@@ -1,0 +1,2000 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>treeboot Specification</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --paper: #101614;
+      --paper-strong: #151d1a;
+      --ink: #e7eee8;
+      --muted: #98a8a1;
+      --line: #26332f;
+      --line-strong: #465850;
+      --green: #49b99b;
+      --green-deep: #7dd7bd;
+      --coral: #ee896d;
+      --gold: #d8b45b;
+      --blue: #82a9c8;
+      --code-bg: #07100d;
+      --code-ink: #dff6ee;
+      --shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+      --radius: 8px;
+      --measure: 76ch;
+      --sans: "Avenir Next", "Gill Sans", "Segoe UI", sans-serif;
+      --serif: "Iowan Old Style", "Charter", "Georgia", serif;
+      --mono: "SFMono-Regular", "Cascadia Code", "Liberation Mono", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 72% 18%, rgba(238, 137, 109, 0.12), transparent 28rem),
+        radial-gradient(circle at 20% 8%, rgba(73, 185, 155, 0.14), transparent 22rem),
+        linear-gradient(90deg, rgba(125, 215, 189, 0.055) 1px, transparent 1px),
+        linear-gradient(rgba(125, 215, 189, 0.045) 1px, transparent 1px),
+        var(--paper);
+      background-size: 44px 44px;
+      color: var(--ink);
+      font-family: var(--sans);
+      font-size: 16px;
+      line-height: 1.58;
+    }
+
+    a {
+      color: var(--green-deep);
+      text-decoration-color: rgba(13, 107, 87, 0.35);
+      text-decoration-thickness: 2px;
+      text-underline-offset: 3px;
+    }
+
+    a:hover {
+      color: var(--coral);
+      text-decoration-color: rgba(197, 86, 61, 0.45);
+    }
+
+    code,
+    pre,
+    kbd {
+      font-family: var(--mono);
+      font-size: 0.92em;
+    }
+
+    code {
+      padding: 0.1rem 0.32rem;
+      border: 1px solid rgba(125, 215, 189, 0.24);
+      border-radius: 5px;
+      background: rgba(73, 185, 155, 0.13);
+      color: var(--green-deep);
+      white-space: nowrap;
+    }
+
+    pre {
+      margin: 1rem 0 0;
+      padding: 1rem;
+      overflow-x: auto;
+      border-radius: var(--radius);
+      background: var(--code-bg);
+      color: var(--code-ink);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    }
+
+    pre code {
+      display: block;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      white-space: pre;
+    }
+
+    .shell {
+      color: #d9efe7;
+    }
+
+    .page {
+      display: grid;
+      grid-template-columns: minmax(220px, 292px) minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .toc {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 1.25rem;
+      overflow-y: auto;
+      border-right: 1px solid var(--line);
+      background:
+        linear-gradient(180deg, rgba(21, 29, 26, 0.86), rgba(16, 22, 20, 0.96)),
+        var(--paper);
+      backdrop-filter: blur(8px);
+    }
+
+    .toc-title {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      margin: 0 0 1.5rem;
+      font-family: var(--serif);
+      font-size: 1.35rem;
+      font-weight: 700;
+    }
+
+    .mark {
+      display: inline-grid;
+      width: 2rem;
+      height: 2rem;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--green-deep);
+      color: #07100d;
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      font-weight: 700;
+    }
+
+    .toc nav {
+      display: grid;
+      gap: 0.35rem;
+    }
+
+    .toc a {
+      display: block;
+      padding: 0.38rem 0.5rem;
+      border-radius: 6px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      text-decoration: none;
+    }
+
+    .toc a:hover {
+      background: rgba(73, 185, 155, 0.12);
+      color: var(--green-deep);
+    }
+
+    .toc .sub {
+      padding-left: 1.25rem;
+      font-size: 0.82rem;
+    }
+
+    main {
+      min-width: 0;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 390px);
+      gap: 2rem;
+      align-items: end;
+      min-height: 78vh;
+      padding: 5rem min(6vw, 5rem) 3rem;
+      border-bottom: 1px solid var(--line);
+      background:
+        linear-gradient(135deg, rgba(73, 185, 155, 0.16), transparent 42%),
+        linear-gradient(315deg, rgba(238, 137, 109, 0.16), transparent 36%);
+    }
+
+    .eyebrow {
+      margin: 0 0 1rem;
+      color: var(--coral);
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      font-family: var(--serif);
+      line-height: 1.08;
+    }
+
+    h1 {
+      max-width: 11ch;
+      font-size: clamp(4rem, 8vw, 7.2rem);
+    }
+
+    h2 {
+      font-size: 2.1rem;
+    }
+
+    h3 {
+      font-size: 1.32rem;
+    }
+
+    p {
+      margin: 1rem 0 0;
+      max-width: var(--measure);
+    }
+
+    .lede {
+      max-width: 58ch;
+      font-family: var(--serif);
+      font-size: 1.34rem;
+      line-height: 1.45;
+    }
+
+    .summary-panel {
+      padding: 1.1rem;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius);
+      background: rgba(21, 29, 26, 0.78);
+      box-shadow: var(--shadow);
+    }
+
+    .summary-panel dl {
+      display: grid;
+      gap: 0.75rem;
+      margin: 0;
+    }
+
+    .summary-panel dt {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+    }
+
+    .summary-panel dd {
+      margin: 0.08rem 0 0;
+      font-weight: 700;
+    }
+
+    .band {
+      padding: 4rem min(6vw, 5rem);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .band:nth-of-type(even) {
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(240px, 34ch);
+      gap: 2rem;
+      align-items: start;
+      margin-bottom: 1.7rem;
+    }
+
+    .section-note {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.96rem;
+    }
+
+    .grid {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .grid.two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .grid.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .panel,
+    .callout {
+      padding: 1rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--paper-strong);
+    }
+
+    .panel h3,
+    .callout h3 {
+      margin-bottom: 0.5rem;
+    }
+
+    .panel p,
+    .callout p {
+      margin-top: 0.55rem;
+    }
+
+    .callout {
+      border-left: 5px solid var(--green);
+    }
+
+    .callout.warning {
+      border-left-color: var(--coral);
+    }
+
+    .callout.future {
+      border-left-color: var(--gold);
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      margin-top: 1rem;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 1.8rem;
+      padding: 0.2rem 0.55rem;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      background: rgba(21, 29, 26, 0.72);
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.76rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+      border: 1px solid var(--line);
+      background: var(--paper-strong);
+      font-size: 0.95rem;
+    }
+
+    th,
+    td {
+      padding: 0.78rem;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: rgba(73, 185, 155, 0.12);
+      color: var(--green-deep);
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .flow {
+      counter-reset: flow;
+      display: grid;
+      gap: 0.8rem;
+      margin-top: 1rem;
+    }
+
+    .flow-step {
+      counter-increment: flow;
+      display: grid;
+      grid-template-columns: 2.5rem minmax(0, 1fr);
+      gap: 0.75rem;
+      align-items: start;
+      padding: 0.85rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--paper-strong);
+    }
+
+    .flow-step::before {
+      content: counter(flow);
+      display: grid;
+      width: 2.1rem;
+      height: 2.1rem;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--green);
+      color: #07100d;
+      font-family: var(--mono);
+      font-weight: 700;
+    }
+
+    .flow-step strong {
+      display: block;
+      margin-bottom: 0.2rem;
+    }
+
+    .flow-step span {
+      color: var(--muted);
+    }
+
+    .matrix {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1px;
+      margin-top: 1rem;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--line);
+    }
+
+    .matrix.two-up {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .matrix-cell {
+      min-height: 9rem;
+      padding: 1rem;
+      background: var(--paper-strong);
+    }
+
+    .matrix-cell strong {
+      display: block;
+      color: var(--green-deep);
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      text-transform: uppercase;
+    }
+
+    .matrix-cell p {
+      margin-top: 0.5rem;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .timeline {
+      display: grid;
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+
+    .timeline-item {
+      display: grid;
+      grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
+      gap: 1rem;
+      padding: 0.9rem 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .timeline-item:last-child {
+      border-bottom: 0;
+    }
+
+    .timeline-item strong {
+      color: var(--green-deep);
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      text-transform: uppercase;
+    }
+
+    ul,
+    ol {
+      margin: 0.8rem 0 0;
+      padding-left: 1.25rem;
+      max-width: var(--measure);
+    }
+
+    li + li {
+      margin-top: 0.3rem;
+    }
+
+    .footer {
+      padding: 3rem min(6vw, 5rem);
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    @media (max-width: 980px) {
+      .page {
+        display: block;
+      }
+
+      .toc {
+        position: static;
+        height: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .toc nav {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .toc .sub {
+        padding-left: 0.5rem;
+      }
+
+      .hero,
+      .section-head,
+      .grid.two,
+      .grid.three,
+      .matrix {
+        grid-template-columns: 1fr;
+      }
+
+      .hero {
+        min-height: auto;
+        padding-top: 3rem;
+      }
+    }
+
+    @media (max-width: 620px) {
+      body {
+        font-size: 15px;
+      }
+
+      h1 {
+        font-size: 4rem;
+      }
+
+      .band,
+      .hero,
+      .footer {
+        padding-left: 1rem;
+        padding-right: 1rem;
+      }
+
+      .timeline-item {
+        grid-template-columns: 1fr;
+        gap: 0.25rem;
+      }
+    }
+
+    @media print {
+      body {
+        background: white;
+        color: black;
+      }
+
+      .page {
+        display: block;
+      }
+
+      .toc {
+        display: none;
+      }
+
+      .hero,
+      .band,
+      .footer {
+        padding: 1.2rem 0;
+        border-bottom: 1px solid #aaa;
+      }
+
+      .summary-panel,
+      .panel,
+      .callout,
+      table,
+      .flow-step,
+      .matrix {
+        box-shadow: none;
+        break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <aside class="toc" aria-label="Specification navigation">
+      <div class="toc-title">
+        <span class="mark">tb</span>
+        <span>treeboot spec</span>
+      </div>
+      <nav>
+        <a href="#overview">Overview</a>
+        <a href="#goals">Goals</a>
+        <a href="#commands">Commands</a>
+        <a href="#paths">Path Model</a>
+        <a class="sub" href="#root-path">Root Path</a>
+        <a href="#environment">Environment</a>
+        <a href="#run-flow">Run Flow</a>
+        <a href="#scripts">Scripts</a>
+        <a href="#config">Config</a>
+        <a href="#validation">Validation</a>
+        <a href="#file-operations">File Operations</a>
+        <a href="#conflicts">Conflict Modes</a>
+        <a href="#commands-runtime">Command Runtime</a>
+        <a href="#output">Output</a>
+        <a href="#releases">Releases</a>
+        <a href="#testing">Testing</a>
+      </nav>
+    </aside>
+
+    <main>
+      <header class="hero" id="overview">
+        <div>
+          <p class="eyebrow">Specification v1.0.0</p>
+          <h1>treeboot</h1>
+          <p class="lede">
+            A portable worktree bootstrapper that lets every coding agent,
+            editor, and orchestration tool run the same repo-local setup
+            command.
+          </p>
+          <div class="badge-row" aria-label="Project characteristics">
+            <span class="badge">Rust executable</span>
+            <span class="badge">TOML config</span>
+            <span class="badge">idempotent default</span>
+            <span class="badge">script escape hatch</span>
+            <span class="badge">agent-tool aliases</span>
+          </div>
+        </div>
+
+        <section class="summary-panel" aria-label="Specification summary">
+          <dl>
+            <div>
+              <dt>Spec status</dt>
+              <dd>v1.0.0 initial implementation contract</dd>
+            </div>
+            <div>
+              <dt>Default command</dt>
+              <dd><code>treeboot</code> == <code>treeboot run</code></dd>
+            </div>
+            <div>
+              <dt>Root path</dt>
+              <dd>Source checkout for copy, symlink, and sync operations</dd>
+            </div>
+            <div>
+              <dt>Worktree path</dt>
+              <dd>Current worktree root where operations execute</dd>
+            </div>
+            <div>
+              <dt>Conflict policy</dt>
+              <dd>Skip existing by default, strict validates, force replaces</dd>
+            </div>
+            <div>
+              <dt>Primary file</dt>
+              <dd><code>.treeboot.toml</code></dd>
+            </div>
+          </dl>
+        </section>
+      </header>
+
+      <section class="band" id="goals">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Intent</p>
+            <h2>One setup contract for many tools</h2>
+          </div>
+          <p class="section-note">
+            Agentic coding tools already create isolated Git worktrees. The
+            repeated pain is everything Git intentionally leaves behind:
+            ignored files, local credentials, dependency caches, and per-worktree
+            setup commands.
+          </p>
+        </div>
+
+        <div class="grid two">
+          <section class="panel">
+            <h3>Goals</h3>
+            <ul>
+              <li>Provide one repo-local worktree bootstrap command.</li>
+              <li>Avoid duplicate setup files across agent tools.</li>
+              <li>Make common copy, symlink, and sync operations declarative.</li>
+              <li>Allow full control with an executable init script.</li>
+              <li>Be safe and idempotent by default.</li>
+              <li>Ship as a small, portable executable.</li>
+            </ul>
+          </section>
+
+          <section class="panel">
+            <h3>Non-goals</h3>
+            <ul>
+              <li>Create Git worktrees.</li>
+              <li>Manage long-running dev servers.</li>
+              <li>Allocate per-worktree ports.</li>
+              <li>Replace tool-specific setup systems entirely.</li>
+              <li>Manage secrets beyond user-configured file operations.</li>
+            </ul>
+          </section>
+        </div>
+
+        <div class="callout">
+          <h3>Design rule</h3>
+          <p>
+            treeboot should be boring to run repeatedly. File operations are
+            idempotent by default. Commands always run, so users must make
+            configured commands safe to rerun when that matters.
+          </p>
+        </div>
+
+        <div class="callout">
+          <h3>Implementation bar</h3>
+          <p>
+            The first implementation should target the full documented behavior
+            in this spec.
+          </p>
+        </div>
+      </section>
+
+      <section class="band" id="commands">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">CLI surface</p>
+            <h2>Two subcommands, one default path</h2>
+          </div>
+          <p class="section-note">
+            The common integration point is intentionally short:
+            <code>treeboot</code>. Tool-specific setup hooks should not need to
+            know whether treeboot is using a script or config internally.
+          </p>
+        </div>
+
+        <div class="grid two">
+          <section class="panel">
+            <h3><code>treeboot run</code></h3>
+            <p>
+              Runs worktree bootstrap. This is also the implicit command when
+              no subcommand is provided.
+            </p>
+            <pre><code class="shell">treeboot
+treeboot run
+treeboot run --dry-run
+treeboot run --strict
+treeboot run --force
+treeboot run --root /path/to/root-checkout
+treeboot run --config .treeboot.toml
+treeboot run --no-commands</code></pre>
+          </section>
+
+          <section class="panel">
+            <h3><code>treeboot init</code></h3>
+            <p>
+              Creates a starter config or script. Interactive runs prompt for
+              the type. Non-interactive runs must specify it.
+            </p>
+            <pre><code class="shell">treeboot init
+treeboot init --config
+treeboot init --script
+treeboot init --path .treeboot.toml
+treeboot init --force</code></pre>
+            <p>
+              Default paths are <code>.treeboot.toml</code> for config and
+              <code>.treeboot.sh</code> for scripts.
+            </p>
+          </section>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Option</th>
+              <th>Scope</th>
+              <th>Behavior</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>--root &lt;path&gt;</code></td>
+              <td>run</td>
+              <td>Overrides the checkout used as the file-operation source.</td>
+            </tr>
+            <tr>
+              <td><code>--config &lt;path&gt;</code></td>
+              <td>run</td>
+              <td>
+                Uses one specific config file, skips config discovery, and
+                bypasses init script discovery.
+              </td>
+            </tr>
+            <tr>
+              <td><code>--strict</code></td>
+              <td>run</td>
+              <td>
+                Fails if a copy/symlink target exists; rejects sync configs.
+              </td>
+            </tr>
+            <tr>
+              <td><code>--force</code></td>
+              <td>run/init</td>
+              <td>Replaces existing file-operation targets or init output.</td>
+            </tr>
+            <tr>
+              <td><code>--dry-run</code></td>
+              <td>run</td>
+              <td>Prints planned work without writing files or running commands.</td>
+            </tr>
+            <tr>
+              <td><code>--no-commands</code></td>
+              <td>run</td>
+              <td>Runs file operations only.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="band" id="paths">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Path model</p>
+            <h2>Root path feeds the worktree path</h2>
+          </div>
+          <p class="section-note">
+            User-facing docs use "root path" instead of "main worktree" to avoid
+            confusion with main branches. The spec still explains that Git's
+            main worktree is the default source when no override exists.
+          </p>
+        </div>
+
+        <div class="matrix two-up">
+          <div class="matrix-cell">
+            <strong>Root path</strong>
+            <p>
+              Source checkout treeboot reads from. Defaults to Git's main
+              worktree, but can be overridden.
+            </p>
+          </div>
+          <div class="matrix-cell">
+            <strong>Worktree path</strong>
+            <p>
+              Current worktree root. File targets and command execution are
+              anchored here.
+            </p>
+          </div>
+        </div>
+
+        <section id="root-path">
+          <h3>Root Path Discovery</h3>
+          <p>
+            The root path is the checkout used as the source for copy, symlink,
+            and sync operations.
+          </p>
+          <ol>
+            <li>Use <code>--root</code>, if provided.</li>
+            <li>Use <code>TREEBOOT_ROOT_PATH</code>, if set.</li>
+            <li>Use <code>CODEX_SOURCE_TREE_PATH</code>, if set.</li>
+            <li>Use <code>CONDUCTOR_ROOT_PATH</code>, if set.</li>
+            <li>Use <code>SUPERSET_ROOT_PATH</code>, if set.</li>
+            <li>Use Git's main worktree from <code>git worktree list --porcelain</code>.</li>
+          </ol>
+          <p>
+            If no root path can be determined, <code>treeboot run</code> fails
+            with a clear error.
+          </p>
+        </section>
+
+        <section>
+          <h3>Default Branch Discovery</h3>
+          <p>
+            <code>TREEBOOT_DEFAULT_BRANCH</code> is best effort. treeboot uses
+            an existing <code>CONDUCTOR_DEFAULT_BRANCH</code> value if present,
+            otherwise resolves <code>origin/HEAD</code>, otherwise sets an empty
+            string. When resolved from Git, the value is the short branch name,
+            such as <code>main</code>, not <code>origin/main</code> or a full
+            ref path.
+          </p>
+        </section>
+
+      </section>
+
+      <section class="band" id="environment">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Compatibility</p>
+            <h2>Environment variables</h2>
+          </div>
+          <p class="section-note">
+            Scripts copied from Codex, Conductor, or Superset should usually
+            work with minimal changes. treeboot sets canonical variables plus
+            aliases for common setup-script ecosystems.
+          </p>
+        </div>
+
+        <div class="callout">
+          <h3>Scope</h3>
+          <p>
+            treeboot builds one environment variable set per run. The same set
+            is applied when executing an init script and when executing commands
+            from declarative config.
+          </p>
+        </div>
+
+        <div class="grid two">
+          <section class="panel">
+            <h3>Canonical</h3>
+            <pre><code>TREEBOOT_ROOT_PATH
+TREEBOOT_WORKTREE_PATH
+TREEBOOT_DEFAULT_BRANCH</code></pre>
+          </section>
+
+          <section class="panel">
+            <h3>Aliases</h3>
+            <pre><code>GIT_SOURCE_TREE_PATH
+GIT_WORKTREE_PATH
+
+CODEX_SOURCE_TREE_PATH
+CODEX_WORKTREE_PATH
+
+CONDUCTOR_ROOT_PATH
+CONDUCTOR_WORKSPACE_PATH
+CONDUCTOR_DEFAULT_BRANCH
+
+SUPERSET_ROOT_PATH</code></pre>
+          </section>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Variable</th>
+              <th>Value</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>CODEX_SOURCE_TREE_PATH</code></td>
+              <td><code>TREEBOOT_ROOT_PATH</code></td>
+              <td>Matches Codex setup-script terminology.</td>
+            </tr>
+            <tr>
+              <td><code>CODEX_WORKTREE_PATH</code></td>
+              <td><code>TREEBOOT_WORKTREE_PATH</code></td>
+              <td>Matches Codex setup-script terminology.</td>
+            </tr>
+            <tr>
+              <td><code>GIT_SOURCE_TREE_PATH</code></td>
+              <td><code>TREEBOOT_ROOT_PATH</code></td>
+              <td>Generic compatibility alias.</td>
+            </tr>
+            <tr>
+              <td><code>GIT_WORKTREE_PATH</code></td>
+              <td><code>TREEBOOT_WORKTREE_PATH</code></td>
+              <td>Generic compatibility alias.</td>
+            </tr>
+            <tr>
+              <td><code>CONDUCTOR_ROOT_PATH</code></td>
+              <td><code>TREEBOOT_ROOT_PATH</code></td>
+              <td>Supports Conductor-style setup scripts.</td>
+            </tr>
+            <tr>
+              <td><code>CONDUCTOR_WORKSPACE_PATH</code></td>
+              <td><code>TREEBOOT_WORKTREE_PATH</code></td>
+              <td>Supports Conductor-style setup scripts.</td>
+            </tr>
+            <tr>
+              <td><code>CONDUCTOR_DEFAULT_BRANCH</code></td>
+              <td><code>TREEBOOT_DEFAULT_BRANCH</code></td>
+              <td>Supports Conductor-style setup scripts.</td>
+            </tr>
+            <tr>
+              <td><code>SUPERSET_ROOT_PATH</code></td>
+              <td><code>TREEBOOT_ROOT_PATH</code></td>
+              <td>Supports Superset-style setup scripts.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="callout warning">
+          <h3>Tool-mode variables are intentionally absent</h3>
+          <p>
+            treeboot does not set <code>CONDUCTOR_IS_LOCAL</code>,
+            <code>CONDUCTOR_PORT</code>, or <code>SUPERSET_PORT_BASE</code>.
+            Those variables are owned by the tools that define them and should
+            not be fabricated.
+          </p>
+        </div>
+      </section>
+
+      <section class="band" id="run-flow">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Execution</p>
+            <h2>Run flow</h2>
+          </div>
+          <p class="section-note">
+            Init scripts are the escape hatch and take precedence. Declarative
+            config is the default happy path.
+          </p>
+        </div>
+
+        <div class="flow">
+          <div class="flow-step">
+            <div>
+              <strong>Confirm Git context</strong>
+              <span>Fail early if not inside a Git working tree.</span>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div>
+              <strong>Discover paths</strong>
+              <span>Resolve worktree path, root path, and default branch.</span>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div>
+              <strong>Build environment</strong>
+              <span>Set treeboot canonical variables and compatibility aliases.</span>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div>
+              <strong>Check init scripts</strong>
+              <span>Run the first executable script and skip config if found.</span>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div>
+              <strong>Load config</strong>
+              <span>
+                Discover TOML config unless a specific path is provided. If no
+                config is found, print an info message and exit.
+              </span>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div>
+              <strong>Validate config</strong>
+              <span>Normalize entries and detect duplicate operation targets.</span>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div>
+              <strong>Apply files, then commands</strong>
+              <span>Run file operations first; commands run afterward.</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="band" id="scripts">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Escape hatch</p>
+            <h2>Init scripts</h2>
+          </div>
+          <p class="section-note">
+            Scripts are for projects that need full control. If an executable
+            init script is found, treeboot runs it instead of declarative config.
+          </p>
+        </div>
+
+        <div class="grid two">
+          <section class="panel">
+            <h3>Discovery</h3>
+            <pre><code>.treeboot.sh
+.treebootrc
+.config/treeboot/init</code></pre>
+            <p>
+              Discovery is relative to <code>TREEBOOT_WORKTREE_PATH</code>.
+              Only executable files are treated as init scripts. The first
+              executable script wins.
+            </p>
+          </section>
+
+          <section class="panel">
+            <h3>Invocation</h3>
+            <pre><code class="shell">./.treeboot.sh "$TREEBOOT_ROOT_PATH"</code></pre>
+            <p>
+              treeboot executes the script from the worktree root, passes the
+              root path as the only positional argument, and provides the full
+              treeboot environment variable set described in
+              <a href="#environment">Environment variables</a>.
+            </p>
+          </section>
+        </div>
+
+        <pre><code>#!/usr/bin/env sh
+set -eu
+
+root_path="$1"
+
+ln -s "$root_path/.env" .env
+mise install</code></pre>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Case</th>
+              <th>Behavior</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Executable script found</td>
+              <td>Run script and skip declarative config.</td>
+            </tr>
+            <tr>
+              <td>Script exits non-zero</td>
+              <td>treeboot exits non-zero with the script status context.</td>
+            </tr>
+            <tr>
+              <td><code>--dry-run</code></td>
+              <td>Print the script path and invocation; do not execute it.</td>
+            </tr>
+            <tr>
+              <td>Script exists but is not executable</td>
+              <td>Ignore it for execution and continue to config discovery.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="callout">
+          <h3>Generated script</h3>
+          <p>
+            <code>treeboot init --script</code> writes
+            <code>.treeboot.sh</code> by default and marks it executable.
+          </p>
+        </div>
+      </section>
+
+      <section class="band" id="config">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Declarative mode</p>
+            <h2>Config files</h2>
+          </div>
+          <p class="section-note">
+            TOML is the intended config format. Simple lists cover the common
+            case; object entries cover richer file and command behavior.
+          </p>
+        </div>
+
+        <div class="grid two">
+          <section class="panel">
+            <h3>Discovery</h3>
+            <pre><code>.treeboot.toml
+treeboot.toml
+.config/treeboot/config.toml</code></pre>
+            <p>
+              The first existing config file wins. If <code>--config</code> is
+              provided, only that file is used and init script discovery is
+              skipped. Relative config paths resolve from
+              <code>TREEBOOT_WORKTREE_PATH</code>.
+            </p>
+          </section>
+
+          <section class="panel">
+            <h3>Init Defaults</h3>
+            <pre><code>config: .treeboot.toml
+script: .treeboot.sh</code></pre>
+            <p>
+              <code>treeboot init</code> prompts interactively for which type
+              to create. Non-interactive use must specify <code>--config</code>
+              or <code>--script</code>.
+            </p>
+          </section>
+        </div>
+
+        <div class="callout">
+          <h3>Missing config</h3>
+          <p>
+            If no executable init script and no config file are detected,
+            treeboot prints an info message such as
+            <code>treeboot: no config detected</code>. Without
+            <code>--strict</code> it exits successfully. With
+            <code>--strict</code> it exits non-zero.
+          </p>
+        </div>
+
+        <pre><code>copy = [
+  ".env",
+  { source = ".env.local", target = ".env.local" },
+]
+
+symlink = [
+  ".tool-versions",
+  { source = "shared/.agents", target = ".agents" },
+]
+
+sync = [
+  "shared/config",
+  { source = "tooling/config", target = ".config/tooling" },
+]
+
+commands = [
+  "mise install",
+  { name = "Install Ruby gems", run = "bundle install", async = true },
+  { name = "Install Node packages", run = "pnpm install", async = true },
+]
+
+files = [
+  { operation = "copy", source = ".npmrc", target = ".npmrc" },
+  { operation = "symlink", source = "shared/bin", target = "bin" },
+  { operation = "sync", source = "shared/editor", target = ".editor" },
+]
+
+[validation]
+dangerously_allow_sources_outside_root = false
+dangerously_allow_targets_outside_worktree = false</code></pre>
+
+        <div class="callout">
+          <h3>File objects</h3>
+          <p>
+            <code>copy</code>, <code>symlink</code>, and <code>sync</code>
+            accept strings and objects. Strings mean source and target are the
+            same path. For <code>sync</code>, string entries also use
+            <code>compare = "metadata"</code> and
+            <code>delete_extra = true</code>. The <code>files</code> list
+            accepts objects with an <code>operation</code> field for mixed
+            copy, symlink, and sync entries.
+          </p>
+          <pre><code>copy = [
+  ".env",
+  { source = ".env.local", target = ".env.local" },
+]
+
+symlink = [
+  ".tool-versions",
+  { source = "shared/.agents", target = ".agents" },
+]
+
+sync = [
+  "shared/config",
+  { source = "tooling/config", target = ".config/tooling" },
+  { source = "shared/tool.lock", target = ".tool.lock", compare = "checksum" },
+]
+
+files = [
+  { operation = "copy", source = ".npmrc", target = ".npmrc" },
+  { operation = "symlink", source = "shared/bin", target = "bin" },
+  { operation = "sync", source = "shared/editor", target = ".editor" },
+]
+
+[[file]]
+operation = "copy"
+source = "templates/editorconfig"
+target = ".editorconfig"</code></pre>
+          <p>
+            The verbose table-array name is singular <code>[[file]]</code> so
+            it can coexist with the plural <code>files = [...]</code> list in
+            the same TOML file.
+          </p>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>File field</th>
+              <th>Applies to</th>
+              <th>Meaning</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>operation</code></td>
+              <td><code>files</code>, <code>[[file]]</code></td>
+              <td>Required for object entries; one of copy, symlink, or sync.</td>
+            </tr>
+            <tr>
+              <td><code>source</code></td>
+              <td>all file operations</td>
+              <td>Required for object entries. Relative paths resolve from root path.</td>
+            </tr>
+            <tr>
+              <td><code>target</code></td>
+              <td>all file operations</td>
+              <td>Optional; defaults to source. Relative paths resolve from worktree path.</td>
+            </tr>
+            <tr>
+              <td><code>compare</code></td>
+              <td><code>sync</code></td>
+              <td><code>metadata</code> by default; <code>checksum</code> for content checks.</td>
+            </tr>
+            <tr>
+              <td><code>delete_extra</code></td>
+              <td><code>sync</code> directories</td>
+              <td>Defaults to <code>true</code>; deletes target-only files.</td>
+            </tr>
+            <tr>
+              <td><code>symlinks</code></td>
+              <td><code>copy</code>, <code>sync</code></td>
+              <td>
+                Defaults to <code>preserve</code>; safe source symlinks are
+                recreated as symlinks and unsafe symlinks are validation errors.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="callout">
+          <h3>Command objects</h3>
+          <p>
+            <code>commands</code> accepts string entries and compact object
+            entries. Strings are shorthand for objects with a <code>run</code>
+            field. For longer command definitions, use verbose
+            <code>[[command]]</code> entries.
+          </p>
+          <pre><code>commands = [
+  "mise install",
+  { run = "bundle install", async = true },
+  { run = "pnpm install", async = true, env = { NODE_ENV = "development" } },
+]
+
+[[command]]
+name = "Install dependencies"
+run = "npm install"
+cwd = "."
+allow_failure = false
+async = false
+
+[command.env]
+NODE_ENV = "development"
+
+[[command]]
+name = "Install dependencies without a shell"
+program = "npm"
+args = ["install"]</code></pre>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Command field</th>
+              <th>Meaning</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>run</code></td>
+              <td>Shell command to execute. Mutually exclusive with <code>program</code>.</td>
+            </tr>
+            <tr>
+              <td><code>program</code> / <code>args</code></td>
+              <td>Direct process execution without shell parsing.</td>
+            </tr>
+            <tr>
+              <td><code>cwd</code></td>
+              <td>
+                Command working directory, relative to the worktree by default.
+                Normalized paths must stay inside
+                <code>TREEBOOT_WORKTREE_PATH</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>env</code></td>
+              <td>
+                Extra environment variables merged into the treeboot env set.
+                Treeboot-owned variables and aliases cannot be overridden.
+              </td>
+            </tr>
+            <tr>
+              <td><code>async</code></td>
+              <td>
+                Defaults to <code>false</code>. Consecutive async commands run
+                as one parallel batch.
+              </td>
+            </tr>
+            <tr>
+              <td><code>allow_failure</code></td>
+              <td>Defaults to <code>false</code>. When true, non-zero exit is not fatal.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="band" id="validation">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Before execution</p>
+            <h2>Config validation</h2>
+          </div>
+          <p class="section-note">
+            treeboot should catch config that describes surprising or
+            self-conflicting file operations before it starts changing the
+            worktree.
+          </p>
+        </div>
+
+        <div class="grid two">
+          <section class="panel">
+            <h3>Normalize first</h3>
+            <p>
+              Config parsing should normalize <code>copy</code>,
+              <code>symlink</code>, <code>sync</code>, <code>files</code>, and
+              <code>[[file]]</code> into one ordered list of file operations
+              with resolved source and target paths.
+            </p>
+          </section>
+
+          <section class="panel">
+            <h3>Duplicate targets</h3>
+            <p>
+              If multiple file operations target the same normalized absolute
+              path, treeboot should report every conflicting entry with its
+              operation, source, target, and declaration location when
+              available.
+            </p>
+          </section>
+
+          <section class="panel">
+            <h3>Target boundary</h3>
+            <p>
+              Every file operation target must resolve inside
+              <code>TREEBOOT_WORKTREE_PATH</code>. Targets outside the current
+              worktree are validation errors by default.
+            </p>
+          </section>
+
+          <section class="panel">
+            <h3>Source boundary</h3>
+            <p>
+              Every file operation source must resolve inside
+              <code>TREEBOOT_ROOT_PATH</code>. Sources outside the root path are
+              validation errors by default.
+            </p>
+          </section>
+
+          <section class="panel">
+            <h3>Command boundary</h3>
+            <p>
+              Command <code>cwd</code> values are normalized relative to
+              <code>TREEBOOT_WORKTREE_PATH</code>. Paths may contain
+              <code>..</code>, but the final resolved path must stay inside the
+              worktree.
+            </p>
+          </section>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Rule</th>
+              <th>Behavior</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Any duplicate configured target</td>
+              <td>Fail before any file operation or command runs.</td>
+            </tr>
+            <tr>
+              <td>Target resolves outside the worktree</td>
+              <td>Fail before any file operation or command runs.</td>
+            </tr>
+            <tr>
+              <td>Source resolves outside the root path</td>
+              <td>Fail before any file operation or command runs.</td>
+            </tr>
+            <tr>
+              <td>Command <code>cwd</code> resolves outside the worktree</td>
+              <td>Fail before any file operation or command runs.</td>
+            </tr>
+            <tr>
+              <td>Command <code>env</code> overrides treeboot-owned variables</td>
+              <td>Fail before any file operation or command runs.</td>
+            </tr>
+            <tr>
+              <td>Copy or sync encounters an unsafe source symlink</td>
+              <td>Fail before any file operation or command runs.</td>
+            </tr>
+            <tr>
+              <td><code>--strict</code> with any sync operation</td>
+              <td>Fail before any file operation or command runs.</td>
+            </tr>
+            <tr>
+              <td><code>--dry-run</code></td>
+              <td>Print the validation error, change no files, and exit non-zero.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="callout warning">
+          <h3>Duplicate targets are invalid config</h3>
+          <p>
+            A config that copies a file and later symlinks to the same target is
+            ambiguous at best and destructive under force mode. treeboot should
+            reject duplicate configured targets in every mode.
+          </p>
+        </div>
+
+        <div class="callout warning">
+          <h3>Outside-worktree targets need an explicit escape hatch</h3>
+          <p>
+            The validation setting
+            <code>dangerously_allow_targets_outside_worktree</code> disables
+            the target-boundary check when set to <code>true</code>.
+            <code>dangerously_allow_sources_outside_root</code> separately
+            disables the source-boundary check. These checks only affect
+            declarative file operations; init scripts are unrestricted because
+            treeboot cannot safely validate arbitrary script behavior.
+          </p>
+        </div>
+
+        <div class="callout warning">
+          <h3>Strict mode is incompatible with sync</h3>
+          <p>
+            Sync expects existing targets and may delete target-only files, so
+            strict mode rejects configs containing sync operations before
+            execution.
+          </p>
+        </div>
+      </section>
+
+      <section class="band" id="file-operations">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Files first</p>
+            <h2>File operations</h2>
+          </div>
+          <p class="section-note">
+            Sources resolve against the root path. Targets resolve against the
+            worktree path. Parent target directories are created as needed.
+          </p>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Config</th>
+              <th>Source</th>
+              <th>Target</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>copy = [".env"]</code></td>
+              <td><code>TREEBOOT_ROOT_PATH/.env</code></td>
+              <td><code>TREEBOOT_WORKTREE_PATH/.env</code></td>
+            </tr>
+            <tr>
+              <td><code>symlink = [".tool-versions"]</code></td>
+              <td><code>TREEBOOT_ROOT_PATH/.tool-versions</code></td>
+              <td><code>TREEBOOT_WORKTREE_PATH/.tool-versions</code></td>
+            </tr>
+            <tr>
+              <td><code>sync = ["shared/config"]</code></td>
+              <td><code>TREEBOOT_ROOT_PATH/shared/config</code></td>
+              <td><code>TREEBOOT_WORKTREE_PATH/shared/config</code></td>
+            </tr>
+            <tr>
+              <td><code>{ source = "a", target = "b" }</code></td>
+              <td><code>TREEBOOT_ROOT_PATH/a</code></td>
+              <td><code>TREEBOOT_WORKTREE_PATH/b</code></td>
+            </tr>
+            <tr>
+              <td><code>{ operation = "sync", source = "a", target = "b" }</code></td>
+              <td><code>TREEBOOT_ROOT_PATH/a</code></td>
+              <td><code>TREEBOOT_WORKTREE_PATH/b</code></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="grid two">
+          <section class="panel">
+            <h3>Copy</h3>
+            <p>
+              Copies files and directories. Directory copies recursively copy
+              the source directory into the configured target path. This is a
+              copy operation, not a sync operation: treeboot never deletes
+              target files merely because they are absent from the source.
+              Source symlinks are preserved by default when they are safe.
+            </p>
+          </section>
+
+          <section class="panel">
+            <h3>Symlink</h3>
+            <p>
+              Creates relative symlinks whenever treeboot can compute the path
+              from the target parent to the source. If it cannot, it falls back
+              to an absolute symlink.
+            </p>
+          </section>
+
+          <section class="panel">
+            <h3>Sync</h3>
+            <p>
+              Reconciles target content to match source content. Files are
+              compared by size and modified time by default, or by checksum when
+              <code>compare = "checksum"</code> is set. Source symlinks are
+              preserved by default when they are safe.
+            </p>
+          </section>
+        </div>
+
+        <div class="callout">
+          <h3>Symlinks inside copy and sync</h3>
+          <p>
+            Copy and sync use <code>symlinks = "preserve"</code> by default:
+            safe source symlinks are recreated as symlinks instead of copying
+            their referents. A symlink is unsafe if it is absolute, empty, or
+            resolves outside the copied source tree. Unsafe symlinks are
+            validation errors in declarative config. Projects that need custom
+            symlink handling should use an init script.
+          </p>
+        </div>
+
+        <div class="callout">
+          <h3>Sync deletes extras by default</h3>
+          <p>
+            When the source is a directory, sync recurses through source and
+            target. It copies new files, updates changed files, and deletes
+            target files or directories that do not exist in the source.
+            Configure <code>delete_extra = false</code> on a sync entry to keep
+            target-only files.
+          </p>
+        </div>
+
+        <div class="callout">
+          <h3>Operation order</h3>
+          <p>
+            treeboot executes <code>copy</code> list entries first,
+            <code>symlink</code> list entries second, <code>sync</code> list
+            entries third, <code>files</code> entries fourth, then
+            <code>[[file]]</code> entries in document order.
+          </p>
+        </div>
+      </section>
+
+      <section class="band" id="conflicts">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Safety</p>
+            <h2>Conflict modes</h2>
+          </div>
+          <p class="section-note">
+            The default mode is optimized for repeated worktree setup. Strict
+            mode is for CI-like validation. Force mode is intentionally
+            destructive and should be explicit.
+          </p>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Mode</th>
+              <th>Missing target</th>
+              <th>Existing target</th>
+              <th>Commands</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>default</td>
+              <td>Create</td>
+              <td>Skip with info output</td>
+              <td>Run</td>
+            </tr>
+            <tr>
+              <td><code>--strict</code></td>
+              <td>Create</td>
+              <td>Fail for copy/symlink; reject sync configs</td>
+              <td>Run only if file operations succeed</td>
+            </tr>
+            <tr>
+              <td><code>--force</code></td>
+              <td>Create</td>
+              <td>Replace files/symlinks; merge copies; sync still reconciles</td>
+              <td>Run</td>
+            </tr>
+            <tr>
+              <td><code>--dry-run</code></td>
+              <td>Print planned create</td>
+              <td>Print planned skip/fail/replace</td>
+              <td>Print only</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="callout">
+          <h3>Directory copy under force</h3>
+          <p>
+            In force mode, copying a source directory over an existing target
+            directory traverses the source and overwrites matching target files.
+            It does not remove target files or directories that are not present
+            in the source. Removing extras would be sync behavior, not copy
+            behavior.
+          </p>
+        </div>
+
+        <div class="callout warning">
+          <h3>Force does not erase directories casually</h3>
+          <p>
+            Force mode may replace existing regular files and symlinks. It must
+            not delete a non-empty directory to satisfy a copy or symlink
+            operation. Copying a file over a directory, creating a symlink over
+            a directory, or copying a directory over a file are operation
+            failures. Use sync when directory contents should be reconciled.
+          </p>
+        </div>
+
+        <div class="callout warning">
+          <h3>Sync is intentionally destructive</h3>
+          <p>
+            Sync is the operation that may delete target-only files. Existing
+            targets are expected for sync and are not treated as conflicts in
+            default or force mode. <code>--strict</code> rejects configs with
+            sync operations before runtime. Use <code>--dry-run</code> to
+            preview sync creates, updates, and deletes.
+          </p>
+        </div>
+      </section>
+
+      <section class="band" id="commands-runtime">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">After files</p>
+            <h2>Command runtime</h2>
+          </div>
+          <p class="section-note">
+            Commands are arbitrary project setup commands. treeboot runs them
+            predictably, but does not attempt to infer whether they are safe.
+          </p>
+        </div>
+
+        <div class="grid two">
+          <section class="panel">
+            <h3>Execution rules</h3>
+            <ul>
+              <li>Run after file operations complete successfully.</li>
+              <li>Run even if every file operation was skipped.</li>
+              <li>Commands run sequentially by default, in declaration order.</li>
+              <li>
+                Consecutive commands with <code>async = true</code> form one
+                parallel batch. treeboot starts every command in the batch,
+                waits for all of them to finish, then continues with the next
+                non-async command.
+              </li>
+              <li>
+                If any command in an async batch exits non-zero without
+                <code>allow_failure = true</code>, treeboot waits for the rest
+                of the batch, then exits non-zero.
+              </li>
+              <li>Run from <code>TREEBOOT_WORKTREE_PATH</code>.</li>
+              <li>
+                Receive the full treeboot environment variable set described in
+                <a href="#environment">Environment variables</a>.
+              </li>
+              <li>
+                Per-command <code>env</code> values are merged into that
+                environment for that command only.
+              </li>
+              <li>Skip only when <code>--no-commands</code> is provided.</li>
+            </ul>
+          </section>
+
+          <section class="panel">
+            <h3>Shells</h3>
+            <pre><code>Unix:    sh -c &lt;command&gt;
+Windows: cmd /C &lt;command&gt;
+
+Direct:  program + args</code></pre>
+            <p>
+              String commands and objects with <code>run</code> use the shell.
+              Objects with <code>program</code> execute directly without shell
+              parsing.
+            </p>
+          </section>
+        </div>
+
+        <div class="callout">
+          <h3>Async batching example</h3>
+          <p>
+            With <code>mise install</code>, then async <code>bundle install</code>
+            and <code>pnpm install</code>, then a final build command, treeboot
+            runs <code>mise install</code> first, runs the Ruby and Node install
+            commands in parallel, waits for both, then runs the build.
+          </p>
+        </div>
+
+        <div class="callout">
+          <h3>Cross-platform contract</h3>
+          <p>
+            Windows support is part of the design contract. Implementation and
+            tests must account for platform differences in shell execution,
+            path handling, and symlink creation.
+          </p>
+        </div>
+      </section>
+
+      <section class="band" id="output">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Operator experience</p>
+            <h2>Output and exit codes</h2>
+          </div>
+          <p class="section-note">
+            Output should be concise enough for setup logs while still making
+            skipped targets and destructive choices obvious.
+          </p>
+        </div>
+
+        <pre><code>treeboot: copy .env -&gt; .env
+treeboot: skip .env.local; target exists
+treeboot: symlink .tool-versions -&gt; ../repo/.tool-versions
+treeboot: sync shared/config -&gt; .config
+treeboot: run mise install</code></pre>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Exit</th>
+              <th>Meaning</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>0</code></td>
+              <td>Success.</td>
+            </tr>
+            <tr>
+              <td><code>1</code></td>
+              <td>Runtime failure, config error, operation failure, or command failure.</td>
+            </tr>
+            <tr>
+              <td><code>2</code></td>
+              <td>CLI usage error.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="band" id="releases">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Distribution</p>
+            <h2>Install and releases</h2>
+          </div>
+          <p class="section-note">
+            Release assets should be predictable enough for direct GitHub
+            release installers such as <code>ubi</code> and
+            <code>mise</code>.
+          </p>
+        </div>
+
+        <p>Archive assets:</p>
+        <pre><code>treeboot-aarch64-apple-darwin.tar.gz
+treeboot-x86_64-apple-darwin.tar.gz
+treeboot-x86_64-unknown-linux-musl.tar.gz
+treeboot-aarch64-unknown-linux-musl.tar.gz
+treeboot-x86_64-pc-windows-msvc.zip
+treeboot-aarch64-pc-windows-msvc.zip
+treeboot-x86_64-unknown-freebsd.tar.gz
+treeboot-aarch64-unknown-freebsd.tar.gz
+treeboot-x86_64-unknown-openbsd.tar.gz
+treeboot-aarch64-unknown-openbsd.tar.gz
+treeboot-x86_64-linux-android.tar.gz
+treeboot-aarch64-linux-android.tar.gz</code></pre>
+
+        <p>Raw executable assets:</p>
+        <pre><code>treeboot-aarch64-apple-darwin
+treeboot-x86_64-apple-darwin
+treeboot-x86_64-unknown-linux-musl
+treeboot-aarch64-unknown-linux-musl
+treeboot-x86_64-pc-windows-msvc.exe
+treeboot-aarch64-pc-windows-msvc.exe
+treeboot-x86_64-unknown-freebsd
+treeboot-aarch64-unknown-freebsd
+treeboot-x86_64-unknown-openbsd
+treeboot-aarch64-unknown-openbsd
+treeboot-x86_64-linux-android
+treeboot-aarch64-linux-android</code></pre>
+
+        <p>Release metadata assets:</p>
+        <pre><code>treeboot-checksums.txt
+treeboot-checksums.txt.asc
+treeboot-sbom.spdx.json
+treeboot-slsa-attestation.intoto.jsonl</code></pre>
+
+        <div class="timeline">
+          <div class="timeline-item">
+            <strong>Archive contents</strong>
+            <span><code>treeboot</code>, <code>README.md</code>, and <code>LICENSE</code>.</span>
+          </div>
+          <div class="timeline-item">
+            <strong>Raw executable assets</strong>
+            <span>
+              Publish the platform executable itself as a separate asset so
+              installers can download, chmod when needed, and run without
+              unpacking an archive.
+            </span>
+          </div>
+          <div class="timeline-item">
+            <strong>Checksums</strong>
+            <span>
+              Publish a checksum manifest that covers every non-signature
+              release asset, including archives, raw executables, SBOMs, and
+              attestations.
+            </span>
+          </div>
+          <div class="timeline-item">
+            <strong>GPG signatures</strong>
+            <span>
+              Publish one detached GPG signature for
+              <code>treeboot-checksums.txt</code>. The checksum manifest is the
+              signed statement for the other release assets.
+            </span>
+          </div>
+          <div class="timeline-item">
+            <strong>SBOM</strong>
+            <span>
+              Publish a machine-readable SPDX JSON software bill of materials
+              for each release.
+            </span>
+          </div>
+          <div class="timeline-item">
+            <strong>Attestations</strong>
+            <span>
+              Publish provenance attestations from release automation, using
+              SLSA/in-toto compatible output where practical.
+            </span>
+          </div>
+          <div class="timeline-item">
+            <strong>Apple signing</strong>
+            <span>
+              Sign macOS CLI binaries with Apple Developer ID and notarize them
+              through Apple's developer tooling before publication.
+            </span>
+          </div>
+          <div class="timeline-item">
+            <strong>Release targets</strong>
+            <span>
+              macOS Apple Silicon, macOS Intel, Linux x86_64 musl,
+              Linux ARM64 musl, Windows x86_64/ARM64 MSVC, FreeBSD
+              x86_64/ARM64, OpenBSD x86_64/ARM64, and Android x86_64/ARM64.
+            </span>
+          </div>
+          <div class="timeline-item">
+            <strong>Target source</strong>
+            <span>
+              The expanded target list uses triples available from
+              <code>rustc --print target-list</code>. Release automation should
+              only publish targets that build and pass a smoke test.
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section class="band" id="testing">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Verification</p>
+            <h2>Testing strategy</h2>
+          </div>
+          <p class="section-note">
+            The test suite should prove the behavior that users will rely on:
+            discovery, idempotency, compatibility env vars, and real Git
+            worktree behavior.
+          </p>
+        </div>
+
+        <div class="grid three">
+          <section class="panel">
+            <h3>Unit tests</h3>
+            <ul>
+              <li>Config parsing.</li>
+              <li>Duplicate file operation target detection.</li>
+              <li>Outside-worktree target validation.</li>
+              <li>String and object file parsing.</li>
+              <li>Sync comparison and delete-extra behavior.</li>
+              <li>String and object command parsing.</li>
+              <li>Discovery order.</li>
+              <li>Environment variable construction.</li>
+              <li>Conflict mode behavior.</li>
+              <li>Relative symlink calculation.</li>
+            </ul>
+          </section>
+
+          <section class="panel">
+            <h3>Integration tests</h3>
+            <ul>
+              <li>Create a temporary Git repository.</li>
+              <li>Create a linked worktree.</li>
+              <li>Run treeboot from the linked worktree.</li>
+              <li>Verify files, symlinks, commands, and env vars.</li>
+            </ul>
+          </section>
+
+          <section class="panel">
+            <h3>CLI tests</h3>
+            <ul>
+              <li><code>treeboot</code> equals <code>treeboot run</code>.</li>
+              <li><code>init --config</code> creates config.</li>
+              <li><code>init --script</code> creates executable script.</li>
+              <li>Non-interactive init without type fails.</li>
+              <li>Conflict flags behave as specified.</li>
+            </ul>
+          </section>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <p>
+          This HTML document is the project specification for treeboot.
+        </p>
+      </footer>
+    </main>
+  </div>
+</body>
+</html>
