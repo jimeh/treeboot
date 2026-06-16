@@ -212,5 +212,6 @@ mise run deps
 mise run fmt
 mise run hooks:install
 mise run lint
+mise run msrv
 mise run test
 ```

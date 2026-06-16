@@ -13,8 +13,7 @@ fn help_should_print_usage() {
 
     assert!(output.status.success());
 
-    let stdout =
-        String::from_utf8(output.stdout).expect("stdout must be utf-8");
+    let stdout = String::from_utf8(output.stdout).expect("stdout must be utf-8");
     assert!(stdout.contains("Usage: treeboot [OPTIONS]"));
 }
 
@@ -27,8 +26,7 @@ fn short_help_should_print_usage() {
 
     assert!(output.status.success());
 
-    let stdout =
-        String::from_utf8(output.stdout).expect("stdout must be utf-8");
+    let stdout = String::from_utf8(output.stdout).expect("stdout must be utf-8");
     assert!(stdout.contains("Usage: treeboot [OPTIONS]"));
 }
 
@@ -41,8 +39,7 @@ fn version_should_print_package_version() {
 
     assert!(output.status.success());
 
-    let stdout =
-        String::from_utf8(output.stdout).expect("stdout must be utf-8");
+    let stdout = String::from_utf8(output.stdout).expect("stdout must be utf-8");
     assert_eq!(stdout, format!("treeboot {}\n", env!("CARGO_PKG_VERSION")));
 }
 
@@ -55,8 +52,7 @@ fn short_version_should_print_package_version() {
 
     assert!(output.status.success());
 
-    let stdout =
-        String::from_utf8(output.stdout).expect("stdout must be utf-8");
+    let stdout = String::from_utf8(output.stdout).expect("stdout must be utf-8");
     assert_eq!(stdout, format!("treeboot {}\n", env!("CARGO_PKG_VERSION")));
 }
 
@@ -78,7 +74,6 @@ fn unknown_option_should_exit_with_usage_error() {
 
     assert_eq!(output.status.code(), Some(2));
 
-    let stderr =
-        String::from_utf8(output.stderr).expect("stderr must be utf-8");
+    let stderr = String::from_utf8(output.stderr).expect("stderr must be utf-8");
     assert!(stderr.contains("treeboot: unknown option: --dry-run"));
 }

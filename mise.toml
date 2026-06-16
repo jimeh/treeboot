@@ -22,12 +22,16 @@ run = "cargo fmt --all -- --check"
 description = "Run Rust lints"
 run = "cargo clippy --all-targets --all-features --locked -- -D warnings"
 
+[tasks.msrv]
+description = "Check Rust MSRV compatibility"
+run = "mise exec rust@1.85.0 -- cargo check --locked"
+
 [tasks.test]
 description = "Run Rust tests"
 run = "cargo test --all-targets --all-features --locked"
 
 [tasks.ci]
-depends = ["actions:lint", "fmt", "lint", "test"]
+depends = ["actions:lint", "fmt", "lint", "msrv", "test"]
 description = "Run all CI checks"
 
 [tasks."hooks:install"]
@@ -48,8 +52,8 @@ run = "zizmor --offline .github/workflows"
 
 [tasks."actions:lint"]
 depends = [
-    "actions:lint:actionlint",
-    "actions:lint:pinact",
-    "actions:lint:zizmor",
+  "actions:lint:actionlint",
+  "actions:lint:pinact",
+  "actions:lint:zizmor",
 ]
 description = "Run GitHub Actions linters"
