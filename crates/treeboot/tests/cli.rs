@@ -1,29 +1,12 @@
-use std::path::Path;
-use std::process::Command as StdCommand;
-
-use assert_cmd::Command;
 use predicates::prelude::*;
 use tempfile::TempDir;
 
-fn treeboot() -> Command {
-    Command::cargo_bin("treeboot").expect("treeboot binary should build")
-}
+mod common;
 
-fn git(args: &[&str], cwd: &Path) {
-    let output = StdCommand::new("git")
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .expect("git should run");
+use common::{git_repo, treeboot, write_file};
 
-    assert!(output.status.success(), "git {args:?} should succeed");
-}
-
-fn git_repo() -> TempDir {
-    let repo = TempDir::new().expect("tempdir should be created");
-    git(&["init"], repo.path());
-    repo
-}
+#[cfg(unix)]
+use common::write_executable_script;
 
 #[test]
 fn help_should_print_usage() {
@@ -94,7 +77,7 @@ fn run_outside_git_worktree_should_exit_with_runtime_failure() {
 fn config_file_should_be_detected_until_config_execution_exists() {
     let repo = git_repo();
     let config = repo.path().join(".treeboot.toml");
-    std::fs::write(&config, "commands = []\n").expect("config should be written");
+    write_file(&config, "commands = []\n");
 
     treeboot()
         .current_dir(repo.path())
@@ -236,7 +219,7 @@ fn config_option_should_skip_executable_script_discovery() {
     let config = repo.path().join("custom.treeboot.toml");
     let script = repo.path().join(".treeboot.sh");
     let marker = repo.path().join("script.out");
-    std::fs::write(&config, "commands = []\n").expect("config should be written");
+    write_file(&config, "commands = []\n");
     write_executable_script(
         &script,
         &format!("#!/bin/sh\nprintf 'ran\\n' > {}\n", marker.display()),
@@ -256,8 +239,7 @@ fn config_option_should_skip_executable_script_discovery() {
 #[test]
 fn non_executable_init_script_should_be_ignored() {
     let repo = git_repo();
-    std::fs::write(repo.path().join(".treeboot.sh"), "#!/bin/sh\nexit 1\n")
-        .expect("script should be written");
+    write_file(&repo.path().join(".treeboot.sh"), "#!/bin/sh\nexit 1\n");
 
     treeboot()
         .current_dir(repo.path())
@@ -298,8 +280,7 @@ fn init_without_kind_should_exit_with_runtime_failure() {
 #[test]
 fn init_config_should_fail_when_target_exists_without_force() {
     let dir = TempDir::new().expect("tempdir should be created");
-    std::fs::write(dir.path().join(".treeboot.toml"), "old\n")
-        .expect("existing config should be written");
+    write_file(&dir.path().join(".treeboot.toml"), "old\n");
 
     treeboot()
         .args(["init", "--config"])
@@ -313,7 +294,7 @@ fn init_config_should_fail_when_target_exists_without_force() {
 fn init_config_force_should_replace_existing_target() {
     let dir = TempDir::new().expect("tempdir should be created");
     let config = dir.path().join(".treeboot.toml");
-    std::fs::write(&config, "old\n").expect("existing config should be written");
+    write_file(&config, "old\n");
 
     treeboot()
         .args(["init", "--config", "--force"])
@@ -358,17 +339,4 @@ fn init_script_should_create_executable_script() {
         .metadata()
         .expect("script should exist");
     assert!(metadata.permissions().mode() & 0o111 != 0);
-}
-
-#[cfg(unix)]
-fn write_executable_script(path: &Path, content: &str) {
-    use std::os::unix::fs::PermissionsExt;
-
-    std::fs::write(path, content).expect("script should be written");
-    let mut permissions = path
-        .metadata()
-        .expect("script metadata should be readable")
-        .permissions();
-    permissions.set_mode(0o755);
-    std::fs::set_permissions(path, permissions).expect("script permissions should be set");
 }

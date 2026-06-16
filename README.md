@@ -203,6 +203,8 @@ This project uses `mise` for runtime/tool management and task running:
 
 ```sh
 mise run setup
+mise run check
+mise run verify
 mise run ci
 ```
 
@@ -210,8 +212,11 @@ Useful individual tasks:
 
 ```sh
 mise run actions:lint
+mise run build
 mise run coverage
+mise run coverage:missing
 mise run deps
+mise run doctor
 mise run fmt
 mise run hooks:install
 mise run lint

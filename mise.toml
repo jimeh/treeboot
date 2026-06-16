@@ -23,6 +23,10 @@ run = "cargo fmt --all -- --check"
 description = "Run Rust lints"
 run = "cargo clippy --all-targets --all-features --locked -- -D warnings"
 
+[tasks.build]
+description = "Build all Rust targets"
+run = "cargo build --workspace --all-targets --locked"
+
 [tasks.msrv]
 description = "Check Rust MSRV compatibility"
 run = "mise exec rust@1.85.0 -- cargo check --locked"
@@ -43,6 +47,18 @@ run = "cargo test -p treeboot --all-targets --all-features --locked"
 description = "Run tests and print Rust coverage summary"
 run = "cargo llvm-cov --workspace --all-targets --all-features --locked"
 
+[tasks."coverage:missing"]
+description = "Show uncovered Rust lines"
+run = "cargo llvm-cov --workspace --all-targets --all-features --locked --summary-only --show-missing-lines"
+
+[tasks.check]
+depends = ["fmt", "lint", "test"]
+description = "Run normal pre-handoff checks"
+
+[tasks.verify]
+description = "Run broad local verification"
+run = ["mise run ci", "mise run coverage"]
+
 [tasks.ci]
 depends = ["actions:lint", "fmt", "lint", "msrv", "test"]
 description = "Run all CI checks"
@@ -50,6 +66,16 @@ description = "Run all CI checks"
 [tasks."hooks:install"]
 description = "Install lefthook Git hooks"
 run = "lefthook install"
+
+[tasks.doctor]
+description = "Check required local tools"
+run = [
+    "git --version",
+    "cargo --version",
+    "cargo llvm-cov --version",
+    "mise --version",
+    "lefthook version",
+]
 
 [tasks."actions:lint:actionlint"]
 description = "Lint GitHub Actions workflow syntax"
