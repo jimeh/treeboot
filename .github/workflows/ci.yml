@@ -67,8 +67,15 @@ jobs:
       - run: mise run msrv
 
   test:
+    name: test (${{ matrix.task }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        task:
+          - test:core
+          - test:cli
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -76,4 +83,4 @@ jobs:
       - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
           cache: false
-      - run: mise run test
+      - run: mise run ${{ matrix.task }}

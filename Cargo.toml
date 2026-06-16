@@ -1,18 +1,19 @@
-[package]
-name = "treeboot"
+[workspace]
+members = ["crates/treeboot", "crates/treeboot-core"]
+resolver = "3"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 
-[lints.rust]
+[workspace.lints.rust]
 future-incompatible = { level = "warn", priority = -2 }
 nonstandard_style = { level = "deny", priority = -1 }
 unsafe_code = "forbid"
 
-[lints.clippy]
+[workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
 large_enum_variant = "deny"
 needless_collect = "deny"
 redundant_clone = "deny"
-
-[dependencies]

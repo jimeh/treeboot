@@ -1,5 +1,6 @@
 [tools]
 actionlint = "1.7.12"
+"cargo:cargo-llvm-cov" = "0.8.7"
 lefthook = "2.1.9"
 rust = { version = "1.96.0", components = "clippy,rust-analyzer,rust-src,rustfmt" }
 shellcheck = "0.11.0"
@@ -27,8 +28,20 @@ description = "Check Rust MSRV compatibility"
 run = "mise exec rust@1.85.0 -- cargo check --locked"
 
 [tasks.test]
-description = "Run Rust tests"
-run = "cargo test --all-targets --all-features --locked"
+depends = ["test:core", "test:cli"]
+description = "Run all Rust tests"
+
+[tasks."test:core"]
+description = "Run treeboot-core tests"
+run = "cargo test -p treeboot-core --all-targets --all-features --locked"
+
+[tasks."test:cli"]
+description = "Run treeboot CLI tests"
+run = "cargo test -p treeboot --all-targets --all-features --locked"
+
+[tasks.coverage]
+description = "Run tests and print Rust coverage summary"
+run = "cargo llvm-cov --workspace --all-targets --all-features --locked"
 
 [tasks.ci]
 depends = ["actions:lint", "fmt", "lint", "msrv", "test"]
@@ -52,8 +65,8 @@ run = "zizmor --offline .github/workflows"
 
 [tasks."actions:lint"]
 depends = [
-  "actions:lint:actionlint",
-  "actions:lint:pinact",
-  "actions:lint:zizmor",
+    "actions:lint:actionlint",
+    "actions:lint:pinact",
+    "actions:lint:zizmor",
 ]
 description = "Run GitHub Actions linters"
