@@ -1,0 +1,12 @@
+pre-commit:
+  parallel: true
+  commands:
+    actions-lint:
+      glob: ".github/workflows/*.{yml,yaml}"
+      run: mise run actions:lint
+    rustfmt:
+      glob: "*.rs"
+      run: rustfmt --edition 2024 --check {staged_files}
+    clippy:
+      glob: "*.rs"
+      run: cargo clippy --all-targets --all-features --locked -- -D warnings
