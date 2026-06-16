@@ -15,13 +15,15 @@ treeboot
 
 ## Status
 
-This project is ready for implementation against spec v1.0.0. The planned
-implementation target is Rust, distributed as small prebuilt binaries from
-GitHub Releases.
+This project is bootstrapped for implementation against spec v1.0.0. The
+planned implementation target is Rust, distributed as small prebuilt binaries
+from GitHub Releases.
 
 The initial implementation contract lives in
 [docs/SPEC.html](./docs/SPEC.html). This README is the short human-facing
 version.
+
+The current CLI intentionally only supports `--help` and `--version`.
 
 ## Why
 
@@ -192,3 +194,24 @@ binaries.
 ## Name
 
 `treeboot` means "worktree bootstrap".
+
+## Development
+
+This project uses `mise` for runtime/tool management and task running:
+
+```sh
+mise run setup
+mise run ci
+```
+
+Useful individual tasks:
+
+```sh
+mise run actions:lint
+mise run deps
+mise run fmt
+mise run hooks:install
+mise run lint
+mise run msrv
+mise run test
+```

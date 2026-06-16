@@ -1,0 +1,59 @@
+[tools]
+actionlint = "1.7.12"
+lefthook = "2.1.9"
+rust = { version = "1.96.0", components = "clippy,rust-analyzer,rust-src,rustfmt" }
+shellcheck = "0.11.0"
+pinact = "4.1.0"
+zizmor = "1.25.2"
+
+[tasks.setup]
+description = "Set up local development environment"
+run = ["mise install", "mise run deps", "mise run hooks:install"]
+
+[tasks.deps]
+description = "Fetch Rust dependencies"
+run = "cargo fetch --locked"
+
+[tasks.fmt]
+description = "Check Rust formatting"
+run = "cargo fmt --all -- --check"
+
+[tasks.lint]
+description = "Run Rust lints"
+run = "cargo clippy --all-targets --all-features --locked -- -D warnings"
+
+[tasks.msrv]
+description = "Check Rust MSRV compatibility"
+run = "mise exec rust@1.85.0 -- cargo check --locked"
+
+[tasks.test]
+description = "Run Rust tests"
+run = "cargo test --all-targets --all-features --locked"
+
+[tasks.ci]
+depends = ["actions:lint", "fmt", "lint", "msrv", "test"]
+description = "Run all CI checks"
+
+[tasks."hooks:install"]
+description = "Install lefthook Git hooks"
+run = "lefthook install"
+
+[tasks."actions:lint:actionlint"]
+description = "Lint GitHub Actions workflow syntax"
+run = "actionlint -shellcheck shellcheck"
+
+[tasks."actions:lint:pinact"]
+description = "Verify GitHub Actions are pinned"
+run = "pinact run '-fix=false' -no-api"
+
+[tasks."actions:lint:zizmor"]
+description = "Audit GitHub Actions workflow security"
+run = "zizmor --offline .github/workflows"
+
+[tasks."actions:lint"]
+depends = [
+  "actions:lint:actionlint",
+  "actions:lint:pinact",
+  "actions:lint:zizmor",
+]
+description = "Run GitHub Actions linters"
