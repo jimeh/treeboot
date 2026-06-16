@@ -605,7 +605,7 @@
     <main>
       <header class="hero" id="overview">
         <div>
-          <p class="eyebrow">Specification v1.0.0</p>
+          <p class="eyebrow">Specification v1.0.1</p>
           <h1>treeboot</h1>
           <p class="lede">
             A portable worktree bootstrapper that lets every coding agent,
@@ -625,7 +625,7 @@
           <dl>
             <div>
               <dt>Spec status</dt>
-              <dd>v1.0.0 initial implementation contract</dd>
+              <dd>v1.0.1 implementation contract</dd>
             </div>
             <div>
               <dt>Default command</dt>
@@ -1171,6 +1171,7 @@ script: .treeboot.sh</code></pre>
         <pre><code>copy = [
   ".env",
   { source = ".env.local", target = ".env.local" },
+  { source = ".env.development.local", target = ".env.development.local" },
 ]
 
 symlink = [
@@ -1208,11 +1209,17 @@ dangerously_allow_targets_outside_worktree = false</code></pre>
             <code>compare = "metadata"</code> and
             <code>delete_extra = true</code>. The <code>files</code> list
             accepts objects with an <code>operation</code> field for mixed
-            copy, symlink, and sync entries.
+            copy, symlink, and sync entries. Missing sources are skipped by
+            default; object entries can set <code>required = true</code> to
+            make a missing source fail. When an object has <code>source</code>
+            but no <code>target</code>, its target defaults to the same path as
+            <code>source</code>.
           </p>
           <pre><code>copy = [
   ".env",
-  { source = ".env.local", target = ".env.local" },
+  { source = ".env.local" },
+  { source = ".env.development.local" },
+  { source = ".env.required", required = true },
 ]
 
 symlink = [
@@ -1261,6 +1268,14 @@ target = ".editorconfig"</code></pre>
               <td><code>source</code></td>
               <td>all file operations</td>
               <td>Required for object entries. Relative paths resolve from root path.</td>
+            </tr>
+            <tr>
+              <td><code>required</code></td>
+              <td>all file operations</td>
+              <td>
+                Defaults to <code>false</code>. When true, a missing source is
+                a failure instead of a skipped operation.
+              </td>
             </tr>
             <tr>
               <td><code>target</code></td>
@@ -1448,6 +1463,14 @@ args = ["install"]</code></pre>
               <td>Fail before any file operation or command runs.</td>
             </tr>
             <tr>
+              <td>Required file operation source does not exist</td>
+              <td>Fail before any file operation or command runs.</td>
+            </tr>
+            <tr>
+              <td>Optional file operation source does not exist</td>
+              <td>Skip that operation, make no target changes, and continue.</td>
+            </tr>
+            <tr>
               <td>Command <code>cwd</code> resolves outside the worktree</td>
               <td>Fail before any file operation or command runs.</td>
             </tr>
@@ -1552,6 +1575,19 @@ args = ["install"]</code></pre>
         </table>
 
         <div class="grid two">
+          <section class="panel">
+            <h3>Missing sources</h3>
+            <p>
+              Missing sources are optional by default for copy, symlink, and
+              sync. When a source does not exist and the entry does not set
+              <code>required = true</code>, treeboot skips that operation and
+              leaves the target unchanged. This lets one config list several
+              local-only files, such as <code>.env.local</code> and
+              <code>.env.development.local</code>, while only applying the
+              files that exist in the root checkout.
+            </p>
+          </section>
+
           <section class="panel">
             <h3>Copy</h3>
             <p>

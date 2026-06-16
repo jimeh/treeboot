@@ -15,7 +15,7 @@ treeboot
 
 ## Status
 
-This project is bootstrapped for implementation against spec v1.0.0. The
+This project is bootstrapped for implementation against spec v1.0.1. The
 planned implementation target is Rust, distributed as small prebuilt binaries
 from GitHub Releases.
 
@@ -104,8 +104,10 @@ commands = [
 ]
 ```
 
-String file entries use the same source and target path. Object entries can set
-different `source` and `target` paths.
+String file entries use the same source and target path. Object entries also
+default `target` to `source` when only `source` is set, and can set a different
+target when needed. Missing sources are skipped by default; set
+`required = true` on a file object when a missing source should fail.
 
 Use `sync` when the target should be actively reconciled with the source.
 Directory sync deletes target-only files by default, so it is intentionally more
