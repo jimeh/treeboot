@@ -56,6 +56,16 @@ pub struct RunReport {
 }
 
 /// Runs worktree bootstrap according to the provided options.
+///
+/// Resolves the worktree context, discovers executable init scripts and
+/// declarative config files, reports the selected action, and executes an init
+/// script when one should run.
+///
+/// # Errors
+///
+/// Returns an error if context discovery fails, output reporting fails, an init
+/// script cannot be started or exits unsuccessfully, a configured file cannot
+/// be read, or strict mode treats a missing config as a failure.
 pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport> {
     let context = context::resolve(&options)?;
 

@@ -30,9 +30,9 @@ pub struct RunContext {
 }
 
 pub(crate) fn resolve(options: &RunOptions) -> Result<RunContext> {
-    let cwd = options.cwd.clone().map_or_else(
+    let cwd = options.cwd.as_ref().map_or_else(
         || std::env::current_dir().map_err(|source| Error::CurrentDir { source }),
-        Ok,
+        |path| Ok(path.clone()),
     )?;
     let git = Git::new(&cwd);
     let worktree_path = normalize_existing_path(&git.worktree_path()?)?;
@@ -83,17 +83,11 @@ fn build_environment(root_path: &Path, worktree_path: &Path, default_branch: &st
     env.insert("TREEBOOT_WORKTREE_PATH".to_owned(), worktree.clone());
     env.insert("TREEBOOT_DEFAULT_BRANCH".to_owned(), branch.clone());
     env.insert("GIT_SOURCE_TREE_PATH".to_owned(), root.clone());
-    env.insert("GIT_WORKTREE_PATH".to_owned(), worktree);
+    env.insert("GIT_WORKTREE_PATH".to_owned(), worktree.clone());
     env.insert("CODEX_SOURCE_TREE_PATH".to_owned(), root.clone());
-    env.insert(
-        "CODEX_WORKTREE_PATH".to_owned(),
-        worktree_path.as_os_str().to_os_string(),
-    );
+    env.insert("CODEX_WORKTREE_PATH".to_owned(), worktree.clone());
     env.insert("CONDUCTOR_ROOT_PATH".to_owned(), root.clone());
-    env.insert(
-        "CONDUCTOR_WORKSPACE_PATH".to_owned(),
-        worktree_path.as_os_str().to_os_string(),
-    );
+    env.insert("CONDUCTOR_WORKSPACE_PATH".to_owned(), worktree);
     env.insert("CONDUCTOR_DEFAULT_BRANCH".to_owned(), branch);
     env.insert("SUPERSET_ROOT_PATH".to_owned(), root);
     env

@@ -29,7 +29,7 @@ run = "cargo build --workspace --all-targets --locked"
 
 [tasks.msrv]
 description = "Check Rust MSRV compatibility"
-run = "mise exec rust@1.85.0 -- cargo check --locked"
+run = "mise exec rust@1.96.0 -- cargo check --locked"
 
 [tasks.test]
 depends = ["test:core", "test:cli"]

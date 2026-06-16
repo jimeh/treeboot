@@ -57,10 +57,19 @@ pub struct InitReport {
 }
 
 /// Creates a starter treeboot config or init script.
+///
+/// Writes the selected init artifact to the requested path, or to the default
+/// path for its kind. Script artifacts are marked executable on Unix.
+///
+/// # Errors
+///
+/// Returns an error if the current directory cannot be resolved, no init kind
+/// was selected, both init kinds were selected, the target already exists
+/// without `force`, or the target directory or file cannot be written.
 pub fn init(options: InitOptions, reporter: &mut dyn Reporter) -> Result<InitReport> {
-    let cwd = options.cwd.clone().map_or_else(
+    let cwd = options.cwd.as_ref().map_or_else(
         || std::env::current_dir().map_err(|source| Error::CurrentDir { source }),
-        Ok,
+        |path| Ok(path.clone()),
     )?;
     let kind = options.kind.ok_or(Error::InitTypeRequired)?;
     let path = options.path.unwrap_or_else(|| default_path(kind));
@@ -115,7 +124,7 @@ fn make_executable(path: &std::path::Path) -> Result<()> {
             source,
         })?
         .permissions();
-    permissions.set_mode(permissions.mode() | 0o755);
+    permissions.set_mode(permissions.mode() | 0o111);
     std::fs::set_permissions(path, permissions).map_err(|source| Error::InitIo {
         path: path.to_path_buf(),
         source,
