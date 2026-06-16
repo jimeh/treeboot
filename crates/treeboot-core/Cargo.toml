@@ -1,0 +1,14 @@
+[package]
+name = "treeboot-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "treeboot_core"
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror = "2"

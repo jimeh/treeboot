@@ -23,7 +23,9 @@ The initial implementation contract lives in
 [docs/SPEC.html](./docs/SPEC.html). This README is the short human-facing
 version.
 
-The current CLI intentionally only supports `--help` and `--version`.
+The current implementation is in progress. It supports the initial `run` and
+`init` command surfaces, path discovery, init-script discovery/execution, and
+missing-config behavior. Declarative TOML config execution is still pending.
 
 ## Why
 
@@ -201,6 +203,8 @@ This project uses `mise` for runtime/tool management and task running:
 
 ```sh
 mise run setup
+mise run check
+mise run verify
 mise run ci
 ```
 
@@ -208,10 +212,16 @@ Useful individual tasks:
 
 ```sh
 mise run actions:lint
+mise run build
+mise run coverage
+mise run coverage:missing
 mise run deps
+mise run doctor
 mise run fmt
 mise run hooks:install
 mise run lint
 mise run msrv
 mise run test
+mise run test:core
+mise run test:cli
 ```
