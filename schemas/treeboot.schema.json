@@ -104,51 +104,106 @@
       ],
       "type": "object"
     },
-    "FileOperationKind": {
-      "enum": [
-        "copy",
-        "symlink",
-        "sync"
-      ],
-      "type": "string"
-    },
     "MixedFileObject": {
-      "additionalProperties": false,
-      "properties": {
-        "compare": {
-          "$ref": "#/$defs/SyncCompare",
-          "description": "File comparison mode. Only valid for sync entries."
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Copy object entry for mixed `files` and `[[file]]` declarations.",
+          "properties": {
+            "operation": {
+              "const": "copy",
+              "type": "string"
+            },
+            "required": {
+              "description": "Whether a missing source should fail validation.",
+              "type": "boolean"
+            },
+            "source": {
+              "description": "Source path, relative to the root checkout unless absolute.",
+              "type": "string"
+            },
+            "symlinks": {
+              "$ref": "#/$defs/SymlinkMode",
+              "description": "How safe source symlinks are handled."
+            },
+            "target": {
+              "description": "Target path, relative to the current worktree unless absolute.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "operation",
+            "source"
+          ],
+          "type": "object"
         },
-        "delete_extra": {
-          "description": "Whether target-only files are deleted for directory sync.",
-          "type": "boolean"
+        {
+          "additionalProperties": false,
+          "description": "Symlink object entry for mixed `files` and `[[file]]` declarations.",
+          "properties": {
+            "operation": {
+              "const": "symlink",
+              "type": "string"
+            },
+            "required": {
+              "description": "Whether a missing source should fail validation.",
+              "type": "boolean"
+            },
+            "source": {
+              "description": "Source path, relative to the root checkout unless absolute.",
+              "type": "string"
+            },
+            "target": {
+              "description": "Target path, relative to the current worktree unless absolute.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "operation",
+            "source"
+          ],
+          "type": "object"
         },
-        "operation": {
-          "$ref": "#/$defs/FileOperationKind",
-          "description": "File operation to perform."
-        },
-        "required": {
-          "description": "Whether a missing source should fail validation.",
-          "type": "boolean"
-        },
-        "source": {
-          "description": "Source path, relative to the root checkout unless absolute.",
-          "type": "string"
-        },
-        "symlinks": {
-          "$ref": "#/$defs/SymlinkMode",
-          "description": "How safe source symlinks are handled. Only valid for copy and sync."
-        },
-        "target": {
-          "description": "Target path, relative to the current worktree unless absolute.",
-          "type": "string"
+        {
+          "additionalProperties": false,
+          "description": "Sync object entry for mixed `files` and `[[file]]` declarations.",
+          "properties": {
+            "compare": {
+              "$ref": "#/$defs/SyncCompare",
+              "description": "File comparison mode."
+            },
+            "delete_extra": {
+              "description": "Whether target-only files are deleted for directory sync.",
+              "type": "boolean"
+            },
+            "operation": {
+              "const": "sync",
+              "type": "string"
+            },
+            "required": {
+              "description": "Whether a missing source should fail validation.",
+              "type": "boolean"
+            },
+            "source": {
+              "description": "Source path, relative to the root checkout unless absolute.",
+              "type": "string"
+            },
+            "symlinks": {
+              "$ref": "#/$defs/SymlinkMode",
+              "description": "How safe source symlinks are handled."
+            },
+            "target": {
+              "description": "Target path, relative to the current worktree unless absolute.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "operation",
+            "source"
+          ],
+          "type": "object"
         }
-      },
-      "required": [
-        "operation",
-        "source"
-      ],
-      "type": "object"
+      ]
     },
     "ShellCommandObject": {
       "additionalProperties": false,

@@ -90,6 +90,25 @@ fn config_file_should_be_detected_until_config_execution_exists() {
 }
 
 #[test]
+fn run_invalid_config_should_exit_with_config_error() {
+    let repo = git_repo();
+    let config = repo.path().join(".treeboot.toml");
+    write_file(
+        &config,
+        "commands = [{ run = \"npm\", program = \"npm\" }]\n",
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.path())
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("treeboot: config detected"))
+        .stderr(predicate::str::contains("invalid config"))
+        .stderr(predicate::str::contains("mutually exclusive"));
+}
+
+#[test]
 fn config_command_should_print_normalized_config() {
     let repo = git_repo();
     let config = repo.path().join(".treeboot.toml");
@@ -128,6 +147,61 @@ fn config_command_json_should_print_normalized_config() {
         .success()
         .stdout(predicate::str::contains("\"commands\""))
         .stdout(predicate::str::contains("\"run\": \"mise install\""));
+}
+
+#[test]
+fn config_command_missing_config_should_exit_with_runtime_failure() {
+    let repo = git_repo();
+
+    treeboot()
+        .arg("config")
+        .current_dir(repo.path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("treeboot: no config detected"));
+}
+
+#[test]
+fn config_command_config_option_should_use_requested_file() {
+    let repo = git_repo();
+    let default_config = repo.path().join(".treeboot.toml");
+    let requested_config = repo.path().join("custom.treeboot.toml");
+    write_file(&default_config, "commands = [\"default\"]\n");
+    write_file(
+        &requested_config,
+        "commands = [{ program = \"npm\", args = [\"install\"] }]\n",
+    );
+
+    treeboot()
+        .args(["config", "--config", "custom.treeboot.toml"])
+        .current_dir(repo.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("custom.treeboot.toml"))
+        .stdout(predicate::str::contains("exec npm install"))
+        .stdout(predicate::str::contains("default").not());
+}
+
+#[test]
+fn config_command_root_option_should_resolve_json_source_paths() {
+    let repo = git_repo();
+    let root = TempDir::new().expect("root tempdir should be created");
+    let config = repo.path().join(".treeboot.toml");
+    write_file(&config, "copy = [\"shared/.env\"]\n");
+
+    let root_path = std::fs::canonicalize(root.path()).expect("root should normalize");
+    let source_path = root_path.join("shared/.env").display().to_string();
+
+    treeboot()
+        .args(["config", "--root"])
+        .arg(root.path())
+        .arg("--format")
+        .arg("json")
+        .current_dir(repo.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"source_path\""))
+        .stdout(predicate::str::contains(source_path));
 }
 
 #[test]

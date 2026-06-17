@@ -126,35 +126,53 @@ struct SyncObject {
 }
 
 #[derive(JsonSchema, Serialize)]
-#[serde(deny_unknown_fields)]
-struct MixedFileObject {
-    /// File operation to perform.
-    operation: FileOperationKind,
-    /// Source path, relative to the root checkout unless absolute.
-    source: String,
-    /// Target path, relative to the current worktree unless absolute.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    target: Option<String>,
-    /// Whether a missing source should fail validation.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    required: Option<bool>,
-    /// File comparison mode. Only valid for sync entries.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    compare: Option<SyncCompare>,
-    /// Whether target-only files are deleted for directory sync.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    delete_extra: Option<bool>,
-    /// How safe source symlinks are handled. Only valid for copy and sync.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    symlinks: Option<SymlinkMode>,
-}
-
-#[derive(JsonSchema, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum FileOperationKind {
-    Copy,
-    Symlink,
-    Sync,
+#[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
+enum MixedFileObject {
+    /// Copy object entry for mixed `files` and `[[file]]` declarations.
+    Copy {
+        /// Source path, relative to the root checkout unless absolute.
+        source: String,
+        /// Target path, relative to the current worktree unless absolute.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        target: Option<String>,
+        /// Whether a missing source should fail validation.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        required: Option<bool>,
+        /// How safe source symlinks are handled.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        symlinks: Option<SymlinkMode>,
+    },
+    /// Symlink object entry for mixed `files` and `[[file]]` declarations.
+    Symlink {
+        /// Source path, relative to the root checkout unless absolute.
+        source: String,
+        /// Target path, relative to the current worktree unless absolute.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        target: Option<String>,
+        /// Whether a missing source should fail validation.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        required: Option<bool>,
+    },
+    /// Sync object entry for mixed `files` and `[[file]]` declarations.
+    Sync {
+        /// Source path, relative to the root checkout unless absolute.
+        source: String,
+        /// Target path, relative to the current worktree unless absolute.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        target: Option<String>,
+        /// Whether a missing source should fail validation.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        required: Option<bool>,
+        /// File comparison mode.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        compare: Option<SyncCompare>,
+        /// Whether target-only files are deleted for directory sync.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        delete_extra: Option<bool>,
+        /// How safe source symlinks are handled.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        symlinks: Option<SymlinkMode>,
+    },
 }
 
 #[derive(JsonSchema, Serialize)]

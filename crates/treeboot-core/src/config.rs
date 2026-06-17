@@ -775,6 +775,21 @@ mod tests {
         parse_config(Path::new(".treeboot.toml"), content, &context()).expect("config should parse")
     }
 
+    fn parse_error(content: &str) -> String {
+        parse_config(Path::new(".treeboot.toml"), content, &context())
+            .expect_err("config should fail")
+            .to_string()
+    }
+
+    fn assert_parse_error_contains(content: &str, expected: &str) {
+        let error = parse_error(content);
+
+        assert!(
+            error.contains(expected),
+            "expected error to contain {expected:?}, got {error:?}"
+        );
+    }
+
     #[test]
     fn parse_config_should_normalize_file_operations_in_spec_order() {
         let config = parse(
@@ -829,6 +844,57 @@ sync = ["shared/config"]
     }
 
     #[test]
+    fn parse_config_should_preserve_explicit_sync_options() {
+        let config = parse(
+            r#"
+sync = [{
+  source = "shared/config",
+  compare = "checksum",
+  delete_extra = false,
+  symlinks = "preserve",
+}]
+"#,
+        );
+
+        let sync = &config.files[0];
+
+        assert_eq!(sync.compare, Some(SyncCompare::Checksum));
+        assert_eq!(sync.delete_extra, Some(false));
+        assert_eq!(sync.symlinks, Some(SymlinkMode::Preserve));
+    }
+
+    #[test]
+    fn parse_config_should_apply_validation_options() {
+        let config = parse(
+            r#"
+[validation]
+dangerously_allow_sources_outside_root = true
+dangerously_allow_targets_outside_worktree = true
+"#,
+        );
+
+        assert!(config.validation.dangerously_allow_sources_outside_root);
+        assert!(config.validation.dangerously_allow_targets_outside_worktree);
+    }
+
+    #[test]
+    fn parse_config_should_resolve_absolute_paths_without_rebasing() {
+        let config = parse(
+            r#"
+copy = [{ source = "/shared/.env", target = "/worktree/.env" }]
+commands = [{ program = "make", cwd = "/worktree/app" }]
+"#,
+        );
+
+        assert_eq!(config.files[0].source_path, PathBuf::from("/shared/.env"));
+        assert_eq!(config.files[0].target_path, PathBuf::from("/worktree/.env"));
+        assert_eq!(
+            config.commands[0].cwd_path,
+            Some(PathBuf::from("/worktree/app"))
+        );
+    }
+
+    #[test]
     fn parse_config_should_normalize_command_forms() {
         let config = parse(
             r#"
@@ -867,50 +933,120 @@ allow_failure = true
     }
 
     #[test]
-    fn parse_config_should_reject_mutually_exclusive_command_fields() {
-        let error = parse_config(
-            Path::new(".treeboot.toml"),
-            r#"commands = [{ run = "npm install", program = "npm" }]"#,
-            &context(),
-        )
-        .expect_err("config should fail");
+    fn parse_config_should_normalize_command_metadata_and_defaults() {
+        let config = parse(
+            r#"
+commands = [{
+  name = "Install",
+  program = "npm",
+  env = { NODE_ENV = "development" },
+}]
+"#,
+        );
 
-        assert!(error.to_string().contains("mutually exclusive"));
+        let command = &config.commands[0];
+
+        assert_eq!(command.name.as_deref(), Some("Install"));
+        assert_eq!(command.env["NODE_ENV"], "development");
+        assert!(!command.async_command);
+        assert!(!command.allow_failure);
+    }
+
+    #[test]
+    fn parse_config_should_allow_program_without_args() {
+        let config = parse(r#"commands = [{ program = "mise" }]"#);
+
+        assert_eq!(
+            config.commands[0].command,
+            CommandKind::Direct {
+                program: "mise".to_owned(),
+                args: Vec::new()
+            }
+        );
+    }
+
+    #[test]
+    fn parse_config_should_reject_mutually_exclusive_command_fields() {
+        assert_parse_error_contains(
+            r#"commands = [{ run = "npm install", program = "npm" }]"#,
+            "mutually exclusive",
+        );
     }
 
     #[test]
     fn parse_config_should_reject_args_without_program() {
-        let error = parse_config(
-            Path::new(".treeboot.toml"),
+        assert_parse_error_contains(
             r#"commands = [{ run = "npm install", args = [] }]"#,
-            &context(),
-        )
-        .expect_err("config should fail");
+            "`args` requires `program`",
+        );
+    }
 
-        assert!(error.to_string().contains("`args` requires `program`"));
+    #[test]
+    fn parse_config_should_reject_missing_command_invocation() {
+        assert_parse_error_contains(
+            r#"commands = [{ name = "Install" }]"#,
+            "missing required `run` or `program`",
+        );
     }
 
     #[test]
     fn parse_config_should_reject_unknown_fields() {
-        let error = parse_config(
-            Path::new(".treeboot.toml"),
+        assert_parse_error_contains(
             r#"copy = [{ source = ".env", unknown = true }]"#,
-            &context(),
-        )
-        .expect_err("config should fail");
-
-        assert!(error.to_string().contains("unknown field"));
+            "unknown field",
+        );
     }
 
     #[test]
     fn parse_config_should_reject_missing_file_operation() {
-        let error = parse_config(
-            Path::new(".treeboot.toml"),
+        assert_parse_error_contains(
             r#"files = [{ source = ".env" }]"#,
-            &context(),
-        )
-        .expect_err("config should fail");
+            "missing required `operation`",
+        );
+    }
 
-        assert!(error.to_string().contains("missing required `operation`"));
+    #[test]
+    fn parse_config_should_reject_missing_file_source() {
+        assert_parse_error_contains(
+            r#"copy = [{ target = ".env" }]"#,
+            "missing required `source`",
+        );
+    }
+
+    #[test]
+    fn parse_config_should_reject_operation_in_specific_file_groups() {
+        assert_parse_error_contains(
+            r#"copy = [{ operation = "copy", source = ".env" }]"#,
+            "`operation` is only valid in `files` and `[[file]]` entries",
+        );
+    }
+
+    #[test]
+    fn parse_config_should_reject_compare_on_copy_file_operations() {
+        assert_parse_error_contains(
+            r#"copy = [{ source = ".env", compare = "checksum" }]"#,
+            "`compare` is only valid for sync file operations",
+        );
+    }
+
+    #[test]
+    fn parse_config_should_reject_delete_extra_on_symlink_file_operations() {
+        assert_parse_error_contains(
+            r#"symlink = [{ source = ".env", delete_extra = true }]"#,
+            "`delete_extra` is only valid for sync file operations",
+        );
+    }
+
+    #[test]
+    fn parse_config_should_reject_symlinks_on_symlink_file_operations() {
+        assert_parse_error_contains(
+            r#"symlink = [{ source = ".env", symlinks = "preserve" }]"#,
+            "`symlinks` is only valid for copy and sync file operations",
+        );
+    }
+
+    #[test]
+    fn parse_config_should_report_invalid_toml_location() {
+        assert_parse_error_contains("commands = [\n", "line 1, column");
     }
 }
