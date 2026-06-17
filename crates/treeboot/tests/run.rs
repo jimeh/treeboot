@@ -49,11 +49,41 @@ fn strict_missing_config_should_exit_with_runtime_failure() {
 }
 
 #[test]
+fn env_strict_missing_config_should_exit_with_runtime_failure() {
+    let repo = git_worktree();
+
+    treeboot()
+        .env("TREEBOOT_STRICT", "yes")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("treeboot: no config detected"))
+        .stderr(predicate::str::contains("treeboot: no config detected"));
+}
+
+#[test]
 fn strict_root_checkout_should_exit_with_runtime_failure() {
     let repo = git_repo();
 
     treeboot()
         .arg("--strict")
+        .current_dir(repo.path())
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains(
+            "treeboot: This is not a work tree",
+        ))
+        .stderr(predicate::str::contains(
+            "treeboot: This is not a work tree",
+        ));
+}
+
+#[test]
+fn env_strict_root_checkout_should_exit_with_runtime_failure() {
+    let repo = git_repo();
+
+    treeboot()
+        .env("TREEBOOT_STRICT", "on")
         .current_dir(repo.path())
         .assert()
         .code(1)
@@ -234,6 +264,152 @@ fn run_strict_sync_should_exit_with_config_error() {
         .code(1)
         .stderr(predicate::str::contains("invalid config"))
         .stderr(predicate::str::contains("cannot be used with sync"));
+}
+
+#[test]
+fn run_config_strict_sync_should_exit_with_config_error() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(
+        &config,
+        r#"
+strict = true
+sync = ["shared"]
+"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("invalid config"))
+        .stderr(predicate::str::contains("cannot be used with sync"));
+}
+
+#[test]
+fn run_env_false_should_override_config_strict() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(
+        &config,
+        r#"
+strict = true
+sync = ["shared"]
+"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .env("TREEBOOT_STRICT", "off")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("invalid config").not())
+        .stderr(predicate::str::contains(
+            "declarative config execution is not implemented",
+        ));
+}
+
+#[test]
+fn run_cli_strict_should_override_env_false() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(
+        &config,
+        r#"
+strict = false
+sync = ["shared"]
+"#,
+    );
+
+    treeboot()
+        .args(["run", "--strict"])
+        .env("TREEBOOT_STRICT", "false")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("invalid config"))
+        .stderr(predicate::str::contains("cannot be used with sync"));
+}
+
+#[test]
+fn run_config_dangerous_source_option_should_allow_outside_source() {
+    let repo = git_worktree();
+    let outside = tempfile::NamedTempFile::new().expect("outside source should be created");
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(
+        &config,
+        &format!(
+            r#"
+dangerously_allow_sources_outside_root = true
+copy = [{{ source = "{}", target = "outside" }}]
+"#,
+            outside.path().display()
+        ),
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("invalid config").not())
+        .stderr(predicate::str::contains(
+            "declarative config execution is not implemented",
+        ));
+}
+
+#[test]
+fn run_env_dangerous_target_option_should_allow_outside_target() {
+    let repo = git_worktree();
+    let outside = TempDir::new().expect("outside target parent should be created");
+    let source = repo.root_path().join("source");
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&source, "value\n");
+    write_file(
+        &config,
+        &format!(
+            r#"
+copy = [{{ source = "source", target = "{}" }}]
+"#,
+            outside.path().join("target").display()
+        ),
+    );
+
+    treeboot()
+        .arg("run")
+        .env("TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE", "1")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("invalid config").not())
+        .stderr(predicate::str::contains(
+            "declarative config execution is not implemented",
+        ));
+}
+
+#[cfg(unix)]
+#[test]
+fn run_invalid_boolean_env_should_fail_before_init_script() {
+    let repo = git_worktree();
+    let script = repo.worktree_path().join(".treeboot.sh");
+    let marker = repo.worktree_path().join("script.out");
+    write_executable_script(
+        &script,
+        &format!("#!/bin/sh\nprintf 'ran\\n' > {}\n", marker.display()),
+    );
+
+    treeboot()
+        .env("TREEBOOT_STRICT", "sometimes")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "invalid boolean environment value for TREEBOOT_STRICT",
+        ));
+
+    assert!(!marker.exists());
 }
 
 #[test]

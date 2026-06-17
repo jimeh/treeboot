@@ -81,6 +81,18 @@ pub enum Error {
         message: String,
     },
 
+    /// A treeboot boolean environment variable has an unsupported value.
+    #[error(
+        "invalid boolean environment value for {name}: {value:?} \
+         (expected one of 1, true, yes, on, 0, false, no, off)"
+    )]
+    InvalidBooleanEnv {
+        /// Environment variable name.
+        name: &'static str,
+        /// Environment variable value.
+        value: String,
+    },
+
     /// No config was found while strict mode was enabled.
     #[error("no config detected")]
     NoConfigDetectedStrict,

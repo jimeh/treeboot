@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
 use crate::{
-    CommandKind, CommandOperation, Config, Error, FileOperation, FileOperationKind, Result,
-    RunContext, SourceSpan, SymlinkMode, SyncCompare,
+    CommandKind, CommandOperation, Config, ConfigRuntimeOptions, Error, FileOperation,
+    FileOperationKind, Result, RunContext, SourceSpan, SymlinkMode, SyncCompare,
 };
 
 /// Options that affect declarative run planning.
@@ -11,6 +11,21 @@ use crate::{
 pub struct RunPlanOptions {
     /// Rejects sync operations and other strict-mode conflicts.
     pub strict: bool,
+    /// Allows file operation sources outside the root checkout.
+    pub dangerously_allow_sources_outside_root: bool,
+    /// Allows file operation targets outside the current worktree.
+    pub dangerously_allow_targets_outside_worktree: bool,
+}
+
+impl From<ConfigRuntimeOptions> for RunPlanOptions {
+    fn from(options: ConfigRuntimeOptions) -> Self {
+        Self {
+            strict: options.strict,
+            dangerously_allow_sources_outside_root: options.dangerously_allow_sources_outside_root,
+            dangerously_allow_targets_outside_worktree: options
+                .dangerously_allow_targets_outside_worktree,
+        }
+    }
 }
 
 /// A validated declarative run plan.
@@ -116,6 +131,7 @@ pub fn plan_run_config(
     let files = plan_file_operations(
         path,
         config,
+        options,
         &target_paths,
         root_path.as_path(),
         worktree_path.as_path(),
@@ -212,6 +228,7 @@ fn validate_strict_sync(path: &Path, files: &[FileOperation], strict: bool) -> R
 fn plan_file_operations(
     path: &Path,
     config: &Config,
+    options: RunPlanOptions,
     target_paths: &[PathBuf],
     root_path: &Path,
     worktree_path: &Path,
@@ -219,7 +236,7 @@ fn plan_file_operations(
     let mut planned = Vec::with_capacity(config.files.len());
 
     for (operation, target_path) in config.files.iter().zip(target_paths) {
-        validate_target_boundary(path, config, operation, target_path, worktree_path)?;
+        validate_target_boundary(path, options, operation, target_path, worktree_path)?;
 
         let source_path = normalize_maybe_existing(&operation.source_path).map_err(|source| {
             invalid_config_error(
@@ -231,7 +248,7 @@ fn plan_file_operations(
                 ),
             )
         })?;
-        validate_source_boundary(path, config, operation, &source_path, root_path)?;
+        validate_source_boundary(path, options, operation, &source_path, root_path)?;
 
         let status = match source_exists(path, operation, source_path.as_path())? {
             true => {
@@ -277,12 +294,12 @@ fn plan_file_operations(
 
 fn validate_target_boundary(
     path: &Path,
-    config: &Config,
+    options: RunPlanOptions,
     operation: &FileOperation,
     target_path: &Path,
     worktree_path: &Path,
 ) -> Result<()> {
-    if config.validation.dangerously_allow_targets_outside_worktree {
+    if options.dangerously_allow_targets_outside_worktree {
         return Ok(());
     }
 
@@ -302,12 +319,12 @@ fn validate_target_boundary(
 
 fn validate_source_boundary(
     path: &Path,
-    config: &Config,
+    options: RunPlanOptions,
     operation: &FileOperation,
     source_path: &Path,
     root_path: &Path,
 ) -> Result<()> {
-    if config.validation.dangerously_allow_sources_outside_root {
+    if options.dangerously_allow_sources_outside_root {
         return Ok(());
     }
 
@@ -598,7 +615,6 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
-    use crate::ValidationOptions;
 
     fn span() -> SourceSpan {
         SourceSpan {
@@ -638,9 +654,9 @@ mod tests {
 
     fn empty_config() -> Config {
         Config {
+            options: Default::default(),
             files: Vec::new(),
             commands: Vec::new(),
-            validation: Default::default(),
         }
     }
 
@@ -703,6 +719,7 @@ mod tests {
     fn plan_run_config_should_mark_optional_missing_sources_skipped() {
         let (root, worktree) = temp_workspace("missing-source");
         let config = Config {
+            options: Default::default(),
             files: vec![FileOperation {
                 operation: FileOperationKind::Copy,
                 source: PathBuf::from("missing"),
@@ -716,7 +733,6 @@ mod tests {
                 declaration: span(),
             }],
             commands: Vec::new(),
-            validation: Default::default(),
         };
 
         let plan = plan_run_config(
@@ -738,6 +754,7 @@ mod tests {
         let (root, worktree) = temp_workspace("ready-file");
         std::fs::write(root.join(".env"), "TOKEN=1\n").expect("source should be written");
         let config = Config {
+            options: Default::default(),
             files: vec![file_operation(
                 FileOperationKind::Copy,
                 &root,
@@ -746,7 +763,6 @@ mod tests {
                 ".env",
             )],
             commands: Vec::new(),
-            validation: Default::default(),
         };
 
         let plan = plan(&config, &root, &worktree).expect("file should plan");
@@ -760,6 +776,7 @@ mod tests {
         let app_dir = worktree.join("app");
         std::fs::create_dir_all(&app_dir).expect("command cwd should be created");
         let config = Config {
+            options: Default::default(),
             files: Vec::new(),
             commands: vec![CommandOperation {
                 name: Some("Install".to_owned()),
@@ -774,7 +791,6 @@ mod tests {
                 allow_failure: true,
                 declaration: span(),
             }],
-            validation: Default::default(),
         };
 
         let plan = plan(&config, &root, &worktree).expect("command should plan");
@@ -800,6 +816,7 @@ mod tests {
             .join("outside-target");
         std::fs::write(&outside_source, "shared\n").expect("outside source should be written");
         let config = Config {
+            options: Default::default(),
             files: vec![FileOperation {
                 operation: FileOperationKind::Copy,
                 source: outside_source.clone(),
@@ -813,13 +830,19 @@ mod tests {
                 declaration: span(),
             }],
             commands: Vec::new(),
-            validation: ValidationOptions {
-                dangerously_allow_sources_outside_root: true,
-                dangerously_allow_targets_outside_worktree: true,
-            },
         };
 
-        let plan = plan(&config, &root, &worktree).expect("escaped paths should plan");
+        let plan = plan_run_config(
+            Path::new(".treeboot.toml"),
+            &config,
+            &context(&root, &worktree),
+            RunPlanOptions {
+                dangerously_allow_sources_outside_root: true,
+                dangerously_allow_targets_outside_worktree: true,
+                ..RunPlanOptions::default()
+            },
+        )
+        .expect("escaped paths should plan");
 
         assert_eq!(plan.files[0].status, PlannedFileStatus::Ready);
     }
@@ -866,7 +889,10 @@ mod tests {
             Path::new(".treeboot.toml"),
             &empty_config(),
             &context(&root, &worktree),
-            RunPlanOptions { strict: true },
+            RunPlanOptions {
+                strict: true,
+                ..RunPlanOptions::default()
+            },
         )
         .expect("strict mode should allow configs without sync");
 
@@ -880,6 +906,7 @@ mod tests {
         std::fs::create_dir_all(&source_dir).expect("source dir should be created");
         std::fs::write(source_dir.join("config"), "value\n").expect("nested source should exist");
         let config = Config {
+            options: Default::default(),
             files: vec![file_operation(
                 FileOperationKind::Copy,
                 &root,
@@ -888,7 +915,6 @@ mod tests {
                 "shared",
             )],
             commands: Vec::new(),
-            validation: Default::default(),
         };
 
         let plan = plan(&config, &root, &worktree).expect("directory source should plan");
@@ -902,6 +928,7 @@ mod tests {
         let source_dir = root.join("shared");
         std::fs::create_dir_all(&source_dir).expect("source dir should be created");
         let config = Config {
+            options: Default::default(),
             files: vec![file_operation(
                 FileOperationKind::Sync,
                 &root,
@@ -910,7 +937,6 @@ mod tests {
                 "shared",
             )],
             commands: Vec::new(),
-            validation: Default::default(),
         };
 
         let plan = plan(&config, &root, &worktree).expect("sync should plan");
@@ -928,6 +954,7 @@ mod tests {
         std::os::unix::fs::symlink(root.join("source"), root.join("link"))
             .expect("safe source symlink should be created");
         let config = Config {
+            options: Default::default(),
             files: vec![file_operation(
                 FileOperationKind::Copy,
                 &root,
@@ -936,7 +963,6 @@ mod tests {
                 "link",
             )],
             commands: Vec::new(),
-            validation: Default::default(),
         };
 
         let plan = plan(&config, &root, &worktree).expect("safe symlink should plan");
@@ -951,6 +977,7 @@ mod tests {
         std::os::unix::fs::symlink(root.join("missing"), root.join("link"))
             .expect("broken source symlink should be created");
         let config = Config {
+            options: Default::default(),
             files: vec![file_operation(
                 FileOperationKind::Copy,
                 &root,
@@ -959,7 +986,6 @@ mod tests {
                 "link",
             )],
             commands: Vec::new(),
-            validation: Default::default(),
         };
 
         let error = plan(&config, &root, &worktree).expect_err("broken symlink should fail");
@@ -975,6 +1001,7 @@ mod tests {
     fn plan_run_config_should_default_command_cwd_to_worktree() {
         let (root, worktree) = temp_workspace("command-cwd");
         let config = Config {
+            options: Default::default(),
             files: Vec::new(),
             commands: vec![CommandOperation {
                 name: None,
@@ -988,7 +1015,6 @@ mod tests {
                 allow_failure: false,
                 declaration: span(),
             }],
-            validation: Default::default(),
         };
 
         let plan = plan_run_config(

@@ -6,7 +6,11 @@ use crate::{Error, OutputEvent, Reporter, Result};
 const DEFAULT_CONFIG_PATH: &str = ".treeboot.toml";
 const DEFAULT_SCRIPT_PATH: &str = ".treeboot.sh";
 
-const STARTER_CONFIG: &str = r#"copy = [
+const STARTER_CONFIG: &str = r#"strict = false
+dangerously_allow_sources_outside_root = false
+dangerously_allow_targets_outside_worktree = false
+
+copy = [
   ".env",
 ]
 

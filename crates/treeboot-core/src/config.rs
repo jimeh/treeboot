@@ -36,12 +36,13 @@ pub struct ConfigReport {
 /// Parsed and normalized treeboot config.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Config {
+    /// Runtime options declared by the config.
+    #[serde(flatten)]
+    pub options: ConfigRuntimeOptions,
     /// Ordered file operations.
     pub files: Vec<FileOperation>,
     /// Ordered command operations.
     pub commands: Vec<CommandOperation>,
-    /// Declarative validation settings.
-    pub validation: ValidationOptions,
 }
 
 /// A normalized file operation.
@@ -139,13 +140,72 @@ pub enum CommandKind {
     },
 }
 
-/// Declarative validation settings.
+/// Runtime options declared by a config file.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-pub struct ValidationOptions {
+pub struct ConfigRuntimeOptions {
+    /// Enables strict declarative validation and conflict handling.
+    pub strict: bool,
     /// Allows file operation sources outside the root checkout.
     pub dangerously_allow_sources_outside_root: bool,
     /// Allows file operation targets outside the current worktree.
     pub dangerously_allow_targets_outside_worktree: bool,
+}
+
+/// Environment overrides for config runtime options.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RuntimeOptionOverrides {
+    /// Strict mode environment override.
+    pub strict: Option<bool>,
+    /// Source-boundary environment override.
+    pub dangerously_allow_sources_outside_root: Option<bool>,
+    /// Target-boundary environment override.
+    pub dangerously_allow_targets_outside_worktree: Option<bool>,
+}
+
+impl RuntimeOptionOverrides {
+    /// Reads treeboot runtime option overrides from the process environment.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when an environment value is not a supported boolean.
+    pub fn from_env() -> Result<Self> {
+        Ok(Self {
+            strict: env_bool("TREEBOOT_STRICT")?,
+            dangerously_allow_sources_outside_root: env_bool(
+                "TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT",
+            )?,
+            dangerously_allow_targets_outside_worktree: env_bool(
+                "TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE",
+            )?,
+        })
+    }
+
+    /// Returns strict mode before config discovery.
+    #[must_use]
+    pub const fn pre_config_strict(self, cli_strict: bool) -> bool {
+        cli_strict || matches!(self.strict, Some(true))
+    }
+
+    /// Resolves runtime options using defaults, config, environment, then CLI.
+    #[must_use]
+    pub fn resolve(self, config: ConfigRuntimeOptions, cli_strict: bool) -> ConfigRuntimeOptions {
+        let mut resolved = config;
+
+        if let Some(strict) = self.strict {
+            resolved.strict = strict;
+        }
+        if let Some(allow) = self.dangerously_allow_sources_outside_root {
+            resolved.dangerously_allow_sources_outside_root = allow;
+        }
+        if let Some(allow) = self.dangerously_allow_targets_outside_worktree {
+            resolved.dangerously_allow_targets_outside_worktree = allow;
+        }
+        if cli_strict {
+            resolved.strict = true;
+        }
+
+        resolved
+    }
 }
 
 /// Byte and line location for a declaration in a config file.
@@ -238,9 +298,14 @@ fn parse_config(path: &Path, content: &str, context: &RunContext) -> Result<Conf
     normalize_command_tables(path, content, context, &mut commands, raw.command)?;
 
     Ok(Config {
+        options: ConfigRuntimeOptions {
+            strict: raw.strict,
+            dangerously_allow_sources_outside_root: raw.dangerously_allow_sources_outside_root,
+            dangerously_allow_targets_outside_worktree: raw
+                .dangerously_allow_targets_outside_worktree,
+        },
         files,
         commands,
-        validation: raw.validation.unwrap_or_default().into(),
     })
 }
 
@@ -606,6 +671,9 @@ fn line_column(content: &str, offset: usize) -> (usize, usize) {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 struct RawConfig {
+    strict: bool,
+    dangerously_allow_sources_outside_root: bool,
+    dangerously_allow_targets_outside_worktree: bool,
     copy: Vec<Spanned<RawFileEntry>>,
     symlink: Vec<Spanned<RawFileEntry>>,
     sync: Vec<Spanned<RawFileEntry>>,
@@ -613,7 +681,6 @@ struct RawConfig {
     file: Vec<Spanned<RawFileObject>>,
     commands: Vec<Spanned<RawCommandEntry>>,
     command: Vec<Spanned<RawCommandObject>>,
-    validation: Option<RawValidation>,
 }
 
 #[derive(Debug)]
@@ -736,20 +803,31 @@ struct RawCommandObject {
     allow_failure: bool,
 }
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-struct RawValidation {
-    dangerously_allow_sources_outside_root: bool,
-    dangerously_allow_targets_outside_worktree: bool,
+fn env_bool(name: &'static str) -> Result<Option<bool>> {
+    let Some(value) = std::env::var_os(name) else {
+        return Ok(None);
+    };
+
+    let Some(value) = value.to_str() else {
+        return Err(Error::InvalidBooleanEnv {
+            name,
+            value: value.to_string_lossy().into_owned(),
+        });
+    };
+
+    parse_bool(value)
+        .ok_or_else(|| Error::InvalidBooleanEnv {
+            name,
+            value: value.to_owned(),
+        })
+        .map(Some)
 }
 
-impl From<RawValidation> for ValidationOptions {
-    fn from(raw: RawValidation) -> Self {
-        Self {
-            dangerously_allow_sources_outside_root: raw.dangerously_allow_sources_outside_root,
-            dangerously_allow_targets_outside_worktree: raw
-                .dangerously_allow_targets_outside_worktree,
-        }
+fn parse_bool(value: &str) -> Option<bool> {
+    match value.to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Some(true),
+        "0" | "false" | "no" | "off" => Some(false),
+        _ => None,
     }
 }
 
@@ -864,17 +942,48 @@ sync = [{
     }
 
     #[test]
-    fn parse_config_should_apply_validation_options() {
+    fn parse_config_should_apply_runtime_options() {
         let config = parse(
             r#"
-[validation]
+strict = true
 dangerously_allow_sources_outside_root = true
 dangerously_allow_targets_outside_worktree = true
 "#,
         );
 
-        assert!(config.validation.dangerously_allow_sources_outside_root);
-        assert!(config.validation.dangerously_allow_targets_outside_worktree);
+        assert!(config.options.strict);
+        assert!(config.options.dangerously_allow_sources_outside_root);
+        assert!(config.options.dangerously_allow_targets_outside_worktree);
+    }
+
+    #[test]
+    fn parse_config_should_reject_nested_validation_options() {
+        assert_parse_error_contains(
+            r#"
+[validation]
+dangerously_allow_sources_outside_root = true
+"#,
+            "unknown field",
+        );
+    }
+
+    #[test]
+    fn parse_bool_should_accept_supported_true_values() {
+        for value in ["1", "true", "TRUE", "yes", "on"] {
+            assert_eq!(parse_bool(value), Some(true), "value {value:?}");
+        }
+    }
+
+    #[test]
+    fn parse_bool_should_accept_supported_false_values() {
+        for value in ["0", "false", "FALSE", "no", "off"] {
+            assert_eq!(parse_bool(value), Some(false), "value {value:?}");
+        }
+    }
+
+    #[test]
+    fn parse_bool_should_reject_unsupported_values() {
+        assert_eq!(parse_bool("sometimes"), None);
     }
 
     #[test]
