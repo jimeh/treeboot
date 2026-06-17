@@ -185,3 +185,28 @@ copy = [
         .stderr(predicate::str::contains("treeboot: warning"))
         .stderr(predicate::str::contains("duplicate configured target"));
 }
+
+#[test]
+fn config_command_json_should_warn_when_run_validation_would_fail() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(
+        &config,
+        r#"
+copy = [
+  { source = "a", target = ".env" },
+  { source = "b", target = "./.env" },
+]
+"#,
+    );
+
+    treeboot()
+        .args(["config", "--format", "json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"config\""))
+        .stdout(predicate::str::contains("\"files\""))
+        .stderr(predicate::str::contains("treeboot: warning"))
+        .stderr(predicate::str::contains("duplicate configured target"));
+}
