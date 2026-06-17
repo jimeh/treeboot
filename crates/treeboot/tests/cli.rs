@@ -191,6 +191,7 @@ fn config_command_root_option_should_resolve_json_source_paths() {
 
     let root_path = std::fs::canonicalize(root.path()).expect("root should normalize");
     let source_path = root_path.join("shared/.env").display().to_string();
+    let source_path_json = source_path.replace('\\', "\\\\");
 
     treeboot()
         .args(["config", "--root"])
@@ -201,7 +202,7 @@ fn config_command_root_option_should_resolve_json_source_paths() {
         .assert()
         .success()
         .stdout(predicate::str::contains("\"source_path\""))
-        .stdout(predicate::str::contains(source_path));
+        .stdout(predicate::str::contains(source_path_json));
 }
 
 #[test]
