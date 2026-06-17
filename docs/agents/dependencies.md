@@ -7,6 +7,12 @@ dependencies for small wrappers around the standard library.
 
 - `clap` belongs in the `treeboot` CLI crate for argument parsing.
 - `thiserror` belongs in `treeboot-core` for public typed errors.
+- `serde` and `toml` belong in `treeboot-core` for declarative config parsing
+  and normalized model serialization.
+- `serde_json` belongs in the `treeboot` CLI crate for `treeboot config
+  --format json` rendering.
+- `schemars` and `serde_json` are dev-dependencies in `treeboot-core` for the
+  JSON Schema generator example.
 - `assert_cmd`, `predicates`, and `tempfile` support CLI integration tests.
 - `cargo-llvm-cov` is a mise-managed development tool, not a Cargo dependency.
 

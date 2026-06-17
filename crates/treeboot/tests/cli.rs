@@ -77,7 +77,7 @@ fn run_outside_git_worktree_should_exit_with_runtime_failure() {
 fn config_file_should_be_detected_until_config_execution_exists() {
     let repo = git_repo();
     let config = repo.path().join(".treeboot.toml");
-    write_file(&config, "commands = []\n");
+    write_file(&config, "commands = [\"mise install\"]\n");
 
     treeboot()
         .current_dir(repo.path())
@@ -87,6 +87,65 @@ fn config_file_should_be_detected_until_config_execution_exists() {
         .stderr(predicate::str::contains(
             "declarative config execution is not implemented yet",
         ));
+}
+
+#[test]
+fn config_command_should_print_normalized_config() {
+    let repo = git_repo();
+    let config = repo.path().join(".treeboot.toml");
+    write_file(
+        &config,
+        r#"
+copy = [{ source = ".env.local" }]
+sync = ["shared/config"]
+commands = ["mise install"]
+"#,
+    );
+
+    treeboot()
+        .arg("config")
+        .current_dir(repo.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("treeboot: config"))
+        .stdout(predicate::str::contains("copy .env.local -> .env.local"))
+        .stdout(predicate::str::contains(
+            "sync shared/config -> shared/config compare=metadata delete_extra=true",
+        ))
+        .stdout(predicate::str::contains("run \"mise install\""));
+}
+
+#[test]
+fn config_command_json_should_print_normalized_config() {
+    let repo = git_repo();
+    let config = repo.path().join(".treeboot.toml");
+    write_file(&config, "commands = [\"mise install\"]\n");
+
+    treeboot()
+        .args(["config", "--format", "json"])
+        .current_dir(repo.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"commands\""))
+        .stdout(predicate::str::contains("\"run\": \"mise install\""));
+}
+
+#[test]
+fn config_command_invalid_config_should_exit_with_config_error() {
+    let repo = git_repo();
+    let config = repo.path().join(".treeboot.toml");
+    write_file(
+        &config,
+        "commands = [{ run = \"npm\", program = \"npm\" }]\n",
+    );
+
+    treeboot()
+        .arg("config")
+        .current_dir(repo.path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("invalid config"))
+        .stderr(predicate::str::contains("mutually exclusive"));
 }
 
 #[test]

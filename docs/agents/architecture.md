@@ -18,7 +18,9 @@ The core crate owns reusable behavior:
 - runtime context discovery
 - Git command wrappers
 - script and config discovery
+- declarative config parsing and normalization
 - init file generation
+- generated JSON Schema for config authoring
 - structured output events
 - typed errors
 
@@ -27,6 +29,8 @@ The core crate owns reusable behavior:
 - `context.rs`: resolves worktree path, root path, default branch, and env vars
 - `git.rs`: wraps Git CLI calls
 - `discovery.rs`: finds init scripts and config files
+- `config.rs`: parses and normalizes declarative TOML config
+- `examples/generate_config_schema.rs`: generates `schemas/treeboot.schema.json`
 - `run.rs`: orchestrates `treeboot run`
 - `init.rs`: implements `treeboot init`
 - `output.rs`: defines output events and reporter abstraction

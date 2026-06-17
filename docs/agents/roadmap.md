@@ -21,11 +21,12 @@ Scope:
 
 ## Milestone 2: Config Parsing And Normalization
 
-Status: next.
+Status: implemented.
 
 Scope:
 
 - parse `.treeboot.toml`, `treeboot.toml`, and explicit `--config`
+- inspect normalized config with `treeboot config`
 - support `copy`, `symlink`, `sync`, `files`, `[[file]]`
 - support `commands` and `[[command]]`
 - normalize declarations into ordered file and command operation models

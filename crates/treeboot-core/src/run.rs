@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+use crate::config;
 use crate::context;
 use crate::discovery;
 use crate::{Error, OutputEvent, Reporter, Result, RunContext};
@@ -84,6 +85,7 @@ pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport
     match discovery::discover_config(&context.worktree_path, options.config.as_deref())? {
         Some(path) => {
             report(reporter, OutputEvent::ConfigDetected { path: path.clone() })?;
+            let _config = config::load_config(&path, &context)?;
 
             Err(Error::ConfigExecutionNotImplemented(path))
         }

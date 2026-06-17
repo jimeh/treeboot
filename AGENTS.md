@@ -26,17 +26,23 @@ Useful deeper docs:
 
 ## Current Implementation State
 
-The current code implements the milestone 1 foundation:
+The current code implements the milestone 1 foundation and milestone 2 config
+parsing:
 
-- CLI parsing for `run` and `init`
+- CLI parsing for `run`, `config`, and `init`
 - Git worktree/root/default-branch discovery
 - treeboot environment aliases
 - init script discovery and execution
+- declarative TOML config parsing and normalization
+- view-only normalized config inspection
+- generated JSON Schema for the config file format
 - starter config/script generation
 - structured output events
 
-Declarative TOML config execution is intentionally not implemented yet. A found
-config currently reports that state and exits non-zero.
+Declarative TOML config execution is intentionally not implemented yet.
+`treeboot run` parses a found config, reports that execution is not implemented,
+and exits non-zero. Use `treeboot config` to inspect normalized config without
+execution.
 
 ## Commands
 
@@ -48,12 +54,16 @@ mise run check      # normal pre-handoff confidence
 mise run verify     # broad local verification
 mise run doctor     # local tool sanity check
 mise run coverage   # coverage summary for test-gap work
+mise run generate   # refresh checked-in generated artifacts
 ```
 
 Targeted commands:
 
 ```sh
 mise run fmt
+mise run generate
+mise run generate:check
+mise run generate:schema:check
 mise run lint
 mise run test
 mise run test:core

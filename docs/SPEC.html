@@ -605,7 +605,7 @@
     <main>
       <header class="hero" id="overview">
         <div>
-          <p class="eyebrow">Specification v1.0.1</p>
+          <p class="eyebrow">Specification v1.0.2</p>
           <h1>treeboot</h1>
           <p class="lede">
             A portable worktree bootstrapper that lets every coding agent,
@@ -625,7 +625,7 @@
           <dl>
             <div>
               <dt>Spec status</dt>
-              <dd>v1.0.1 implementation contract</dd>
+              <dd>v1.0.2 implementation contract</dd>
             </div>
             <div>
               <dt>Default command</dt>
@@ -712,7 +712,7 @@
         <div class="section-head">
           <div>
             <p class="eyebrow">CLI surface</p>
-            <h2>Two subcommands, one default path</h2>
+            <h2>Three subcommands, one default path</h2>
           </div>
           <p class="section-note">
             The common integration point is intentionally short:
@@ -721,7 +721,7 @@
           </p>
         </div>
 
-        <div class="grid two">
+        <div class="grid three">
           <section class="panel">
             <h3><code>treeboot run</code></h3>
             <p>
@@ -736,6 +736,22 @@ treeboot run --force
 treeboot run --root /path/to/root-checkout
 treeboot run --config .treeboot.toml
 treeboot run --no-commands</code></pre>
+          </section>
+
+          <section class="panel">
+            <h3><code>treeboot config</code></h3>
+            <p>
+              Parses the selected TOML config and prints the normalized file
+              and command operations without executing them.
+            </p>
+            <pre><code class="shell">treeboot config
+treeboot config --config .treeboot.toml
+treeboot config --format json</code></pre>
+            <p>
+              This command is view-only. It is intended for validating and
+              inspecting config parsing behavior; editing config values is out
+              of scope.
+            </p>
           </section>
 
           <section class="panel">
@@ -767,15 +783,23 @@ treeboot init --force</code></pre>
           <tbody>
             <tr>
               <td><code>--root &lt;path&gt;</code></td>
-              <td>run</td>
+              <td>run/config</td>
               <td>Overrides the checkout used as the file-operation source.</td>
             </tr>
             <tr>
               <td><code>--config &lt;path&gt;</code></td>
-              <td>run</td>
+              <td>run/config</td>
               <td>
                 Uses one specific config file, skips config discovery, and
                 bypasses init script discovery.
+              </td>
+            </tr>
+            <tr>
+              <td><code>--format &lt;text|json&gt;</code></td>
+              <td>config</td>
+              <td>
+                Selects human-readable or JSON output for normalized config
+                inspection. Defaults to <code>text</code>.
               </td>
             </tr>
             <tr>
@@ -1165,6 +1189,30 @@ script: .treeboot.sh</code></pre>
             <code>treeboot: no config detected</code>. Without
             <code>--strict</code> it exits successfully. With
             <code>--strict</code> it exits non-zero.
+          </p>
+        </div>
+
+        <div class="callout">
+          <h3>Config inspection</h3>
+          <p>
+            <code>treeboot config</code> uses the same config discovery rules as
+            declarative run mode, parses the selected TOML file, normalizes file
+            and command declarations, and exits successfully when parsing and
+            normalization succeed. It does not discover or run init scripts,
+            apply file operations, or execute configured commands. Invalid TOML,
+            unknown fields, invalid enum values, missing required fields, and
+            mutually exclusive command fields are config errors.
+          </p>
+        </div>
+
+        <div class="callout">
+          <h3>JSON Schema</h3>
+          <p>
+            The checked-in JSON Schema for the config file format lives at
+            <code>schemas/treeboot.schema.json</code>. It is generated from the
+            Rust schema model with <code>mise run generate</code> and checked in
+            CI with <code>mise run generate:schema:check</code> through the
+            aggregate <code>mise run generate:check</code> task.
           </p>
         </div>
 
