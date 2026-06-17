@@ -26,6 +26,9 @@ pub enum OutputEvent {
     /// No script or config was found.
     NoConfigDetected,
 
+    /// The run started from the root checkout instead of a separate worktree.
+    RootWorktreeDetected,
+
     /// A config file was found.
     ConfigDetected {
         /// Config file path.
@@ -56,6 +59,7 @@ impl OutputEvent {
                 format!("treeboot: run {}", path.display())
             }
             Self::NoConfigDetected => "treeboot: no config detected".to_owned(),
+            Self::RootWorktreeDetected => "treeboot: This is not a work tree".to_owned(),
             Self::ConfigDetected { path } => {
                 format!("treeboot: config detected {}", path.display())
             }
@@ -107,5 +111,12 @@ mod tests {
         };
 
         assert_eq!(event.message(), "treeboot: config detected .treeboot.toml");
+    }
+
+    #[test]
+    fn message_should_format_root_worktree_detected() {
+        let event = OutputEvent::RootWorktreeDetected;
+
+        assert_eq!(event.message(), "treeboot: This is not a work tree");
     }
 }

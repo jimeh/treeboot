@@ -85,6 +85,10 @@ pub enum Error {
     #[error("no config detected")]
     NoConfigDetectedStrict,
 
+    /// The command was run from the root checkout while strict mode was enabled.
+    #[error("This is not a work tree")]
+    RootWorktreeStrict,
+
     /// Declarative config execution has not been implemented yet.
     #[error("declarative config execution is not implemented yet: {0:?}")]
     ConfigExecutionNotImplemented(PathBuf),

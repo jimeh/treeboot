@@ -30,6 +30,8 @@ pub struct RunOptions {
 pub enum RunAction {
     /// No config or executable init script was detected.
     MissingConfig,
+    /// The run started from the root checkout and had no work to do.
+    RootWorktreeSkipped,
     /// An init script would run in dry-run mode.
     WouldRunInitScript {
         /// Script path.
@@ -69,6 +71,19 @@ pub struct RunReport {
 /// be read, or strict mode treats a missing config as a failure.
 pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport> {
     let context = context::resolve(&options)?;
+
+    if context.root_path == context.worktree_path {
+        report(reporter, OutputEvent::RootWorktreeDetected)?;
+
+        if options.strict {
+            return Err(Error::RootWorktreeStrict);
+        }
+
+        return Ok(RunReport {
+            context,
+            action: RunAction::RootWorktreeSkipped,
+        });
+    }
 
     if options.config.is_none() {
         let scripts = discovery::discover_scripts(&context.worktree_path);
