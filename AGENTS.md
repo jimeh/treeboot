@@ -26,23 +26,24 @@ Useful deeper docs:
 
 ## Current Implementation State
 
-The current code implements the milestone 1 foundation and milestone 2 config
-parsing:
+The current code implements the milestone 1 foundation, milestone 2 config
+parsing, and milestone 3 declarative validation/planning:
 
 - CLI parsing for `run`, `config`, and `init`
 - Git worktree/root/default-branch discovery
 - treeboot environment aliases
 - init script discovery and execution
 - declarative TOML config parsing and normalization
+- declarative TOML validation and run-plan construction
 - view-only normalized config inspection
 - generated JSON Schema for the config file format
 - starter config/script generation
 - structured output events
 
 Declarative TOML config execution is intentionally not implemented yet.
-`treeboot run` parses a found config, reports that execution is not implemented,
-and exits non-zero. Use `treeboot config` to inspect normalized config without
-execution.
+`treeboot run` parses and validates a found config, reports that execution is
+not implemented, and exits non-zero. Use `treeboot config` to inspect normalized
+config without execution; it warns when run validation would fail.
 
 ## Commands
 

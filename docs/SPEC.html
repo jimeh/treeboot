@@ -1348,7 +1348,9 @@ script: .treeboot.sh</code></pre>
             normalization succeed. It does not discover or run init scripts,
             apply file operations, or execute configured commands. Invalid TOML,
             unknown fields, invalid enum values, missing required fields, and
-            mutually exclusive command fields are config errors.
+            mutually exclusive command fields are config errors. If the same
+            config would fail declarative run validation, the command prints a
+            warning without changing the successful exit status.
           </p>
         </div>
 

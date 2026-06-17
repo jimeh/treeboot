@@ -42,7 +42,7 @@ Validation focus:
 
 ## Milestone 3: Declarative Validation
 
-Status: pending.
+Status: implemented.
 
 Scope:
 

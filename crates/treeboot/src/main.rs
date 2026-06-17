@@ -4,7 +4,7 @@ use std::process::ExitCode;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use treeboot_core::{
     CommandKind, CommandOperation, ConfigOptions, ConfigReport, Error, FileOperation,
-    FileOperationKind, InitKind, InitOptions, OutputEvent, Reporter, RunOptions,
+    FileOperationKind, InitKind, InitOptions, OutputEvent, Reporter, RunOptions, RunPlanOptions,
 };
 
 #[derive(Debug, Parser)]
@@ -139,7 +139,18 @@ fn run_config_command(args: ConfigArgs) -> treeboot_core::Result<()> {
             use std::io::Write;
             writeln!(handle).map_err(|source| Error::Output { source })
         }
+    }?;
+
+    if let Err(error) = treeboot_core::plan_run_config(
+        &report.path,
+        &report.config,
+        &report.context,
+        RunPlanOptions::default(),
+    ) {
+        eprintln!("treeboot: warning: run validation would fail: {error}");
     }
+
+    Ok(())
 }
 
 fn print_config_text(report: &ConfigReport) -> std::io::Result<()> {
