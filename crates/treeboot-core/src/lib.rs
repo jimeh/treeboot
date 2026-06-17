@@ -5,6 +5,7 @@
 
 #![deny(missing_docs)]
 
+mod config;
 mod context;
 mod discovery;
 mod error;
@@ -21,3 +22,7 @@ pub use run::{RunAction, RunOptions, RunReport, run};
 
 /// Convenient result type used by `treeboot-core`.
 pub type Result<T> = std::result::Result<T, Error>;
+pub use config::{
+    CommandKind, CommandOperation, Config, ConfigOptions, ConfigReport, FileOperation,
+    FileOperationKind, SourceSpan, SymlinkMode, SyncCompare, ValidationOptions, inspect_config,
+};

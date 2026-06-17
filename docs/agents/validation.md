@@ -43,6 +43,8 @@ GitHub Actions runs these mise tasks:
 
 - `mise run actions:lint`
 - `mise run fmt`
+- `mise run generate:check`
+  - currently wraps `mise run generate:schema:check`
 - `mise run lint`
 - `mise run msrv`
 - `mise run test:core`
@@ -64,7 +66,7 @@ propagation, and output formatting.
 
 Useful follow-up coverage areas:
 
-- TOML config parsing and normalization once implemented
+- declarative validation before side effects
 - file-operation validation before side effects
 - command runtime and async batching
 - sync conflict and delete-extra behavior

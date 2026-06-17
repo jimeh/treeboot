@@ -11,4 +11,10 @@ name = "treeboot_core"
 workspace = true
 
 [dependencies]
+serde = { version = "1.0.228", features = ["derive"] }
 thiserror = "2"
+toml = "1.1.2"
+
+[dev-dependencies]
+schemars = "1.2.1"
+serde_json = "1.0.150"

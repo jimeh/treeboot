@@ -15,7 +15,7 @@ treeboot
 
 ## Status
 
-This project is bootstrapped for implementation against spec v1.0.0. The
+This project is bootstrapped for implementation against spec v1.0.2. The
 planned implementation target is Rust, distributed as small prebuilt binaries
 from GitHub Releases.
 
@@ -23,9 +23,10 @@ The initial implementation contract lives in
 [docs/SPEC.html](./docs/SPEC.html). This README is the short human-facing
 version.
 
-The current implementation is in progress. It supports the initial `run` and
-`init` command surfaces, path discovery, init-script discovery/execution, and
-missing-config behavior. Declarative TOML config execution is still pending.
+The current implementation is in progress. It supports the initial `run`,
+`config`, and `init` command surfaces, path discovery, init-script
+discovery/execution, config parsing/inspection, and missing-config behavior.
+Declarative TOML config execution is still pending.
 
 ## Why
 
@@ -104,8 +105,10 @@ commands = [
 ]
 ```
 
-String file entries use the same source and target path. Object entries can set
-different `source` and `target` paths.
+String file entries use the same source and target path. Object entries also
+default `target` to `source` when only `source` is set, and can set a different
+target when needed. Missing sources are skipped by default; set
+`required = true` on a file object when a missing source should fail.
 
 Use `sync` when the target should be actively reconciled with the source.
 Directory sync deletes target-only files by default, so it is intentionally more
@@ -140,6 +143,8 @@ mise install
 ```sh
 treeboot
 treeboot run
+treeboot config
+treeboot config --format json
 ```
 
 Useful planned options:
@@ -183,6 +188,20 @@ TREEBOOT_DEFAULT_BRANCH
 including Codex, Conductor, Superset, and generic Git-style names. See
 [docs/SPEC.html](./docs/SPEC.html) for the full mapping.
 
+## Schema
+
+The checked-in JSON Schema for `.treeboot.toml` is generated at:
+
+```text
+schemas/treeboot.schema.json
+```
+
+Regenerate it with:
+
+```sh
+mise run generate
+```
+
 ## Install
 
 The intended install path is downloading the release asset for your platform
@@ -213,11 +232,15 @@ Useful individual tasks:
 ```sh
 mise run actions:lint
 mise run build
+mise run build:release
 mise run coverage
 mise run coverage:missing
 mise run deps
 mise run doctor
 mise run fmt
+mise run generate
+mise run generate:check
+mise run generate:schema:check
 mise run hooks:install
 mise run lint
 mise run msrv

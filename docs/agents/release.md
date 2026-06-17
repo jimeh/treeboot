@@ -19,7 +19,8 @@ The spec expects:
 
 Before the first real release, add or document commands for:
 
-- building each supported target
+- building each supported target; `mise run build:release` covers the local
+  optimized workspace build
 - smoke-testing each built binary
 - creating archives with `treeboot`, `README.md`, and `LICENSE`
 - generating checksums

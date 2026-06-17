@@ -53,6 +53,34 @@ pub enum Error {
     #[error("config file not found: {0:?}")]
     ConfigNotFound(PathBuf),
 
+    /// A config file could not be read.
+    #[error("failed to read config {path:?}: {source}")]
+    ConfigIo {
+        /// Config file path.
+        path: PathBuf,
+        /// Source I/O error.
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// A config file contains invalid TOML.
+    #[error("invalid config {path:?}: {message}")]
+    ConfigParse {
+        /// Config file path.
+        path: PathBuf,
+        /// Parse error message.
+        message: String,
+    },
+
+    /// A config file contains unsupported or invalid declarations.
+    #[error("invalid config {path:?}: {message}")]
+    ConfigInvalid {
+        /// Config file path.
+        path: PathBuf,
+        /// Validation error message.
+        message: String,
+    },
+
     /// No config was found while strict mode was enabled.
     #[error("no config detected")]
     NoConfigDetectedStrict,
