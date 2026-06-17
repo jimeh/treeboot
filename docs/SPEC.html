@@ -605,7 +605,7 @@
     <main>
       <header class="hero" id="overview">
         <div>
-          <p class="eyebrow">Specification v1.0.3</p>
+          <p class="eyebrow">Specification v1.1.0</p>
           <h1>treeboot</h1>
           <p class="lede">
             A portable worktree bootstrapper that lets every coding agent,
@@ -625,7 +625,7 @@
           <dl>
             <div>
               <dt>Spec status</dt>
-              <dd>v1.0.3 implementation contract</dd>
+              <dd>v1.1.0 implementation contract</dd>
             </div>
             <div>
               <dt>Default command</dt>
@@ -712,7 +712,7 @@
         <div class="section-head">
           <div>
             <p class="eyebrow">CLI surface</p>
-            <h2>Three subcommands, one default path</h2>
+            <h2>Six subcommands, one default path</h2>
           </div>
           <p class="section-note">
             The common integration point is intentionally short:
@@ -772,6 +772,64 @@ treeboot init --force</code></pre>
           </section>
         </div>
 
+        <div class="grid three">
+          <section class="panel">
+            <h3><code>treeboot copy</code></h3>
+            <p>
+              Runs one or more copy operations without reading declarative
+              config or running configured commands.
+            </p>
+            <pre><code class="shell">treeboot copy .env
+treeboot copy .env .npmrc --target local
+treeboot copy templates/editorconfig --target .editorconfig
+treeboot copy shared/config --symlinks preserve</code></pre>
+          </section>
+
+          <section class="panel">
+            <h3><code>treeboot symlink</code></h3>
+            <p>
+              Runs one or more symlink operations from the root path into the
+              current worktree.
+            </p>
+            <pre><code class="shell">treeboot symlink .tool-versions
+treeboot symlink bin scripts --target .local
+treeboot symlink shared/bin --target bin</code></pre>
+          </section>
+
+          <section class="panel">
+            <h3><code>treeboot sync</code></h3>
+            <p>
+              Runs one or more sync operations without reading declarative
+              config or running configured commands.
+            </p>
+            <pre><code class="shell">treeboot sync shared/config
+treeboot sync shared/config shared/editor --target .config
+treeboot sync shared/config --no-delete-extra
+treeboot sync shared/config --compare checksum</code></pre>
+          </section>
+        </div>
+
+        <div class="callout">
+          <h3>Manual file operation commands</h3>
+          <p>
+            <code>copy</code>, <code>symlink</code>, and <code>sync</code>
+            expose the same file operation engine used by declarative config.
+            Each command requires at least one source argument. Multiple source
+            arguments create multiple independent file operations. These
+            commands still discover the root path and worktree path, but they do
+            not discover config files, run init scripts, or run configured
+            commands.
+          </p>
+          <p>
+            With one source, <code>--target</code> is the exact target path. With
+            multiple sources, <code>--target</code> is a directory or path prefix
+            joined with each source value. For example,
+            <code>treeboot copy .env .npmrc --target local</code> copies
+            <code>.env</code> to <code>local/.env</code> and
+            <code>.npmrc</code> to <code>local/.npmrc</code>.
+          </p>
+        </div>
+
         <table>
           <thead>
             <tr>
@@ -783,7 +841,7 @@ treeboot init --force</code></pre>
           <tbody>
             <tr>
               <td><code>--root &lt;path&gt;</code></td>
-              <td>run/config</td>
+              <td>run/config/copy/symlink/sync</td>
               <td>Overrides the checkout used as the file-operation source.</td>
             </tr>
             <tr>
@@ -804,26 +862,59 @@ treeboot init --force</code></pre>
             </tr>
             <tr>
               <td><code>--strict</code></td>
-              <td>run</td>
+              <td>run/copy/symlink/sync</td>
               <td>
-                Fails if a copy/symlink target exists; rejects sync configs;
-                exits non-zero when run from the root checkout.
+                Fails if a copy/symlink target exists; rejects sync operations;
+                exits non-zero when run from the root checkout. Declarative
+                config can also enable strict mode with top-level
+                <code>strict = true</code>.
               </td>
             </tr>
             <tr>
               <td><code>--force</code></td>
-              <td>run/init</td>
+              <td>run/init/copy/symlink/sync</td>
               <td>Replaces existing file-operation targets or init output.</td>
             </tr>
             <tr>
               <td><code>--dry-run</code></td>
-              <td>run</td>
+              <td>run/copy/symlink/sync</td>
               <td>Prints planned work without writing files or running commands.</td>
             </tr>
             <tr>
               <td><code>--no-commands</code></td>
               <td>run</td>
               <td>Runs file operations only.</td>
+            </tr>
+            <tr>
+              <td><code>--target &lt;path&gt;</code></td>
+              <td>copy/symlink/sync</td>
+              <td>
+                Overrides the target. With multiple sources, acts as the target
+                path prefix for each source.
+              </td>
+            </tr>
+            <tr>
+              <td><code>--required</code></td>
+              <td>copy/symlink/sync</td>
+              <td>Fails when any requested source does not exist.</td>
+            </tr>
+            <tr>
+              <td><code>--symlinks &lt;preserve&gt;</code></td>
+              <td>copy/sync</td>
+              <td>
+                Selects how source symlinks are handled. The initial supported
+                value is <code>preserve</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>--compare &lt;metadata|checksum&gt;</code></td>
+              <td>sync</td>
+              <td>Selects sync comparison behavior.</td>
+            </tr>
+            <tr>
+              <td><code>--delete-extra</code> / <code>--no-delete-extra</code></td>
+              <td>sync</td>
+              <td>Controls whether sync deletes target-only files.</td>
             </tr>
           </tbody>
         </table>
@@ -890,8 +981,10 @@ treeboot init --force</code></pre>
           <p>
             In the default mode, treeboot prints
             <code>This is not a work tree</code> and exits successfully before
-            discovering init scripts or config. In <code>--strict</code> mode,
-            treeboot prints the same info message and exits non-zero.
+            discovering init scripts or config. In strict mode enabled by
+            <code>--strict</code> or <code>TREEBOOT_STRICT</code>, treeboot
+            prints the same info message and exits non-zero. Config-level
+            <code>strict</code> is not loaded before this check.
           </p>
         </section>
 
@@ -929,6 +1022,21 @@ treeboot init --force</code></pre>
             is applied when executing an init script and when executing commands
             from declarative config.
           </p>
+        </div>
+
+        <div class="callout">
+          <h3>Config option environment overrides</h3>
+          <p>
+            treeboot also reads environment variables for config-level boolean
+            options. Values <code>1</code>, <code>true</code>, <code>yes</code>,
+            and <code>on</code> enable an option; <code>0</code>,
+            <code>false</code>, <code>no</code>, and <code>off</code> disable
+            it. Invalid values are errors before file operations or commands
+            run.
+          </p>
+          <pre><code>TREEBOOT_STRICT
+TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT
+TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE</code></pre>
         </div>
 
         <div class="grid two">
@@ -1049,7 +1157,7 @@ SUPERSET_ROOT_PATH</code></pre>
               <span>
                 If root path and worktree path match, print
                 <code>This is not a work tree</code> and exit before scripts or
-                config; strict mode exits non-zero.
+                config; strict mode from CLI or environment exits non-zero.
               </span>
             </div>
           </div>
@@ -1071,6 +1179,15 @@ SUPERSET_ROOT_PATH</code></pre>
               <span>
                 Discover TOML config unless a specific path is provided. If no
                 config is found, print an info message and exit.
+              </span>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div>
+              <strong>Resolve config options</strong>
+              <span>
+                Merge top-level config options with environment overrides and
+                CLI flags.
               </span>
             </div>
           </div>
@@ -1178,7 +1295,8 @@ mise install</code></pre>
           </div>
           <p class="section-note">
             TOML is the intended config format. Simple lists cover the common
-            case; object entries cover richer file and command behavior.
+            case; top-level options and object entries cover stricter runtime,
+            file, and command behavior.
           </p>
         </div>
 
@@ -1214,8 +1332,10 @@ script: .treeboot.sh</code></pre>
             If no executable init script and no config file are detected,
             treeboot prints an info message such as
             <code>treeboot: no config detected</code>. Without
-            <code>--strict</code> it exits successfully. With
-            <code>--strict</code> it exits non-zero.
+            <code>--strict</code> or <code>TREEBOOT_STRICT</code> it exits
+            successfully. With either one, it exits non-zero. Config-level
+            <code>strict</code> cannot affect missing-config behavior because no
+            config has been loaded.
           </p>
         </div>
 
@@ -1243,7 +1363,11 @@ script: .treeboot.sh</code></pre>
           </p>
         </div>
 
-        <pre><code>copy = [
+        <pre><code>strict = true
+dangerously_allow_sources_outside_root = false
+dangerously_allow_targets_outside_worktree = false
+
+copy = [
   ".env",
   { source = ".env.local", target = ".env.local" },
   { source = ".env.development.local", target = ".env.development.local" },
@@ -1269,11 +1393,53 @@ files = [
   { operation = "copy", source = ".npmrc", target = ".npmrc" },
   { operation = "symlink", source = "shared/bin", target = "bin" },
   { operation = "sync", source = "shared/editor", target = ".editor" },
-]
+]</code></pre>
 
-[validation]
-dangerously_allow_sources_outside_root = false
-dangerously_allow_targets_outside_worktree = false</code></pre>
+        <div class="callout">
+          <h3>Top-level options</h3>
+          <p>
+            Top-level boolean options are project defaults for declarative
+            config execution. Environment variables override matching config
+            values. CLI flags override both where an equivalent flag exists.
+          </p>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Option</th>
+              <th>Environment</th>
+              <th>Meaning</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>strict</code></td>
+              <td><code>TREEBOOT_STRICT</code></td>
+              <td>
+                Defaults to <code>false</code>. Enables stricter declarative
+                validation and conflict handling. CLI or environment strictness
+                also applies before config discovery.
+              </td>
+            </tr>
+            <tr>
+              <td><code>dangerously_allow_sources_outside_root</code></td>
+              <td><code>TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT</code></td>
+              <td>
+                Defaults to <code>false</code>. Allows declarative file
+                operation sources outside <code>TREEBOOT_ROOT_PATH</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>dangerously_allow_targets_outside_worktree</code></td>
+              <td><code>TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE</code></td>
+              <td>
+                Defaults to <code>false</code>. Allows declarative file
+                operation targets outside <code>TREEBOOT_WORKTREE_PATH</code>.
+              </td>
+            </tr>
+          </tbody>
+        </table>
 
         <div class="callout">
           <h3>File objects</h3>
@@ -1458,12 +1624,11 @@ args = ["install"]</code></pre>
         <div class="section-head">
           <div>
             <p class="eyebrow">Before execution</p>
-            <h2>Config validation</h2>
+            <h2>Operation validation</h2>
           </div>
           <p class="section-note">
-            treeboot should catch config that describes surprising or
-            self-conflicting file operations before it starts changing the
-            worktree.
+            treeboot should catch surprising or self-conflicting file
+            operations before it starts changing the worktree.
           </p>
         </div>
 
@@ -1474,7 +1639,9 @@ args = ["install"]</code></pre>
               Config parsing should normalize <code>copy</code>,
               <code>symlink</code>, <code>sync</code>, <code>files</code>, and
               <code>[[file]]</code> into one ordered list of file operations
-              with resolved source and target paths.
+              with resolved source and target paths. Manual
+              <code>copy</code>, <code>symlink</code>, and <code>sync</code>
+              commands should produce the same normalized operation shape.
             </p>
           </section>
 
@@ -1526,7 +1693,7 @@ args = ["install"]</code></pre>
           </thead>
           <tbody>
             <tr>
-              <td>Any duplicate configured target</td>
+              <td>Any duplicate operation target</td>
               <td>Fail before any file operation or command runs.</td>
             </tr>
             <tr>
@@ -1558,7 +1725,7 @@ args = ["install"]</code></pre>
               <td>Fail before any file operation or command runs.</td>
             </tr>
             <tr>
-              <td><code>--strict</code> with any sync operation</td>
+              <td>Strict mode with any sync operation</td>
               <td>Fail before any file operation or command runs.</td>
             </tr>
             <tr>
@@ -1573,19 +1740,22 @@ args = ["install"]</code></pre>
           <p>
             A config that copies a file and later symlinks to the same target is
             ambiguous at best and destructive under force mode. treeboot should
-            reject duplicate configured targets in every mode.
+            reject duplicate configured targets in every mode. Manual commands
+            should reject duplicate targets derived from their source arguments
+            and <code>--target</code> before any file changes are made.
           </p>
         </div>
 
         <div class="callout warning">
           <h3>Outside-worktree targets need an explicit escape hatch</h3>
           <p>
-            The validation setting
-            <code>dangerously_allow_targets_outside_worktree</code> disables
-            the target-boundary check when set to <code>true</code>.
+            The top-level option
+            <code>dangerously_allow_targets_outside_worktree = true</code>
+            disables the target-boundary check.
             <code>dangerously_allow_sources_outside_root</code> separately
             disables the source-boundary check. These checks only affect
-            declarative file operations; init scripts are unrestricted because
+            declarative file operations. Manual file operation commands always
+            apply the boundary checks, and init scripts are unrestricted because
             treeboot cannot safely validate arbitrary script behavior.
           </p>
         </div>
@@ -1594,8 +1764,9 @@ args = ["install"]</code></pre>
           <h3>Strict mode is incompatible with sync</h3>
           <p>
             Sync expects existing targets and may delete target-only files, so
-            strict mode rejects configs containing sync operations before
-            execution.
+            strict mode rejects sync operations before execution. Strict mode can
+            be enabled with <code>--strict</code>, top-level
+            <code>strict = true</code>, or <code>TREEBOOT_STRICT=true</code>.
           </p>
         </div>
       </section>
@@ -1646,8 +1817,50 @@ args = ["install"]</code></pre>
               <td><code>TREEBOOT_ROOT_PATH/a</code></td>
               <td><code>TREEBOOT_WORKTREE_PATH/b</code></td>
             </tr>
+            <tr>
+              <td><code>treeboot copy a --target b</code></td>
+              <td><code>TREEBOOT_ROOT_PATH/a</code></td>
+              <td><code>TREEBOOT_WORKTREE_PATH/b</code></td>
+            </tr>
+            <tr>
+              <td><code>treeboot copy a c --target b</code></td>
+              <td><code>TREEBOOT_ROOT_PATH/a</code>, <code>TREEBOOT_ROOT_PATH/c</code></td>
+              <td><code>TREEBOOT_WORKTREE_PATH/b/a</code>, <code>TREEBOOT_WORKTREE_PATH/b/c</code></td>
+            </tr>
           </tbody>
         </table>
+
+        <div class="callout">
+          <h3>Manual operation source completion</h3>
+          <p>
+            Shell completions for the source arguments of
+            <code>treeboot copy</code>, <code>treeboot symlink</code>, and
+            <code>treeboot sync</code> should list files and directories from
+            the resolved root path, not from the current worktree. Completion
+            candidates should be relative to the root path so completed values
+            can be reused as default targets.
+          </p>
+        </div>
+
+        <div class="callout">
+          <h3>Manual operation normalization</h3>
+          <p>
+            Manual file operation commands normalize to the same internal file
+            operation shape as config entries. The subcommand supplies
+            <code>operation</code>, each positional source supplies
+            <code>source</code>, <code>--required</code> supplies
+            <code>required = true</code>, and operation-specific flags supply
+            <code>symlinks</code>, <code>compare</code>, or
+            <code>delete_extra</code>.
+          </p>
+          <p>
+            If <code>--target</code> is omitted, each target defaults to its
+            source value. If one source is passed, <code>--target</code> is that
+            operation's target. If more than one source is passed,
+            <code>--target</code> is joined with each source value to produce
+            each operation's target.
+          </p>
+        </div>
 
         <div class="grid two">
           <section class="panel">
@@ -1672,6 +1885,12 @@ args = ["install"]</code></pre>
               target files merely because they are absent from the source.
               Source symlinks are preserved by default when they are safe.
             </p>
+            <p>
+              <code>treeboot copy</code> exposes <code>--target</code>,
+              <code>--required</code>, <code>--symlinks</code>,
+              <code>--dry-run</code>, <code>--strict</code>, and
+              <code>--force</code>.
+            </p>
           </section>
 
           <section class="panel">
@@ -1680,6 +1899,11 @@ args = ["install"]</code></pre>
               Creates relative symlinks whenever treeboot can compute the path
               from the target parent to the source. If it cannot, it falls back
               to an absolute symlink.
+            </p>
+            <p>
+              <code>treeboot symlink</code> exposes <code>--target</code>,
+              <code>--required</code>, <code>--dry-run</code>,
+              <code>--strict</code>, and <code>--force</code>.
             </p>
           </section>
 
@@ -1690,6 +1914,13 @@ args = ["install"]</code></pre>
               compared by size and modified time by default, or by checksum when
               <code>compare = "checksum"</code> is set. Source symlinks are
               preserved by default when they are safe.
+            </p>
+            <p>
+              <code>treeboot sync</code> exposes <code>--target</code>,
+              <code>--required</code>, <code>--compare</code>,
+              <code>--delete-extra</code>, <code>--no-delete-extra</code>,
+              <code>--symlinks</code>, <code>--dry-run</code>,
+              <code>--strict</code>, and <code>--force</code>.
             </p>
           </section>
         </div>
@@ -1760,7 +1991,7 @@ args = ["install"]</code></pre>
             <tr>
               <td><code>--strict</code></td>
               <td>Create</td>
-              <td>Fail for copy/symlink; reject sync configs</td>
+              <td>Fail for copy/symlink; reject sync operations</td>
               <td>Run only if file operations succeed</td>
             </tr>
             <tr>
@@ -1805,9 +2036,9 @@ args = ["install"]</code></pre>
           <p>
             Sync is the operation that may delete target-only files. Existing
             targets are expected for sync and are not treated as conflicts in
-            default or force mode. <code>--strict</code> rejects configs with
-            sync operations before runtime. Use <code>--dry-run</code> to
-            preview sync creates, updates, and deletes.
+            default or force mode. Strict mode rejects configs with sync
+            operations before runtime. Use <code>--dry-run</code> to preview
+            sync creates, updates, and deletes.
           </p>
         </div>
       </section>
@@ -2074,6 +2305,7 @@ treeboot-slsa-attestation.intoto.jsonl</code></pre>
               <li>Environment variable construction.</li>
               <li>Conflict mode behavior.</li>
               <li>Relative symlink calculation.</li>
+              <li>Manual source-to-target normalization.</li>
             </ul>
           </section>
 
@@ -2083,6 +2315,7 @@ treeboot-slsa-attestation.intoto.jsonl</code></pre>
               <li>Create a temporary Git repository.</li>
               <li>Create a linked worktree.</li>
               <li>Run treeboot from the linked worktree.</li>
+              <li>Run manual copy, symlink, and sync operations.</li>
               <li>Verify files, symlinks, commands, and env vars.</li>
             </ul>
           </section>
@@ -2094,6 +2327,9 @@ treeboot-slsa-attestation.intoto.jsonl</code></pre>
               <li><code>init --config</code> creates config.</li>
               <li><code>init --script</code> creates executable script.</li>
               <li>Non-interactive init without type fails.</li>
+              <li><code>copy</code>, <code>symlink</code>, and <code>sync</code> require sources.</li>
+              <li>Manual <code>--target</code> handles one and many sources.</li>
+              <li>Manual operation source completion reads from root path.</li>
               <li>Conflict flags behave as specified.</li>
             </ul>
           </section>

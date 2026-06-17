@@ -56,7 +56,31 @@ Scope:
 
 Validation must complete before file operations or configured commands run.
 
-## Milestone 4: File Operations
+## Milestone 4: Config Runtime Options
+
+Status: pending.
+
+Scope:
+
+- parse top-level `strict`
+- move `dangerously_allow_sources_outside_root` and
+  `dangerously_allow_targets_outside_worktree` to the config top level
+- remove the nested `[validation]` config table from the spec model
+- support `TREEBOOT_STRICT`,
+  `TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT`, and
+  `TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE`
+- apply precedence: defaults, then config, then environment, then CLI flags
+- reject invalid boolean environment values before side effects
+- update generated JSON Schema and starter config output
+
+Validation focus:
+
+- top-level option parsing
+- unknown nested `[validation]` rejection
+- environment override parsing and precedence
+- strict behavior before and after config discovery
+
+## Milestone 5: File Operations
 
 Status: pending.
 
@@ -75,7 +99,7 @@ Validation focus:
 - sync delete-extra behavior
 - unsafe symlink rejection before side effects
 
-## Milestone 5: Command Runtime
+## Milestone 6: Command Runtime
 
 Status: pending.
 
@@ -91,7 +115,31 @@ Scope:
 Async implementation should be decided here. Keep milestone 1 synchronous until
 command batching needs concurrency.
 
-## Milestone 6: Release Packaging
+## Milestone 7: Manual File Operation Commands
+
+Status: pending.
+
+Scope:
+
+- add `treeboot copy`, `treeboot symlink`, and `treeboot sync`
+- reuse the same normalized file operation model as declarative config
+- require one or more source arguments
+- support root-path-based shell completion for source arguments
+- support `--target` for one source and as a path prefix for multiple sources
+- expose relevant operation flags: `--required`, `--symlinks`, `--compare`,
+  `--delete-extra`, and `--no-delete-extra`
+- support shared `--root`, `--strict`, `--force`, and `--dry-run` behavior
+- skip config discovery, init script discovery, and configured commands
+
+Validation focus:
+
+- source-to-target normalization for one and many sources
+- duplicate target rejection before side effects
+- source and target boundary checks
+- operation-specific flag validation
+- completion candidates come from the resolved root path
+
+## Milestone 8: Release Packaging
 
 Status: pending.
 
