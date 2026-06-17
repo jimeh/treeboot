@@ -1,4 +1,6 @@
-use std::path::Path;
+#![allow(dead_code)]
+
+use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
 
 use assert_cmd::Command;
@@ -15,13 +17,63 @@ pub fn git(args: &[&str], cwd: &Path) {
         .output()
         .expect("git should run");
 
-    assert!(output.status.success(), "git {args:?} should succeed");
+    assert!(
+        output.status.success(),
+        "git {args:?} should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 pub fn git_repo() -> TempDir {
     let repo = TempDir::new().expect("tempdir should be created");
     git(&["init"], repo.path());
     repo
+}
+
+pub struct GitWorktree {
+    root: TempDir,
+    _worktree_parent: TempDir,
+    worktree_path: PathBuf,
+}
+
+impl GitWorktree {
+    pub fn root_path(&self) -> &Path {
+        self.root.path()
+    }
+
+    pub fn worktree_path(&self) -> &Path {
+        &self.worktree_path
+    }
+}
+
+pub fn git_worktree() -> GitWorktree {
+    let root = git_repo();
+    git(&["config", "user.name", "treeboot"], root.path());
+    git(
+        &["config", "user.email", "treeboot@example.invalid"],
+        root.path(),
+    );
+    git(&["config", "commit.gpgsign", "false"], root.path());
+    write_file(&root.path().join("README.md"), "treeboot test repo\n");
+    git(&["add", "README.md"], root.path());
+    git(&["commit", "-m", "Initial commit"], root.path());
+
+    let worktree_parent = TempDir::new().expect("worktree parent should be created");
+    let worktree_path = worktree_parent.path().join("linked");
+    let worktree = worktree_path
+        .to_str()
+        .expect("worktree path should be valid UTF-8");
+    git(
+        &["worktree", "add", "-b", "treeboot-test-worktree", worktree],
+        root.path(),
+    );
+
+    GitWorktree {
+        root,
+        _worktree_parent: worktree_parent,
+        worktree_path,
+    }
 }
 
 pub fn write_file(path: &Path, content: &str) {

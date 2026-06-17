@@ -605,7 +605,7 @@
     <main>
       <header class="hero" id="overview">
         <div>
-          <p class="eyebrow">Specification v1.0.2</p>
+          <p class="eyebrow">Specification v1.0.3</p>
           <h1>treeboot</h1>
           <p class="lede">
             A portable worktree bootstrapper that lets every coding agent,
@@ -625,7 +625,7 @@
           <dl>
             <div>
               <dt>Spec status</dt>
-              <dd>v1.0.2 implementation contract</dd>
+              <dd>v1.0.3 implementation contract</dd>
             </div>
             <div>
               <dt>Default command</dt>
@@ -806,7 +806,8 @@ treeboot init --force</code></pre>
               <td><code>--strict</code></td>
               <td>run</td>
               <td>
-                Fails if a copy/symlink target exists; rejects sync configs.
+                Fails if a copy/symlink target exists; rejects sync configs;
+                exits non-zero when run from the root checkout.
               </td>
             </tr>
             <tr>
@@ -875,6 +876,22 @@ treeboot init --force</code></pre>
           <p>
             If no root path can be determined, <code>treeboot run</code> fails
             with a clear error.
+          </p>
+        </section>
+
+        <section>
+          <h3>Root Checkout No-op</h3>
+          <p>
+            If the resolved root path and worktree path are the same,
+            <code>treeboot run</code> is running from the source checkout rather
+            than a separate worktree. There is no file or command bootstrap work
+            to apply because sources and targets point at the same tree.
+          </p>
+          <p>
+            In the default mode, treeboot prints
+            <code>This is not a work tree</code> and exits successfully before
+            discovering init scripts or config. In <code>--strict</code> mode,
+            treeboot prints the same info message and exits non-zero.
           </p>
         </section>
 
@@ -1024,6 +1041,16 @@ SUPERSET_ROOT_PATH</code></pre>
             <div>
               <strong>Discover paths</strong>
               <span>Resolve worktree path, root path, and default branch.</span>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div>
+              <strong>Skip root checkout</strong>
+              <span>
+                If root path and worktree path match, print
+                <code>This is not a work tree</code> and exit before scripts or
+                config; strict mode exits non-zero.
+              </span>
             </div>
           </div>
           <div class="flow-step">

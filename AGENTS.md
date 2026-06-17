@@ -92,6 +92,8 @@ and CI mapping.
 - Add focused tests for new behavior when the existing suite has a matching
   layer.
 - Use CLI integration tests for user-visible command behavior.
+- For run/config CLI behavior inside Git, prefer `git_worktree()` so tests run
+  from an actual linked worktree; reserve `git_repo()` for root-checkout cases.
 - Use core unit tests for pure helpers, formatting, and validation logic.
 - Put reusable CLI integration helpers in `crates/treeboot/tests/common/`.
 - Run `mise run check` before handoff for ordinary code changes.
