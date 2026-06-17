@@ -4,7 +4,7 @@ use std::process::Command;
 use crate::config;
 use crate::context;
 use crate::discovery;
-use crate::{Error, OutputEvent, Reporter, Result, RunContext};
+use crate::{Error, OutputEvent, Reporter, Result, RunContext, RunPlanOptions};
 
 /// Options for running worktree bootstrap.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -100,7 +100,15 @@ pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport
     match discovery::discover_config(&context.worktree_path, options.config.as_deref())? {
         Some(path) => {
             report(reporter, OutputEvent::ConfigDetected { path: path.clone() })?;
-            let _config = config::load_config(&path, &context)?;
+            let config = config::load_config(&path, &context)?;
+            let _plan = crate::plan_run_config(
+                &path,
+                &config,
+                &context,
+                RunPlanOptions {
+                    strict: options.strict,
+                },
+            )?;
 
             Err(Error::ConfigExecutionNotImplemented(path))
         }

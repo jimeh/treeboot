@@ -150,6 +150,156 @@ fn run_invalid_config_should_exit_with_config_error() {
         .stderr(predicate::str::contains("mutually exclusive"));
 }
 
+#[test]
+fn run_duplicate_file_targets_should_exit_with_config_error() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(
+        &config,
+        r#"
+copy = [
+  { source = "a", target = ".env" },
+  { source = "b", target = "./.env" },
+]
+"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("invalid config"))
+        .stderr(predicate::str::contains("duplicate configured target"));
+}
+
+#[test]
+fn run_target_outside_worktree_should_exit_with_config_error() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&config, r#"copy = [{ source = "a", target = "../.env" }]"#);
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("invalid config"))
+        .stderr(predicate::str::contains("target resolves outside worktree"));
+}
+
+#[test]
+fn run_source_outside_root_should_exit_with_config_error() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(
+        &config,
+        r#"copy = [{ source = "../shared", target = "shared" }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("invalid config"))
+        .stderr(predicate::str::contains("source resolves outside root"));
+}
+
+#[test]
+fn run_required_missing_source_should_exit_with_config_error() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&config, r#"copy = [{ source = ".env", required = true }]"#);
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("invalid config"))
+        .stderr(predicate::str::contains("required source does not exist"));
+}
+
+#[test]
+fn run_strict_sync_should_exit_with_config_error() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&config, r#"sync = ["shared"]"#);
+
+    treeboot()
+        .args(["run", "--strict"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("invalid config"))
+        .stderr(predicate::str::contains("cannot be used with sync"));
+}
+
+#[test]
+fn run_command_cwd_outside_worktree_should_exit_with_config_error() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(
+        &config,
+        r#"commands = [{ run = "pwd", cwd = "../outside" }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("invalid config"))
+        .stderr(predicate::str::contains(
+            "command cwd resolves outside worktree",
+        ));
+}
+
+#[test]
+fn run_command_env_owned_override_should_exit_with_config_error() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(
+        &config,
+        r#"commands = [{ run = "pwd", env = { TREEBOOT_ROOT_PATH = "/tmp" } }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("invalid config"))
+        .stderr(predicate::str::contains(
+            "overrides treeboot-owned variable",
+        ));
+}
+
+#[cfg(unix)]
+#[test]
+fn run_unsafe_source_symlink_should_exit_with_config_error() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    let source_dir = repo.root_path().join("shared");
+    let outside = tempfile::NamedTempFile::new().expect("outside file should be created");
+    std::fs::create_dir_all(&source_dir).expect("source dir should be created");
+    std::os::unix::fs::symlink(outside.path(), source_dir.join("outside"))
+        .expect("source symlink should be created");
+    write_file(
+        &config,
+        r#"copy = [{ source = "shared", target = "shared" }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("invalid config"))
+        .stderr(predicate::str::contains("unsafe symlink"));
+}
+
 #[cfg(unix)]
 #[test]
 fn root_option_should_set_script_root_env() {
