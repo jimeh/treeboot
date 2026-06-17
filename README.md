@@ -15,7 +15,7 @@ treeboot
 
 ## Status
 
-This project is bootstrapped for implementation against spec v1.0.3. The
+This project is bootstrapped for implementation against spec v1.1.0. The
 planned implementation target is Rust, distributed as small prebuilt binaries
 from GitHub Releases.
 
@@ -84,6 +84,10 @@ The default config file is:
 The common top-level config keys are:
 
 ```toml
+strict = true
+dangerously_allow_sources_outside_root = false
+dangerously_allow_targets_outside_worktree = false
+
 copy = [
   ".env",
   { source = "templates/local.env", target = ".env.local" },
@@ -167,7 +171,7 @@ prompts for which one to create.
 - existing copy and symlink targets are skipped
 - duplicate configured targets are config errors
 - file targets must stay inside the current worktree
-- `--strict` fails on existing copy/symlink targets and rejects sync configs
+- `--strict` fails on existing copy/symlink targets and rejects sync operations
 - `--force` is the explicit mode for replacing existing targets
 
 If no config or executable init script is found, `treeboot` prints an info
