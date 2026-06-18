@@ -331,20 +331,6 @@
         "source"
       ],
       "type": "object"
-    },
-    "ValidationOptions": {
-      "additionalProperties": false,
-      "properties": {
-        "dangerously_allow_sources_outside_root": {
-          "description": "Allows file operation sources outside the root checkout.",
-          "type": "boolean"
-        },
-        "dangerously_allow_targets_outside_worktree": {
-          "description": "Allows file operation targets outside the current worktree.",
-          "type": "boolean"
-        }
-      },
-      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -371,6 +357,14 @@
       },
       "type": "array"
     },
+    "dangerously_allow_sources_outside_root": {
+      "description": "Allows file operation sources outside the root checkout.",
+      "type": "boolean"
+    },
+    "dangerously_allow_targets_outside_worktree": {
+      "description": "Allows file operation targets outside the current worktree.",
+      "type": "boolean"
+    },
     "file": {
       "description": "Verbose mixed file operation entries. TOML uses this as [[file]].",
       "items": {
@@ -385,6 +379,10 @@
       },
       "type": "array"
     },
+    "strict": {
+      "description": "Enables strict declarative validation and conflict handling.",
+      "type": "boolean"
+    },
     "symlink": {
       "description": "Symlink file entries. Entries run after copy and before sync.",
       "items": {
@@ -398,10 +396,6 @@
         "$ref": "#/$defs/SyncEntry"
       },
       "type": "array"
-    },
-    "validation": {
-      "$ref": "#/$defs/ValidationOptions",
-      "description": "Declarative validation settings."
     }
   },
   "title": "TreebootConfig",

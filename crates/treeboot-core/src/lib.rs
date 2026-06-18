@@ -28,6 +28,7 @@ pub use validation::{
 /// Convenient result type used by `treeboot-core`.
 pub type Result<T> = std::result::Result<T, Error>;
 pub use config::{
-    CommandKind, CommandOperation, Config, ConfigOptions, ConfigReport, FileOperation,
-    FileOperationKind, SourceSpan, SymlinkMode, SyncCompare, ValidationOptions, inspect_config,
+    CommandKind, CommandOperation, Config, ConfigOptions, ConfigReport, ConfigRuntimeOptions,
+    FileOperation, FileOperationKind, RuntimeOptionOverrides, SourceSpan, SymlinkMode, SyncCompare,
+    inspect_config,
 };

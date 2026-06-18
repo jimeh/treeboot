@@ -27,7 +27,8 @@ Useful deeper docs:
 ## Current Implementation State
 
 The current code implements the milestone 1 foundation, milestone 2 config
-parsing, and milestone 3 declarative validation/planning:
+parsing, milestone 3 declarative validation/planning, and milestone 4 config
+runtime options:
 
 - CLI parsing for `run`, `config`, and `init`
 - Git worktree/root/default-branch discovery
@@ -35,6 +36,7 @@ parsing, and milestone 3 declarative validation/planning:
 - init script discovery and execution
 - declarative TOML config parsing and normalization
 - declarative TOML validation and run-plan construction
+- config/env/CLI runtime option precedence for declarative validation
 - view-only normalized config inspection
 - generated JSON Schema for the config file format
 - starter config/script generation

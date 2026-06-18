@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use crate::config;
+use crate::config::{self, RuntimeOptionOverrides};
 use crate::context;
 use crate::discovery;
-use crate::{Error, OutputEvent, Reporter, Result, RunContext, RunPlanOptions};
+use crate::{Error, OutputEvent, Reporter, Result, RunContext};
 
 /// Options for running worktree bootstrap.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -70,12 +70,14 @@ pub struct RunReport {
 /// script cannot be started or exits unsuccessfully, a configured file cannot
 /// be read, or strict mode treats a missing config as a failure.
 pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport> {
+    let env_options = RuntimeOptionOverrides::from_env()?;
+    let pre_config_strict = env_options.pre_config_strict(options.strict);
     let context = context::resolve(&options)?;
 
     if context.root_path == context.worktree_path {
         report(reporter, OutputEvent::RootWorktreeDetected)?;
 
-        if options.strict {
+        if pre_config_strict {
             return Err(Error::RootWorktreeStrict);
         }
 
@@ -101,21 +103,15 @@ pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport
         Some(path) => {
             report(reporter, OutputEvent::ConfigDetected { path: path.clone() })?;
             let config = config::load_config(&path, &context)?;
-            let _plan = crate::plan_run_config(
-                &path,
-                &config,
-                &context,
-                RunPlanOptions {
-                    strict: options.strict,
-                },
-            )?;
+            let plan_options = env_options.resolve(&config.options, options.strict);
+            let _plan = crate::plan_run_config(&path, &config, &context, plan_options.into())?;
 
             Err(Error::ConfigExecutionNotImplemented(path))
         }
         None => {
             report(reporter, OutputEvent::NoConfigDetected)?;
 
-            if options.strict {
+            if pre_config_strict {
                 Err(Error::NoConfigDetectedStrict)
             } else {
                 Ok(RunReport {

@@ -7,7 +7,12 @@ use assert_cmd::Command;
 use tempfile::TempDir;
 
 pub fn treeboot() -> Command {
-    Command::cargo_bin("treeboot").expect("treeboot binary should build")
+    let mut command = Command::cargo_bin("treeboot").expect("treeboot binary should build");
+    command
+        .env_remove("TREEBOOT_STRICT")
+        .env_remove("TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT")
+        .env_remove("TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE");
+    command
 }
 
 pub fn git(args: &[&str], cwd: &Path) {

@@ -59,6 +59,9 @@ fn init_config_force_should_replace_existing_target() {
         .success();
 
     let content = std::fs::read_to_string(config).expect("config should be readable");
+    assert!(content.contains("strict = false"));
+    assert!(content.contains("dangerously_allow_sources_outside_root = false"));
+    assert!(content.contains("dangerously_allow_targets_outside_worktree = false"));
     assert!(content.contains("copy = ["));
 }
 

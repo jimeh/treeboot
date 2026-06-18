@@ -58,7 +58,7 @@ Validation must complete before file operations or configured commands run.
 
 ## Milestone 4: Config Runtime Options
 
-Status: pending.
+Status: implemented.
 
 Scope:
 

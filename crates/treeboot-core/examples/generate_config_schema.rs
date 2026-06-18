@@ -12,6 +12,15 @@ use serde::Serialize;
 #[derive(JsonSchema, Serialize)]
 #[serde(deny_unknown_fields)]
 struct TreebootConfig {
+    /// Enables strict declarative validation and conflict handling.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    strict: Option<bool>,
+    /// Allows file operation sources outside the root checkout.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dangerously_allow_sources_outside_root: Option<bool>,
+    /// Allows file operation targets outside the current worktree.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dangerously_allow_targets_outside_worktree: Option<bool>,
     /// Copy file entries. Entries run before symlink, sync, files, and file.
     #[serde(skip_serializing_if = "Option::is_none")]
     copy: Option<Vec<CopyEntry>>,
@@ -33,9 +42,6 @@ struct TreebootConfig {
     /// Verbose command entries. TOML uses this as [[command]].
     #[serde(skip_serializing_if = "Option::is_none")]
     command: Option<Vec<CommandObject>>,
-    /// Declarative validation settings.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    validation: Option<ValidationOptions>,
 }
 
 #[derive(JsonSchema, Serialize)]
@@ -242,17 +248,6 @@ struct DirectCommandObject {
     /// Whether a non-zero exit status should be non-fatal.
     #[serde(skip_serializing_if = "Option::is_none")]
     allow_failure: Option<bool>,
-}
-
-#[derive(JsonSchema, Serialize)]
-#[serde(deny_unknown_fields)]
-struct ValidationOptions {
-    /// Allows file operation sources outside the root checkout.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    dangerously_allow_sources_outside_root: Option<bool>,
-    /// Allows file operation targets outside the current worktree.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    dangerously_allow_targets_outside_worktree: Option<bool>,
 }
 
 fn main() {

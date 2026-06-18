@@ -210,3 +210,48 @@ copy = [
         .stderr(predicate::str::contains("treeboot: warning"))
         .stderr(predicate::str::contains("duplicate configured target"));
 }
+
+#[test]
+fn config_command_should_warn_when_config_strict_would_fail() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(
+        &config,
+        r#"
+strict = true
+sync = ["shared"]
+"#,
+    );
+
+    treeboot()
+        .arg("config")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("treeboot: config"))
+        .stderr(predicate::str::contains("treeboot: warning"))
+        .stderr(predicate::str::contains("cannot be used with sync"));
+}
+
+#[test]
+fn config_command_should_warn_when_env_strict_would_fail() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(
+        &config,
+        r#"
+strict = false
+sync = ["shared"]
+"#,
+    );
+
+    treeboot()
+        .arg("config")
+        .env("TREEBOOT_STRICT", "true")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("treeboot: config"))
+        .stderr(predicate::str::contains("treeboot: warning"))
+        .stderr(predicate::str::contains("cannot be used with sync"));
+}
