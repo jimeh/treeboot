@@ -103,7 +103,7 @@ pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport
         Some(path) => {
             report(reporter, OutputEvent::ConfigDetected { path: path.clone() })?;
             let config = config::load_config(&path, &context)?;
-            let plan_options = env_options.resolve(config.options.clone(), options.strict);
+            let plan_options = env_options.resolve(&config.options, options.strict);
             let _plan = crate::plan_run_config(&path, &config, &context, plan_options.into())?;
 
             Err(Error::ConfigExecutionNotImplemented(path))

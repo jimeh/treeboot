@@ -8,6 +8,13 @@ use common::{git_repo, git_worktree, treeboot, write_file};
 #[cfg(unix)]
 use common::write_executable_script;
 
+fn toml_string_path(path: &std::path::Path) -> String {
+    path.display()
+        .to_string()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+}
+
 #[test]
 fn no_args_should_report_root_checkout_noop() {
     let repo = git_repo();
@@ -345,7 +352,7 @@ fn run_config_dangerous_source_option_should_allow_outside_source() {
 dangerously_allow_sources_outside_root = true
 copy = [{{ source = "{}", target = "outside" }}]
 "#,
-            outside.path().display()
+            toml_string_path(outside.path())
         ),
     );
 
@@ -373,7 +380,7 @@ fn run_env_dangerous_target_option_should_allow_outside_target() {
             r#"
 copy = [{{ source = "source", target = "{}" }}]
 "#,
-            outside.path().join("target").display()
+            toml_string_path(&outside.path().join("target"))
         ),
     );
 

@@ -141,7 +141,7 @@ pub enum CommandKind {
 }
 
 /// Runtime options declared by a config file.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 pub struct ConfigRuntimeOptions {
     /// Enables strict declarative validation and conflict handling.
     pub strict: bool,
@@ -188,8 +188,8 @@ impl RuntimeOptionOverrides {
 
     /// Resolves runtime options using defaults, config, environment, then CLI.
     #[must_use]
-    pub fn resolve(self, config: ConfigRuntimeOptions, cli_strict: bool) -> ConfigRuntimeOptions {
-        let mut resolved = config;
+    pub fn resolve(self, config: &ConfigRuntimeOptions, cli_strict: bool) -> ConfigRuntimeOptions {
+        let mut resolved = *config;
 
         if let Some(strict) = self.strict {
             resolved.strict = strict;

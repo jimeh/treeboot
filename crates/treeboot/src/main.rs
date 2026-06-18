@@ -143,7 +143,7 @@ fn run_config_command(args: ConfigArgs) -> treeboot_core::Result<()> {
         }
     }?;
 
-    let plan_options = env_options.resolve(report.config.options.clone(), false);
+    let plan_options = env_options.resolve(&report.config.options, false);
 
     if let Err(error) = treeboot_core::plan_run_config(
         &report.path,
