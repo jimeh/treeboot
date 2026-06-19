@@ -96,7 +96,7 @@ Validation focus:
 
 - idempotent default behavior
 - force behavior around files, symlinks, and directories
-- sync delete-extra behavior
+- sync explicit delete behavior
 - unsafe symlink rejection before side effects
 
 ## Milestone 6: Command Runtime
@@ -110,7 +110,7 @@ Scope:
 - support command `cwd`
 - implement `allow_failure`
 - implement async command batching
-- support `--no-commands` and `--dry-run`
+- support `--skip-commands` and `--dry-run`
 
 Async implementation should be decided here. Keep milestone 1 synchronous until
 command batching needs concurrency.
@@ -127,7 +127,7 @@ Scope:
 - support root-path-based shell completion for source arguments
 - support `--target` for one source and as a path prefix for multiple sources
 - expose relevant operation flags: `--required`, `--symlinks`, `--compare`,
-  `--delete-extra`, and `--no-delete-extra`
+  `--delete`, and `--no-delete`
 - support shared `--root`, `--strict`, `--force`, and `--dry-run` behavior
 - skip config discovery, init script discovery, and configured commands
 
