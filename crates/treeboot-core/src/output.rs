@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use crate::FileOperationKind;
+
 /// A structured message produced during a treeboot operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OutputEvent {
@@ -35,6 +37,54 @@ pub enum OutputEvent {
         path: PathBuf,
     },
 
+    /// A file operation was applied.
+    FileApplied {
+        /// File operation kind.
+        operation: FileOperationKind,
+        /// Display source path.
+        source: PathBuf,
+        /// Display target path.
+        target: PathBuf,
+    },
+
+    /// A dry run would apply a file operation.
+    FileWouldApply {
+        /// File operation kind.
+        operation: FileOperationKind,
+        /// Display source path.
+        source: PathBuf,
+        /// Display target path.
+        target: PathBuf,
+    },
+
+    /// A file operation was skipped.
+    FileSkipped {
+        /// File operation kind.
+        operation: FileOperationKind,
+        /// Display target path.
+        target: PathBuf,
+        /// Reason the operation was skipped.
+        reason: String,
+    },
+
+    /// A dry run would skip a file operation.
+    FileWouldSkip {
+        /// File operation kind.
+        operation: FileOperationKind,
+        /// Display target path.
+        target: PathBuf,
+        /// Reason the operation would be skipped.
+        reason: String,
+    },
+
+    /// A file operation warning was produced.
+    FileWarning {
+        /// Warning path.
+        path: PathBuf,
+        /// Human-readable warning detail.
+        reason: String,
+    },
+
     /// An init file was created.
     InitCreated {
         /// Created file path.
@@ -63,10 +113,61 @@ impl OutputEvent {
             Self::ConfigDetected { path } => {
                 format!("treeboot: config detected {}", path.display())
             }
+            Self::FileApplied {
+                operation,
+                source,
+                target,
+            } => format!(
+                "treeboot: {} {} -> {}",
+                operation_name(*operation),
+                source.display(),
+                target.display()
+            ),
+            Self::FileWouldApply {
+                operation,
+                source,
+                target,
+            } => format!(
+                "treeboot: would {} {} -> {}",
+                operation_name(*operation),
+                source.display(),
+                target.display()
+            ),
+            Self::FileSkipped {
+                operation,
+                target,
+                reason,
+            } => format!(
+                "treeboot: skip {} {}; {}",
+                operation_name(*operation),
+                target.display(),
+                reason
+            ),
+            Self::FileWouldSkip {
+                operation,
+                target,
+                reason,
+            } => format!(
+                "treeboot: would skip {} {}; {}",
+                operation_name(*operation),
+                target.display(),
+                reason
+            ),
+            Self::FileWarning { path, reason } => {
+                format!("treeboot: warning: {} {}", path.display(), reason)
+            }
             Self::InitCreated { path } => {
                 format!("treeboot: created {}", path.display())
             }
         }
+    }
+}
+
+fn operation_name(operation: FileOperationKind) -> &'static str {
+    match operation {
+        FileOperationKind::Copy => "copy",
+        FileOperationKind::Symlink => "symlink",
+        FileOperationKind::Sync => "sync",
     }
 }
 
@@ -81,6 +182,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+    use crate::FileOperationKind;
 
     #[test]
     fn message_should_format_ignored_init_script() {
@@ -111,6 +213,66 @@ mod tests {
         };
 
         assert_eq!(event.message(), "treeboot: config detected .treeboot.toml");
+    }
+
+    #[test]
+    fn message_should_format_file_applied() {
+        let event = OutputEvent::FileApplied {
+            operation: FileOperationKind::Copy,
+            source: PathBuf::from(".env"),
+            target: PathBuf::from(".env"),
+        };
+
+        assert_eq!(event.message(), "treeboot: copy .env -> .env");
+    }
+
+    #[test]
+    fn message_should_format_file_would_apply() {
+        let event = OutputEvent::FileWouldApply {
+            operation: FileOperationKind::Symlink,
+            source: PathBuf::from("tool"),
+            target: PathBuf::from(".tool"),
+        };
+
+        assert_eq!(event.message(), "treeboot: would symlink tool -> .tool");
+    }
+
+    #[test]
+    fn message_should_format_file_skipped() {
+        let event = OutputEvent::FileSkipped {
+            operation: FileOperationKind::Copy,
+            target: PathBuf::from(".env"),
+            reason: "target exists".to_owned(),
+        };
+
+        assert_eq!(event.message(), "treeboot: skip copy .env; target exists");
+    }
+
+    #[test]
+    fn message_should_format_file_would_skip() {
+        let event = OutputEvent::FileWouldSkip {
+            operation: FileOperationKind::Sync,
+            target: PathBuf::from("shared"),
+            reason: "missing source".to_owned(),
+        };
+
+        assert_eq!(
+            event.message(),
+            "treeboot: would skip sync shared; missing source"
+        );
+    }
+
+    #[test]
+    fn message_should_format_file_warning() {
+        let event = OutputEvent::FileWarning {
+            path: PathBuf::from("shared/link"),
+            reason: "symlink target does not exist".to_owned(),
+        };
+
+        assert_eq!(
+            event.message(),
+            "treeboot: warning: shared/link symlink target does not exist"
+        );
     }
 
     #[test]

@@ -167,7 +167,7 @@ fn run_outside_git_worktree_should_exit_with_runtime_failure() {
 }
 
 #[test]
-fn config_file_should_be_detected_until_config_execution_exists() {
+fn config_with_commands_should_fail_until_command_execution_exists() {
     let repo = git_worktree();
     let config = repo.worktree_path().join(".treeboot.toml");
     write_file(&config, "commands = [\"mise install\"]\n");
@@ -178,7 +178,7 @@ fn config_file_should_be_detected_until_config_execution_exists() {
         .code(1)
         .stdout(predicate::str::contains("treeboot: config detected"))
         .stderr(predicate::str::contains(
-            "declarative config execution is not implemented yet",
+            "command execution is not implemented yet",
         ));
 }
 
@@ -312,6 +312,8 @@ sync = ["shared"]
 fn run_env_false_should_override_config_strict() {
     let repo = git_worktree();
     let config = repo.worktree_path().join(".treeboot.toml");
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("sync source should be created");
     write_file(
         &config,
         r#"
@@ -328,7 +330,7 @@ sync = ["shared"]
         .code(1)
         .stderr(predicate::str::contains("invalid config").not())
         .stderr(predicate::str::contains(
-            "declarative config execution is not implemented",
+            "sync file operation execution is not implemented",
         ));
 }
 
@@ -374,11 +376,14 @@ copy = [{{ source = "{}", target = "outside" }}]
         .arg("run")
         .current_dir(repo.worktree_path())
         .assert()
-        .code(1)
-        .stderr(predicate::str::contains("invalid config").not())
-        .stderr(predicate::str::contains(
-            "declarative config execution is not implemented",
-        ));
+        .success()
+        .stdout(predicate::str::contains("treeboot: copy"))
+        .stderr(predicate::str::contains("invalid config").not());
+
+    let copied = std::fs::read_to_string(repo.worktree_path().join("outside"))
+        .expect("outside source should be copied");
+    let source = std::fs::read_to_string(outside.path()).expect("source should be readable");
+    assert_eq!(copied, source);
 }
 
 #[test]
@@ -403,11 +408,13 @@ copy = [{{ source = "source", target = "{}" }}]
         .env("TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE", "1")
         .current_dir(repo.worktree_path())
         .assert()
-        .code(1)
-        .stderr(predicate::str::contains("invalid config").not())
-        .stderr(predicate::str::contains(
-            "declarative config execution is not implemented",
-        ));
+        .success()
+        .stdout(predicate::str::contains("treeboot: copy"))
+        .stderr(predicate::str::contains("invalid config").not());
+
+    let copied = std::fs::read_to_string(outside.path().join("target"))
+        .expect("outside target should be copied");
+    assert_eq!(copied, "value\n");
 }
 
 #[cfg(unix)]
@@ -495,6 +502,195 @@ fn run_unsafe_source_symlink_should_exit_with_config_error() {
         .code(1)
         .stderr(predicate::str::contains("invalid config"))
         .stderr(predicate::str::contains("unsafe symlink"));
+}
+
+#[test]
+fn run_file_only_config_should_copy_file() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
+    write_file(&config, r#"copy = [".env"]"#);
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("treeboot: copy .env -> .env"));
+
+    let copied = std::fs::read_to_string(repo.worktree_path().join(".env"))
+        .expect("copied file should be readable");
+    assert_eq!(copied, "TOKEN=1\n");
+}
+
+#[test]
+fn run_optional_missing_source_should_report_skip() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&config, r#"copy = [".env.local"]"#);
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "treeboot: skip copy .env.local; missing source",
+        ));
+
+    assert!(!repo.worktree_path().join(".env.local").exists());
+}
+
+#[test]
+fn run_config_with_commands_should_fail_before_file_mutation() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
+    write_file(
+        &config,
+        "copy = [\".env\"]\ncommands = [\"mise install\"]\n",
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "command execution is not implemented",
+        ));
+
+    assert!(!repo.worktree_path().join(".env").exists());
+}
+
+#[test]
+fn run_sync_config_should_fail_before_file_mutation() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("sync source should be created");
+    write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
+    write_file(&config, "copy = [\".env\"]\nsync = [\"shared\"]\n");
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "sync file operation execution is not implemented",
+        ));
+
+    assert!(!repo.worktree_path().join(".env").exists());
+}
+
+#[test]
+fn run_config_with_commands_and_skip_commands_should_copy_file() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
+    write_file(
+        &config,
+        "copy = [\".env\"]\ncommands = [\"mise install\"]\n",
+    );
+
+    treeboot()
+        .args(["run", "--skip-commands"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("treeboot: copy .env -> .env"));
+
+    let copied = std::fs::read_to_string(repo.worktree_path().join(".env"))
+        .expect("copied file should be readable");
+    assert_eq!(copied, "TOKEN=1\n");
+}
+
+#[test]
+fn run_strict_existing_copy_target_should_fail_before_mutation() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&repo.root_path().join(".env"), "new\n");
+    write_file(&repo.worktree_path().join(".env"), "old\n");
+    write_file(&config, r#"copy = [".env"]"#);
+
+    treeboot()
+        .args(["run", "--strict"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("target exists"));
+
+    let existing = std::fs::read_to_string(repo.worktree_path().join(".env"))
+        .expect("existing target should be readable");
+    assert_eq!(existing, "old\n");
+}
+
+#[test]
+fn run_force_copy_should_replace_existing_target() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&repo.root_path().join(".env"), "new\n");
+    write_file(&repo.worktree_path().join(".env"), "old\n");
+    write_file(&config, r#"copy = [".env"]"#);
+
+    treeboot()
+        .args(["run", "--force"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("treeboot: copy .env -> .env"));
+
+    let replaced = std::fs::read_to_string(repo.worktree_path().join(".env"))
+        .expect("replaced target should be readable");
+    assert_eq!(replaced, "new\n");
+}
+
+#[test]
+fn run_dry_run_copy_should_not_mutate_target() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
+    write_file(&config, r#"copy = [".env"]"#);
+
+    treeboot()
+        .args(["run", "--dry-run"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "treeboot: would copy .env -> .env",
+        ));
+
+    assert!(!repo.worktree_path().join(".env").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn run_symlink_should_create_relative_symlink() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    let source = repo.root_path().join("tool");
+    let target = repo.worktree_path().join(".tool");
+    write_file(&source, "tool\n");
+    write_file(
+        &config,
+        r#"symlink = [{ source = "tool", target = ".tool" }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("treeboot: symlink tool -> .tool"));
+
+    let link = std::fs::read_link(&target).expect("target should be a symlink");
+    let resolved = std::fs::canonicalize(target.parent().unwrap().join(&link))
+        .expect("relative symlink should resolve");
+    let expected = std::fs::canonicalize(source).expect("source should resolve");
+    assert!(!link.is_absolute());
+    assert_eq!(resolved, expected);
 }
 
 #[cfg(unix)]
@@ -630,7 +826,7 @@ fn config_option_should_skip_executable_script_discovery() {
         .args(["-c", "custom.treeboot.toml"])
         .current_dir(repo.worktree_path())
         .assert()
-        .code(1)
+        .success()
         .stdout(predicate::str::contains("treeboot: config detected"));
 
     assert!(!marker.exists());

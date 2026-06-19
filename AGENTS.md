@@ -52,10 +52,10 @@ runtime options:
 - starter config/script generation
 - structured output events
 
-Declarative TOML config execution is intentionally not implemented yet.
-`treeboot run` parses and validates a found config, reports that execution is
-not implemented, and exits non-zero. Use `treeboot config` to inspect normalized
-config without execution; it warns when run validation would fail.
+Declarative TOML config execution currently applies `copy` and `symlink` file
+operations. `sync` file operations and declarative command execution are gated
+until later milestones. Use `treeboot config` to inspect normalized config
+without execution; it warns when run validation would fail.
 
 ## Commands
 

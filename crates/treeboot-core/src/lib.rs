@@ -9,6 +9,7 @@ mod config;
 mod context;
 mod discovery;
 mod error;
+mod files;
 mod git;
 mod init;
 mod output;
