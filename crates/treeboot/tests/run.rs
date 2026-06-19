@@ -327,11 +327,11 @@ sync = ["shared"]
         .env("TREEBOOT_STRICT", "off")
         .current_dir(repo.worktree_path())
         .assert()
-        .code(1)
-        .stderr(predicate::str::contains("invalid config").not())
-        .stderr(predicate::str::contains(
-            "sync file operation execution is not implemented",
-        ));
+        .success()
+        .stdout(predicate::str::contains("treeboot: sync shared -> shared"))
+        .stderr(predicate::str::contains("invalid config").not());
+
+    assert!(repo.worktree_path().join("shared").is_dir());
 }
 
 #[test]
@@ -564,13 +564,16 @@ fn run_config_with_commands_should_fail_before_file_mutation() {
 }
 
 #[test]
-fn run_sync_config_should_fail_before_file_mutation() {
+fn run_sync_config_with_commands_should_fail_before_file_mutation() {
     let repo = git_worktree();
     let config = repo.worktree_path().join(".treeboot.toml");
     std::fs::create_dir_all(repo.root_path().join("shared"))
         .expect("sync source should be created");
-    write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
-    write_file(&config, "copy = [\".env\"]\nsync = [\"shared\"]\n");
+    write_file(&repo.root_path().join("shared/config"), "value\n");
+    write_file(
+        &config,
+        "sync = [\"shared\"]\ncommands = [\"mise install\"]\n",
+    );
 
     treeboot()
         .arg("run")
@@ -578,10 +581,63 @@ fn run_sync_config_should_fail_before_file_mutation() {
         .assert()
         .code(1)
         .stderr(predicate::str::contains(
-            "sync file operation execution is not implemented",
+            "command execution is not implemented",
         ));
 
-    assert!(!repo.worktree_path().join(".env").exists());
+    assert!(!repo.worktree_path().join("shared/config").exists());
+}
+
+#[test]
+fn run_sync_config_should_copy_then_sync() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("sync source should be created");
+    write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
+    write_file(&repo.root_path().join("shared/config"), "value\n");
+    write_file(&config, "copy = [\".env\"]\nsync = [\"shared\"]\n");
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("treeboot: copy .env -> .env"))
+        .stdout(predicate::str::contains(
+            "treeboot: sync shared/config -> shared/config",
+        ));
+
+    let copied = std::fs::read_to_string(repo.worktree_path().join(".env"))
+        .expect("copied file should be readable");
+    let synced = std::fs::read_to_string(repo.worktree_path().join("shared/config"))
+        .expect("synced file should be readable");
+    assert_eq!(copied, "TOKEN=1\n");
+    assert_eq!(synced, "value\n");
+}
+
+#[test]
+fn run_sync_delete_should_remove_target_only_file() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("sync source should be created");
+    std::fs::create_dir_all(repo.worktree_path().join("shared"))
+        .expect("sync target should be created");
+    write_file(&repo.root_path().join("shared/config"), "value\n");
+    write_file(&repo.worktree_path().join("shared/old"), "remove\n");
+    write_file(
+        &config,
+        r#"sync = [{ source = "shared", target = "shared", delete = true }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("treeboot: delete shared/old"));
+
+    assert!(!repo.worktree_path().join("shared/old").exists());
 }
 
 #[test]
@@ -604,6 +660,32 @@ fn run_config_with_commands_and_skip_commands_should_copy_file() {
     let copied = std::fs::read_to_string(repo.worktree_path().join(".env"))
         .expect("copied file should be readable");
     assert_eq!(copied, "TOKEN=1\n");
+}
+
+#[test]
+fn run_sync_config_with_commands_and_skip_commands_should_sync_file() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("sync source should be created");
+    write_file(&repo.root_path().join("shared/config"), "value\n");
+    write_file(
+        &config,
+        "sync = [\"shared\"]\ncommands = [\"mise install\"]\n",
+    );
+
+    treeboot()
+        .args(["run", "--skip-commands"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "treeboot: sync shared/config -> shared/config",
+        ));
+
+    let synced = std::fs::read_to_string(repo.worktree_path().join("shared/config"))
+        .expect("synced file should be readable");
+    assert_eq!(synced, "value\n");
 }
 
 #[test]

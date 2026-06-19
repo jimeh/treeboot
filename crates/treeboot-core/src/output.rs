@@ -77,6 +77,18 @@ pub enum OutputEvent {
         reason: String,
     },
 
+    /// A sync operation deleted a target-only path.
+    FileDeleted {
+        /// Deleted path.
+        path: PathBuf,
+    },
+
+    /// A dry-run sync operation would delete a target-only path.
+    FileWouldDelete {
+        /// Path that would be deleted.
+        path: PathBuf,
+    },
+
     /// A file operation warning was produced.
     FileWarning {
         /// Warning path.
@@ -153,6 +165,12 @@ impl OutputEvent {
                 target.display(),
                 reason
             ),
+            Self::FileDeleted { path } => {
+                format!("treeboot: delete {}", path.display())
+            }
+            Self::FileWouldDelete { path } => {
+                format!("treeboot: would delete {}", path.display())
+            }
             Self::FileWarning { path, reason } => {
                 format!("treeboot: warning: {} {}", path.display(), reason)
             }
@@ -260,6 +278,24 @@ mod tests {
             event.message(),
             "treeboot: would skip sync shared; missing source"
         );
+    }
+
+    #[test]
+    fn message_should_format_file_deleted() {
+        let event = OutputEvent::FileDeleted {
+            path: PathBuf::from(".config/old.toml"),
+        };
+
+        assert_eq!(event.message(), "treeboot: delete .config/old.toml");
+    }
+
+    #[test]
+    fn message_should_format_file_would_delete() {
+        let event = OutputEvent::FileWouldDelete {
+            path: PathBuf::from(".config/old.toml"),
+        };
+
+        assert_eq!(event.message(), "treeboot: would delete .config/old.toml");
     }
 
     #[test]

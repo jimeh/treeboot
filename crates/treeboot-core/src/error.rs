@@ -101,14 +101,6 @@ pub enum Error {
     #[error("This is not a work tree")]
     RootWorktreeStrict,
 
-    /// Declarative config execution has not been implemented yet.
-    #[error("declarative config execution is not implemented yet: {0:?}")]
-    ConfigExecutionNotImplemented(PathBuf),
-
-    /// Declarative sync execution has not been implemented yet.
-    #[error("sync file operation execution is not implemented yet: {0:?}")]
-    SyncExecutionNotImplemented(PathBuf),
-
     /// Declarative command execution has not been implemented yet.
     #[error("command execution is not implemented yet: {0:?}")]
     CommandExecutionNotImplemented(PathBuf),

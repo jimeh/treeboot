@@ -1,10 +1,11 @@
 use std::collections::BTreeSet;
 use std::fs::{self, File, FileTimes, Metadata};
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
 use crate::{
     Error, FileOperationKind, OutputEvent, PlannedFileOperation, PlannedFileStatus, Reporter,
-    Result, RunPlan,
+    Result, RunPlan, SyncCompare,
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -45,6 +46,10 @@ enum FileAction {
         target_is_dir: bool,
         replace: bool,
     },
+    Delete {
+        target: PathBuf,
+        target_path: PathBuf,
+    },
     Skip {
         operation: FileOperationKind,
         target: PathBuf,
@@ -80,8 +85,6 @@ pub(crate) fn apply_file_operations(
     options: FileApplyOptions,
     reporter: &mut dyn Reporter,
 ) -> Result<FileApplyReport> {
-    ensure_supported(plan)?;
-
     let mut actions = Vec::new();
     for operation in &plan.files {
         plan_operation(plan, operation, options, &mut actions)?;
@@ -99,17 +102,6 @@ pub(crate) fn apply_file_operations(
     Ok(FileApplyReport {
         action_count: actions.len(),
     })
-}
-
-fn ensure_supported(plan: &RunPlan) -> Result<()> {
-    if plan.files.iter().any(|operation| {
-        operation.operation == FileOperationKind::Sync
-            && operation.status == PlannedFileStatus::Ready
-    }) {
-        return Err(Error::SyncExecutionNotImplemented(plan.config_path.clone()));
-    }
-
-    Ok(())
 }
 
 fn plan_operation(
@@ -130,7 +122,7 @@ fn plan_operation(
     match operation.operation {
         FileOperationKind::Copy => plan_copy(plan, operation, options, actions),
         FileOperationKind::Symlink => plan_symlink(operation, options, actions),
-        FileOperationKind::Sync => Ok(()),
+        FileOperationKind::Sync => plan_sync(plan, operation, actions),
     }
 }
 
@@ -371,8 +363,12 @@ fn plan_copy_symlink_at(
     options: FileApplyOptions,
     actions: &mut Vec<FileAction>,
 ) -> Result<()> {
-    let (link_target, final_target, target_is_dir) =
-        preserved_source_link(plan, entry.source_path, entry.target_path)?;
+    let (link_target, final_target, target_is_dir) = preserved_source_link(
+        plan,
+        operation.operation,
+        entry.source_path,
+        entry.target_path,
+    )?;
     plan_symlink_action(
         SymlinkActionPlan {
             operation: operation.operation,
@@ -462,6 +458,412 @@ fn plan_symlink_action(
     }
 }
 
+fn plan_sync(
+    plan: &RunPlan,
+    operation: &PlannedFileOperation,
+    actions: &mut Vec<FileAction>,
+) -> Result<()> {
+    let source_path = raw_source_path(plan, operation);
+    let metadata = metadata(&source_path, operation.operation)?;
+
+    if metadata.file_type().is_symlink() {
+        return plan_sync_symlink(plan, operation, &source_path, actions);
+    }
+    if metadata.is_file() {
+        return plan_sync_file(
+            operation,
+            operation.source.clone(),
+            operation.target.clone(),
+            &source_path,
+            &operation.target_path,
+            actions,
+        );
+    }
+    if metadata.is_dir() {
+        return plan_sync_directory(
+            plan,
+            operation,
+            CopyEntry {
+                source_path: &source_path,
+                target_path: &operation.target_path,
+                source: &operation.source,
+                target: &operation.target,
+            },
+            actions,
+        );
+    }
+
+    conflict(
+        operation.operation,
+        source_path,
+        "source file type is unsupported",
+    )
+}
+
+fn plan_sync_directory(
+    plan: &RunPlan,
+    operation: &PlannedFileOperation,
+    entry: CopyEntry<'_>,
+    actions: &mut Vec<FileAction>,
+) -> Result<()> {
+    match maybe_metadata(entry.target_path, operation.operation)? {
+        Some(metadata) if metadata.file_type().is_symlink() || metadata.is_file() => {
+            return conflict(
+                operation.operation,
+                entry.target_path.to_path_buf(),
+                "target is a file or symlink",
+            );
+        }
+        Some(metadata) if metadata.is_dir() => {}
+        Some(_) => {
+            return conflict(
+                operation.operation,
+                entry.target_path.to_path_buf(),
+                "target file type is unsupported",
+            );
+        }
+        None => actions.push(FileAction::CreateDirectory {
+            operation: operation.operation,
+            source: entry.source.to_path_buf(),
+            target: entry.target.to_path_buf(),
+            target_path: entry.target_path.to_path_buf(),
+        }),
+    }
+
+    for child in fs::read_dir(entry.source_path).map_err(|source| Error::FileOperationIo {
+        operation: operation_name(operation.operation),
+        path: entry.source_path.to_path_buf(),
+        source,
+    })? {
+        let child = child.map_err(|source| Error::FileOperationIo {
+            operation: operation_name(operation.operation),
+            path: entry.source_path.to_path_buf(),
+            source,
+        })?;
+        let child_source_path = child.path();
+        let child_target_path = entry.target_path.join(child.file_name());
+        let child_source = entry.source.join(child.file_name());
+        let child_target = entry.target.join(child.file_name());
+        let child_metadata = metadata(&child_source_path, operation.operation)?;
+
+        if child_metadata.file_type().is_symlink() {
+            plan_sync_symlink_at(
+                plan,
+                operation,
+                CopyEntry {
+                    source_path: &child_source_path,
+                    target_path: &child_target_path,
+                    source: &child_source,
+                    target: &child_target,
+                },
+                actions,
+            )?;
+        } else if child_metadata.is_file() {
+            plan_sync_file(
+                operation,
+                child_source,
+                child_target,
+                &child_source_path,
+                &child_target_path,
+                actions,
+            )?;
+        } else if child_metadata.is_dir() {
+            plan_sync_directory(
+                plan,
+                operation,
+                CopyEntry {
+                    source_path: &child_source_path,
+                    target_path: &child_target_path,
+                    source: &child_source,
+                    target: &child_target,
+                },
+                actions,
+            )?;
+        } else {
+            return conflict(
+                operation.operation,
+                child_source_path,
+                "source file type is unsupported",
+            );
+        }
+    }
+
+    if operation.delete.unwrap_or(false) {
+        plan_sync_deletes(operation, entry, actions)?;
+    }
+
+    Ok(())
+}
+
+fn plan_sync_file(
+    operation: &PlannedFileOperation,
+    source: PathBuf,
+    target: PathBuf,
+    source_path: &Path,
+    target_path: &Path,
+    actions: &mut Vec<FileAction>,
+) -> Result<()> {
+    match maybe_metadata(target_path, operation.operation)? {
+        Some(metadata) if metadata.is_dir() => conflict(
+            operation.operation,
+            target_path.to_path_buf(),
+            "target is a directory",
+        ),
+        Some(metadata) if !metadata.is_file() && !metadata.file_type().is_symlink() => conflict(
+            operation.operation,
+            target_path.to_path_buf(),
+            "target file type is unsupported",
+        ),
+        Some(metadata) if file_sync_changed(operation, source_path, target_path, &metadata)? => {
+            actions.push(FileAction::CopyFile {
+                operation: operation.operation,
+                source,
+                target,
+                source_path: source_path.to_path_buf(),
+                target_path: target_path.to_path_buf(),
+                replace: true,
+            });
+            Ok(())
+        }
+        Some(_) => Ok(()),
+        None => {
+            actions.push(FileAction::CopyFile {
+                operation: operation.operation,
+                source,
+                target,
+                source_path: source_path.to_path_buf(),
+                target_path: target_path.to_path_buf(),
+                replace: false,
+            });
+            Ok(())
+        }
+    }
+}
+
+fn plan_sync_symlink(
+    plan: &RunPlan,
+    operation: &PlannedFileOperation,
+    source_path: &Path,
+    actions: &mut Vec<FileAction>,
+) -> Result<()> {
+    plan_sync_symlink_at(
+        plan,
+        operation,
+        CopyEntry {
+            source_path,
+            target_path: &operation.target_path,
+            source: &operation.source,
+            target: &operation.target,
+        },
+        actions,
+    )
+}
+
+fn plan_sync_symlink_at(
+    plan: &RunPlan,
+    operation: &PlannedFileOperation,
+    entry: CopyEntry<'_>,
+    actions: &mut Vec<FileAction>,
+) -> Result<()> {
+    let (link_target, final_target, target_is_dir) = preserved_source_link(
+        plan,
+        operation.operation,
+        entry.source_path,
+        entry.target_path,
+    )?;
+
+    match maybe_metadata(entry.target_path, operation.operation)? {
+        Some(metadata) if metadata.is_dir() => conflict(
+            operation.operation,
+            entry.target_path.to_path_buf(),
+            "target is a directory",
+        ),
+        Some(metadata) if metadata.file_type().is_symlink() => {
+            let existing =
+                fs::read_link(entry.target_path).map_err(|source| Error::FileOperationIo {
+                    operation: operation_name(operation.operation),
+                    path: entry.target_path.to_path_buf(),
+                    source,
+                })?;
+            if existing != link_target {
+                actions.push(FileAction::CreateSymlink {
+                    operation: operation.operation,
+                    source: entry.source.to_path_buf(),
+                    target: entry.target.to_path_buf(),
+                    target_path: entry.target_path.to_path_buf(),
+                    link_target,
+                    final_target,
+                    target_is_dir,
+                    replace: true,
+                });
+            }
+            Ok(())
+        }
+        Some(_) => {
+            actions.push(FileAction::CreateSymlink {
+                operation: operation.operation,
+                source: entry.source.to_path_buf(),
+                target: entry.target.to_path_buf(),
+                target_path: entry.target_path.to_path_buf(),
+                link_target,
+                final_target,
+                target_is_dir,
+                replace: true,
+            });
+            Ok(())
+        }
+        None => {
+            actions.push(FileAction::CreateSymlink {
+                operation: operation.operation,
+                source: entry.source.to_path_buf(),
+                target: entry.target.to_path_buf(),
+                target_path: entry.target_path.to_path_buf(),
+                link_target,
+                final_target,
+                target_is_dir,
+                replace: false,
+            });
+            Ok(())
+        }
+    }
+}
+
+fn plan_sync_deletes(
+    operation: &PlannedFileOperation,
+    entry: CopyEntry<'_>,
+    actions: &mut Vec<FileAction>,
+) -> Result<()> {
+    let Some(target_metadata) = maybe_metadata(entry.target_path, operation.operation)? else {
+        return Ok(());
+    };
+    if !target_metadata.is_dir() {
+        return Ok(());
+    }
+
+    for child in fs::read_dir(entry.target_path).map_err(|source| Error::FileOperationIo {
+        operation: operation_name(operation.operation),
+        path: entry.target_path.to_path_buf(),
+        source,
+    })? {
+        let child = child.map_err(|source| Error::FileOperationIo {
+            operation: operation_name(operation.operation),
+            path: entry.target_path.to_path_buf(),
+            source,
+        })?;
+        let child_target_path = child.path();
+        let child_source_path = entry.source_path.join(child.file_name());
+        if maybe_metadata(&child_source_path, operation.operation)?.is_none() {
+            actions.push(FileAction::Delete {
+                target: entry.target.join(child.file_name()),
+                target_path: child_target_path,
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn file_sync_changed(
+    operation: &PlannedFileOperation,
+    source_path: &Path,
+    target_path: &Path,
+    target_metadata: &Metadata,
+) -> Result<bool> {
+    if target_metadata.file_type().is_symlink() {
+        return Ok(true);
+    }
+
+    match operation.compare.unwrap_or(SyncCompare::Metadata) {
+        SyncCompare::Metadata => {
+            metadata_changed(operation, source_path, target_path, target_metadata)
+        }
+        SyncCompare::Checksum => contents_changed(operation, source_path, target_path),
+    }
+}
+
+fn metadata_changed(
+    operation: &PlannedFileOperation,
+    source_path: &Path,
+    target_path: &Path,
+    target_metadata: &Metadata,
+) -> Result<bool> {
+    let source_metadata = metadata(source_path, operation.operation)?;
+    if source_metadata.len() != target_metadata.len() {
+        return Ok(true);
+    }
+
+    let source_modified = source_metadata
+        .modified()
+        .map_err(|source| Error::FileOperationIo {
+            operation: operation_name(operation.operation),
+            path: source_path.to_path_buf(),
+            source,
+        })?;
+    let target_modified = target_metadata
+        .modified()
+        .map_err(|source| Error::FileOperationIo {
+            operation: operation_name(operation.operation),
+            path: target_path.to_path_buf(),
+            source,
+        })?;
+
+    Ok(source_modified != target_modified)
+}
+
+fn contents_changed(
+    operation: &PlannedFileOperation,
+    source_path: &Path,
+    target_path: &Path,
+) -> Result<bool> {
+    let source_metadata = metadata(source_path, operation.operation)?;
+    let target_metadata = metadata(target_path, operation.operation)?;
+    if source_metadata.len() != target_metadata.len() {
+        return Ok(true);
+    }
+
+    let mut source_file = File::open(source_path).map_err(|source| Error::FileOperationIo {
+        operation: operation_name(operation.operation),
+        path: source_path.to_path_buf(),
+        source,
+    })?;
+    let mut target_file = File::open(target_path).map_err(|source| Error::FileOperationIo {
+        operation: operation_name(operation.operation),
+        path: target_path.to_path_buf(),
+        source,
+    })?;
+    let mut source_buf = [0; 8192];
+    let mut target_buf = [0; 8192];
+
+    loop {
+        let source_read =
+            source_file
+                .read(&mut source_buf)
+                .map_err(|source| Error::FileOperationIo {
+                    operation: operation_name(operation.operation),
+                    path: source_path.to_path_buf(),
+                    source,
+                })?;
+        let target_read =
+            target_file
+                .read(&mut target_buf)
+                .map_err(|source| Error::FileOperationIo {
+                    operation: operation_name(operation.operation),
+                    path: target_path.to_path_buf(),
+                    source,
+                })?;
+
+        if source_read != target_read {
+            return Ok(true);
+        }
+        if source_read == 0 {
+            return Ok(false);
+        }
+        if source_buf[..source_read] != target_buf[..target_read] {
+            return Ok(true);
+        }
+    }
+}
+
 fn add_symlink_warnings(actions: &mut Vec<FileAction>) {
     let created_paths = actions
         .iter()
@@ -469,7 +871,9 @@ fn add_symlink_warnings(actions: &mut Vec<FileAction>) {
             FileAction::CreateDirectory { target_path, .. }
             | FileAction::CopyFile { target_path, .. }
             | FileAction::CreateSymlink { target_path, .. } => Some(target_path.clone()),
-            FileAction::Skip { .. } | FileAction::Warning { .. } => None,
+            FileAction::Delete { .. } | FileAction::Skip { .. } | FileAction::Warning { .. } => {
+                None
+            }
         })
         .collect::<BTreeSet<_>>();
     let warnings = actions
@@ -517,6 +921,12 @@ fn report_dry_run(action: &FileAction, reporter: &mut dyn Reporter) -> Result<()
                 operation: *operation,
                 source: source.clone(),
                 target: target.clone(),
+            },
+        ),
+        FileAction::Delete { target, .. } => report(
+            reporter,
+            OutputEvent::FileWouldDelete {
+                path: target.clone(),
             },
         ),
         FileAction::Skip {
@@ -587,6 +997,18 @@ fn apply_action(action: &FileAction, reporter: &mut dyn Reporter) -> Result<()> 
             }
             create_symlink(*operation, link_target, *target_is_dir, target_path)?;
             report_applied(reporter, *operation, source, target)
+        }
+        FileAction::Delete {
+            target,
+            target_path,
+        } => {
+            remove_any(FileOperationKind::Sync, target_path)?;
+            report(
+                reporter,
+                OutputEvent::FileDeleted {
+                    path: target.clone(),
+                },
+            )
         }
         FileAction::Skip {
             operation,
@@ -684,6 +1106,19 @@ fn remove_file(operation: FileOperationKind, path: &Path) -> Result<()> {
     })
 }
 
+fn remove_any(operation: FileOperationKind, path: &Path) -> Result<()> {
+    let metadata = metadata(path, operation)?;
+    if metadata.is_dir() {
+        fs::remove_dir_all(path).map_err(|source| Error::FileOperationIo {
+            operation: operation_name(operation),
+            path: path.to_path_buf(),
+            source,
+        })
+    } else {
+        remove_file(operation, path)
+    }
+}
+
 fn create_symlink(
     operation: FileOperationKind,
     source: &Path,
@@ -713,17 +1148,18 @@ fn create_symlink_impl(source: &Path, target: &Path, target_is_dir: bool) -> std
 
 fn preserved_source_link(
     plan: &RunPlan,
+    operation: FileOperationKind,
     source_path: &Path,
     target_path: &Path,
 ) -> Result<(PathBuf, PathBuf, bool)> {
     let raw_target = fs::read_link(source_path).map_err(|source| Error::FileOperationIo {
-        operation: operation_name(FileOperationKind::Copy),
+        operation: operation_name(operation),
         path: source_path.to_path_buf(),
         source,
     })?;
     if raw_target.as_os_str().is_empty() {
         return conflict(
-            FileOperationKind::Copy,
+            operation,
             source_path.to_path_buf(),
             "source symlink target is empty",
         );
@@ -1142,25 +1578,319 @@ mod tests {
     }
 
     #[test]
-    fn apply_file_operations_should_gate_sync_before_copy_mutation() {
-        let (root, worktree) = temp_workspace("sync-gate");
-        fs::write(root.join(".env"), "TOKEN=1\n").expect("copy source should be written");
-        fs::create_dir_all(root.join("shared")).expect("sync source should be created");
+    fn apply_file_operations_should_sync_missing_file() {
+        let (root, worktree) = temp_workspace("sync-missing-file");
+        fs::write(root.join(".env"), "TOKEN=1\n").expect("source should be written");
         let plan = run_plan(
             &root,
             &worktree,
-            vec![
-                operation(FileOperationKind::Copy, &root, &worktree, ".env", ".env"),
-                sync_operation(&root, &worktree, "shared", "shared"),
-            ],
+            vec![sync_operation(&root, &worktree, ".env", ".env")],
+        );
+        let mut reporter = VecReporter::default();
+
+        apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+            .expect("sync should create missing file");
+
+        let synced = fs::read_to_string(worktree.join(".env")).expect("target should be readable");
+        assert_eq!(synced, "TOKEN=1\n");
+        assert!(matches!(
+            reporter.events.as_slice(),
+            [OutputEvent::FileApplied {
+                operation: FileOperationKind::Sync,
+                ..
+            }]
+        ));
+    }
+
+    #[test]
+    fn apply_file_operations_should_leave_unchanged_metadata_sync_silent() {
+        let (root, worktree) = temp_workspace("sync-unchanged");
+        let source = root.join(".env");
+        let target = worktree.join(".env");
+        fs::write(&source, "TOKEN=1\n").expect("source should be written");
+        copy_file_with_metadata(FileOperationKind::Sync, &source, &target)
+            .expect("target should be seeded");
+        let plan = run_plan(
+            &root,
+            &worktree,
+            vec![sync_operation(&root, &worktree, ".env", ".env")],
+        );
+        let mut reporter = VecReporter::default();
+
+        apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+            .expect("unchanged sync should succeed");
+
+        assert!(reporter.events.is_empty());
+    }
+
+    #[test]
+    fn apply_file_operations_should_update_changed_metadata_sync_file() {
+        let (root, worktree) = temp_workspace("sync-metadata-update");
+        fs::write(root.join(".env"), "new\n").expect("source should be written");
+        fs::write(worktree.join(".env"), "old\n").expect("target should be written");
+        let plan = run_plan(
+            &root,
+            &worktree,
+            vec![sync_operation(&root, &worktree, ".env", ".env")],
+        );
+        let mut reporter = VecReporter::default();
+
+        apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+            .expect("changed sync should update target");
+
+        let synced = fs::read_to_string(worktree.join(".env")).expect("target should be readable");
+        assert_eq!(synced, "new\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn apply_file_operations_should_replace_target_symlink_with_sync_file() {
+        let (root, worktree) = temp_workspace("sync-file-over-symlink");
+        fs::write(root.join(".env"), "new\n").expect("source should be written");
+        fs::write(worktree.join("old"), "old\n").expect("old target should be written");
+        std::os::unix::fs::symlink("old", worktree.join(".env"))
+            .expect("target symlink should be created");
+        let plan = run_plan(
+            &root,
+            &worktree,
+            vec![sync_operation(&root, &worktree, ".env", ".env")],
+        );
+        let mut reporter = VecReporter::default();
+
+        apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+            .expect("sync file should replace target symlink");
+
+        let synced = fs::read_to_string(worktree.join(".env")).expect("target should be readable");
+        assert_eq!(synced, "new\n");
+    }
+
+    #[test]
+    fn apply_file_operations_should_reject_sync_file_to_directory_target() {
+        let (root, worktree) = temp_workspace("sync-file-to-directory");
+        fs::write(root.join(".env"), "new\n").expect("source should be written");
+        fs::create_dir_all(worktree.join(".env")).expect("target dir should be created");
+        let plan = run_plan(
+            &root,
+            &worktree,
+            vec![sync_operation(&root, &worktree, ".env", ".env")],
         );
         let mut reporter = VecReporter::default();
 
         let error = apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
-            .expect_err("sync should be gated");
+            .expect_err("sync file to directory should fail");
 
-        assert!(error.to_string().contains("sync file operation execution"));
-        assert!(!worktree.join(".env").exists());
+        assert!(error.to_string().contains("target is a directory"));
+    }
+
+    #[test]
+    fn apply_file_operations_should_reject_sync_directory_to_file_target() {
+        let (root, worktree) = temp_workspace("sync-directory-to-file");
+        fs::create_dir_all(root.join("shared")).expect("source dir should be created");
+        fs::write(worktree.join("shared"), "old\n").expect("target file should be written");
+        let plan = run_plan(
+            &root,
+            &worktree,
+            vec![sync_operation(&root, &worktree, "shared", "shared")],
+        );
+        let mut reporter = VecReporter::default();
+
+        let error = apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+            .expect_err("sync directory to file should fail");
+
+        assert!(error.to_string().contains("target is a file or symlink"));
+    }
+
+    #[test]
+    fn apply_file_operations_should_update_checksum_sync_when_metadata_matches() {
+        let (root, worktree) = temp_workspace("sync-checksum-update");
+        let source = root.join(".env");
+        let target = worktree.join(".env");
+        fs::write(&source, "ABC\n").expect("source should be written");
+        fs::write(&target, "XYZ\n").expect("target should be written");
+        let modified = fs::metadata(&source)
+            .expect("source metadata should be readable")
+            .modified()
+            .expect("source mtime should be readable");
+        let times = FileTimes::new().set_modified(modified);
+        File::options()
+            .read(true)
+            .open(&target)
+            .and_then(|file| file.set_times(times))
+            .expect("target mtime should be aligned");
+        let mut sync = sync_operation(&root, &worktree, ".env", ".env");
+        sync.compare = Some(SyncCompare::Checksum);
+        let plan = run_plan(&root, &worktree, vec![sync]);
+        let mut reporter = VecReporter::default();
+
+        apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+            .expect("checksum sync should update changed content");
+
+        let synced = fs::read_to_string(target).expect("target should be readable");
+        assert_eq!(synced, "ABC\n");
+    }
+
+    #[test]
+    fn apply_file_operations_should_leave_unchanged_checksum_sync_silent() {
+        let (root, worktree) = temp_workspace("sync-checksum-unchanged");
+        fs::write(root.join(".env"), "ABC\n").expect("source should be written");
+        fs::write(worktree.join(".env"), "ABC\n").expect("target should be written");
+        let mut sync = sync_operation(&root, &worktree, ".env", ".env");
+        sync.compare = Some(SyncCompare::Checksum);
+        let plan = run_plan(&root, &worktree, vec![sync]);
+        let mut reporter = VecReporter::default();
+
+        apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+            .expect("unchanged checksum sync should succeed");
+
+        assert!(reporter.events.is_empty());
+    }
+
+    #[test]
+    fn apply_file_operations_should_update_checksum_sync_when_size_differs() {
+        let (root, worktree) = temp_workspace("sync-checksum-size");
+        fs::write(root.join(".env"), "longer\n").expect("source should be written");
+        fs::write(worktree.join(".env"), "old\n").expect("target should be written");
+        let mut sync = sync_operation(&root, &worktree, ".env", ".env");
+        sync.compare = Some(SyncCompare::Checksum);
+        let plan = run_plan(&root, &worktree, vec![sync]);
+        let mut reporter = VecReporter::default();
+
+        apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+            .expect("checksum sync should update size change");
+
+        let synced = fs::read_to_string(worktree.join(".env")).expect("target should be readable");
+        assert_eq!(synced, "longer\n");
+    }
+
+    #[test]
+    fn apply_file_operations_should_preserve_sync_directory_extras_by_default() {
+        let (root, worktree) = temp_workspace("sync-no-delete");
+        fs::create_dir_all(root.join("shared")).expect("source dir should be created");
+        fs::create_dir_all(worktree.join("shared")).expect("target dir should be created");
+        fs::write(root.join("shared/config"), "new\n").expect("source should be written");
+        fs::write(worktree.join("shared/extra"), "keep\n").expect("extra should be written");
+        let plan = run_plan(
+            &root,
+            &worktree,
+            vec![sync_operation(&root, &worktree, "shared", "shared")],
+        );
+        let mut reporter = VecReporter::default();
+
+        apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+            .expect("sync should preserve extras by default");
+
+        assert!(worktree.join("shared/extra").exists());
+    }
+
+    #[test]
+    fn apply_file_operations_should_delete_target_only_entries_when_sync_delete_is_true() {
+        let (root, worktree) = temp_workspace("sync-delete");
+        fs::create_dir_all(root.join("shared")).expect("source dir should be created");
+        fs::create_dir_all(worktree.join("shared/extra-dir"))
+            .expect("target extra dir should be created");
+        fs::write(root.join("shared/config"), "new\n").expect("source should be written");
+        fs::write(worktree.join("shared/extra"), "remove\n").expect("extra should be written");
+        fs::write(worktree.join("shared/extra-dir/file"), "remove\n")
+            .expect("nested extra should be written");
+        let mut sync = sync_operation(&root, &worktree, "shared", "shared");
+        sync.delete = Some(true);
+        let plan = run_plan(&root, &worktree, vec![sync]);
+        let mut reporter = VecReporter::default();
+
+        apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+            .expect("sync delete should remove target-only entries");
+
+        assert!(!worktree.join("shared/extra").exists());
+        assert!(!worktree.join("shared/extra-dir").exists());
+        assert!(
+            reporter
+                .events
+                .iter()
+                .any(|event| matches!(event, OutputEvent::FileDeleted { .. }))
+        );
+    }
+
+    #[test]
+    fn apply_file_operations_should_report_sync_delete_in_dry_run_without_mutation() {
+        let (root, worktree) = temp_workspace("sync-delete-dry-run");
+        fs::create_dir_all(root.join("shared")).expect("source dir should be created");
+        fs::create_dir_all(worktree.join("shared")).expect("target dir should be created");
+        fs::write(worktree.join("shared/extra"), "keep\n").expect("extra should be written");
+        let mut sync = sync_operation(&root, &worktree, "shared", "shared");
+        sync.delete = Some(true);
+        let plan = run_plan(&root, &worktree, vec![sync]);
+        let mut reporter = VecReporter::default();
+
+        apply_file_operations(
+            &plan,
+            FileApplyOptions {
+                dry_run: true,
+                ..FileApplyOptions::default()
+            },
+            &mut reporter,
+        )
+        .expect("dry-run sync delete should plan");
+
+        assert!(worktree.join("shared/extra").exists());
+        assert!(matches!(
+            reporter.events.as_slice(),
+            [OutputEvent::FileWouldDelete { .. }]
+        ));
+    }
+
+    #[test]
+    fn apply_file_operations_should_report_sync_update_in_dry_run_without_mutation() {
+        let (root, worktree) = temp_workspace("sync-update-dry-run");
+        fs::write(root.join(".env"), "new-value\n").expect("source should be written");
+        fs::write(worktree.join(".env"), "old\n").expect("target should be written");
+        let plan = run_plan(
+            &root,
+            &worktree,
+            vec![sync_operation(&root, &worktree, ".env", ".env")],
+        );
+        let mut reporter = VecReporter::default();
+
+        apply_file_operations(
+            &plan,
+            FileApplyOptions {
+                dry_run: true,
+                ..FileApplyOptions::default()
+            },
+            &mut reporter,
+        )
+        .expect("dry-run sync update should plan");
+
+        let existing =
+            fs::read_to_string(worktree.join(".env")).expect("target should remain readable");
+        assert_eq!(existing, "old\n");
+        assert!(matches!(
+            reporter.events.as_slice(),
+            [OutputEvent::FileWouldApply {
+                operation: FileOperationKind::Sync,
+                ..
+            }]
+        ));
+    }
+
+    #[test]
+    fn apply_file_operations_should_delete_nested_target_only_entries() {
+        let (root, worktree) = temp_workspace("sync-nested-delete");
+        fs::create_dir_all(root.join("shared/nested")).expect("source dir should be created");
+        fs::create_dir_all(worktree.join("shared/nested")).expect("target dir should be created");
+        fs::write(root.join("shared/nested/config"), "keep\n")
+            .expect("source file should be written");
+        fs::write(worktree.join("shared/nested/old"), "remove\n")
+            .expect("nested extra should be written");
+        let mut sync = sync_operation(&root, &worktree, "shared", "shared");
+        sync.delete = Some(true);
+        let plan = run_plan(&root, &worktree, vec![sync]);
+        let mut reporter = VecReporter::default();
+
+        apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+            .expect("sync delete should remove nested target-only entries");
+
+        assert!(!worktree.join("shared/nested/old").exists());
+        assert!(worktree.join("shared/nested/config").exists());
     }
 
     #[test]
@@ -1392,6 +2122,108 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn apply_file_operations_should_sync_preserved_source_symlinks() {
+        let (root, worktree) = temp_workspace("sync-preserved-symlink");
+        let source_dir = root.join("shared");
+        fs::create_dir_all(&source_dir).expect("source dir should be created");
+        fs::write(source_dir.join("config"), "value\n").expect("source should be written");
+        std::os::unix::fs::symlink("config", source_dir.join("link"))
+            .expect("source symlink should be created");
+        fs::create_dir_all(worktree.join("shared")).expect("target dir should be created");
+        fs::write(worktree.join("shared/link"), "old\n").expect("target should be written");
+        let plan = run_plan(
+            &root,
+            &worktree,
+            vec![sync_operation(&root, &worktree, "shared", "shared")],
+        );
+        let mut reporter = VecReporter::default();
+
+        apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+            .expect("sync should preserve source symlink");
+
+        let link =
+            fs::read_link(worktree.join("shared/link")).expect("synced symlink should exist");
+        assert_eq!(link, PathBuf::from("config"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn apply_file_operations_should_sync_top_level_source_symlink() {
+        let (root, worktree) = temp_workspace("sync-top-level-symlink");
+        fs::write(root.join("config"), "value\n").expect("source target should be written");
+        std::os::unix::fs::symlink("config", root.join("link"))
+            .expect("source symlink should be created");
+        let plan = run_plan(
+            &root,
+            &worktree,
+            vec![sync_operation(&root, &worktree, "link", "link")],
+        );
+        let mut reporter = VecReporter::default();
+
+        apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+            .expect("sync should create top-level symlink");
+
+        let link = fs::read_link(worktree.join("link")).expect("synced symlink should exist");
+        assert_eq!(link, PathBuf::from("config"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn apply_file_operations_should_warn_for_sync_symlink_to_uncopied_target() {
+        let (root, worktree) = temp_workspace("sync-symlink-warning");
+        let source_dir = root.join("shared");
+        fs::create_dir_all(&source_dir).expect("source dir should be created");
+        fs::write(source_dir.join("config"), "value\n").expect("source should be written");
+        std::os::unix::fs::symlink("config", source_dir.join("link"))
+            .expect("source symlink should be created");
+        let plan = run_plan(
+            &root,
+            &worktree,
+            vec![sync_operation(
+                &root,
+                &worktree,
+                "shared/link",
+                "shared/link",
+            )],
+        );
+        let mut reporter = VecReporter::default();
+
+        apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+            .expect("synced symlink should apply");
+
+        assert!(reporter.events.iter().any(|event| matches!(
+            event,
+            OutputEvent::FileWarning { reason, .. }
+                if reason == "symlink target does not exist"
+        )));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn apply_file_operations_should_update_changed_sync_symlink_target() {
+        let (root, worktree) = temp_workspace("sync-changed-symlink");
+        fs::write(root.join("config"), "value\n").expect("source target should be written");
+        fs::write(root.join("other"), "value\n").expect("other source target should be written");
+        std::os::unix::fs::symlink("config", root.join("link"))
+            .expect("source symlink should be created");
+        std::os::unix::fs::symlink("../root/other", worktree.join("link"))
+            .expect("target symlink should be created");
+        let plan = run_plan(
+            &root,
+            &worktree,
+            vec![sync_operation(&root, &worktree, "link", "link")],
+        );
+        let mut reporter = VecReporter::default();
+
+        apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+            .expect("sync should update changed symlink");
+
+        let link = fs::read_link(worktree.join("link")).expect("synced symlink should exist");
+        assert_eq!(link, PathBuf::from("config"));
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn preserved_source_link_should_track_directory_target_type() {
         let (root, worktree) = temp_workspace("preserved-directory-symlink");
         let source_dir = root.join("shared");
@@ -1402,6 +2234,7 @@ mod tests {
 
         let (_, final_target, target_is_dir) = preserved_source_link(
             &plan,
+            FileOperationKind::Copy,
             &source_dir.join("link"),
             &worktree.join("shared/link"),
         )
