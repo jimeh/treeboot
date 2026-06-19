@@ -1337,6 +1337,95 @@ mod tests {
         assert!(error.to_string().contains("target is a file or symlink"));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn apply_file_operations_should_reject_unsupported_source_file_type() {
+        use std::os::unix::net::UnixListener;
+
+        let (root, worktree) = temp_workspace("unsupported-source");
+        let socket_path = root.join("socket");
+        let _listener = UnixListener::bind(&socket_path).expect("source socket should be created");
+        let plan = run_plan(
+            &root,
+            &worktree,
+            vec![operation(
+                FileOperationKind::Copy,
+                &root,
+                &worktree,
+                "socket",
+                "socket",
+            )],
+        );
+        let mut reporter = VecReporter::default();
+
+        let error = apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+            .expect_err("unsupported source should fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("source file type is unsupported")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn apply_file_operations_should_reject_unsupported_directory_target_file_type() {
+        use std::os::unix::net::UnixListener;
+
+        let (root, worktree) = temp_workspace("unsupported-directory-target");
+        fs::create_dir_all(root.join("shared")).expect("source dir should be created");
+        let socket_path = worktree.join("shared");
+        let _listener = UnixListener::bind(&socket_path).expect("target socket should be created");
+        let plan = run_plan(
+            &root,
+            &worktree,
+            vec![operation(
+                FileOperationKind::Copy,
+                &root,
+                &worktree,
+                "shared",
+                "shared",
+            )],
+        );
+        let mut reporter = VecReporter::default();
+
+        let error = apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+            .expect_err("unsupported target should fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("target file type is unsupported")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn apply_file_operations_should_reject_unsupported_sync_file_target_type() {
+        use std::os::unix::net::UnixListener;
+
+        let (root, worktree) = temp_workspace("unsupported-sync-target");
+        fs::write(root.join(".env"), "TOKEN=1\n").expect("source should be written");
+        let socket_path = worktree.join(".env");
+        let _listener = UnixListener::bind(&socket_path).expect("target socket should be created");
+        let plan = run_plan(
+            &root,
+            &worktree,
+            vec![sync_operation(&root, &worktree, ".env", ".env")],
+        );
+        let mut reporter = VecReporter::default();
+
+        let error = apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+            .expect_err("unsupported sync target should fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("target file type is unsupported")
+        );
+    }
+
     #[test]
     fn apply_file_operations_should_skip_optional_missing_sources() {
         let (root, worktree) = temp_workspace("missing-source");
@@ -1650,6 +1739,84 @@ mod tests {
     }
 
     #[test]
+    fn apply_file_operations_should_report_copy_skip_in_dry_run_without_mutation() {
+        let (root, worktree) = temp_workspace("copy-skip-dry-run");
+        fs::write(root.join(".env"), "new\n").expect("source should be written");
+        fs::write(worktree.join(".env"), "old\n").expect("target should be written");
+        let plan = run_plan(
+            &root,
+            &worktree,
+            vec![operation(
+                FileOperationKind::Copy,
+                &root,
+                &worktree,
+                ".env",
+                ".env",
+            )],
+        );
+        let mut reporter = VecReporter::default();
+
+        apply_file_operations(
+            &plan,
+            FileApplyOptions {
+                dry_run: true,
+                ..FileApplyOptions::default()
+            },
+            &mut reporter,
+        )
+        .expect("dry-run copy skip should plan");
+
+        let existing =
+            fs::read_to_string(worktree.join(".env")).expect("target should remain readable");
+        assert_eq!(existing, "old\n");
+        assert!(matches!(
+            reporter.events.as_slice(),
+            [OutputEvent::FileWouldSkip {
+                operation: FileOperationKind::Copy,
+                reason,
+                ..
+            }] if reason == "target exists"
+        ));
+    }
+
+    #[test]
+    fn apply_file_operations_should_report_directory_create_in_dry_run_without_mutation() {
+        let (root, worktree) = temp_workspace("directory-create-dry-run");
+        fs::create_dir_all(root.join("shared")).expect("source dir should be created");
+        let plan = run_plan(
+            &root,
+            &worktree,
+            vec![operation(
+                FileOperationKind::Copy,
+                &root,
+                &worktree,
+                "shared",
+                "shared",
+            )],
+        );
+        let mut reporter = VecReporter::default();
+
+        apply_file_operations(
+            &plan,
+            FileApplyOptions {
+                dry_run: true,
+                ..FileApplyOptions::default()
+            },
+            &mut reporter,
+        )
+        .expect("dry-run directory copy should plan");
+
+        assert!(!worktree.join("shared").exists());
+        assert!(matches!(
+            reporter.events.as_slice(),
+            [OutputEvent::FileWouldApply {
+                operation: FileOperationKind::Copy,
+                ..
+            }]
+        ));
+    }
+
+    #[test]
     fn apply_file_operations_should_delete_nested_target_only_entries() {
         let (root, worktree) = temp_workspace("sync-nested-delete");
         fs::create_dir_all(root.join("shared/nested")).expect("source dir should be created");
@@ -1805,6 +1972,37 @@ mod tests {
     }
 
     #[test]
+    fn apply_file_operations_should_reject_existing_symlink_target_in_strict() {
+        let (root, worktree) = temp_workspace("strict-symlink");
+        fs::write(root.join("tool"), "tool\n").expect("source should be written");
+        fs::write(worktree.join(".tool"), "old\n").expect("target should be written");
+        let plan = run_plan(
+            &root,
+            &worktree,
+            vec![operation(
+                FileOperationKind::Symlink,
+                &root,
+                &worktree,
+                "tool",
+                ".tool",
+            )],
+        );
+        let mut reporter = VecReporter::default();
+
+        let error = apply_file_operations(
+            &plan,
+            FileApplyOptions {
+                strict: true,
+                ..FileApplyOptions::default()
+            },
+            &mut reporter,
+        )
+        .expect_err("strict symlink target should fail");
+
+        assert!(error.to_string().contains("target exists"));
+    }
+
+    #[test]
     fn apply_file_operations_should_reject_symlink_to_existing_directory_even_with_force() {
         let (root, worktree) = temp_workspace("symlink-existing-dir");
         fs::write(root.join("tool"), "tool\n").expect("source should be written");
@@ -1831,6 +2029,27 @@ mod tests {
             &mut reporter,
         )
         .expect_err("symlink over directory should fail");
+
+        assert!(error.to_string().contains("target is a directory"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn apply_file_operations_should_reject_sync_symlink_to_existing_directory() {
+        let (root, worktree) = temp_workspace("sync-symlink-existing-dir");
+        fs::write(root.join("tool"), "tool\n").expect("source target should be written");
+        std::os::unix::fs::symlink("tool", root.join("link"))
+            .expect("source symlink should be created");
+        fs::create_dir_all(worktree.join("link")).expect("target dir should be created");
+        let plan = run_plan(
+            &root,
+            &worktree,
+            vec![sync_operation(&root, &worktree, "link", "link")],
+        );
+        let mut reporter = VecReporter::default();
+
+        let error = apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+            .expect_err("sync symlink over directory should fail");
 
         assert!(error.to_string().contains("target is a directory"));
     }
@@ -1895,6 +2114,47 @@ mod tests {
             OutputEvent::FileWarning { reason, .. }
                 if reason == "symlink target does not exist"
         )));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn apply_file_operations_should_report_symlink_warning_in_dry_run() {
+        let (root, worktree) = temp_workspace("preserved-symlink-warning-dry-run");
+        let source_dir = root.join("shared");
+        fs::create_dir_all(&source_dir).expect("source dir should be created");
+        fs::write(source_dir.join("config"), "value\n").expect("source should be written");
+        std::os::unix::fs::symlink("config", source_dir.join("link"))
+            .expect("source symlink should be created");
+        let plan = run_plan(
+            &root,
+            &worktree,
+            vec![operation(
+                FileOperationKind::Copy,
+                &root,
+                &worktree,
+                "shared/link",
+                "shared/link",
+            )],
+        );
+        let mut reporter = VecReporter::default();
+
+        apply_file_operations(
+            &plan,
+            FileApplyOptions {
+                dry_run: true,
+                ..FileApplyOptions::default()
+            },
+            &mut reporter,
+        )
+        .expect("dry-run copied symlink should plan");
+
+        assert!(matches!(
+            reporter.events.as_slice(),
+            [
+                OutputEvent::FileWouldApply { .. },
+                OutputEvent::FileWarning { reason, .. }
+            ] if reason == "symlink target does not exist"
+        ));
     }
 
     #[cfg(unix)]

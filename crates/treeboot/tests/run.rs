@@ -641,6 +641,102 @@ fn run_sync_delete_should_remove_target_only_file() {
 }
 
 #[test]
+fn run_sync_should_preserve_target_only_file_by_default() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("sync source should be created");
+    std::fs::create_dir_all(repo.worktree_path().join("shared"))
+        .expect("sync target should be created");
+    write_file(&repo.root_path().join("shared/config"), "value\n");
+    write_file(&repo.worktree_path().join("shared/old"), "keep\n");
+    write_file(
+        &config,
+        r#"sync = [{ source = "shared", target = "shared" }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("treeboot: delete").not());
+
+    let extra = std::fs::read_to_string(repo.worktree_path().join("shared/old"))
+        .expect("target-only file should remain readable");
+    assert_eq!(extra, "keep\n");
+}
+
+#[test]
+fn run_dry_run_sync_delete_should_not_remove_target_only_file() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("sync source should be created");
+    std::fs::create_dir_all(repo.worktree_path().join("shared"))
+        .expect("sync target should be created");
+    write_file(&repo.worktree_path().join("shared/old"), "keep\n");
+    write_file(
+        &config,
+        r#"sync = [{ source = "shared", target = "shared", delete = true }]"#,
+    );
+
+    treeboot()
+        .args(["run", "--dry-run"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "treeboot: would delete shared/old",
+        ));
+
+    let extra = std::fs::read_to_string(repo.worktree_path().join("shared/old"))
+        .expect("target-only file should remain readable");
+    assert_eq!(extra, "keep\n");
+}
+
+#[test]
+fn run_checksum_sync_should_update_when_metadata_matches() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    let source = repo.root_path().join("shared/config");
+    let target = repo.worktree_path().join("shared/config");
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("sync source should be created");
+    std::fs::create_dir_all(repo.worktree_path().join("shared"))
+        .expect("sync target should be created");
+    write_file(&source, "new\n");
+    write_file(&target, "old\n");
+    let modified = std::fs::metadata(&source)
+        .expect("source metadata should be readable")
+        .modified()
+        .expect("source mtime should be readable");
+    let times = std::fs::FileTimes::new().set_modified(modified);
+    std::fs::File::options()
+        .write(true)
+        .open(&target)
+        .expect("target should be opened")
+        .set_times(times)
+        .expect("target mtime should match source");
+    write_file(
+        &config,
+        r#"sync = [{ source = "shared/config", target = "shared/config", compare = "checksum" }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "treeboot: sync shared/config -> shared/config",
+        ));
+
+    let synced = std::fs::read_to_string(target).expect("target should be readable");
+    assert_eq!(synced, "new\n");
+}
+
+#[test]
 fn run_config_with_commands_and_skip_commands_should_copy_file() {
     let repo = git_worktree();
     let config = repo.worktree_path().join(".treeboot.toml");
@@ -745,6 +841,56 @@ fn run_dry_run_copy_should_not_mutate_target() {
         ));
 
     assert!(!repo.worktree_path().join(".env").exists());
+}
+
+#[test]
+fn run_default_copy_should_skip_existing_target() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&repo.root_path().join(".env"), "new\n");
+    write_file(&repo.worktree_path().join(".env"), "old\n");
+    write_file(&config, r#"copy = [".env"]"#);
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "treeboot: skip copy .env; target exists",
+        ));
+
+    let existing = std::fs::read_to_string(repo.worktree_path().join(".env"))
+        .expect("existing target should be readable");
+    assert_eq!(existing, "old\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn run_copied_symlink_should_warn_when_final_target_is_missing() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    std::fs::create_dir_all(repo.root_path().join("shared")).expect("source dir should be created");
+    write_file(&repo.root_path().join("shared/config"), "value\n");
+    std::os::unix::fs::symlink("config", repo.root_path().join("shared/link"))
+        .expect("source symlink should be created");
+    write_file(
+        &config,
+        r#"copy = [{ source = "shared/link", target = "shared/link" }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "treeboot: warning: shared/link symlink target does not exist",
+        ));
+
+    let link = std::fs::read_link(repo.worktree_path().join("shared/link"))
+        .expect("copied symlink should exist");
+    assert_eq!(link, std::path::PathBuf::from("config"));
 }
 
 #[cfg(unix)]

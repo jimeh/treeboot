@@ -25,9 +25,9 @@ version.
 
 The current implementation is in progress. It supports the initial `run`,
 `config`, and `init` command surfaces, path discovery, init-script
-discovery/execution, config parsing/inspection, declarative validation, and
-missing-config behavior.
-Declarative TOML config execution is still pending.
+discovery/execution, config parsing/inspection, declarative validation,
+declarative file operations, and missing-config behavior. Declarative command
+execution is still pending.
 
 ## Why
 

@@ -82,7 +82,7 @@ Validation focus:
 
 ## Milestone 5: File Operations
 
-Status: pending.
+Status: implemented.
 
 Scope:
 
