@@ -8,6 +8,16 @@ from one repo-local setup contract.
 The implementation target is the behavior in [docs/SPEC.html](docs/SPEC.html).
 The README is the user-facing summary; the spec is the contract when they differ.
 
+## Spec Discipline
+
+Keep [docs/SPEC.html](docs/SPEC.html) complete enough that a separate
+implementation, in another language or runtime, could build a compatible
+`treeboot` from the spec alone. When planning uncovers observable behavior,
+edge-case semantics, CLI output, validation rules, or compatibility
+requirements, update the spec instead of leaving those details only in
+implementation plans or roadmap notes. Keep implementation tactics in
+`docs/agents/` planning docs.
+
 ## Repo Shape
 
 - `crates/treeboot` is the CLI package and should stay thin.
