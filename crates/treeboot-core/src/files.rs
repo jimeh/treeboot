@@ -1494,6 +1494,12 @@ mod tests {
         let (root, worktree) = temp_workspace("sync-metadata-update");
         fs::write(root.join(".env"), "new\n").expect("source should be written");
         fs::write(worktree.join(".env"), "old\n").expect("target should be written");
+        let times = FileTimes::new().set_modified(UNIX_EPOCH);
+        File::options()
+            .write(true)
+            .open(worktree.join(".env"))
+            .and_then(|file| file.set_times(times))
+            .expect("target mtime should be set");
         let plan = run_plan(
             &root,
             &worktree,
