@@ -80,6 +80,12 @@ struct SymlinkActionPlan {
     target_is_dir: bool,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum TreePlanMode {
+    Copy { options: FileApplyOptions },
+    Sync,
+}
+
 pub(crate) fn apply_file_operations(
     plan: &RunPlan,
     options: FileApplyOptions,
@@ -120,62 +126,67 @@ fn plan_operation(
     }
 
     match operation.operation {
-        FileOperationKind::Copy => plan_copy(plan, operation, options, actions),
+        FileOperationKind::Copy => {
+            plan_tree(plan, operation, TreePlanMode::Copy { options }, actions)
+        }
         FileOperationKind::Symlink => plan_symlink(operation, options, actions),
-        FileOperationKind::Sync => plan_sync(plan, operation, actions),
+        FileOperationKind::Sync => plan_tree(plan, operation, TreePlanMode::Sync, actions),
     }
 }
 
-fn plan_copy(
+fn plan_tree(
     plan: &RunPlan,
     operation: &PlannedFileOperation,
-    options: FileApplyOptions,
+    mode: TreePlanMode,
     actions: &mut Vec<FileAction>,
 ) -> Result<()> {
     let source_path = raw_source_path(plan, operation);
     let metadata = metadata(&source_path, operation.operation)?;
+    plan_tree_entry(
+        plan,
+        operation,
+        CopyEntry {
+            source_path: &source_path,
+            target_path: &operation.target_path,
+            source: &operation.source,
+            target: &operation.target,
+        },
+        &metadata,
+        mode,
+        actions,
+    )
+}
 
-    if metadata.file_type().is_symlink() {
-        return plan_copy_symlink(plan, operation, &source_path, options, actions);
+fn plan_tree_entry(
+    plan: &RunPlan,
+    operation: &PlannedFileOperation,
+    entry: CopyEntry<'_>,
+    source_metadata: &Metadata,
+    mode: TreePlanMode,
+    actions: &mut Vec<FileAction>,
+) -> Result<()> {
+    if source_metadata.file_type().is_symlink() {
+        return plan_tree_symlink(plan, operation, entry, mode, actions);
     }
-    if metadata.is_file() {
-        return plan_copy_file(
-            operation,
-            operation.source.clone(),
-            operation.target.clone(),
-            &source_path,
-            &operation.target_path,
-            options,
-            actions,
-        );
+    if source_metadata.is_file() {
+        return plan_tree_file(operation, entry, mode, actions);
     }
-    if metadata.is_dir() {
-        return plan_copy_directory(
-            plan,
-            operation,
-            CopyEntry {
-                source_path: &source_path,
-                target_path: &operation.target_path,
-                source: &operation.source,
-                target: &operation.target,
-            },
-            options,
-            actions,
-        );
+    if source_metadata.is_dir() {
+        return plan_tree_directory(plan, operation, entry, mode, actions);
     }
 
     conflict(
         operation.operation,
-        source_path,
+        entry.source_path.to_path_buf(),
         "source file type is unsupported",
     )
 }
 
-fn plan_copy_directory(
+fn plan_tree_directory(
     plan: &RunPlan,
     operation: &PlannedFileOperation,
     entry: CopyEntry<'_>,
-    options: FileApplyOptions,
+    mode: TreePlanMode,
     actions: &mut Vec<FileAction>,
 ) -> Result<()> {
     match maybe_metadata(entry.target_path, operation.operation)? {
@@ -187,20 +198,22 @@ fn plan_copy_directory(
             );
         }
         Some(metadata) if metadata.is_dir() => {
-            if options.strict {
-                return conflict(
-                    operation.operation,
-                    entry.target_path.to_path_buf(),
-                    "target directory exists",
-                );
-            }
+            if let TreePlanMode::Copy { options } = mode {
+                if options.strict {
+                    return conflict(
+                        operation.operation,
+                        entry.target_path.to_path_buf(),
+                        "target directory exists",
+                    );
+                }
 
-            if !options.force {
-                actions.push(FileAction::Skip {
-                    operation: operation.operation,
-                    target: entry.target.to_path_buf(),
-                    reason: "target directory exists".to_owned(),
-                });
+                if !options.force {
+                    actions.push(FileAction::Skip {
+                        operation: operation.operation,
+                        target: entry.target.to_path_buf(),
+                        reason: "target directory exists".to_owned(),
+                    });
+                }
             }
         }
         Some(_) => {
@@ -234,100 +247,99 @@ fn plan_copy_directory(
         let child_target = entry.target.join(child.file_name());
         let child_metadata = metadata(&child_source_path, operation.operation)?;
 
-        if child_metadata.file_type().is_symlink() {
-            plan_copy_symlink_at(
-                plan,
-                operation,
-                CopyEntry {
-                    source_path: &child_source_path,
-                    target_path: &child_target_path,
-                    source: &child_source,
-                    target: &child_target,
-                },
-                options,
-                actions,
-            )?;
-        } else if child_metadata.is_file() {
-            plan_copy_file(
-                operation,
-                child_source,
-                child_target,
-                &child_source_path,
-                &child_target_path,
-                options,
-                actions,
-            )?;
-        } else if child_metadata.is_dir() {
-            plan_copy_directory(
-                plan,
-                operation,
-                CopyEntry {
-                    source_path: &child_source_path,
-                    target_path: &child_target_path,
-                    source: &child_source,
-                    target: &child_target,
-                },
-                options,
-                actions,
-            )?;
-        } else {
-            return conflict(
-                operation.operation,
-                child_source_path,
-                "source file type is unsupported",
-            );
-        }
+        plan_tree_entry(
+            plan,
+            operation,
+            CopyEntry {
+                source_path: &child_source_path,
+                target_path: &child_target_path,
+                source: &child_source,
+                target: &child_target,
+            },
+            &child_metadata,
+            mode,
+            actions,
+        )?;
+    }
+
+    if matches!(mode, TreePlanMode::Sync) && operation.delete.unwrap_or(false) {
+        plan_sync_deletes(operation, entry, actions)?;
     }
 
     Ok(())
 }
 
-fn plan_copy_file(
+fn plan_tree_file(
     operation: &PlannedFileOperation,
-    source: PathBuf,
-    target: PathBuf,
-    source_path: &Path,
-    target_path: &Path,
-    options: FileApplyOptions,
+    entry: CopyEntry<'_>,
+    mode: TreePlanMode,
     actions: &mut Vec<FileAction>,
 ) -> Result<()> {
-    match maybe_metadata(target_path, operation.operation)? {
+    match maybe_metadata(entry.target_path, operation.operation)? {
         Some(metadata) if metadata.is_dir() => conflict(
             operation.operation,
-            target_path.to_path_buf(),
+            entry.target_path.to_path_buf(),
             "target is a directory",
         ),
-        Some(_) if options.strict => conflict(
-            operation.operation,
-            target_path.to_path_buf(),
-            "target exists",
-        ),
-        Some(_) if options.force => {
-            actions.push(FileAction::CopyFile {
-                operation: operation.operation,
-                source,
-                target,
-                source_path: source_path.to_path_buf(),
-                target_path: target_path.to_path_buf(),
-                replace: true,
-            });
-            Ok(())
-        }
-        Some(_) => {
-            actions.push(FileAction::Skip {
-                operation: operation.operation,
-                target,
-                reason: "target exists".to_owned(),
-            });
-            Ok(())
-        }
+        Some(metadata) => match mode {
+            TreePlanMode::Copy { options } if options.strict => conflict(
+                operation.operation,
+                entry.target_path.to_path_buf(),
+                "target exists",
+            ),
+            TreePlanMode::Copy { options } if options.force => {
+                actions.push(FileAction::CopyFile {
+                    operation: operation.operation,
+                    source: entry.source.to_path_buf(),
+                    target: entry.target.to_path_buf(),
+                    source_path: entry.source_path.to_path_buf(),
+                    target_path: entry.target_path.to_path_buf(),
+                    replace: true,
+                });
+                Ok(())
+            }
+            TreePlanMode::Copy { .. } => {
+                actions.push(FileAction::Skip {
+                    operation: operation.operation,
+                    target: entry.target.to_path_buf(),
+                    reason: "target exists".to_owned(),
+                });
+                Ok(())
+            }
+            TreePlanMode::Sync if !metadata.is_file() && !metadata.file_type().is_symlink() => {
+                conflict(
+                    operation.operation,
+                    entry.target_path.to_path_buf(),
+                    "target file type is unsupported",
+                )
+            }
+            TreePlanMode::Sync
+                if file_sync_changed(
+                    operation,
+                    entry.source_path,
+                    entry.target_path,
+                    &metadata,
+                )? =>
+            {
+                actions.push(FileAction::CopyFile {
+                    operation: operation.operation,
+                    source: entry.source.to_path_buf(),
+                    target: entry.target.to_path_buf(),
+                    source_path: entry.source_path.to_path_buf(),
+                    target_path: entry.target_path.to_path_buf(),
+                    replace: true,
+                });
+                Ok(())
+            }
+            TreePlanMode::Sync => Ok(()),
+        },
         None => {
             actions.push(FileAction::CopyFile {
                 operation: operation.operation,
-                source,
-                target,
-                source_path: source_path.to_path_buf(),
-                target_path: target_path.to_path_buf(),
+                source: entry.source.to_path_buf(),
+                target: entry.target.to_path_buf(),
+                source_path: entry.source_path.to_path_buf(),
+                target_path: entry.target_path.to_path_buf(),
                 replace: false,
             });
             Ok(())
@@ -335,32 +347,11 @@ fn plan_copy_file(
     }
 }
 
-fn plan_copy_symlink(
-    plan: &RunPlan,
-    operation: &PlannedFileOperation,
-    source_path: &Path,
-    options: FileApplyOptions,
-    actions: &mut Vec<FileAction>,
-) -> Result<()> {
-    plan_copy_symlink_at(
-        plan,
-        operation,
-        CopyEntry {
-            source_path,
-            target_path: &operation.target_path,
-            source: &operation.source,
-            target: &operation.target,
-        },
-        options,
-        actions,
-    )
-}
-
-fn plan_copy_symlink_at(
+fn plan_tree_symlink(
     plan: &RunPlan,
     operation: &PlannedFileOperation,
     entry: CopyEntry<'_>,
-    options: FileApplyOptions,
+    mode: TreePlanMode,
     actions: &mut Vec<FileAction>,
 ) -> Result<()> {
     let (link_target, final_target, target_is_dir) = preserved_source_link(
@@ -369,19 +360,75 @@ fn plan_copy_symlink_at(
         entry.source_path,
         entry.target_path,
     )?;
-    plan_symlink_action(
-        SymlinkActionPlan {
-            operation: operation.operation,
-            source: entry.source.to_path_buf(),
-            target: entry.target.to_path_buf(),
-            target_path: entry.target_path.to_path_buf(),
-            link_target,
-            final_target,
-            target_is_dir,
-        },
-        options,
-        actions,
-    )
+    let symlink_plan = SymlinkActionPlan {
+        operation: operation.operation,
+        source: entry.source.to_path_buf(),
+        target: entry.target.to_path_buf(),
+        target_path: entry.target_path.to_path_buf(),
+        link_target,
+        final_target,
+        target_is_dir,
+    };
+
+    match mode {
+        TreePlanMode::Copy { options } => plan_symlink_action(symlink_plan, options, actions),
+        TreePlanMode::Sync => plan_sync_symlink_action(symlink_plan, actions),
+    }
+}
+
+fn plan_sync_symlink_action(plan: SymlinkActionPlan, actions: &mut Vec<FileAction>) -> Result<()> {
+    match maybe_metadata(&plan.target_path, plan.operation)? {
+        Some(metadata) if metadata.is_dir() => {
+            conflict(plan.operation, plan.target_path, "target is a directory")
+        }
+        Some(metadata) if metadata.file_type().is_symlink() => {
+            let existing =
+                fs::read_link(&plan.target_path).map_err(|source| Error::FileOperationIo {
+                    operation: operation_name(plan.operation),
+                    path: plan.target_path.clone(),
+                    source,
+                })?;
+            if existing != plan.link_target {
+                actions.push(FileAction::CreateSymlink {
+                    operation: plan.operation,
+                    source: plan.source,
+                    target: plan.target,
+                    target_path: plan.target_path,
+                    link_target: plan.link_target,
+                    final_target: plan.final_target,
+                    target_is_dir: plan.target_is_dir,
+                    replace: true,
+                });
+            }
+            Ok(())
+        }
+        Some(_) => {
+            actions.push(FileAction::CreateSymlink {
+                operation: plan.operation,
+                source: plan.source,
+                target: plan.target,
+                target_path: plan.target_path,
+                link_target: plan.link_target,
+                final_target: plan.final_target,
+                target_is_dir: plan.target_is_dir,
+                replace: true,
+            });
+            Ok(())
+        }
+        None => {
+            actions.push(FileAction::CreateSymlink {
+                operation: plan.operation,
+                source: plan.source,
+                target: plan.target,
+                target_path: plan.target_path,
+                link_target: plan.link_target,
+                final_target: plan.final_target,
+                target_is_dir: plan.target_is_dir,
+                replace: false,
+            });
+            Ok(())
+        }
+    }
 }
 
 fn plan_symlink(
@@ -451,276 +498,6 @@ fn plan_symlink_action(
                 link_target: plan.link_target,
                 final_target: plan.final_target,
                 target_is_dir: plan.target_is_dir,
-                replace: false,
-            });
-            Ok(())
-        }
-    }
-}
-
-fn plan_sync(
-    plan: &RunPlan,
-    operation: &PlannedFileOperation,
-    actions: &mut Vec<FileAction>,
-) -> Result<()> {
-    let source_path = raw_source_path(plan, operation);
-    let metadata = metadata(&source_path, operation.operation)?;
-
-    if metadata.file_type().is_symlink() {
-        return plan_sync_symlink(plan, operation, &source_path, actions);
-    }
-    if metadata.is_file() {
-        return plan_sync_file(
-            operation,
-            operation.source.clone(),
-            operation.target.clone(),
-            &source_path,
-            &operation.target_path,
-            actions,
-        );
-    }
-    if metadata.is_dir() {
-        return plan_sync_directory(
-            plan,
-            operation,
-            CopyEntry {
-                source_path: &source_path,
-                target_path: &operation.target_path,
-                source: &operation.source,
-                target: &operation.target,
-            },
-            actions,
-        );
-    }
-
-    conflict(
-        operation.operation,
-        source_path,
-        "source file type is unsupported",
-    )
-}
-
-fn plan_sync_directory(
-    plan: &RunPlan,
-    operation: &PlannedFileOperation,
-    entry: CopyEntry<'_>,
-    actions: &mut Vec<FileAction>,
-) -> Result<()> {
-    match maybe_metadata(entry.target_path, operation.operation)? {
-        Some(metadata) if metadata.file_type().is_symlink() || metadata.is_file() => {
-            return conflict(
-                operation.operation,
-                entry.target_path.to_path_buf(),
-                "target is a file or symlink",
-            );
-        }
-        Some(metadata) if metadata.is_dir() => {}
-        Some(_) => {
-            return conflict(
-                operation.operation,
-                entry.target_path.to_path_buf(),
-                "target file type is unsupported",
-            );
-        }
-        None => actions.push(FileAction::CreateDirectory {
-            operation: operation.operation,
-            source: entry.source.to_path_buf(),
-            target: entry.target.to_path_buf(),
-            target_path: entry.target_path.to_path_buf(),
-        }),
-    }
-
-    for child in fs::read_dir(entry.source_path).map_err(|source| Error::FileOperationIo {
-        operation: operation_name(operation.operation),
-        path: entry.source_path.to_path_buf(),
-        source,
-    })? {
-        let child = child.map_err(|source| Error::FileOperationIo {
-            operation: operation_name(operation.operation),
-            path: entry.source_path.to_path_buf(),
-            source,
-        })?;
-        let child_source_path = child.path();
-        let child_target_path = entry.target_path.join(child.file_name());
-        let child_source = entry.source.join(child.file_name());
-        let child_target = entry.target.join(child.file_name());
-        let child_metadata = metadata(&child_source_path, operation.operation)?;
-
-        if child_metadata.file_type().is_symlink() {
-            plan_sync_symlink_at(
-                plan,
-                operation,
-                CopyEntry {
-                    source_path: &child_source_path,
-                    target_path: &child_target_path,
-                    source: &child_source,
-                    target: &child_target,
-                },
-                actions,
-            )?;
-        } else if child_metadata.is_file() {
-            plan_sync_file(
-                operation,
-                child_source,
-                child_target,
-                &child_source_path,
-                &child_target_path,
-                actions,
-            )?;
-        } else if child_metadata.is_dir() {
-            plan_sync_directory(
-                plan,
-                operation,
-                CopyEntry {
-                    source_path: &child_source_path,
-                    target_path: &child_target_path,
-                    source: &child_source,
-                    target: &child_target,
-                },
-                actions,
-            )?;
-        } else {
-            return conflict(
-                operation.operation,
-                child_source_path,
-                "source file type is unsupported",
-            );
-        }
-    }
-
-    if operation.delete.unwrap_or(false) {
-        plan_sync_deletes(operation, entry, actions)?;
-    }
-
-    Ok(())
-}
-
-fn plan_sync_file(
-    operation: &PlannedFileOperation,
-    source: PathBuf,
-    target: PathBuf,
-    source_path: &Path,
-    target_path: &Path,
-    actions: &mut Vec<FileAction>,
-) -> Result<()> {
-    match maybe_metadata(target_path, operation.operation)? {
-        Some(metadata) if metadata.is_dir() => conflict(
-            operation.operation,
-            target_path.to_path_buf(),
-            "target is a directory",
-        ),
-        Some(metadata) if !metadata.is_file() && !metadata.file_type().is_symlink() => conflict(
-            operation.operation,
-            target_path.to_path_buf(),
-            "target file type is unsupported",
-        ),
-        Some(metadata) if file_sync_changed(operation, source_path, target_path, &metadata)? => {
-            actions.push(FileAction::CopyFile {
-                operation: operation.operation,
-                source,
-                target,
-                source_path: source_path.to_path_buf(),
-                target_path: target_path.to_path_buf(),
-                replace: true,
-            });
-            Ok(())
-        }
-        Some(_) => Ok(()),
-        None => {
-            actions.push(FileAction::CopyFile {
-                operation: operation.operation,
-                source,
-                target,
-                source_path: source_path.to_path_buf(),
-                target_path: target_path.to_path_buf(),
-                replace: false,
-            });
-            Ok(())
-        }
-    }
-}
-
-fn plan_sync_symlink(
-    plan: &RunPlan,
-    operation: &PlannedFileOperation,
-    source_path: &Path,
-    actions: &mut Vec<FileAction>,
-) -> Result<()> {
-    plan_sync_symlink_at(
-        plan,
-        operation,
-        CopyEntry {
-            source_path,
-            target_path: &operation.target_path,
-            source: &operation.source,
-            target: &operation.target,
-        },
-        actions,
-    )
-}
-
-fn plan_sync_symlink_at(
-    plan: &RunPlan,
-    operation: &PlannedFileOperation,
-    entry: CopyEntry<'_>,
-    actions: &mut Vec<FileAction>,
-) -> Result<()> {
-    let (link_target, final_target, target_is_dir) = preserved_source_link(
-        plan,
-        operation.operation,
-        entry.source_path,
-        entry.target_path,
-    )?;
-
-    match maybe_metadata(entry.target_path, operation.operation)? {
-        Some(metadata) if metadata.is_dir() => conflict(
-            operation.operation,
-            entry.target_path.to_path_buf(),
-            "target is a directory",
-        ),
-        Some(metadata) if metadata.file_type().is_symlink() => {
-            let existing =
-                fs::read_link(entry.target_path).map_err(|source| Error::FileOperationIo {
-                    operation: operation_name(operation.operation),
-                    path: entry.target_path.to_path_buf(),
-                    source,
-                })?;
-            if existing != link_target {
-                actions.push(FileAction::CreateSymlink {
-                    operation: operation.operation,
-                    source: entry.source.to_path_buf(),
-                    target: entry.target.to_path_buf(),
-                    target_path: entry.target_path.to_path_buf(),
-                    link_target,
-                    final_target,
-                    target_is_dir,
-                    replace: true,
-                });
-            }
-            Ok(())
-        }
-        Some(_) => {
-            actions.push(FileAction::CreateSymlink {
-                operation: operation.operation,
-                source: entry.source.to_path_buf(),
-                target: entry.target.to_path_buf(),
-                target_path: entry.target_path.to_path_buf(),
-                link_target,
-                final_target,
-                target_is_dir,
-                replace: true,
-            });
-            Ok(())
-        }
-        None => {
-            actions.push(FileAction::CreateSymlink {
-                operation: operation.operation,
-                source: entry.source.to_path_buf(),
-                target: entry.target.to_path_buf(),
-                target_path: entry.target_path.to_path_buf(),
-                link_target,
-                final_target,
-                target_is_dir,
                 replace: false,
             });
             Ok(())
