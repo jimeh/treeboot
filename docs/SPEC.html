@@ -368,6 +368,34 @@
       border-bottom: 0;
     }
 
+    .table-wrap {
+      overflow-x: auto;
+      margin-top: 1rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--paper-strong);
+    }
+
+    .table-wrap table {
+      min-width: 820px;
+      margin-top: 0;
+      border: 0;
+    }
+
+    .conflict-matrix th:first-child,
+    .conflict-matrix td:first-child {
+      position: sticky;
+      left: 0;
+      z-index: 1;
+      background: var(--paper-strong);
+      box-shadow: 1px 0 0 var(--line);
+    }
+
+    .conflict-matrix th:first-child {
+      z-index: 2;
+      background: #1b2a25;
+    }
+
     .flow {
       counter-reset: flow;
       display: grid;
@@ -566,6 +594,7 @@
       .summary-panel,
       .panel,
       .callout,
+      .table-wrap,
       table,
       .flow-step,
       .matrix {
@@ -605,7 +634,7 @@
     <main>
       <header class="hero" id="overview">
         <div>
-          <p class="eyebrow">Specification v1.2.0</p>
+          <p class="eyebrow">Specification v1.3.0</p>
           <h1>treeboot</h1>
           <p class="lede">
             A portable worktree bootstrapper that lets every coding agent,
@@ -613,6 +642,7 @@
             command.
           </p>
           <div class="badge-row" aria-label="Project characteristics">
+            <span class="badge">compatibility contract</span>
             <span class="badge">Rust executable</span>
             <span class="badge">TOML config</span>
             <span class="badge">idempotent default</span>
@@ -623,10 +653,6 @@
 
         <section class="summary-panel" aria-label="Specification summary">
           <dl>
-            <div>
-              <dt>Spec status</dt>
-              <dd>v1.2.0 implementation contract</dd>
-            </div>
             <div>
               <dt>Default command</dt>
               <dd><code>treeboot</code> == <code>treeboot run</code></dd>
@@ -1961,9 +1987,11 @@ args = ["install"]</code></pre>
             <h3>Sync</h3>
             <p>
               Reconciles target content to match source content. Files are
-              compared by size and modified time by default, or by checksum when
-              <code>compare = "checksum"</code> is set. Source symlinks are
-              preserved by default when they are safe.
+              compared by size and modified time by default, or by content when
+              <code>compare = "checksum"</code> is set. Checksum comparison must
+              detect content changes even when size and modified time do not
+              change. Source symlinks are preserved by default when they are
+              safe.
             </p>
             <p>
               <code>treeboot sync</code> exposes <code>--target</code>,
@@ -1983,12 +2011,24 @@ args = ["install"]</code></pre>
             their referents. A symlink is unsafe if it is empty or resolves
             outside <code>TREEBOOT_ROOT_PATH</code>. When source and target
             layouts differ, treeboot rewrites copied symlinks to point at the
-            analogous worktree destination when it can. When no rewrite is
-            needed, treeboot preserves the symlink target text. If the final
-            symlink target does not exist and will not be created by the current
-            run, treeboot prints a warning. Unsafe symlinks are validation
-            errors in declarative config. Projects that need custom symlink
-            handling should use an init script.
+            analogous worktree destination when it can. Root-local symlink
+            targets are mapped by root-relative path into the worktree before
+            treeboot computes the destination symlink. When no rewrite is needed,
+            treeboot preserves the symlink target text. If the final symlink
+            target does not exist and will not be created by the current run,
+            treeboot prints a warning. Unsafe symlinks are validation errors in
+            declarative config. Projects that need custom symlink handling should
+            use an init script.
+          </p>
+        </div>
+
+        <div class="callout">
+          <h3>File metadata preservation</h3>
+          <p>
+            Copy and sync preserve regular file contents, permissions, and
+            modified time where the platform supports them. Modified time
+            preservation is part of the sync contract because metadata mode
+            compares size and modified time for idempotent reruns.
           </p>
         </div>
 
@@ -2028,42 +2068,125 @@ args = ["install"]</code></pre>
           </p>
         </div>
 
-        <table>
-          <thead>
-            <tr>
-              <th>Mode</th>
-              <th>Missing target</th>
-              <th>Existing target</th>
-              <th>Commands</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>default</td>
-              <td>Create</td>
-              <td>Skip with info output</td>
-              <td>Run</td>
-            </tr>
-            <tr>
-              <td><code>--strict</code></td>
-              <td>Create</td>
-              <td>Fail for copy/symlink; reject sync operations</td>
-              <td>Run only if file operations succeed</td>
-            </tr>
-            <tr>
-              <td><code>--force</code></td>
-              <td>Create</td>
-              <td>Replace files/symlinks; merge copies; sync still reconciles</td>
-              <td>Run</td>
-            </tr>
-            <tr>
-              <td><code>--dry-run</code></td>
-              <td>Print planned create</td>
-              <td>Print planned skip/fail/replace</td>
-              <td>Print only</td>
-            </tr>
-          </tbody>
-        </table>
+        <p>
+          Dry-run reports the same file-operation decision that treeboot would
+          take without mutating files. The table below is the compatibility
+          contract for file-operation conflicts.
+        </p>
+
+        <div class="callout warning">
+          <h3>Current command runtime gate</h3>
+          <p>
+            In this release line, declarative commands are not executed yet.
+            If a config contains commands and <code>--skip-commands</code> is
+            not set, <code>treeboot run</code> fails before file mutation.
+            File-only configs, or configs run with
+            <code>--skip-commands</code>, continue through file operations.
+          </p>
+        </div>
+
+        <div class="table-wrap">
+          <table class="conflict-matrix">
+            <thead>
+              <tr>
+                <th>Case</th>
+                <th>Default</th>
+                <th><code>--strict</code></th>
+                <th><code>--force</code></th>
+                <th><code>--dry-run</code></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Copy file to missing destination</td>
+                <td>Create file and parents.</td>
+                <td>Create file and parents.</td>
+                <td>Create file and parents.</td>
+                <td>Report planned create.</td>
+              </tr>
+              <tr>
+                <td>Copy file to existing file or symlink</td>
+                <td>Skip with info output.</td>
+                <td>Fail before mutation.</td>
+                <td>Replace file or symlink.</td>
+                <td>Report skip, fail, or replace.</td>
+              </tr>
+              <tr>
+                <td>Copy file to existing directory</td>
+                <td>Fail operation.</td>
+                <td>Fail before mutation.</td>
+                <td>Fail; do not remove directory.</td>
+                <td>Report failure.</td>
+              </tr>
+              <tr>
+                <td>Copy directory to missing destination</td>
+                <td>Recursively create directory tree.</td>
+                <td>Recursively create directory tree.</td>
+                <td>Recursively create directory tree.</td>
+                <td>Report planned creates.</td>
+              </tr>
+              <tr>
+                <td>Copy directory to existing directory</td>
+                <td>Recursively copy missing files and skip existing files.</td>
+                <td>Fail before mutation.</td>
+                <td>Merge and overwrite matching files only.</td>
+                <td>Report planned creates, skips, fail, or merge.</td>
+              </tr>
+              <tr>
+                <td>Copy directory to file or symlink</td>
+                <td>Fail operation.</td>
+                <td>Fail before mutation.</td>
+                <td>Fail; do not replace with directory.</td>
+                <td>Report failure.</td>
+              </tr>
+              <tr>
+                <td>Symlink to missing destination</td>
+                <td>Create parent directories and symlink.</td>
+                <td>Create parent directories and symlink.</td>
+                <td>Create parent directories and symlink.</td>
+                <td>Report planned symlink.</td>
+              </tr>
+              <tr>
+                <td>Symlink to existing file or symlink</td>
+                <td>Skip with info output.</td>
+                <td>Fail before mutation.</td>
+                <td>Replace file or symlink.</td>
+                <td>Report skip, fail, or replace.</td>
+              </tr>
+              <tr>
+                <td>Symlink to existing directory</td>
+                <td>Fail operation.</td>
+                <td>Fail before mutation.</td>
+                <td>Fail; do not remove directory.</td>
+                <td>Report failure.</td>
+              </tr>
+              <tr>
+                <td>Sync file</td>
+                <td>Create or update when changed.</td>
+                <td>Rejected by validation.</td>
+                <td>Same as default.</td>
+                <td>Report create or update; stay silent when unchanged.</td>
+              </tr>
+              <tr>
+                <td>Sync directory</td>
+                <td>Reconcile tree; preserve target-only files by default.</td>
+                <td>Rejected by validation.</td>
+                <td>Same as default.</td>
+                <td>
+                  Report creates, updates, and explicit deletes; stay silent
+                  when unchanged.
+                </td>
+              </tr>
+              <tr>
+                <td>Optional missing source</td>
+                <td>Skip and leave target unchanged.</td>
+                <td>Skip and leave target unchanged.</td>
+                <td>Skip and leave target unchanged.</td>
+                <td>Report planned skip.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
         <div class="callout">
           <h3>Directory copy under force</h3>
@@ -2194,6 +2317,11 @@ treeboot: skip .env.local; target exists
 treeboot: symlink .tool-versions -&gt; ../repo/.tool-versions
 treeboot: sync shared/config -&gt; .config
 treeboot: run mise install</code></pre>
+
+        <p>
+          Unchanged sync files and directories produce no output. Sync reports
+          creates, updates, and deletes when deletion is explicitly enabled.
+        </p>
 
         <table>
           <thead>

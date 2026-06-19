@@ -101,9 +101,32 @@ pub enum Error {
     #[error("This is not a work tree")]
     RootWorktreeStrict,
 
-    /// Declarative config execution has not been implemented yet.
-    #[error("declarative config execution is not implemented yet: {0:?}")]
-    ConfigExecutionNotImplemented(PathBuf),
+    /// Declarative command execution has not been implemented yet.
+    #[error("command execution is not implemented yet: {0:?}")]
+    CommandExecutionNotImplemented(PathBuf),
+
+    /// A file operation encountered an unsupported conflict.
+    #[error("{operation} file operation cannot use {path:?}: {message}")]
+    FileOperationConflict {
+        /// Operation being applied.
+        operation: &'static str,
+        /// Path involved in the conflict.
+        path: PathBuf,
+        /// Human-readable conflict detail.
+        message: String,
+    },
+
+    /// A file operation failed while accessing the filesystem.
+    #[error("{operation} file operation failed at {path:?}: {source}")]
+    FileOperationIo {
+        /// Operation being applied.
+        operation: &'static str,
+        /// Path being accessed.
+        path: PathBuf,
+        /// Source I/O error.
+        #[source]
+        source: std::io::Error,
+    },
 
     /// An init script could not be spawned.
     #[error("failed to run init script {path:?}: {source}")]

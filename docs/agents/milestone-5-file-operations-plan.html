@@ -1,0 +1,1375 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>treeboot Milestone 5 Implementation Plan</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101614;
+      --panel: #151d1a;
+      --panel-soft: #19231f;
+      --ink: #e7eee8;
+      --muted: #9baaa4;
+      --line: #2a3934;
+      --line-strong: #4f625a;
+      --accent: #49b99b;
+      --accent-strong: #7dd7bd;
+      --warn: #d8b45b;
+      --danger: #ee896d;
+      --blue: #82a9c8;
+      --code-bg: #07100d;
+      --shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+      --radius: 8px;
+      --sans: "Avenir Next", "Segoe UI", sans-serif;
+      --mono: "SFMono-Regular", "Cascadia Code", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background:
+        linear-gradient(90deg, rgba(125, 215, 189, 0.045) 1px,
+          transparent 1px),
+        linear-gradient(rgba(125, 215, 189, 0.035) 1px, transparent 1px),
+        var(--bg);
+      background-size: 44px 44px;
+      color: var(--ink);
+      font-family: var(--sans);
+      line-height: 1.58;
+    }
+
+    a {
+      color: var(--accent-strong);
+      text-underline-offset: 3px;
+    }
+
+    code,
+    pre {
+      font-family: var(--mono);
+      font-size: 0.92em;
+    }
+
+    code {
+      padding: 0.1rem 0.32rem;
+      border: 1px solid rgba(125, 215, 189, 0.24);
+      border-radius: 5px;
+      background: rgba(73, 185, 155, 0.13);
+      color: var(--accent-strong);
+      white-space: nowrap;
+    }
+
+    pre {
+      margin: 1rem 0 0;
+      padding: 1rem;
+      overflow-x: auto;
+      border-radius: var(--radius);
+      background: var(--code-bg);
+      color: #dff6ee;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    }
+
+    pre code {
+      display: block;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      white-space: pre;
+    }
+
+    .page {
+      display: grid;
+      grid-template-columns: minmax(232px, 300px) minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .toc {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 1.25rem;
+      overflow-y: auto;
+      border-right: 1px solid var(--line);
+      background:
+        linear-gradient(180deg, rgba(21, 29, 26, 0.94),
+          rgba(16, 22, 20, 0.98)),
+        var(--bg);
+    }
+
+    .toc-title {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      margin: 0 0 1.25rem;
+      color: var(--ink);
+      font-size: 1rem;
+      font-weight: 700;
+    }
+
+    .mark {
+      display: inline-grid;
+      width: 2rem;
+      height: 2rem;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--accent-strong);
+      color: #07100d;
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+
+    .toc a {
+      display: block;
+      margin: 0.3rem 0;
+      padding: 0.45rem 0.55rem;
+      border-radius: 6px;
+      color: var(--ink);
+      text-decoration: none;
+    }
+
+    .toc a:hover {
+      background: rgba(125, 215, 189, 0.11);
+      color: var(--accent-strong);
+    }
+
+    main {
+      min-width: 0;
+    }
+
+    .hero {
+      padding: 4.5rem min(6vw, 4rem) 3rem;
+      border-bottom: 1px solid var(--line);
+      background:
+        radial-gradient(circle at 80% 10%, rgba(238, 137, 109, 0.13),
+          transparent 24rem),
+        radial-gradient(circle at 16% 0%, rgba(73, 185, 155, 0.16),
+          transparent 22rem),
+        linear-gradient(180deg, rgba(21, 29, 26, 0.72),
+          rgba(16, 22, 20, 0.96));
+    }
+
+    .eyebrow {
+      margin: 0 0 0.7rem;
+      color: var(--accent-strong);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      line-height: 1.12;
+    }
+
+    h1 {
+      max-width: 980px;
+      font-size: clamp(2.5rem, 6vw, 5.3rem);
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      font-size: clamp(1.65rem, 3vw, 2.4rem);
+      letter-spacing: 0;
+    }
+
+    h3 {
+      font-size: 1.05rem;
+    }
+
+    .lede {
+      max-width: 78ch;
+      margin: 1.25rem 0 0;
+      color: var(--muted);
+      font-size: 1.1rem;
+    }
+
+    .badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.55rem;
+      margin-top: 1.6rem;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 2rem;
+      padding: 0.35rem 0.62rem;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      background: rgba(16, 22, 20, 0.78);
+      color: var(--ink);
+      font-size: 0.86rem;
+      font-weight: 650;
+    }
+
+    .badge.warn {
+      border-color: rgba(216, 180, 91, 0.55);
+      color: #ffe5a3;
+    }
+
+    .badge.done {
+      border-color: rgba(125, 215, 189, 0.58);
+      color: var(--accent-strong);
+    }
+
+    .section {
+      padding: 3rem min(6vw, 4rem);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 2rem;
+      align-items: end;
+      margin-bottom: 1.5rem;
+    }
+
+    .section-note {
+      max-width: 44ch;
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .grid {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .grid.two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .grid.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .card {
+      min-width: 0;
+      padding: 1rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(21, 29, 26, 0.86);
+      box-shadow: var(--shadow);
+    }
+
+    .card p,
+    .card ul,
+    .card ol {
+      margin-bottom: 0;
+      color: var(--muted);
+    }
+
+    .callout {
+      margin-top: 1rem;
+      padding: 1rem;
+      border-left: 4px solid var(--accent);
+      border-radius: 0 var(--radius) var(--radius) 0;
+      background: rgba(73, 185, 155, 0.1);
+    }
+
+    .callout.warning {
+      border-left-color: var(--warn);
+      background: rgba(216, 180, 91, 0.1);
+    }
+
+    .callout.danger {
+      border-left-color: var(--danger);
+      background: rgba(238, 137, 109, 0.1);
+    }
+
+    .callout p {
+      margin: 0.45rem 0 0;
+      color: var(--muted);
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(21, 29, 26, 0.78);
+      box-shadow: var(--shadow);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+    }
+
+    th,
+    td {
+      padding: 0.82rem 0.9rem;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--accent-strong);
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      background: rgba(7, 16, 13, 0.54);
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    td {
+      color: var(--muted);
+    }
+
+    .matrix td:first-child,
+    .matrix th:first-child {
+      position: sticky;
+      left: 0;
+      background: #121a17;
+      color: var(--ink);
+      font-weight: 700;
+    }
+
+    .status {
+      display: inline-flex;
+      padding: 0.16rem 0.44rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 750;
+      white-space: nowrap;
+    }
+
+    .status.keep {
+      background: rgba(125, 215, 189, 0.13);
+      color: var(--accent-strong);
+    }
+
+    .status.build {
+      background: rgba(130, 169, 200, 0.13);
+      color: #b8ddf7;
+    }
+
+    .status.decide {
+      background: rgba(216, 180, 91, 0.14);
+      color: #ffe5a3;
+    }
+
+    .flow {
+      display: block;
+      width: 100%;
+      height: auto;
+      margin-top: 1rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(7, 16, 13, 0.42);
+    }
+
+    .lane {
+      display: grid;
+      grid-template-columns: 11rem repeat(4, minmax(0, 1fr));
+      gap: 0.65rem;
+      align-items: stretch;
+      margin-top: 0.75rem;
+    }
+
+    .lane-label {
+      display: flex;
+      align-items: center;
+      padding: 0.8rem;
+      border-radius: var(--radius);
+      background: rgba(7, 16, 13, 0.72);
+      color: var(--accent-strong);
+      font-weight: 750;
+    }
+
+    .lane-step {
+      padding: 0.8rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      color: var(--muted);
+    }
+
+    .lane-step strong {
+      display: block;
+      margin-bottom: 0.2rem;
+      color: var(--ink);
+    }
+
+    .checklist {
+      display: grid;
+      gap: 0.6rem;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .checklist li {
+      padding: 0.75rem 0.85rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(21, 29, 26, 0.76);
+      color: var(--muted);
+    }
+
+    .checklist li::before {
+      content: "[ ]";
+      margin-right: 0.55rem;
+      color: var(--accent-strong);
+      font-weight: 800;
+    }
+
+    .risk {
+      display: grid;
+      grid-template-columns: 8rem 1fr;
+      gap: 0.75rem;
+      align-items: start;
+      padding: 0.8rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(21, 29, 26, 0.78);
+    }
+
+    .risk strong {
+      color: var(--danger);
+    }
+
+    .footer {
+      padding: 2rem min(6vw, 4rem);
+      color: var(--muted);
+    }
+
+    @media (max-width: 960px) {
+      .page {
+        display: block;
+      }
+
+      .toc {
+        position: static;
+        height: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .grid.two,
+      .grid.three {
+        grid-template-columns: 1fr;
+      }
+
+      .section-head {
+        display: block;
+      }
+
+      .section-note {
+        margin-top: 0.75rem;
+      }
+
+      .lane {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media print {
+      body {
+        background: white;
+        color: black;
+      }
+
+      .page {
+        display: block;
+      }
+
+      .toc {
+        display: none;
+      }
+
+      .hero,
+      .section,
+      .footer {
+        padding: 1.2rem 0;
+        border-bottom: 1px solid #aaa;
+      }
+
+      .card,
+      .callout,
+      .lane-step,
+      .risk,
+      table,
+      svg {
+        box-shadow: none;
+        break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <nav class="toc" aria-label="Milestone 5 plan navigation">
+      <p class="toc-title">
+        <span class="mark">m5</span>
+        <span>Milestone 5 Plan</span>
+      </p>
+      <a href="#summary">Summary</a>
+      <a href="#alignment">Spec Alignment</a>
+      <a href="#boundary">Milestone Boundary</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#algorithm">Execution Algorithm</a>
+      <a href="#conflicts">Conflict Semantics</a>
+      <a href="#output">Output Contract</a>
+      <a href="#testing">Testing Strategy</a>
+      <a href="#rollout">Rollout Sequence</a>
+      <a href="#risks">Risks</a>
+      <a href="#questions">Resolved Decisions</a>
+    </nav>
+
+    <main>
+      <header class="hero" id="summary">
+        <p class="eyebrow">treeboot roadmap</p>
+        <h1>Milestone 5: declarative file operations</h1>
+        <p class="lede">
+          Implement the file-effect portion of declarative config execution
+          while preserving the existing validation-first contract. The target
+          outcome is that file-only configs can apply, dry-run, and report
+          planned work; command runtime remains explicitly gated for milestone
+          6.
+        </p>
+        <div class="badges" aria-label="Plan status badges">
+          <span class="badge done">Status: ready for implementation</span>
+          <span class="badge done">Spec v1.3.0 baseline</span>
+          <span class="badge done">Spec is the contract</span>
+          <span class="badge">Core-owned behavior</span>
+          <span class="badge">Std-first implementation</span>
+        </div>
+      </header>
+
+      <section class="section" id="alignment">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Contract map</p>
+            <h2>Spec Alignment</h2>
+          </div>
+          <p class="section-note">
+            Roadmap milestone 5 is short. The implementation should use these
+            spec clauses as the detailed acceptance criteria.
+          </p>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Roadmap scope</th>
+                <th>Spec contract</th>
+                <th>Implementation consequence</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Copy files and directories</td>
+                <td>
+                  Directory copies recurse into the configured target path and
+                  never remove target-only files.
+                </td>
+                <td>
+                  Build recursive copy actions. Force may overwrite matching
+                  files inside an existing target directory, but copy must not
+                  become sync.
+                </td>
+                <td><span class="status build">Build</span></td>
+              </tr>
+              <tr>
+                <td>Create relative symlinks when possible</td>
+                <td>
+                  Symlink operations create links from the target path to the
+                  source, using a relative link when it can be computed.
+                </td>
+                <td>
+                  Add a small relative-path helper in core. Fall back to an
+                  absolute source path only when relative computation is not
+                  possible.
+                </td>
+                <td><span class="status build">Build</span></td>
+              </tr>
+              <tr>
+                <td>Sync files/directories</td>
+                <td>
+                  Sync reconciles targets, compares by metadata or checksum,
+                  and preserves target-only files by default for directories.
+                </td>
+                <td>
+                  Build sync as a separate traversal. Checksum mode should be a
+                  streaming byte comparison unless a later need justifies a
+                  digest dependency. Metadata mode should preserve source mtime
+                  after copying to keep future runs idempotent. Deleting
+                  target-only files must require explicit
+                  <code>delete = true</code> or <code>--delete</code>.
+                </td>
+                <td><span class="status build">Build</span></td>
+              </tr>
+              <tr>
+                <td>Default, strict, force, dry-run conflicts</td>
+                <td>
+                  Default skips existing copy/symlink targets. Strict fails
+                  copy/symlink conflicts and rejects sync. Force replaces
+                  files and symlinks but must not erase directories casually.
+                </td>
+                <td>
+                  Decide conflict outcomes before mutation. Dry-run reports the
+                  same decisions without applying them.
+                </td>
+                <td><span class="status build">Build</span></td>
+              </tr>
+              <tr>
+                <td>Preserve safe source symlinks</td>
+                <td>
+                  Copy and sync preserve safe source symlinks. A symlink is
+                  unsafe if empty or resolving outside
+                  <code>TREEBOOT_ROOT_PATH</code>.
+                </td>
+                <td>
+                  Keep the project root as the safety boundary. Rewrite copied
+                  symlinks only when needed to keep them pointing at the
+                  analogous worktree destination, and warn when the final
+                  target does not exist or will not be created.
+                </td>
+                <td><span class="status build">Build</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout">
+          <h3>Symlink rewrite checklist</h3>
+          <p>
+            The compatibility behavior lives in <code>docs/SPEC.html</code>.
+            Implement preserved source symlinks with this sequence.
+          </p>
+          <ol>
+            <li>Read the raw source symlink target without following it.</li>
+            <li>Resolve that target from the source link parent.</li>
+            <li>Reject it if the resolved target is outside the root path.</li>
+            <li>
+              Map root-relative resolved targets to the analogous worktree path.
+            </li>
+            <li>
+              Write a relative link from the destination parent when possible.
+            </li>
+            <li>
+              Preserve the raw link text when no rewrite is needed, and warn if
+              the final target does not exist or will not be created.
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="section" id="boundary">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Scope control</p>
+            <h2>Milestone Boundary</h2>
+          </div>
+          <p class="section-note">
+            The clean boundary is file effects only. Command execution should
+            remain unavailable until milestone 6.
+          </p>
+        </div>
+
+        <div class="callout">
+          <h3>Current implementation baseline</h3>
+          <p>
+            The spec and roadmap contract changes have already landed. Current
+            code parses and normalizes file operations, supports
+            <code>delete</code>, accepts <code>--skip-commands</code>, and
+            validates duplicate targets, boundaries, required sources, strict
+            sync rejection, and unsafe source symlinks before side effects.
+            Milestone 5 starts from that validation layer.
+          </p>
+          <p>
+            Runtime execution still stops at
+            <code>ConfigExecutionNotImplemented</code>. The milestone should add
+            the file executor, file output events, and the more specific
+            <code>CommandExecutionNotImplemented</code> gate for configs that
+            still contain commands.
+          </p>
+        </div>
+
+        <div class="grid three">
+          <article class="card">
+            <h3>File-only config</h3>
+            <p>
+              Validate the full config, apply file operations, report results,
+              and exit <code>0</code> when all file effects succeed.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Config with commands</h3>
+            <p>
+              If <code>--skip-commands</code> is not set, fail before file side
+              effects with a new
+              <code>CommandExecutionNotImplemented</code> error. This avoids
+              mutating a worktree and then failing only because milestone 6 has
+              not landed.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Dry run</h3>
+            <p>
+              Build and report the same planned file decisions, but write
+              nothing. Validation errors still exit non-zero and must not
+              produce partial output that implies mutation happened.
+            </p>
+          </article>
+        </div>
+
+        <div class="callout">
+          <h3>Manual commands remain out of scope</h3>
+          <p>
+            Milestone 5 implements declarative file-operation execution only.
+            <code>treeboot copy</code>, <code>treeboot symlink</code>, and
+            <code>treeboot sync</code> are milestone 8, so the reusable engine
+            can stay crate-private until that public command surface is ready.
+          </p>
+        </div>
+      </section>
+
+      <section class="section" id="architecture">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Code shape</p>
+            <h2>Architecture</h2>
+          </div>
+          <p class="section-note">
+            Keep the CLI thin. The new executor belongs in
+            <code>treeboot-core</code> and should consume the existing
+            <code>RunPlan</code>.
+          </p>
+        </div>
+
+        <svg class="flow" viewBox="0 0 980 360" role="img"
+          aria-labelledby="arch-title arch-desc">
+          <title id="arch-title">Milestone 5 module flow</title>
+          <desc id="arch-desc">
+            run.rs loads config and builds RunPlan, files.rs plans and applies
+            file actions, output.rs formats structured events.
+          </desc>
+          <defs>
+            <marker id="arrow" markerWidth="10" markerHeight="10" refX="9"
+              refY="3" orient="auto" markerUnits="strokeWidth">
+              <path d="M0,0 L0,6 L9,3 z" fill="#7dd7bd"></path>
+            </marker>
+          </defs>
+          <rect x="30" y="40" width="180" height="78" rx="8"
+            fill="#151d1a" stroke="#4f625a"></rect>
+          <text x="120" y="73" fill="#e7eee8" text-anchor="middle"
+            font-size="18" font-weight="700">run.rs</text>
+          <text x="120" y="98" fill="#9baaa4" text-anchor="middle"
+            font-size="13">orchestrate run</text>
+
+          <rect x="278" y="40" width="190" height="78" rx="8"
+            fill="#151d1a" stroke="#4f625a"></rect>
+          <text x="373" y="73" fill="#e7eee8" text-anchor="middle"
+            font-size="18" font-weight="700">validation.rs</text>
+          <text x="373" y="98" fill="#9baaa4" text-anchor="middle"
+            font-size="13">build RunPlan</text>
+
+          <rect x="536" y="40" width="190" height="78" rx="8"
+            fill="#151d1a" stroke="#49b99b"></rect>
+          <text x="631" y="73" fill="#e7eee8" text-anchor="middle"
+            font-size="18" font-weight="700">files.rs</text>
+          <text x="631" y="98" fill="#9baaa4" text-anchor="middle"
+            font-size="13">plan/apply file actions</text>
+
+          <rect x="794" y="40" width="156" height="78" rx="8"
+            fill="#151d1a" stroke="#4f625a"></rect>
+          <text x="872" y="73" fill="#e7eee8" text-anchor="middle"
+            font-size="18" font-weight="700">output.rs</text>
+          <text x="872" y="98" fill="#9baaa4" text-anchor="middle"
+            font-size="13">format events</text>
+
+          <line x1="210" y1="79" x2="278" y2="79" stroke="#7dd7bd"
+            stroke-width="2" marker-end="url(#arrow)"></line>
+          <line x1="468" y1="79" x2="536" y2="79" stroke="#7dd7bd"
+            stroke-width="2" marker-end="url(#arrow)"></line>
+          <line x1="726" y1="79" x2="794" y2="79" stroke="#7dd7bd"
+            stroke-width="2" marker-end="url(#arrow)"></line>
+
+          <rect x="78" y="190" width="170" height="92" rx="8"
+            fill="#19231f" stroke="#2a3934"></rect>
+          <text x="163" y="224" fill="#e7eee8" text-anchor="middle"
+            font-size="16" font-weight="700">RunOptions</text>
+          <text x="163" y="249" fill="#9baaa4" text-anchor="middle"
+            font-size="13">strict, force, dry_run</text>
+
+          <rect x="312" y="190" width="170" height="92" rx="8"
+            fill="#19231f" stroke="#2a3934"></rect>
+          <text x="397" y="224" fill="#e7eee8" text-anchor="middle"
+            font-size="16" font-weight="700">RunPlan.files</text>
+          <text x="397" y="249" fill="#9baaa4" text-anchor="middle"
+            font-size="13">validated operations</text>
+
+          <rect x="546" y="190" width="170" height="92" rx="8"
+            fill="#19231f" stroke="#2a3934"></rect>
+          <text x="631" y="224" fill="#e7eee8" text-anchor="middle"
+            font-size="16" font-weight="700">FileAction list</text>
+          <text x="631" y="249" fill="#9baaa4" text-anchor="middle"
+            font-size="13">preflighted effects</text>
+
+          <rect x="780" y="190" width="170" height="92" rx="8"
+            fill="#19231f" stroke="#2a3934"></rect>
+          <text x="865" y="224" fill="#e7eee8" text-anchor="middle"
+            font-size="16" font-weight="700">Reporter</text>
+          <text x="865" y="249" fill="#9baaa4" text-anchor="middle"
+            font-size="13">stdout lines</text>
+
+          <line x1="163" y1="190" x2="120" y2="118" stroke="#82a9c8"
+            stroke-width="2"></line>
+          <line x1="397" y1="190" x2="373" y2="118" stroke="#82a9c8"
+            stroke-width="2"></line>
+          <line x1="631" y1="190" x2="631" y2="118" stroke="#82a9c8"
+            stroke-width="2"></line>
+          <line x1="865" y1="190" x2="872" y2="118" stroke="#82a9c8"
+            stroke-width="2"></line>
+        </svg>
+
+        <div class="grid two" style="margin-top: 1rem;">
+          <article class="card">
+            <h3>New core module</h3>
+            <pre><code>mod files;</code></pre>
+          </article>
+          <article class="card">
+            <h3>Typed errors</h3>
+            <p>
+              Add public typed error variants for file operation I/O,
+              unsupported conflicts, and command runtime not implemented.
+              Keep <code>anyhow</code> out of <code>treeboot-core</code>.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="algorithm">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Execution model</p>
+            <h2>Execution Algorithm</h2>
+          </div>
+          <p class="section-note">
+            Prefer an explicit action plan. It makes dry-run honest and keeps
+            validation failures ahead of mutation.
+          </p>
+        </div>
+
+        <div class="lane" aria-label="Implementation lanes">
+          <div class="lane-label">Run flow</div>
+          <div class="lane-step">
+            <strong>1. Discover</strong>
+            Load init script or config exactly as today.
+          </div>
+          <div class="lane-step">
+            <strong>2. Validate</strong>
+            Parse config and build <code>RunPlan</code>.
+          </div>
+          <div class="lane-step">
+            <strong>3. Gate commands</strong>
+            If commands exist and not <code>--skip-commands</code>, fail before
+            file effects.
+          </div>
+          <div class="lane-step">
+            <strong>4. Apply files</strong>
+            Plan actions, emit dry-run or apply output, return success.
+          </div>
+        </div>
+
+        <div class="lane">
+          <div class="lane-label">File action flow</div>
+          <div class="lane-step">
+            <strong>1. Inspect source</strong>
+            Use <code>symlink_metadata</code> so symlinks stay visible.
+          </div>
+          <div class="lane-step">
+            <strong>2. Inspect target</strong>
+            Missing targets become creates; existing targets become conflict
+            decisions.
+          </div>
+          <div class="lane-step">
+            <strong>3. Build actions</strong>
+            Expand directory copy and sync into per-entry actions so dry-run
+            reports exact creates, updates, deletes, warnings, and skips.
+          </div>
+          <div class="lane-step">
+            <strong>4. Apply serially</strong>
+            Preserve operation order and stop on the first runtime failure.
+          </div>
+        </div>
+
+        <pre><code>run()
+  resolve context
+  discover script/config
+  load config
+  plan_run_config()
+  if plan.commands is not empty and !options.skip_commands:
+      return Err(CommandExecutionNotImplemented)
+  apply_file_operations(plan.files, FileApplyOptions)
+  return RunReport { action: ConfigApplied }</code></pre>
+      </section>
+
+      <section class="section" id="conflicts">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Safety matrix</p>
+            <h2>Conflict Semantics</h2>
+          </div>
+          <p class="section-note">
+            This table should drive both implementation branches and test
+            names. It mirrors the compatibility contract in
+            <code>docs/SPEC.html</code>; update the spec first if behavior
+            changes.
+          </p>
+        </div>
+
+        <div class="table-wrap">
+          <table class="matrix">
+            <thead>
+              <tr>
+                <th>Case</th>
+                <th>Default</th>
+                <th>Strict</th>
+                <th>Force</th>
+                <th>Dry-run</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Copy file to missing destination</td>
+                <td>Create file and parents.</td>
+                <td>Create file and parents.</td>
+                <td>Create file and parents.</td>
+                <td>Report planned create.</td>
+              </tr>
+              <tr>
+                <td>Copy file to existing file or symlink</td>
+                <td>Skip with info output.</td>
+                <td>Fail before mutation.</td>
+                <td>Replace file or symlink.</td>
+                <td>Report skip, fail, or replace.</td>
+              </tr>
+              <tr>
+                <td>Copy file to existing directory</td>
+                <td>Fail operation.</td>
+                <td>Fail before mutation.</td>
+                <td>Fail; do not remove directory.</td>
+                <td>Report failure.</td>
+              </tr>
+              <tr>
+                <td>Copy directory to missing destination</td>
+                <td>Recursively create directory tree.</td>
+                <td>Recursively create directory tree.</td>
+                <td>Recursively create directory tree.</td>
+                <td>Report planned creates.</td>
+              </tr>
+              <tr>
+                <td>Copy directory to existing directory</td>
+                <td>Recursively copy missing files and skip existing files.</td>
+                <td>Fail before mutation.</td>
+                <td>Merge and overwrite matching files only.</td>
+                <td>Report planned creates, skips, fail, or merge.</td>
+              </tr>
+              <tr>
+                <td>Copy directory to file or symlink</td>
+                <td>Fail operation.</td>
+                <td>Fail before mutation.</td>
+                <td>Fail; do not replace with directory.</td>
+                <td>Report failure.</td>
+              </tr>
+              <tr>
+                <td>Symlink to missing destination</td>
+                <td>Create parent dirs and symlink.</td>
+                <td>Create parent dirs and symlink.</td>
+                <td>Create parent dirs and symlink.</td>
+                <td>Report planned symlink.</td>
+              </tr>
+              <tr>
+                <td>Symlink to existing file or symlink</td>
+                <td>Skip with info output.</td>
+                <td>Fail before mutation.</td>
+                <td>Replace file or symlink.</td>
+                <td>Report skip, fail, or replace.</td>
+              </tr>
+              <tr>
+                <td>Symlink to existing directory</td>
+                <td>Fail operation.</td>
+                <td>Fail before mutation.</td>
+                <td>Fail; do not remove directory.</td>
+                <td>Report failure.</td>
+              </tr>
+              <tr>
+                <td>Sync file</td>
+                <td>Create or update when changed.</td>
+                <td>Rejected by validation.</td>
+                <td>Same as default.</td>
+                <td>Report create or update; stay silent when unchanged.</td>
+              </tr>
+              <tr>
+                <td>Sync directory</td>
+                <td>Reconcile tree; preserve target-only files by default.</td>
+                <td>Rejected by validation.</td>
+                <td>Same as default.</td>
+                <td>
+                  Report creates, updates, and explicit deletes; stay silent
+                  when unchanged.
+                </td>
+              </tr>
+              <tr>
+                <td>Optional missing source</td>
+                <td>Skip and leave target unchanged.</td>
+                <td>Skip and leave target unchanged.</td>
+                <td>Skip and leave target unchanged.</td>
+                <td>Report planned skip.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="section" id="output">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Operator UX</p>
+            <h2>Output Contract</h2>
+          </div>
+          <p class="section-note">
+            Output should be structured in core and formatted in one place,
+            matching the examples in the spec.
+          </p>
+        </div>
+
+        <div class="grid two">
+          <article class="card">
+            <h3>Proposed events</h3>
+            <pre><code>OutputEvent::FileApplied { operation, source, target }
+OutputEvent::FileSkipped { operation, target, reason }
+OutputEvent::FileWouldApply { operation, source, target }
+OutputEvent::FileWouldSkip { operation, target, reason }
+OutputEvent::FileDeleted { path }
+OutputEvent::FileWouldDelete { path }
+OutputEvent::FileWarning { path, reason }</code></pre>
+          </article>
+          <article class="card">
+            <h3>Example lines</h3>
+            <pre><code>treeboot: copy .env -&gt; .env
+treeboot: skip .env.local; missing source
+treeboot: skip .tool-versions; target exists
+treeboot: would sync shared/config -&gt; .config
+treeboot: delete .config/old.toml
+treeboot: warning: symlink .config/theme target does not exist</code></pre>
+          </article>
+        </div>
+
+        <div class="callout">
+          <h3>Keep events semantic</h3>
+          <p>
+            Avoid output variants that expose implementation details such as
+            <code>CopyFileAction</code>. Events should describe what the user
+            cares about: operation, source, target, and reason.
+          </p>
+          <p>
+            Delete events are only emitted for sync operations when deletion is
+            explicitly enabled with <code>delete = true</code> or
+            <code>--delete</code>.
+          </p>
+        </div>
+      </section>
+
+      <section class="section" id="testing">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Feedback loops</p>
+            <h2>Testing Strategy</h2>
+          </div>
+          <p class="section-note">
+            Add focused coverage where the behavior lives, then prove the CLI
+            result in linked Git worktrees.
+          </p>
+        </div>
+
+        <div class="grid two">
+          <article class="card">
+            <h3>Core tests</h3>
+            <ul class="checklist">
+              <li>Default copy is idempotent and skips existing targets.</li>
+              <li>Default directory copy creates missing files only.</li>
+              <li>Force copy replaces files/symlinks, but not directories.</li>
+              <li>Directory copy force merges without deleting extras.</li>
+              <li>Symlink creation prefers relative links.</li>
+              <li>Sync metadata mode skips unchanged files on second run.</li>
+              <li>Sync checksum mode detects same-size content changes.</li>
+              <li>Sync preserves target-only files by default.</li>
+              <li><code>delete = true</code> removes target-only files.</li>
+              <li>Dry-run emits planned actions and changes no files.</li>
+              <li>Source symlink outside root path fails preflight.</li>
+              <li>Copied project-local symlinks are rewritten when needed.</li>
+              <li>Copied symlinks warn when their final target will not exist.</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>CLI tests</h3>
+            <ul class="checklist">
+              <li>File-only config exits <code>0</code> and applies files.</li>
+              <li>Config with commands fails before file mutation.</li>
+              <li>Config with commands and <code>--skip-commands</code> applies files.</li>
+              <li><code>--strict</code> fails existing copy/symlink target.</li>
+              <li><code>--force</code> reports and applies replacement.</li>
+              <li><code>--dry-run</code> reports planned work without mutation.</li>
+              <li>Validation errors still happen before any side effects.</li>
+            </ul>
+          </article>
+        </div>
+
+        <pre><code class="shell">mise run test:core
+mise run test:cli
+mise run check</code></pre>
+      </section>
+
+      <section class="section" id="rollout">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Work order</p>
+            <h2>Rollout Sequence</h2>
+          </div>
+          <p class="section-note">
+            This order starts from the landed contract and existing validation,
+            then adds dry-run safety before enabling mutations.
+          </p>
+        </div>
+
+        <div class="grid two">
+          <article class="card">
+            <h3>Phase 1: baseline and preflight</h3>
+            <ol>
+              <li>Confirm the current spec and roadmap are the baseline.</li>
+              <li>Reuse <code>plan_run_config</code> as the validation layer.</li>
+              <li>Add command-runtime gate before file side effects.</li>
+              <li>Add file action data types and dry-run action planning.</li>
+            </ol>
+          </article>
+          <article class="card">
+            <h3>Phase 2: mutation primitives</h3>
+            <ol>
+              <li>Implement parent directory creation.</li>
+              <li>Implement copy file, copy directory, and preserved symlink.</li>
+              <li>Rewrite copied symlinks when target layout changes.</li>
+              <li>Implement symlink operation with relative target.</li>
+              <li>Implement replacement rules for force mode.</li>
+            </ol>
+          </article>
+          <article class="card">
+            <h3>Phase 3: sync</h3>
+            <ol>
+              <li>Implement file sync compare modes.</li>
+              <li>Preserve mtime after copying regular files.</li>
+              <li>Implement directory reconcile traversal.</li>
+              <li>Implement explicit target-only deletion and no-delete default behavior.</li>
+            </ol>
+          </article>
+          <article class="card">
+            <h3>Phase 4: integration polish</h3>
+            <ol>
+              <li>Wire output events into CLI stdout.</li>
+              <li>Replace not-implemented run tests with file-runtime tests.</li>
+              <li>Run <code>mise run check</code>.</li>
+              <li>Document any discovered edge cases in agent docs.</li>
+            </ol>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="risks">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Risk register</p>
+            <h2>Risks</h2>
+          </div>
+          <p class="section-note">
+            These are the places most likely to create behavior drift from the
+            spec.
+          </p>
+        </div>
+
+        <div class="grid">
+          <div class="risk">
+            <strong>Partial mutation</strong>
+            <span>
+              Runtime I/O can still fail after preflight. Keep validation
+              failures ahead of mutation, but do not pretend file application
+              is transactional. Stop on first failure and report the path.
+            </span>
+          </div>
+          <div class="risk">
+            <strong>Symlink portability</strong>
+            <span>
+              Windows symlink creation may require privileges. Gate tests with
+              platform cfg where needed and keep cross-platform behavior in the
+              spec visible.
+            </span>
+          </div>
+          <div class="risk">
+            <strong>Metadata compare</strong>
+            <span>
+              If copied files do not preserve modified time, metadata sync will
+              update forever. Use <code>std::fs::FileTimes</code> through an
+              opened file after copying regular files, and preserve regular file
+              permissions where the platform supports it.
+            </span>
+          </div>
+          <div class="risk">
+            <strong>Directory force</strong>
+            <span>
+              Force mode is destructive, but the spec explicitly says it must
+              not erase directories casually. Directory type conflicts should
+              fail instead of trying to be clever.
+            </span>
+          </div>
+          <div class="risk">
+            <strong>Race after preflight</strong>
+            <span>
+              Filesystem state can change between planning and apply. Re-check
+              target type before destructive replacements and return typed,
+              path-specific runtime errors.
+            </span>
+          </div>
+          <div class="risk">
+            <strong>Checksum semantics</strong>
+            <span>
+              Rust std has no stable content digest helper. Treat checksum mode
+              as streaming byte equality for milestone 5 unless a real digest
+              requirement appears.
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="questions">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Decisions</p>
+            <h2>Resolved Decisions</h2>
+          </div>
+          <p class="section-note">
+            These decisions close the planning questions and should be treated
+            as implementation constraints.
+          </p>
+        </div>
+
+        <div class="grid two">
+          <article class="card">
+            <h3>Command gate wording</h3>
+            <p>
+              Use the more accurate
+              <code>CommandExecutionNotImplemented</code> error for configs
+              that contain commands when <code>--skip-commands</code> is not set.
+              Keep the failure before file side effects.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Sync unchanged output</h3>
+            <p>
+              Stay silent for unchanged sync files and unchanged sync
+              directories. Report creates, updates, and explicit deletes
+              because those are the meaningful effects.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Sync delete default</h3>
+            <p>
+              Preserve target-only files by default in declarative and manual
+              sync. Use <code>delete = true</code> in config or
+              <code>--delete</code> / <code>-D</code> for manual sync to opt
+              into deleting target-only files.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Copy existing directory default</h3>
+            <p>
+              In default mode, recursively copy all missing files from the
+              source directory and skip anything that already exists. Treat this
+              like manually listing every file in the directory rather than one
+              single target conflict.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Public API surface</h3>
+            <p>
+              Keep milestone 5 internals crate-private. Public API shape can
+              wait until milestone 8, when manual file-operation commands need
+              to reuse the engine and the unfinished product is closer to a
+              releasable contract.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Metadata preservation</h3>
+            <p>
+              Preserve regular file contents, permissions, and modified time
+              during copy and sync. Metadata mode compares size plus modified
+              time, so mtime preservation is required for idempotent reruns.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Checksum comparison</h3>
+            <p>
+              Implement checksum comparison as streaming byte-for-byte equality
+              rather than adding a digest dependency. The result is the same
+              update decision without expanding the dependency surface.
+            </p>
+          </article>
+          <article class="card">
+            <h3>CLI shorthand flags</h3>
+            <p>
+              Use short aliases for frequent options:
+              <code>-r</code>/<code>--root</code>,
+              <code>-c</code>/<code>--config &lt;path&gt;</code>,
+              <code>-o</code>/<code>--format</code>,
+              <code>-J</code>/<code>--json</code>,
+              <code>-S</code>/<code>--strict</code>,
+              <code>-f</code>/<code>--force</code>,
+              <code>-n</code>/<code>--dry-run</code>,
+              <code>-t</code>/<code>--target</code>,
+              <code>-D</code>/<code>--delete</code>,
+              <code>-s</code>/<code>--script</code>, and
+              <code>-p</code>/<code>--path</code>. Keep
+              <code>--skip-commands</code>, <code>--required</code>,
+              <code>--symlinks</code>, <code>--compare</code>,
+              <code>--no-delete</code>, and init <code>--config</code>
+              long-only.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <p>
+          Generated as an implementation planning artifact for
+          <code>docs/agents/roadmap.md</code> milestone 5. Keep this document
+          aligned with <code>docs/SPEC.html</code> when file-operation behavior
+          changes.
+        </p>
+      </footer>
+    </main>
+  </div>
+</body>
+</html>

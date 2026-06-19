@@ -8,6 +8,16 @@ from one repo-local setup contract.
 The implementation target is the behavior in [docs/SPEC.html](docs/SPEC.html).
 The README is the user-facing summary; the spec is the contract when they differ.
 
+## Spec Discipline
+
+Keep [docs/SPEC.html](docs/SPEC.html) complete enough that a separate
+implementation, in another language or runtime, could build a compatible
+`treeboot` from the spec alone. When planning uncovers observable behavior,
+edge-case semantics, CLI output, validation rules, or compatibility
+requirements, update the spec instead of leaving those details only in
+implementation plans or roadmap notes. Keep implementation tactics in
+`docs/agents/` planning docs.
+
 ## Repo Shape
 
 - `crates/treeboot` is the CLI package and should stay thin.
@@ -42,10 +52,10 @@ runtime options:
 - starter config/script generation
 - structured output events
 
-Declarative TOML config execution is intentionally not implemented yet.
-`treeboot run` parses and validates a found config, reports that execution is
-not implemented, and exits non-zero. Use `treeboot config` to inspect normalized
-config without execution; it warns when run validation would fail.
+Declarative TOML config execution currently applies `copy`, `symlink`, and
+`sync` file operations. Declarative command execution is gated until a later
+milestone. Use `treeboot config` to inspect normalized config without
+execution; it warns when run validation would fail.
 
 ## Commands
 
@@ -92,12 +102,22 @@ and CI mapping.
 
 ## Testing Expectations
 
-- Add focused tests for new behavior when the existing suite has a matching
-  layer.
+- Treat tests as part of the implementation, not a follow-up. Do not hand off
+  feature work until the new behavior has focused coverage at the right layer.
+- For behavior changes, cover the happy path plus edge cases: missing optional
+  and required inputs, strict/force/dry-run behavior, conflict handling,
+  non-mutation on failure, user-visible output, and platform-specific paths
+  when relevant.
+- For bug fixes, add a regression test that fails without the fix unless the
+  scenario cannot be reproduced in the local harness.
 - Use CLI integration tests for user-visible command behavior.
 - For run/config CLI behavior inside Git, prefer `git_worktree()` so tests run
   from an actual linked worktree; reserve `git_repo()` for root-checkout cases.
 - Use core unit tests for pure helpers, formatting, and validation logic.
+- For non-trivial features, run `mise run coverage:missing`, inspect uncovered
+  lines in touched modules, and add high-value tests for reachable branches.
+  Do not chase brittle coverage for OS permission quirks, platform-only code, or
+  defensive I/O error arms unless the behavior is important and testable.
 - Put reusable CLI integration helpers in `crates/treeboot/tests/common/`.
 - Run `mise run check` before handoff for ordinary code changes.
 - Run `mise run verify` for broad harness, CI, release, or architecture changes.

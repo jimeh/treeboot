@@ -4,6 +4,7 @@ use std::process::Command;
 use crate::config::{self, RuntimeOptionOverrides};
 use crate::context;
 use crate::discovery;
+use crate::files::{FileApplyOptions, apply_file_operations};
 use crate::{Error, OutputEvent, Reporter, Result, RunContext};
 
 /// Options for running worktree bootstrap.
@@ -44,6 +45,11 @@ pub enum RunAction {
     },
     /// A declarative config was detected.
     ConfigDetected {
+        /// Config file path.
+        path: PathBuf,
+    },
+    /// Declarative config file operations were applied.
+    ConfigApplied {
         /// Config file path.
         path: PathBuf,
     },
@@ -104,9 +110,26 @@ pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport
             report(reporter, OutputEvent::ConfigDetected { path: path.clone() })?;
             let config = config::load_config(&path, &context)?;
             let plan_options = env_options.resolve(&config.options, options.strict);
-            let _plan = crate::plan_run_config(&path, &config, &context, plan_options.into())?;
+            let plan = crate::plan_run_config(&path, &config, &context, plan_options.into())?;
 
-            Err(Error::ConfigExecutionNotImplemented(path))
+            if !options.skip_commands && !plan.commands.is_empty() {
+                return Err(Error::CommandExecutionNotImplemented(path));
+            }
+
+            apply_file_operations(
+                &plan,
+                FileApplyOptions {
+                    strict: plan_options.strict,
+                    force: options.force,
+                    dry_run: options.dry_run,
+                },
+                reporter,
+            )?;
+
+            Ok(RunReport {
+                context,
+                action: RunAction::ConfigApplied { path },
+            })
         }
         None => {
             report(reporter, OutputEvent::NoConfigDetected)?;
