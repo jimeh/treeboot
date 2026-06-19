@@ -928,7 +928,7 @@ sync = ["shared/config"]
 sync = [{
   source = "shared/config",
   compare = "checksum",
-  delete = false,
+  delete = true,
   symlinks = "preserve",
 }]
 "#,
@@ -937,7 +937,7 @@ sync = [{
         let sync = &config.files[0];
 
         assert_eq!(sync.compare, Some(SyncCompare::Checksum));
-        assert_eq!(sync.delete, Some(false));
+        assert_eq!(sync.delete, Some(true));
         assert_eq!(sync.symlinks, Some(SymlinkMode::Preserve));
     }
 

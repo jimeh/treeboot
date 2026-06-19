@@ -927,22 +927,25 @@ mod tests {
         let (root, worktree) = temp_workspace("sync-options");
         let source_dir = root.join("shared");
         std::fs::create_dir_all(&source_dir).expect("source dir should be created");
+        let mut operation = file_operation(
+            FileOperationKind::Sync,
+            &root,
+            &worktree,
+            "shared",
+            "shared",
+        );
+        operation.delete = Some(true);
+
         let config = Config {
             options: Default::default(),
-            files: vec![file_operation(
-                FileOperationKind::Sync,
-                &root,
-                &worktree,
-                "shared",
-                "shared",
-            )],
+            files: vec![operation],
             commands: Vec::new(),
         };
 
         let plan = plan(&config, &root, &worktree).expect("sync should plan");
 
         assert_eq!(plan.files[0].compare, Some(SyncCompare::Metadata));
-        assert_eq!(plan.files[0].delete, Some(false));
+        assert_eq!(plan.files[0].delete, Some(true));
         assert_eq!(plan.files[0].symlinks, Some(SymlinkMode::Preserve));
     }
 
