@@ -712,7 +712,7 @@
         <div class="section-head">
           <div>
             <p class="eyebrow">CLI surface</p>
-            <h2>Six subcommands, one default path</h2>
+            <h2>Seven subcommands, one default path</h2>
           </div>
           <p class="section-note">
             The common integration point is intentionally short:
@@ -807,6 +807,19 @@ treeboot symlink shared/bin --target bin</code></pre>
 treeboot sync shared/config shared/editor --target .config
 treeboot sync shared/config --delete
 treeboot sync shared/config --compare checksum</code></pre>
+          </section>
+
+          <section class="panel">
+            <h3><code>treeboot completions</code></h3>
+            <p>
+              Prints shell completion scripts for supported shells so package
+              managers and users can install them.
+            </p>
+            <pre><code class="shell">treeboot completions bash
+treeboot completions zsh
+treeboot completions fish
+treeboot completions powershell
+treeboot completions elvish</code></pre>
           </section>
         </div>
 
@@ -2374,6 +2387,7 @@ treeboot-slsa-attestation.intoto.jsonl</code></pre>
               <li><code>copy</code>, <code>symlink</code>, and <code>sync</code> require sources.</li>
               <li>Manual <code>--target</code> handles one and many sources.</li>
               <li>Manual operation source completion reads from root path.</li>
+              <li><code>completions</code> emits scripts for supported shells.</li>
               <li>Conflict flags behave as specified.</li>
             </ul>
           </section>

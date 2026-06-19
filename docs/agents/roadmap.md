@@ -115,7 +115,29 @@ Scope:
 Async implementation should be decided here. Keep milestone 1 synchronous until
 command batching needs concurrency.
 
-## Milestone 7: Manual File Operation Commands
+## Milestone 7: Shell Completion
+
+Status: pending.
+
+Scope:
+
+- add a built-in `treeboot completions <shell>` command
+- use the clap completion ecosystem, such as `clap_complete`, to generate
+  scripts from the same CLI definition used for runtime parsing
+- support Bash, Zsh, Fish, PowerShell, and Elvish when available from the
+  generator crate
+- keep completion generation side-effect free by writing scripts to stdout
+- include completion installation notes in release or install documentation
+- add the completion plumbing needed for command-specific dynamic candidates
+
+Validation focus:
+
+- every supported shell value emits non-empty script output
+- unsupported shell values fail with a CLI usage error
+- generated scripts include implemented subcommands and options
+- completion plumbing can be extended by later commands for dynamic candidates
+
+## Milestone 8: Manual File Operation Commands
 
 Status: pending.
 
@@ -139,7 +161,7 @@ Validation focus:
 - operation-specific flag validation
 - completion candidates come from the resolved root path
 
-## Milestone 8: Release Packaging
+## Milestone 9: Release Packaging
 
 Status: pending.
 
