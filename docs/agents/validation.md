@@ -69,4 +69,4 @@ Useful follow-up coverage areas:
 - declarative validation before side effects
 - file-operation validation before side effects
 - command runtime and async batching
-- sync conflict and delete-extra behavior
+- sync conflict and explicit delete behavior

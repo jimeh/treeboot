@@ -125,7 +125,7 @@ struct SyncObject {
     compare: Option<SyncCompare>,
     /// Whether target-only files are deleted for directory sync.
     #[serde(skip_serializing_if = "Option::is_none")]
-    delete_extra: Option<bool>,
+    delete: Option<bool>,
     /// How safe source symlinks are handled.
     #[serde(skip_serializing_if = "Option::is_none")]
     symlinks: Option<SymlinkMode>,
@@ -174,7 +174,7 @@ enum MixedFileObject {
         compare: Option<SyncCompare>,
         /// Whether target-only files are deleted for directory sync.
         #[serde(skip_serializing_if = "Option::is_none")]
-        delete_extra: Option<bool>,
+        delete: Option<bool>,
         /// How safe source symlinks are handled.
         #[serde(skip_serializing_if = "Option::is_none")]
         symlinks: Option<SymlinkMode>,

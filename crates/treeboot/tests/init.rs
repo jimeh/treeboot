@@ -53,7 +53,7 @@ fn init_config_force_should_replace_existing_target() {
     write_file(&config, "old\n");
 
     treeboot()
-        .args(["init", "--config", "--force"])
+        .args(["init", "--config", "-f"])
         .current_dir(dir.path())
         .assert()
         .success();
@@ -70,7 +70,7 @@ fn init_path_should_create_parent_directories() {
     let dir = TempDir::new().expect("tempdir should be created");
 
     treeboot()
-        .args(["init", "--config", "--path", "nested/.treeboot.toml"])
+        .args(["init", "--config", "-p", "nested/.treeboot.toml"])
         .current_dir(dir.path())
         .assert()
         .success();
@@ -86,7 +86,7 @@ fn init_script_should_create_executable_script() {
     let dir = TempDir::new().expect("tempdir should be created");
 
     treeboot()
-        .args(["init", "--script"])
+        .args(["init", "-s"])
         .current_dir(dir.path())
         .assert()
         .success()

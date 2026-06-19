@@ -26,7 +26,7 @@ commands = ["mise install"]
         .stdout(predicate::str::contains("treeboot: config"))
         .stdout(predicate::str::contains("copy .env.local -> .env.local"))
         .stdout(predicate::str::contains(
-            "sync shared/config -> shared/config compare=metadata delete_extra=true",
+            "sync shared/config -> shared/config compare=metadata delete=false",
         ))
         .stdout(predicate::str::contains("run \"mise install\""));
 }
@@ -44,6 +44,33 @@ fn config_command_json_should_print_normalized_config() {
         .success()
         .stdout(predicate::str::contains("\"commands\""))
         .stdout(predicate::str::contains("\"run\": \"mise install\""));
+}
+
+#[test]
+fn config_command_json_shortcut_should_print_normalized_config() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&config, "commands = [\"mise install\"]\n");
+
+    treeboot()
+        .args(["config", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"commands\""))
+        .stdout(predicate::str::contains("\"run\": \"mise install\""));
+}
+
+#[test]
+fn config_command_json_should_conflict_with_format() {
+    let repo = git_worktree();
+
+    treeboot()
+        .args(["config", "--json", "--format", "json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("cannot be used with"));
 }
 
 #[test]
@@ -70,7 +97,7 @@ fn config_command_config_option_should_use_requested_file() {
     );
 
     treeboot()
-        .args(["config", "--config", "custom.treeboot.toml"])
+        .args(["config", "-c", "custom.treeboot.toml"])
         .current_dir(repo.worktree_path())
         .assert()
         .success()
@@ -133,10 +160,9 @@ fn config_command_root_option_should_resolve_json_source_paths() {
     let source_path_json = source_path.replace('\\', "\\\\");
 
     treeboot()
-        .args(["config", "--root"])
+        .args(["config", "-r"])
         .arg(root.path())
-        .arg("--format")
-        .arg("json")
+        .arg("-J")
         .current_dir(repo.worktree_path())
         .assert()
         .success()

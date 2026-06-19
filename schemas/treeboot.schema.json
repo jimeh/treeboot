@@ -172,7 +172,7 @@
               "$ref": "#/$defs/SyncCompare",
               "description": "File comparison mode."
             },
-            "delete_extra": {
+            "delete": {
               "description": "Whether target-only files are deleted for directory sync.",
               "type": "boolean"
             },
@@ -306,7 +306,7 @@
           "$ref": "#/$defs/SyncCompare",
           "description": "File comparison mode."
         },
-        "delete_extra": {
+        "delete": {
           "description": "Whether target-only files are deleted for directory sync.",
           "type": "boolean"
         },

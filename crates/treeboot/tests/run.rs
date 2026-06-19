@@ -43,11 +43,25 @@ fn run_should_report_root_checkout_noop_like_no_args() {
 }
 
 #[test]
+fn skip_commands_should_be_accepted_for_run() {
+    let repo = git_repo();
+
+    treeboot()
+        .args(["run", "--skip-commands"])
+        .current_dir(repo.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "treeboot: This is not a work tree",
+        ));
+}
+
+#[test]
 fn strict_missing_config_should_exit_with_runtime_failure() {
     let repo = git_worktree();
 
     treeboot()
-        .arg("--strict")
+        .arg("-S")
         .current_dir(repo.worktree_path())
         .assert()
         .code(1)
@@ -499,7 +513,7 @@ fn root_option_should_set_script_root_env() {
     );
 
     treeboot()
-        .arg("--root")
+        .arg("-r")
         .arg(root.path())
         .current_dir(repo.worktree_path())
         .assert()
@@ -575,7 +589,7 @@ fn dry_run_init_script_should_not_execute_script() {
     );
 
     treeboot()
-        .arg("--dry-run")
+        .arg("-n")
         .current_dir(repo.worktree_path())
         .assert()
         .success()
@@ -613,7 +627,7 @@ fn config_option_should_skip_executable_script_discovery() {
     );
 
     treeboot()
-        .args(["--config", "custom.treeboot.toml"])
+        .args(["-c", "custom.treeboot.toml"])
         .current_dir(repo.worktree_path())
         .assert()
         .code(1)
