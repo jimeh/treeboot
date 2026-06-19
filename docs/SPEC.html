@@ -2074,6 +2074,17 @@ args = ["install"]</code></pre>
           contract for file-operation conflicts.
         </p>
 
+        <div class="callout warning">
+          <h3>Current command runtime gate</h3>
+          <p>
+            In this release line, declarative commands are not executed yet.
+            If a config contains commands and <code>--skip-commands</code> is
+            not set, <code>treeboot run</code> fails before file mutation.
+            File-only configs, or configs run with
+            <code>--skip-commands</code>, continue through file operations.
+          </p>
+        </div>
+
         <div class="table-wrap">
           <table class="conflict-matrix">
             <thead>

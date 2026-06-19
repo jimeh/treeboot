@@ -850,14 +850,7 @@
         <div class="grid two" style="margin-top: 1rem;">
           <article class="card">
             <h3>New core module</h3>
-            <pre><code>mod files;
-
-pub use files::{
-    FileAction,
-    FileApplyOptions,
-    FileApplyReport,
-    apply_file_operations,
-};</code></pre>
+            <pre><code>mod files;</code></pre>
           </article>
           <article class="card">
             <h3>Typed errors</h3>
@@ -1079,10 +1072,10 @@ OutputEvent::FileWarning { path, reason }</code></pre>
           </article>
           <article class="card">
             <h3>Example lines</h3>
-            <pre><code>treeboot: copy .env -> .env
+            <pre><code>treeboot: copy .env -&gt; .env
 treeboot: skip .env.local; missing source
 treeboot: skip .tool-versions; target exists
-treeboot: would sync shared/config -> .config
+treeboot: would sync shared/config -&gt; .config
 treeboot: delete .config/old.toml
 treeboot: warning: symlink .config/theme target does not exist</code></pre>
           </article>
