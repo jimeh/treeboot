@@ -59,7 +59,7 @@ pub struct PlannedFileOperation {
     /// Sync comparison mode.
     pub compare: Option<SyncCompare>,
     /// Whether sync should delete target-only files.
-    pub delete_extra: Option<bool>,
+    pub delete: Option<bool>,
     /// How copy and sync should treat source symlinks.
     pub symlinks: Option<SymlinkMode>,
     /// Whether this operation should execute.
@@ -282,7 +282,7 @@ fn plan_file_operations(
             target_path: target_path.clone(),
             required: operation.required,
             compare: operation.compare,
-            delete_extra: operation.delete_extra,
+            delete: operation.delete,
             symlinks: operation.symlinks,
             status,
             declaration: operation.declaration,
@@ -678,8 +678,8 @@ mod tests {
                 FileOperationKind::Sync => Some(SyncCompare::Metadata),
                 FileOperationKind::Copy | FileOperationKind::Symlink => None,
             },
-            delete_extra: match operation {
-                FileOperationKind::Sync => Some(true),
+            delete: match operation {
+                FileOperationKind::Sync => Some(false),
                 FileOperationKind::Copy | FileOperationKind::Symlink => None,
             },
             symlinks: match operation {
@@ -728,7 +728,7 @@ mod tests {
                 target_path: worktree.join("missing"),
                 required: false,
                 compare: None,
-                delete_extra: None,
+                delete: None,
                 symlinks: Some(SymlinkMode::Preserve),
                 declaration: span(),
             }],
@@ -825,7 +825,7 @@ mod tests {
                 target_path: outside_target,
                 required: false,
                 compare: None,
-                delete_extra: None,
+                delete: None,
                 symlinks: Some(SymlinkMode::Preserve),
                 declaration: span(),
             }],
@@ -927,22 +927,25 @@ mod tests {
         let (root, worktree) = temp_workspace("sync-options");
         let source_dir = root.join("shared");
         std::fs::create_dir_all(&source_dir).expect("source dir should be created");
+        let mut operation = file_operation(
+            FileOperationKind::Sync,
+            &root,
+            &worktree,
+            "shared",
+            "shared",
+        );
+        operation.delete = Some(true);
+
         let config = Config {
             options: Default::default(),
-            files: vec![file_operation(
-                FileOperationKind::Sync,
-                &root,
-                &worktree,
-                "shared",
-                "shared",
-            )],
+            files: vec![operation],
             commands: Vec::new(),
         };
 
         let plan = plan(&config, &root, &worktree).expect("sync should plan");
 
         assert_eq!(plan.files[0].compare, Some(SyncCompare::Metadata));
-        assert_eq!(plan.files[0].delete_extra, Some(true));
+        assert_eq!(plan.files[0].delete, Some(true));
         assert_eq!(plan.files[0].symlinks, Some(SymlinkMode::Preserve));
     }
 

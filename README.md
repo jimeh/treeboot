@@ -15,7 +15,7 @@ treeboot
 
 ## Status
 
-This project is bootstrapped for implementation against spec v1.1.0. The
+This project is bootstrapped for implementation against spec v1.2.0. The
 planned implementation target is Rust, distributed as small prebuilt binaries
 from GitHub Releases.
 
@@ -116,8 +116,8 @@ target when needed. Missing sources are skipped by default; set
 `required = true` on a file object when a missing source should fail.
 
 Use `sync` when the target should be actively reconciled with the source.
-Directory sync deletes target-only files by default, so it is intentionally more
-destructive than `copy`.
+Directory sync preserves target-only files by default. Set `delete = true` when
+target-only files and directories should be removed.
 
 ## Scripts
 
@@ -150,6 +150,7 @@ treeboot
 treeboot run
 treeboot config
 treeboot config --format json
+treeboot config --json
 ```
 
 Useful planned options:

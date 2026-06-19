@@ -22,7 +22,7 @@ pub struct RunOptions {
     /// Prints planned work without changing files or running commands.
     pub dry_run: bool,
     /// Runs file operations only.
-    pub no_commands: bool,
+    pub skip_commands: bool,
 }
 
 /// Completed action for a `treeboot run` invocation.

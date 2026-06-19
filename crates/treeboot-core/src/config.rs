@@ -63,7 +63,7 @@ pub struct FileOperation {
     /// Sync comparison mode.
     pub compare: Option<SyncCompare>,
     /// Whether sync should delete target-only files.
-    pub delete_extra: Option<bool>,
+    pub delete: Option<bool>,
     /// How copy and sync should treat source symlinks.
     pub symlinks: Option<SymlinkMode>,
     /// Source location for the operation declaration.
@@ -327,7 +327,7 @@ fn normalize_file_group(
                 target: None,
                 required: false,
                 compare: None,
-                delete_extra: None,
+                delete: None,
                 symlinks: None,
             },
             RawFileEntry::Object(object) => object,
@@ -403,10 +403,10 @@ fn normalize_file_object(
             None
         }
     };
-    let delete_extra = match operation {
-        FileOperationKind::Sync => Some(object.delete_extra.unwrap_or(true)),
+    let delete = match operation {
+        FileOperationKind::Sync => Some(object.delete.unwrap_or(false)),
         FileOperationKind::Copy | FileOperationKind::Symlink => {
-            reject_non_sync_field(path, content, span, "delete_extra", object.delete_extra)?;
+            reject_non_sync_field(path, content, span, "delete", object.delete)?;
             None
         }
     };
@@ -428,7 +428,7 @@ fn normalize_file_object(
         target: PathBuf::from(target),
         required: object.required,
         compare,
-        delete_extra,
+        delete,
         symlinks,
         declaration: span,
     })
@@ -738,7 +738,7 @@ struct RawFileObject {
     target: Option<String>,
     required: bool,
     compare: Option<SyncCompare>,
-    delete_extra: Option<bool>,
+    delete: Option<bool>,
     symlinks: Option<SymlinkMode>,
 }
 
@@ -918,7 +918,7 @@ sync = ["shared/config"]
         assert!(!copy.required);
         assert_eq!(copy.symlinks, Some(SymlinkMode::Preserve));
         assert_eq!(sync.compare, Some(SyncCompare::Metadata));
-        assert_eq!(sync.delete_extra, Some(true));
+        assert_eq!(sync.delete, Some(false));
     }
 
     #[test]
@@ -928,7 +928,7 @@ sync = ["shared/config"]
 sync = [{
   source = "shared/config",
   compare = "checksum",
-  delete_extra = false,
+  delete = true,
   symlinks = "preserve",
 }]
 "#,
@@ -937,7 +937,7 @@ sync = [{
         let sync = &config.files[0];
 
         assert_eq!(sync.compare, Some(SyncCompare::Checksum));
-        assert_eq!(sync.delete_extra, Some(false));
+        assert_eq!(sync.delete, Some(true));
         assert_eq!(sync.symlinks, Some(SymlinkMode::Preserve));
     }
 
@@ -1139,10 +1139,18 @@ commands = [{
     }
 
     #[test]
-    fn parse_config_should_reject_delete_extra_on_symlink_file_operations() {
+    fn parse_config_should_reject_delete_on_symlink_file_operations() {
         assert_parse_error_contains(
-            r#"symlink = [{ source = ".env", delete_extra = true }]"#,
-            "`delete_extra` is only valid for sync file operations",
+            r#"symlink = [{ source = ".env", delete = true }]"#,
+            "`delete` is only valid for sync file operations",
+        );
+    }
+
+    #[test]
+    fn parse_config_should_reject_legacy_delete_extra_field() {
+        assert_parse_error_contains(
+            r#"sync = [{ source = "shared", delete_extra = true }]"#,
+            "unknown field `delete_extra`",
         );
     }
 

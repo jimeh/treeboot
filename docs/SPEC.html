@@ -605,7 +605,7 @@
     <main>
       <header class="hero" id="overview">
         <div>
-          <p class="eyebrow">Specification v1.1.0</p>
+          <p class="eyebrow">Specification v1.2.0</p>
           <h1>treeboot</h1>
           <p class="lede">
             A portable worktree bootstrapper that lets every coding agent,
@@ -625,7 +625,7 @@
           <dl>
             <div>
               <dt>Spec status</dt>
-              <dd>v1.1.0 implementation contract</dd>
+              <dd>v1.2.0 implementation contract</dd>
             </div>
             <div>
               <dt>Default command</dt>
@@ -712,7 +712,7 @@
         <div class="section-head">
           <div>
             <p class="eyebrow">CLI surface</p>
-            <h2>Six subcommands, one default path</h2>
+            <h2>Seven subcommands, one default path</h2>
           </div>
           <p class="section-note">
             The common integration point is intentionally short:
@@ -735,7 +735,7 @@ treeboot run --strict
 treeboot run --force
 treeboot run --root /path/to/root-checkout
 treeboot run --config .treeboot.toml
-treeboot run --no-commands</code></pre>
+treeboot run --skip-commands</code></pre>
           </section>
 
           <section class="panel">
@@ -746,7 +746,8 @@ treeboot run --no-commands</code></pre>
             </p>
             <pre><code class="shell">treeboot config
 treeboot config --config .treeboot.toml
-treeboot config --format json</code></pre>
+treeboot config --format json
+treeboot config --json</code></pre>
             <p>
               This command is view-only. It is intended for validating and
               inspecting config parsing behavior; editing config values is out
@@ -804,8 +805,21 @@ treeboot symlink shared/bin --target bin</code></pre>
             </p>
             <pre><code class="shell">treeboot sync shared/config
 treeboot sync shared/config shared/editor --target .config
-treeboot sync shared/config --no-delete-extra
+treeboot sync shared/config --delete
 treeboot sync shared/config --compare checksum</code></pre>
+          </section>
+
+          <section class="panel">
+            <h3><code>treeboot completions</code></h3>
+            <p>
+              Prints shell completion scripts for supported shells so package
+              managers and users can install them.
+            </p>
+            <pre><code class="shell">treeboot completions bash
+treeboot completions zsh
+treeboot completions fish
+treeboot completions powershell
+treeboot completions elvish</code></pre>
           </section>
         </div>
 
@@ -840,12 +854,12 @@ treeboot sync shared/config --compare checksum</code></pre>
           </thead>
           <tbody>
             <tr>
-              <td><code>--root &lt;path&gt;</code></td>
+              <td><code>-r</code>, <code>--root &lt;path&gt;</code></td>
               <td>run/config/copy/symlink/sync</td>
               <td>Overrides the checkout used as the file-operation source.</td>
             </tr>
             <tr>
-              <td><code>--config &lt;path&gt;</code></td>
+              <td><code>-c</code>, <code>--config &lt;path&gt;</code></td>
               <td>run/config</td>
               <td>
                 Uses one specific config file, skips config discovery, and
@@ -853,7 +867,7 @@ treeboot sync shared/config --compare checksum</code></pre>
               </td>
             </tr>
             <tr>
-              <td><code>--format &lt;text|json&gt;</code></td>
+              <td><code>-o</code>, <code>--format &lt;text|json&gt;</code></td>
               <td>config</td>
               <td>
                 Selects human-readable or JSON output for normalized config
@@ -861,7 +875,15 @@ treeboot sync shared/config --compare checksum</code></pre>
               </td>
             </tr>
             <tr>
-              <td><code>--strict</code></td>
+              <td><code>-J</code>, <code>--json</code></td>
+              <td>config</td>
+              <td>
+                Shortcut for <code>--format json</code>. Conflicts with
+                <code>--format</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>-S</code>, <code>--strict</code></td>
               <td>run/copy/symlink/sync</td>
               <td>
                 Fails if a copy/symlink target exists; rejects sync operations;
@@ -871,22 +893,22 @@ treeboot sync shared/config --compare checksum</code></pre>
               </td>
             </tr>
             <tr>
-              <td><code>--force</code></td>
+              <td><code>-f</code>, <code>--force</code></td>
               <td>run/init/copy/symlink/sync</td>
               <td>Replaces existing file-operation targets or init output.</td>
             </tr>
             <tr>
-              <td><code>--dry-run</code></td>
+              <td><code>-n</code>, <code>--dry-run</code></td>
               <td>run/copy/symlink/sync</td>
               <td>Prints planned work without writing files or running commands.</td>
             </tr>
             <tr>
-              <td><code>--no-commands</code></td>
+              <td><code>--skip-commands</code></td>
               <td>run</td>
               <td>Runs file operations only.</td>
             </tr>
             <tr>
-              <td><code>--target &lt;path&gt;</code></td>
+              <td><code>-t</code>, <code>--target &lt;path&gt;</code></td>
               <td>copy/symlink/sync</td>
               <td>
                 Overrides the target. With multiple sources, acts as the target
@@ -912,9 +934,31 @@ treeboot sync shared/config --compare checksum</code></pre>
               <td>Selects sync comparison behavior.</td>
             </tr>
             <tr>
-              <td><code>--delete-extra</code> / <code>--no-delete-extra</code></td>
+              <td><code>-D</code>, <code>--delete</code> / <code>--no-delete</code></td>
               <td>sync</td>
-              <td>Controls whether sync deletes target-only files.</td>
+              <td>
+                Controls whether sync deletes target-only files. Defaults to
+                <code>--no-delete</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>--config</code></td>
+              <td>init</td>
+              <td>
+                Creates a starter TOML config. This intentionally has no short
+                alias so <code>-c</code> can consistently mean config path for
+                run/config.
+              </td>
+            </tr>
+            <tr>
+              <td><code>-s</code>, <code>--script</code></td>
+              <td>init</td>
+              <td>Creates an executable init script.</td>
+            </tr>
+            <tr>
+              <td><code>-p</code>, <code>--path &lt;path&gt;</code></td>
+              <td>init</td>
+              <td>Writes the generated init output to a custom path.</td>
             </tr>
           </tbody>
         </table>
@@ -1450,7 +1494,7 @@ files = [
             accept strings and objects. Strings mean source and target are the
             same path. For <code>sync</code>, string entries also use
             <code>compare = "metadata"</code> and
-            <code>delete_extra = true</code>. The <code>files</code> list
+            <code>delete = false</code>. The <code>files</code> list
             accepts objects with an <code>operation</code> field for mixed
             copy, symlink, and sync entries. Missing sources are skipped by
             default; object entries can set <code>required = true</code> to
@@ -1472,7 +1516,7 @@ symlink = [
 
 sync = [
   "shared/config",
-  { source = "tooling/config", target = ".config/tooling" },
+  { source = "tooling/config", target = ".config/tooling", delete = true },
   { source = "shared/tool.lock", target = ".tool.lock", compare = "checksum" },
 ]
 
@@ -1531,9 +1575,12 @@ target = ".editorconfig"</code></pre>
               <td><code>metadata</code> by default; <code>checksum</code> for content checks.</td>
             </tr>
             <tr>
-              <td><code>delete_extra</code></td>
+              <td><code>delete</code></td>
               <td><code>sync</code> directories</td>
-              <td>Defaults to <code>true</code>; deletes target-only files.</td>
+              <td>
+                Defaults to <code>false</code>; when true, deletes target-only
+                files and directories.
+              </td>
             </tr>
             <tr>
               <td><code>symlinks</code></td>
@@ -1765,9 +1812,10 @@ args = ["install"]</code></pre>
         <div class="callout warning">
           <h3>Strict mode is incompatible with sync</h3>
           <p>
-            Sync expects existing targets and may delete target-only files, so
-            strict mode rejects sync operations before execution. Strict mode can
-            be enabled with <code>--strict</code>, top-level
+            Sync expects existing targets and can be configured to delete
+            target-only files, so strict mode rejects sync operations before
+            execution. Strict mode can be enabled with <code>--strict</code>,
+            top-level
             <code>strict = true</code>, or <code>TREEBOOT_STRICT=true</code>.
           </p>
         </div>
@@ -1853,7 +1901,7 @@ args = ["install"]</code></pre>
             <code>source</code>, <code>--required</code> supplies
             <code>required = true</code>, and operation-specific flags supply
             <code>symlinks</code>, <code>compare</code>, or
-            <code>delete_extra</code>.
+            <code>delete</code>.
           </p>
           <p>
             If <code>--target</code> is omitted, each target defaults to its
@@ -1920,7 +1968,7 @@ args = ["install"]</code></pre>
             <p>
               <code>treeboot sync</code> exposes <code>--target</code>,
               <code>--required</code>, <code>--compare</code>,
-              <code>--delete-extra</code>, <code>--no-delete-extra</code>,
+              <code>--delete</code>, <code>--no-delete</code>,
               <code>--symlinks</code>, <code>--dry-run</code>,
               <code>--strict</code>, and <code>--force</code>.
             </p>
@@ -1932,21 +1980,27 @@ args = ["install"]</code></pre>
           <p>
             Copy and sync use <code>symlinks = "preserve"</code> by default:
             safe source symlinks are recreated as symlinks instead of copying
-            their referents. A symlink is unsafe if it is absolute, empty, or
-            resolves outside the copied source tree. Unsafe symlinks are
-            validation errors in declarative config. Projects that need custom
-            symlink handling should use an init script.
+            their referents. A symlink is unsafe if it is empty or resolves
+            outside <code>TREEBOOT_ROOT_PATH</code>. When source and target
+            layouts differ, treeboot rewrites copied symlinks to point at the
+            analogous worktree destination when it can. When no rewrite is
+            needed, treeboot preserves the symlink target text. If the final
+            symlink target does not exist and will not be created by the current
+            run, treeboot prints a warning. Unsafe symlinks are validation
+            errors in declarative config. Projects that need custom symlink
+            handling should use an init script.
           </p>
         </div>
 
         <div class="callout">
-          <h3>Sync deletes extras by default</h3>
+          <h3>Sync preserves extras by default</h3>
           <p>
             When the source is a directory, sync recurses through source and
-            target. It copies new files, updates changed files, and deletes
-            target files or directories that do not exist in the source.
-            Configure <code>delete_extra = false</code> on a sync entry to keep
-            target-only files.
+            target. It copies new files and updates changed files. Target files
+            or directories that do not exist in the source are preserved by
+            default. Configure <code>delete = true</code> on a sync entry, or
+            use <code>--delete</code> / <code>-D</code> for manual sync, to
+            delete target-only files and directories.
           </p>
         </div>
 
@@ -2036,11 +2090,12 @@ args = ["install"]</code></pre>
         <div class="callout warning">
           <h3>Sync is intentionally destructive</h3>
           <p>
-            Sync is the operation that may delete target-only files. Existing
-            targets are expected for sync and are not treated as conflicts in
-            default or force mode. Strict mode rejects configs with sync
-            operations before runtime. Use <code>--dry-run</code> to preview
-            sync creates, updates, and deletes.
+            Sync is the operation that may delete target-only files when
+            deletion is explicitly enabled. Existing targets are expected for
+            sync and are not treated as conflicts in default or force mode.
+            Strict mode rejects configs with sync operations before runtime. Use
+            <code>--dry-run</code> to preview sync creates, updates, and
+            explicit deletes.
           </p>
         </div>
       </section>
@@ -2084,7 +2139,7 @@ args = ["install"]</code></pre>
                 Per-command <code>env</code> values are merged into that
                 environment for that command only.
               </li>
-              <li>Skip only when <code>--no-commands</code> is provided.</li>
+              <li>Skip only when <code>--skip-commands</code> is provided.</li>
             </ul>
           </section>
 
@@ -2301,7 +2356,7 @@ treeboot-slsa-attestation.intoto.jsonl</code></pre>
               <li>Duplicate file operation target detection.</li>
               <li>Outside-worktree target validation.</li>
               <li>String and object file parsing.</li>
-              <li>Sync comparison and delete-extra behavior.</li>
+              <li>Sync comparison and explicit delete behavior.</li>
               <li>String and object command parsing.</li>
               <li>Discovery order.</li>
               <li>Environment variable construction.</li>
@@ -2332,6 +2387,7 @@ treeboot-slsa-attestation.intoto.jsonl</code></pre>
               <li><code>copy</code>, <code>symlink</code>, and <code>sync</code> require sources.</li>
               <li>Manual <code>--target</code> handles one and many sources.</li>
               <li>Manual operation source completion reads from root path.</li>
+              <li><code>completions</code> emits scripts for supported shells.</li>
               <li>Conflict flags behave as specified.</li>
             </ul>
           </section>

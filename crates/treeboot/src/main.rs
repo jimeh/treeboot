@@ -36,28 +36,28 @@ enum Command {
 #[derive(Debug, Args, Clone, Default)]
 struct RunArgs {
     /// Override the checkout used as the file-operation source.
-    #[arg(long)]
+    #[arg(short, long)]
     root: Option<PathBuf>,
 
     /// Use one specific config file and skip init script discovery.
-    #[arg(long)]
+    #[arg(short, long)]
     config: Option<PathBuf>,
 
     /// Fail on missing config and stricter file-operation conflicts.
-    #[arg(long)]
+    #[arg(short = 'S', long)]
     strict: bool,
 
     /// Replace existing file-operation targets where supported.
-    #[arg(long)]
+    #[arg(short, long)]
     force: bool,
 
     /// Print planned work without changing files or running commands.
-    #[arg(long)]
+    #[arg(short = 'n', long)]
     dry_run: bool,
 
     /// Run file operations only.
     #[arg(long)]
-    no_commands: bool,
+    skip_commands: bool,
 }
 
 #[derive(Debug, Args, Clone, Default)]
@@ -67,31 +67,35 @@ struct InitArgs {
     config: bool,
 
     /// Create an executable init script.
-    #[arg(long, conflicts_with = "config")]
+    #[arg(short, long, conflicts_with = "config")]
     script: bool,
 
     /// Output path for the generated file.
-    #[arg(long)]
+    #[arg(short, long)]
     path: Option<PathBuf>,
 
     /// Replace an existing init output file.
-    #[arg(long)]
+    #[arg(short, long)]
     force: bool,
 }
 
 #[derive(Debug, Args, Clone, Default)]
 struct ConfigArgs {
     /// Override the checkout used as the file-operation source.
-    #[arg(long)]
+    #[arg(short, long)]
     root: Option<PathBuf>,
 
     /// Use one specific config file and skip config discovery.
-    #[arg(long)]
+    #[arg(short, long)]
     config: Option<PathBuf>,
 
     /// Output format for normalized config.
-    #[arg(long, value_enum, default_value_t = ConfigFormat::Text)]
-    format: ConfigFormat,
+    #[arg(short = 'o', long, value_enum, conflicts_with = "json")]
+    format: Option<ConfigFormat>,
+
+    /// Print normalized config as JSON.
+    #[arg(short = 'J', long)]
+    json: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
@@ -121,7 +125,7 @@ fn main() -> ExitCode {
 }
 
 fn run_config_command(args: ConfigArgs) -> treeboot_core::Result<()> {
-    let format = args.format;
+    let format = args.output_format();
     let env_options = RuntimeOptionOverrides::from_env()?;
     let report = treeboot_core::inspect_config(args.into())?;
 
@@ -195,8 +199,8 @@ fn file_operation_summary(operation: &FileOperation) -> String {
     if let Some(compare) = operation.compare {
         summary.push_str(&format!(" compare={compare:?}").to_lowercase());
     }
-    if let Some(delete_extra) = operation.delete_extra {
-        summary.push_str(&format!(" delete_extra={delete_extra}"));
+    if let Some(delete) = operation.delete {
+        summary.push_str(&format!(" delete={delete}"));
     }
 
     summary
@@ -242,7 +246,7 @@ impl From<RunArgs> for RunOptions {
             strict: args.strict,
             force: args.force,
             dry_run: args.dry_run,
-            no_commands: args.no_commands,
+            skip_commands: args.skip_commands,
         }
     }
 }
@@ -253,6 +257,16 @@ impl From<ConfigArgs> for ConfigOptions {
             cwd: None,
             root: args.root,
             config: args.config,
+        }
+    }
+}
+
+impl ConfigArgs {
+    fn output_format(&self) -> ConfigFormat {
+        if self.json {
+            ConfigFormat::Json
+        } else {
+            self.format.unwrap_or_default()
         }
     }
 }

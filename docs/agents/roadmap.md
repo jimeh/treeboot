@@ -96,7 +96,7 @@ Validation focus:
 
 - idempotent default behavior
 - force behavior around files, symlinks, and directories
-- sync delete-extra behavior
+- sync explicit delete behavior
 - unsafe symlink rejection before side effects
 
 ## Milestone 6: Command Runtime
@@ -110,12 +110,34 @@ Scope:
 - support command `cwd`
 - implement `allow_failure`
 - implement async command batching
-- support `--no-commands` and `--dry-run`
+- support `--skip-commands` and `--dry-run`
 
 Async implementation should be decided here. Keep milestone 1 synchronous until
 command batching needs concurrency.
 
-## Milestone 7: Manual File Operation Commands
+## Milestone 7: Shell Completion
+
+Status: pending.
+
+Scope:
+
+- add a built-in `treeboot completions <shell>` command
+- use the clap completion ecosystem, such as `clap_complete`, to generate
+  scripts from the same CLI definition used for runtime parsing
+- support Bash, Zsh, Fish, PowerShell, and Elvish when available from the
+  generator crate
+- keep completion generation side-effect free by writing scripts to stdout
+- include completion installation notes in release or install documentation
+- add the completion plumbing needed for command-specific dynamic candidates
+
+Validation focus:
+
+- every supported shell value emits non-empty script output
+- unsupported shell values fail with a CLI usage error
+- generated scripts include implemented subcommands and options
+- completion plumbing can be extended by later commands for dynamic candidates
+
+## Milestone 8: Manual File Operation Commands
 
 Status: pending.
 
@@ -127,7 +149,7 @@ Scope:
 - support root-path-based shell completion for source arguments
 - support `--target` for one source and as a path prefix for multiple sources
 - expose relevant operation flags: `--required`, `--symlinks`, `--compare`,
-  `--delete-extra`, and `--no-delete-extra`
+  `--delete`, and `--no-delete`
 - support shared `--root`, `--strict`, `--force`, and `--dry-run` behavior
 - skip config discovery, init script discovery, and configured commands
 
@@ -139,7 +161,7 @@ Validation focus:
 - operation-specific flag validation
 - completion candidates come from the resolved root path
 
-## Milestone 8: Release Packaging
+## Milestone 9: Release Packaging
 
 Status: pending.
 

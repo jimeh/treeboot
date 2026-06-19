@@ -30,3 +30,12 @@ fn unknown_option_should_exit_with_usage_error() {
         .code(2)
         .stderr(predicate::str::contains("unexpected argument"));
 }
+
+#[test]
+fn legacy_no_commands_option_should_exit_with_usage_error() {
+    treeboot()
+        .arg("--no-commands")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("unexpected argument"));
+}
