@@ -37,10 +37,11 @@ Useful deeper docs:
 ## Current Implementation State
 
 The current code implements the milestone 1 foundation, milestone 2 config
-parsing, milestone 3 declarative validation/planning, and milestone 4 config
-runtime options:
+parsing, milestone 3 declarative validation/planning, milestone 4 config
+runtime options, milestone 5 file operations, milestone 6 command runtime, and
+milestone 7 shell completions:
 
-- CLI parsing for `run`, `config`, and `init`
+- CLI parsing for `run`, `config`, `init`, and `completions`
 - Git worktree/root/default-branch discovery
 - treeboot environment aliases
 - init script discovery and execution
@@ -50,12 +51,13 @@ runtime options:
 - view-only normalized config inspection
 - generated JSON Schema for the config file format
 - starter config/script generation
+- static shell completion generation
 - structured output events
 
 Declarative TOML config execution currently applies `copy`, `symlink`, and
-`sync` file operations. Declarative command execution is gated until a later
-milestone. Use `treeboot config` to inspect normalized config without
-execution; it warns when run validation would fail.
+`sync` file operations, then runs configured commands unless `--skip-commands`
+is set. Use `treeboot config` to inspect normalized config without execution;
+it warns when run validation would fail.
 
 ## Commands
 

@@ -24,10 +24,10 @@ The initial implementation contract lives in
 version.
 
 The current implementation is in progress. It supports the initial `run`,
-`config`, and `init` command surfaces, path discovery, init-script
-discovery/execution, config parsing/inspection, declarative validation,
-declarative file operations, declarative command execution, and missing-config
-behavior.
+`config`, `init`, and `completions` command surfaces, path discovery,
+init-script discovery/execution, config parsing/inspection, declarative
+validation, declarative file operations, declarative command execution, shell
+completion generation, and missing-config behavior.
 
 ## Why
 
@@ -151,6 +151,7 @@ treeboot run
 treeboot config
 treeboot config --format json
 treeboot config --json
+treeboot completions bash
 ```
 
 Useful planned options:
@@ -165,6 +166,22 @@ treeboot init
 
 `treeboot init` creates a starter config or script. In an interactive shell it
 prompts for which one to create.
+
+## Shell Completions
+
+`treeboot completions <shell>` prints completion scripts to stdout. Supported
+shells are `bash`, `zsh`, `fish`, `powershell`, and `elvish`.
+
+```sh
+treeboot completions bash > ~/.local/share/bash-completion/completions/treeboot
+treeboot completions zsh > ~/.zfunc/_treeboot
+treeboot completions fish > ~/.config/fish/completions/treeboot.fish
+treeboot completions powershell
+treeboot completions elvish
+```
+
+The command does not install files or inspect the current repository. Redirect
+the output to the path your shell or package manager expects.
 
 ## Safety
 
@@ -213,6 +230,10 @@ mise run generate
 The intended install path is downloading the release asset for your platform
 from GitHub Releases, either directly or through tools such as `ubi` and
 `mise`.
+
+After installing the binary, generate shell completion scripts with
+`treeboot completions <shell>` and install them according to your shell or
+package manager conventions.
 
 Releases are expected to include archives, raw executable assets, checksums,
 a signed checksum manifest, SBOMs, attestations, and signed/notarized macOS

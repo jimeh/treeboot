@@ -117,7 +117,7 @@ command batching needs concurrency.
 
 ## Milestone 7: Shell Completion
 
-Status: pending.
+Status: implemented.
 
 Scope:
 

@@ -21,6 +21,8 @@ Before the first real release, add or document commands for:
 
 - building each supported target; `mise run build:release` covers the local
   optimized workspace build
+- generating shell completion scripts for bash, zsh, fish, powershell, and
+  elvish from the built binary
 - smoke-testing each built binary
 - creating archives with `treeboot`, `README.md`, and `LICENSE`
 - generating checksums
@@ -38,3 +40,6 @@ mise run verify
 
 Release-specific automation should also have at least one local dry-run or smoke
 command that does not publish anything.
+
+Before publishing, review install notes for shell completion paths and run
+completion generation for every supported shell.
