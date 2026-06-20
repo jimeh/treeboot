@@ -28,6 +28,12 @@ impl From<ConfigRuntimeOptions> for RunPlanOptions {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(super) enum FilePlanOrigin<'a> {
+    Config(&'a Path),
+    Manual { operation: FileOperationKind },
+}
+
 /// A validated declarative run plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunPlan {
@@ -113,9 +119,6 @@ pub fn plan_run_config(
     context: &RunContext,
     options: RunPlanOptions,
 ) -> Result<RunPlan> {
-    let root_path = normalize_existing(&context.root_path).map_err(|source| {
-        invalid_config_error(path, None, format!("failed to resolve root path: {source}"))
-    })?;
     let worktree_path = normalize_existing(&context.worktree_path).map_err(|source| {
         invalid_config_error(
             path,
@@ -123,18 +126,11 @@ pub fn plan_run_config(
             format!("failed to resolve worktree path: {source}"),
         )
     })?;
-
-    let target_paths = normalize_target_paths(path, &config.files)?;
-    validate_duplicate_targets(path, &config.files, &target_paths)?;
-    validate_strict_sync(path, &config.files, options.strict)?;
-
     let files = plan_file_operations(
-        path,
-        config,
+        FilePlanOrigin::Config(path),
+        &config.files,
+        context,
         options,
-        &target_paths,
-        root_path.as_path(),
-        worktree_path.as_path(),
     )?;
     let commands = plan_commands(path, &config.commands, context, worktree_path.as_path())?;
 
@@ -146,13 +142,51 @@ pub fn plan_run_config(
     })
 }
 
-fn normalize_target_paths(path: &Path, files: &[FileOperation]) -> Result<Vec<PathBuf>> {
+pub(super) fn plan_file_operations(
+    origin: FilePlanOrigin<'_>,
+    files: &[FileOperation],
+    context: &RunContext,
+    options: RunPlanOptions,
+) -> Result<Vec<PlannedFileOperation>> {
+    let root_path = normalize_existing(&context.root_path).map_err(|source| {
+        file_plan_error(
+            origin,
+            None,
+            format!("failed to resolve root path: {source}"),
+        )
+    })?;
+    let worktree_path = normalize_existing(&context.worktree_path).map_err(|source| {
+        file_plan_error(
+            origin,
+            None,
+            format!("failed to resolve worktree path: {source}"),
+        )
+    })?;
+
+    let target_paths = normalize_target_paths(origin, files)?;
+    validate_duplicate_targets(origin, files, &target_paths)?;
+    validate_strict_sync(origin, files, options.strict)?;
+
+    build_file_operations(
+        origin,
+        files,
+        options,
+        &target_paths,
+        root_path.as_path(),
+        worktree_path.as_path(),
+    )
+}
+
+fn normalize_target_paths(
+    origin: FilePlanOrigin<'_>,
+    files: &[FileOperation],
+) -> Result<Vec<PathBuf>> {
     files
         .iter()
         .map(|operation| {
             normalize_maybe_existing(&operation.target_path).map_err(|source| {
-                invalid_config_error(
-                    path,
+                file_plan_error(
+                    origin,
                     Some(operation.declaration),
                     format!(
                         "failed to resolve target {}: {source}",
@@ -165,7 +199,7 @@ fn normalize_target_paths(path: &Path, files: &[FileOperation]) -> Result<Vec<Pa
 }
 
 fn validate_duplicate_targets(
-    path: &Path,
+    origin: FilePlanOrigin<'_>,
     files: &[FileOperation],
     target_paths: &[PathBuf],
 ) -> Result<()> {
@@ -191,19 +225,29 @@ fn validate_duplicate_targets(
         .iter()
         .flat_map(|(target, operations)| {
             operations.iter().map(move |operation| {
-                format!("{}: {}", target.display(), operation_summary(operation))
+                format!(
+                    "{}: {}",
+                    target.display(),
+                    operation_summary(origin, operation)
+                )
             })
         })
         .collect::<Vec<_>>()
         .join("; ");
 
-    Err(Error::ConfigInvalid {
-        path: path.to_path_buf(),
-        message: format!("duplicate configured target: {details}"),
-    })
+    let message = match origin {
+        FilePlanOrigin::Config(_) => format!("duplicate configured target: {details}"),
+        FilePlanOrigin::Manual { .. } => format!("duplicate target: {details}"),
+    };
+
+    Err(file_plan_error(origin, None, message))
 }
 
-fn validate_strict_sync(path: &Path, files: &[FileOperation], strict: bool) -> Result<()> {
+fn validate_strict_sync(
+    origin: FilePlanOrigin<'_>,
+    files: &[FileOperation],
+    strict: bool,
+) -> Result<()> {
     if !strict {
         return Ok(());
     }
@@ -212,12 +256,12 @@ fn validate_strict_sync(path: &Path, files: &[FileOperation], strict: bool) -> R
         .iter()
         .find(|operation| operation.operation == FileOperationKind::Sync)
     {
-        return invalid_config(
-            path,
+        return invalid_file_plan(
+            origin,
             Some(operation.declaration),
             format!(
                 "`--strict` cannot be used with sync file operation {}",
-                operation_summary(operation)
+                operation_summary(origin, operation)
             ),
         );
     }
@@ -225,22 +269,22 @@ fn validate_strict_sync(path: &Path, files: &[FileOperation], strict: bool) -> R
     Ok(())
 }
 
-fn plan_file_operations(
-    path: &Path,
-    config: &Config,
+fn build_file_operations(
+    origin: FilePlanOrigin<'_>,
+    files: &[FileOperation],
     options: RunPlanOptions,
     target_paths: &[PathBuf],
     root_path: &Path,
     worktree_path: &Path,
 ) -> Result<Vec<PlannedFileOperation>> {
-    let mut planned = Vec::with_capacity(config.files.len());
+    let mut planned = Vec::with_capacity(files.len());
 
-    for (operation, target_path) in config.files.iter().zip(target_paths) {
-        validate_target_boundary(path, options, operation, target_path, worktree_path)?;
+    for (operation, target_path) in files.iter().zip(target_paths) {
+        validate_target_boundary(origin, options, operation, target_path, worktree_path)?;
 
         let source_path = normalize_maybe_existing(&operation.source_path).map_err(|source| {
-            invalid_config_error(
-                path,
+            file_plan_error(
+                origin,
                 Some(operation.declaration),
                 format!(
                     "failed to resolve source {}: {source}",
@@ -248,26 +292,26 @@ fn plan_file_operations(
                 ),
             )
         })?;
-        validate_source_boundary(path, options, operation, &source_path, root_path)?;
+        validate_source_boundary(origin, options, operation, &source_path, root_path)?;
 
-        let status = match source_exists(path, operation, source_path.as_path())? {
+        let status = match source_exists(origin, operation, source_path.as_path())? {
             true => {
                 if matches!(
                     operation.operation,
                     FileOperationKind::Copy | FileOperationKind::Sync
                 ) {
-                    validate_source_symlinks(path, operation, source_path.as_path(), root_path)?;
+                    validate_source_symlinks(origin, operation, source_path.as_path(), root_path)?;
                 }
 
                 PlannedFileStatus::Ready
             }
             false if operation.required => {
-                return invalid_config(
-                    path,
+                return invalid_file_plan(
+                    origin,
                     Some(operation.declaration),
                     format!(
                         "required source does not exist for {}",
-                        operation_summary(operation)
+                        operation_summary(origin, operation)
                     ),
                 );
             }
@@ -293,7 +337,7 @@ fn plan_file_operations(
 }
 
 fn validate_target_boundary(
-    path: &Path,
+    origin: FilePlanOrigin<'_>,
     options: RunPlanOptions,
     operation: &FileOperation,
     target_path: &Path,
@@ -304,12 +348,12 @@ fn validate_target_boundary(
     }
 
     if !is_within(target_path, worktree_path) {
-        return invalid_config(
-            path,
+        return invalid_file_plan(
+            origin,
             Some(operation.declaration),
             format!(
                 "target resolves outside worktree for {}",
-                operation_summary(operation)
+                operation_summary(origin, operation)
             ),
         );
     }
@@ -318,7 +362,7 @@ fn validate_target_boundary(
 }
 
 fn validate_source_boundary(
-    path: &Path,
+    origin: FilePlanOrigin<'_>,
     options: RunPlanOptions,
     operation: &FileOperation,
     source_path: &Path,
@@ -329,12 +373,12 @@ fn validate_source_boundary(
     }
 
     if !is_within(source_path, root_path) {
-        return invalid_config(
-            path,
+        return invalid_file_plan(
+            origin,
             Some(operation.declaration),
             format!(
                 "source resolves outside root for {}",
-                operation_summary(operation)
+                operation_summary(origin, operation)
             ),
         );
     }
@@ -400,23 +444,23 @@ fn plan_commands(
 }
 
 fn validate_source_symlinks(
-    path: &Path,
+    origin: FilePlanOrigin<'_>,
     operation: &FileOperation,
     source_path: &Path,
     root_path: &Path,
 ) -> Result<()> {
-    validate_source_symlink_path(path, operation, source_path, root_path)
+    validate_source_symlink_path(origin, operation, source_path, root_path)
 }
 
 fn validate_source_symlink_path(
-    config_path: &Path,
+    origin: FilePlanOrigin<'_>,
     operation: &FileOperation,
     path: &Path,
     root_path: &Path,
 ) -> Result<()> {
     let metadata = std::fs::symlink_metadata(path).map_err(|source| {
-        invalid_config_error(
-            config_path,
+        file_plan_error(
+            origin,
             Some(operation.declaration),
             format!(
                 "failed to inspect source {}: {source}",
@@ -427,8 +471,8 @@ fn validate_source_symlink_path(
 
     if metadata.file_type().is_symlink() {
         let target = normalize_existing(path).map_err(|source| {
-            invalid_config_error(
-                config_path,
+            file_plan_error(
+                origin,
                 Some(operation.declaration),
                 format!(
                     "failed to resolve source symlink {}: {source}",
@@ -438,8 +482,8 @@ fn validate_source_symlink_path(
         })?;
 
         if !is_within(&target, root_path) {
-            return invalid_config(
-                config_path,
+            return invalid_file_plan(
+                origin,
                 Some(operation.declaration),
                 format!(
                     "copy or sync source contains unsafe symlink {}",
@@ -456,8 +500,8 @@ fn validate_source_symlink_path(
     }
 
     for entry in std::fs::read_dir(path).map_err(|source| {
-        invalid_config_error(
-            config_path,
+        file_plan_error(
+            origin,
             Some(operation.declaration),
             format!(
                 "failed to inspect source directory {}: {source}",
@@ -466,8 +510,8 @@ fn validate_source_symlink_path(
         )
     })? {
         let entry = entry.map_err(|source| {
-            invalid_config_error(
-                config_path,
+            file_plan_error(
+                origin,
                 Some(operation.declaration),
                 format!(
                     "failed to inspect source directory {}: {source}",
@@ -475,18 +519,22 @@ fn validate_source_symlink_path(
                 ),
             )
         })?;
-        validate_source_symlink_path(config_path, operation, &entry.path(), root_path)?;
+        validate_source_symlink_path(origin, operation, &entry.path(), root_path)?;
     }
 
     Ok(())
 }
 
-fn source_exists(path: &Path, operation: &FileOperation, source_path: &Path) -> Result<bool> {
+fn source_exists(
+    origin: FilePlanOrigin<'_>,
+    operation: &FileOperation,
+    source_path: &Path,
+) -> Result<bool> {
     match std::fs::symlink_metadata(source_path) {
         Ok(_) => Ok(true),
         Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(source) => Err(invalid_config_error(
-            path,
+        Err(source) => Err(file_plan_error(
+            origin,
             Some(operation.declaration),
             format!(
                 "failed to inspect source {}: {source}",
@@ -496,18 +544,24 @@ fn source_exists(path: &Path, operation: &FileOperation, source_path: &Path) -> 
     }
 }
 
-fn operation_summary(operation: &FileOperation) -> String {
-    format!(
-        "{} {} -> {} at line {}, column {}",
+fn operation_summary(origin: FilePlanOrigin<'_>, operation: &FileOperation) -> String {
+    let summary = format!(
+        "{} {} -> {}",
         operation_name(operation.operation),
         operation.source.display(),
-        operation.target.display(),
-        operation.declaration.line,
-        operation.declaration.column
-    )
+        operation.target.display()
+    );
+
+    match origin {
+        FilePlanOrigin::Config(_) => format!(
+            "{} at line {}, column {}",
+            summary, operation.declaration.line, operation.declaration.column
+        ),
+        FilePlanOrigin::Manual { .. } => summary,
+    }
 }
 
-fn operation_name(operation: FileOperationKind) -> &'static str {
+const fn operation_name(operation: FileOperationKind) -> &'static str {
     match operation {
         FileOperationKind::Copy => "copy",
         FileOperationKind::Symlink => "symlink",
@@ -521,6 +575,14 @@ fn invalid_config<T>(
     message: impl Into<String>,
 ) -> Result<T> {
     Err(invalid_config_error(path, span, message))
+}
+
+fn invalid_file_plan<T>(
+    origin: FilePlanOrigin<'_>,
+    span: Option<SourceSpan>,
+    message: impl Into<String>,
+) -> Result<T> {
+    Err(file_plan_error(origin, span, message))
 }
 
 fn invalid_config_error(
@@ -541,6 +603,20 @@ fn invalid_config_error(
     Error::ConfigInvalid {
         path: path.to_path_buf(),
         message,
+    }
+}
+
+fn file_plan_error(
+    origin: FilePlanOrigin<'_>,
+    span: Option<SourceSpan>,
+    message: impl Into<String>,
+) -> Error {
+    match origin {
+        FilePlanOrigin::Config(path) => invalid_config_error(path, span, message),
+        FilePlanOrigin::Manual { operation } => Error::FileOperationInvalid {
+            operation: operation_name(operation),
+            message: message.into(),
+        },
     }
 }
 

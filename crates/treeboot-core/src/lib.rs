@@ -13,6 +13,7 @@ mod error;
 mod files;
 mod git;
 mod init;
+mod manual;
 mod output;
 mod run;
 mod validation;
@@ -20,6 +21,10 @@ mod validation;
 pub use context::{Environment, RunContext};
 pub use error::Error;
 pub use init::{InitKind, InitOptions, InitReport, init};
+pub use manual::{
+    FileOperationAction, FileOperationCompletionOptions, FileOperationOptions, FileOperationReport,
+    file_operation_source_candidates, run_file_operation,
+};
 pub use output::{OutputEvent, OutputStream, Reporter};
 pub use run::{RunAction, RunOptions, RunReport, run};
 pub use validation::{

@@ -142,6 +142,15 @@ pub enum Error {
         message: String,
     },
 
+    /// A manual file operation request is invalid.
+    #[error("invalid {operation} file operation: {message}")]
+    FileOperationInvalid {
+        /// Operation being planned.
+        operation: &'static str,
+        /// Human-readable validation detail.
+        message: String,
+    },
+
     /// A file operation failed while accessing the filesystem.
     #[error("{operation} file operation failed at {path:?}: {source}")]
     FileOperationIo {
