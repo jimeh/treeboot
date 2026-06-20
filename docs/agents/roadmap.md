@@ -101,7 +101,7 @@ Validation focus:
 
 ## Milestone 6: Command Runtime
 
-Status: pending.
+Status: implemented.
 
 Scope:
 

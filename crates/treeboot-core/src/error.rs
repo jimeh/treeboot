@@ -101,9 +101,35 @@ pub enum Error {
     #[error("This is not a work tree")]
     RootWorktreeStrict,
 
-    /// Declarative command execution has not been implemented yet.
-    #[error("command execution is not implemented yet: {0:?}")]
-    CommandExecutionNotImplemented(PathBuf),
+    /// A configured command could not be spawned.
+    #[error("failed to run command {label}: {source}")]
+    CommandIo {
+        /// Human-readable command label.
+        label: String,
+        /// Source I/O error.
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// A configured command exited unsuccessfully.
+    #[error("command {label} failed with {status}")]
+    CommandFailed {
+        /// Human-readable command label.
+        label: String,
+        /// Process exit status.
+        status: ExitStatus,
+    },
+
+    /// One or more async commands failed after the whole batch completed.
+    #[error("{count} async command{plural} failed: {labels}")]
+    CommandBatchFailed {
+        /// Number of failed commands.
+        count: usize,
+        /// Grammar suffix for the formatted message.
+        plural: &'static str,
+        /// Failed command labels.
+        labels: String,
+    },
 
     /// A file operation encountered an unsupported conflict.
     #[error("{operation} file operation cannot use {path:?}: {message}")]

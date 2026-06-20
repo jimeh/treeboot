@@ -9,10 +9,11 @@ use common::{git_repo, git_worktree, treeboot, write_file};
 use common::write_executable_script;
 
 fn toml_string_path(path: &std::path::Path) -> String {
-    path.display()
-        .to_string()
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
+    toml_string(&path.display().to_string())
+}
+
+fn toml_string(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 #[test]
@@ -166,20 +167,33 @@ fn run_outside_git_worktree_should_exit_with_runtime_failure() {
         .stderr(predicate::str::contains("not inside a Git worktree"));
 }
 
+#[cfg(unix)]
 #[test]
-fn config_with_commands_should_fail_until_command_execution_exists() {
+fn run_command_only_config_should_execute_from_worktree() {
     let repo = git_worktree();
     let config = repo.worktree_path().join(".treeboot.toml");
-    write_file(&config, "commands = [\"mise install\"]\n");
+    let marker = repo.worktree_path().join("pwd.out");
+    write_file(
+        &config,
+        &format!(
+            r#"commands = [{{ program = "sh", args = ["-c", "pwd > {}"] }}]"#,
+            toml_string_path(&marker),
+        ),
+    );
 
     treeboot()
         .current_dir(repo.worktree_path())
         .assert()
-        .code(1)
+        .success()
         .stdout(predicate::str::contains("treeboot: config detected"))
-        .stderr(predicate::str::contains(
-            "command execution is not implemented yet",
-        ));
+        .stdout(predicate::str::contains("treeboot: run sh -c"));
+
+    let pwd = std::fs::read_to_string(marker).expect("pwd marker should be readable");
+    let worktree = std::fs::canonicalize(repo.worktree_path())
+        .expect("worktree should canonicalize")
+        .display()
+        .to_string();
+    assert_eq!(pwd.trim(), worktree);
 }
 
 #[test]
@@ -541,38 +555,55 @@ fn run_optional_missing_source_should_report_skip() {
     assert!(!repo.worktree_path().join(".env.local").exists());
 }
 
+#[cfg(unix)]
 #[test]
-fn run_config_with_commands_should_fail_before_file_mutation() {
+fn run_config_with_commands_should_apply_files_before_commands() {
     let repo = git_worktree();
     let config = repo.worktree_path().join(".treeboot.toml");
+    let marker = repo.worktree_path().join("command.out");
     write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
     write_file(
         &config,
-        "copy = [\".env\"]\ncommands = [\"mise install\"]\n",
+        &format!(
+            "copy = [\".env\"]\ncommands = [{{ program = \"sh\", args = [\"-c\", \"cat .env > {}\"] }}]\n",
+            toml_string_path(&marker),
+        ),
     );
 
     treeboot()
         .arg("run")
         .current_dir(repo.worktree_path())
         .assert()
-        .code(1)
-        .stderr(predicate::str::contains(
-            "command execution is not implemented",
-        ));
+        .success()
+        .stdout(predicate::str::contains("treeboot: copy .env -> .env"))
+        .stdout(predicate::str::contains("treeboot: run sh -c"));
 
-    assert!(!repo.worktree_path().join(".env").exists());
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join(".env"))
+            .expect("copied file should be readable"),
+        "TOKEN=1\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(marker).expect("command marker should be readable"),
+        "TOKEN=1\n"
+    );
 }
 
+#[cfg(unix)]
 #[test]
-fn run_sync_config_with_commands_should_fail_before_file_mutation() {
+fn run_file_failure_should_prevent_command_execution() {
     let repo = git_worktree();
     let config = repo.worktree_path().join(".treeboot.toml");
-    std::fs::create_dir_all(repo.root_path().join("shared"))
-        .expect("sync source should be created");
-    write_file(&repo.root_path().join("shared/config"), "value\n");
+    let marker = repo.worktree_path().join("command.out");
+    write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
+    std::fs::create_dir_all(repo.worktree_path().join("target"))
+        .expect("target dir should be created");
     write_file(
         &config,
-        "sync = [\"shared\"]\ncommands = [\"mise install\"]\n",
+        &format!(
+            "copy = [{{ source = \".env\", target = \"target\" }}]\ncommands = [{{ program = \"sh\", args = [\"-c\", \"touch {}\"] }}]\n",
+            toml_string_path(&marker),
+        ),
     );
 
     treeboot()
@@ -580,11 +611,9 @@ fn run_sync_config_with_commands_should_fail_before_file_mutation() {
         .current_dir(repo.worktree_path())
         .assert()
         .code(1)
-        .stderr(predicate::str::contains(
-            "command execution is not implemented",
-        ));
+        .stderr(predicate::str::contains("file operation cannot use"));
 
-    assert!(!repo.worktree_path().join("shared/config").exists());
+    assert!(!marker.exists());
 }
 
 #[test]
@@ -756,6 +785,330 @@ fn run_config_with_commands_and_skip_commands_should_copy_file() {
     let copied = std::fs::read_to_string(repo.worktree_path().join(".env"))
         .expect("copied file should be readable");
     assert_eq!(copied, "TOKEN=1\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn run_skip_commands_should_not_spawn_failing_command() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
+    write_file(
+        &config,
+        r#"copy = [".env"]
+commands = [{ name = "missing", program = "treeboot-missing-program-for-test" }]
+"#,
+    );
+
+    treeboot()
+        .args(["run", "--skip-commands"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("treeboot: copy .env -> .env"))
+        .stdout(predicate::str::contains("treeboot: run missing").not())
+        .stderr(predicate::str::contains("failed to run command").not());
+
+    assert!(repo.worktree_path().join(".env").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn run_dry_run_should_report_files_and_commands_without_side_effects() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    let marker = repo.worktree_path().join("command.out");
+    write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
+    write_file(
+        &config,
+        &format!(
+            "copy = [\".env\"]\ncommands = [{{ name = \"mark\", program = \"sh\", args = [\"-c\", \"touch {}\"] }}]\n",
+            toml_string_path(&marker),
+        ),
+    );
+
+    treeboot()
+        .args(["run", "--dry-run"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "treeboot: would copy .env -> .env",
+        ))
+        .stdout(predicate::str::contains("treeboot: would run mark: sh -c"));
+
+    assert!(!repo.worktree_path().join(".env").exists());
+    assert!(!marker.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn run_commands_should_isolate_env_and_honor_cwd() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    let app = repo.worktree_path().join("app");
+    let first = repo.worktree_path().join("first.out");
+    let second = repo.worktree_path().join("second.out");
+    std::fs::create_dir_all(&app).expect("app dir should be created");
+    write_file(
+        &config,
+        &format!(
+            r#"
+[[command]]
+name = "env one"
+program = "sh"
+args = ["-c", "printf '%s\n%s\n%s\n%s\n' \"$LOCAL_VALUE\" \"$TREEBOOT_ROOT_PATH\" \"$TREEBOOT_WORKTREE_PATH\" \"$(pwd)\" > {}"]
+cwd = "app"
+env = {{ LOCAL_VALUE = "local" }}
+
+[[command]]
+name = "env two"
+program = "sh"
+args = ["-c", "printf '%s\n' \"$LOCAL_VALUE\" > {}"]
+"#,
+            toml_string_path(&first),
+            toml_string_path(&second),
+        ),
+    );
+
+    treeboot()
+        .env("LOCAL_VALUE", "outer")
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    let first = std::fs::read_to_string(first).expect("first marker should be readable");
+    let lines = first.lines().collect::<Vec<_>>();
+    assert_eq!(lines[0], "local");
+    let root = std::fs::canonicalize(repo.root_path())
+        .expect("root should canonicalize")
+        .display()
+        .to_string();
+    let worktree = std::fs::canonicalize(repo.worktree_path())
+        .expect("worktree should canonicalize")
+        .display()
+        .to_string();
+    let app = std::fs::canonicalize(app)
+        .expect("app should canonicalize")
+        .display()
+        .to_string();
+    assert_eq!(lines[1], root);
+    assert_eq!(lines[2], worktree);
+    assert_eq!(lines[3], app);
+    assert_eq!(
+        std::fs::read_to_string(second).expect("second marker should be readable"),
+        "outer\n"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn run_direct_program_args_should_preserve_argument_boundaries() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    let marker = repo.worktree_path().join("args.out");
+    write_file(
+        &config,
+        &format!(
+            r#"
+commands = [{{
+  program = "sh",
+  args = ["-c", "printf '%s\n%s\n' \"$1\" \"$2\" > {}", "helper", "one two", "three"]
+}}]
+"#,
+            toml_string_path(&marker),
+        ),
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert_eq!(
+        std::fs::read_to_string(marker).expect("args marker should be readable"),
+        "one two\nthree\n"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn run_async_batch_should_finish_before_following_sequential_command() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    let one = repo.worktree_path().join("one.done");
+    let two = repo.worktree_path().join("two.done");
+    let order = repo.worktree_path().join("order.out");
+    write_file(
+        &config,
+        &format!(
+            r#"
+[[command]]
+name = "one"
+run = "printf a >> {}; touch {}"
+async = true
+
+[[command]]
+name = "two"
+run = "while [ ! -f {} ]; do sleep 0.01; done; printf b >> {}; touch {}"
+async = true
+
+[[command]]
+name = "after"
+run = "if [ -f {} ]; then printf C >> {}; else printf X >> {}; fi"
+"#,
+            toml_string_path(&order),
+            toml_string_path(&one),
+            toml_string_path(&one),
+            toml_string_path(&order),
+            toml_string_path(&two),
+            toml_string_path(&two),
+            toml_string_path(&order),
+            toml_string_path(&order),
+        ),
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("treeboot: run one:"))
+        .stdout(predicate::str::contains("treeboot: run two:"))
+        .stdout(predicate::str::contains("treeboot: run after:"));
+
+    assert_eq!(
+        std::fs::read_to_string(order).expect("order marker should be readable"),
+        "abC"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn run_async_output_should_prefix_stdout_and_stderr_lines() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(
+        &config,
+        r#"
+[[command]]
+name = "lines"
+run = "printf 'out'; printf 'err\\n' >&2"
+async = true
+"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "[lines: printf 'out'; printf 'err\\n' >&2] out",
+        ))
+        .stderr(predicate::str::contains(
+            "[lines: printf 'out'; printf 'err\\n' >&2] err",
+        ));
+}
+
+#[cfg(unix)]
+#[test]
+fn run_fatal_command_failure_should_keep_file_side_effects_and_stop_later_commands() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    let marker = repo.worktree_path().join("later.out");
+    write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
+    write_file(
+        &config,
+        &format!(
+            r#"
+copy = [".env"]
+
+[[command]]
+name = "fail"
+run = "exit 9"
+
+[[command]]
+name = "later"
+run = "touch {}"
+"#,
+            toml_string_path(&marker),
+        ),
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("treeboot: copy .env -> .env"))
+        .stderr(predicate::str::contains(
+            "treeboot: command fail: exit 9 failed with exit status: 9",
+        ));
+
+    assert!(repo.worktree_path().join(".env").exists());
+    assert!(!marker.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn run_allowed_command_failure_should_warn_and_continue() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    let marker = repo.worktree_path().join("later.out");
+    write_file(
+        &config,
+        &format!(
+            r#"
+[[command]]
+name = "optional"
+program = "treeboot-missing-program-for-test"
+allow_failure = true
+
+[[command]]
+name = "later"
+run = "touch {}"
+"#,
+            toml_string_path(&marker),
+        ),
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "treeboot: warning: command optional: treeboot-missing-program-for-test failed to start:",
+        ))
+        .stdout(predicate::str::contains("treeboot: run later:"));
+
+    assert!(marker.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn run_fatal_spawn_failure_should_exit_nonzero() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(
+        &config,
+        r#"commands = [{ name = "missing", program = "treeboot-missing-program-for-test" }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains(
+            "treeboot: run missing: treeboot-missing-program-for-test",
+        ))
+        .stderr(predicate::str::contains(
+            "treeboot: failed to run command missing: treeboot-missing-program-for-test",
+        ));
 }
 
 #[test]
