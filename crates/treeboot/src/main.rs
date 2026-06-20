@@ -4,7 +4,7 @@ use std::process::ExitCode;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use treeboot_core::{
     CommandKind, CommandOperation, ConfigOptions, ConfigReport, Error, FileOperation,
-    FileOperationKind, InitKind, InitOptions, OutputEvent, Reporter, RunOptions,
+    FileOperationKind, InitKind, InitOptions, OutputEvent, OutputStream, Reporter, RunOptions,
     RuntimeOptionOverrides,
 };
 
@@ -294,7 +294,17 @@ struct StdoutReporter;
 
 impl Reporter for StdoutReporter {
     fn report(&mut self, event: OutputEvent) -> std::io::Result<()> {
-        println!("{}", event.message());
+        if matches!(
+            event,
+            OutputEvent::CommandOutput {
+                stream: OutputStream::Stderr,
+                ..
+            }
+        ) {
+            eprintln!("{}", event.message());
+        } else {
+            println!("{}", event.message());
+        }
         Ok(())
     }
 }

@@ -2074,17 +2074,6 @@ args = ["install"]</code></pre>
           contract for file-operation conflicts.
         </p>
 
-        <div class="callout warning">
-          <h3>Current command runtime gate</h3>
-          <p>
-            In this release line, declarative commands are not executed yet.
-            If a config contains commands and <code>--skip-commands</code> is
-            not set, <code>treeboot run</code> fails before file mutation.
-            File-only configs, or configs run with
-            <code>--skip-commands</code>, continue through file operations.
-          </p>
-        </div>
-
         <div class="table-wrap">
           <table class="conflict-matrix">
             <thead>
@@ -2253,7 +2242,15 @@ args = ["install"]</code></pre>
                 <code>allow_failure = true</code>, treeboot waits for the rest
                 of the batch, then exits non-zero.
               </li>
-              <li>Run from <code>TREEBOOT_WORKTREE_PATH</code>.</li>
+              <li>
+                A command with <code>allow_failure = true</code> warns when it
+                cannot be spawned or exits non-zero, then later commands
+                continue.
+              </li>
+              <li>
+                Run from <code>TREEBOOT_WORKTREE_PATH</code> unless a command
+                sets <code>cwd</code>.
+              </li>
               <li>
                 Receive the full treeboot environment variable set described in
                 <a href="#environment">Environment variables</a>.
@@ -2263,6 +2260,10 @@ args = ["install"]</code></pre>
                 environment for that command only.
               </li>
               <li>Skip only when <code>--skip-commands</code> is provided.</li>
+              <li>
+                In <code>--dry-run</code>, report planned file operations and
+                commands without spawning any configured command process.
+              </li>
             </ul>
           </section>
 
@@ -2290,6 +2291,57 @@ Direct:  program + args</code></pre>
           </p>
         </div>
 
+        <div class="grid two">
+          <section class="panel">
+            <h3>Lifecycle output</h3>
+            <p>
+              treeboot reports <code>treeboot: run &lt;label&gt;</code> before
+              spawning each command. In dry-run it reports
+              <code>treeboot: would run &lt;label&gt;</code> instead. Async
+              batches may also report
+              <code>treeboot: would run async batch: &lt;labels&gt;</code> in
+              dry-run. A successful command does not produce a separate success
+              event.
+            </p>
+          </section>
+
+          <section class="panel">
+            <h3>Command labels</h3>
+            <p>
+              Labels include both <code>name</code> and invocation when
+              <code>name</code> is set, formatted as
+              <code>Name: invocation</code>. Without a name, shell commands use
+              the shell string and direct commands use
+              <code>program arg...</code>.
+            </p>
+          </section>
+        </div>
+
+        <div class="grid two">
+          <section class="panel">
+            <h3>Child output</h3>
+            <p>
+              Sequential commands inherit stdout and stderr directly. Async
+              commands pipe stdout and stderr, buffer complete lines, flush any
+              trailing fragment at EOF, prefix each line with
+              <code>[&lt;label&gt;]</code>, and serialize writes so output never
+              interleaves mid-line. stdout lines remain on stdout; stderr
+              lines remain on stderr.
+            </p>
+          </section>
+
+          <section class="panel">
+            <h3>Failures</h3>
+            <p>
+              Fatal singleton failures exit non-zero immediately and later
+              commands do not run. Fatal async batch failures are reported only
+              after every started command in the batch exits, and the error
+              lists every failed command label. Allowed failures always emit a
+              warning and do not make the run fail by themselves.
+            </p>
+          </section>
+        </div>
+
         <div class="callout">
           <h3>Cross-platform contract</h3>
           <p>
@@ -2313,14 +2365,28 @@ Direct:  program + args</code></pre>
         </div>
 
         <pre><code>treeboot: copy .env -&gt; .env
-treeboot: skip .env.local; target exists
+treeboot: skip copy .env.local; target exists
 treeboot: symlink .tool-versions -&gt; ../repo/.tool-versions
 treeboot: sync shared/config -&gt; .config
-treeboot: run mise install</code></pre>
+treeboot: run Install packages: npm install
+[Install Node packages: pnpm install] Lockfile is up to date
+treeboot: warning: command optional lint: npm run lint failed with exit status: 1</code></pre>
 
         <p>
           Unchanged sync files and directories produce no output. Sync reports
           creates, updates, and deletes when deletion is explicitly enabled.
+          Sequential command child output is inherited directly. Async command
+          child output is prefixed with the command label and written to the
+          same stream, stdout or stderr, that the child used.
+        </p>
+
+        <p>
+          Command start lines use <code>treeboot: run &lt;label&gt;</code>. Dry-run
+          uses <code>treeboot: would run &lt;label&gt;</code> and does not spawn
+          commands. Fatal singleton command failures are reported as
+          <code>treeboot: command &lt;label&gt; failed with &lt;status&gt;</code>.
+          Fatal async batch failures are reported after the batch drains as
+          <code>treeboot: N async commands failed: &lt;labels&gt;</code>.
         </p>
 
         <table>

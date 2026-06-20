@@ -5,6 +5,7 @@
 
 #![deny(missing_docs)]
 
+mod commands;
 mod config;
 mod context;
 mod discovery;
@@ -19,7 +20,7 @@ mod validation;
 pub use context::{Environment, RunContext};
 pub use error::Error;
 pub use init::{InitKind, InitOptions, InitReport, init};
-pub use output::{OutputEvent, Reporter};
+pub use output::{OutputEvent, OutputStream, Reporter};
 pub use run::{RunAction, RunOptions, RunReport, run};
 pub use validation::{
     PlannedCommand, PlannedFileOperation, PlannedFileStatus, RunPlan, RunPlanOptions,

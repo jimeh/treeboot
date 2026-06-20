@@ -26,8 +26,8 @@ version.
 The current implementation is in progress. It supports the initial `run`,
 `config`, and `init` command surfaces, path discovery, init-script
 discovery/execution, config parsing/inspection, declarative validation,
-declarative file operations, and missing-config behavior. Declarative command
-execution is still pending.
+declarative file operations, declarative command execution, and missing-config
+behavior.
 
 ## Why
 

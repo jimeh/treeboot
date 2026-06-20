@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+use crate::commands::{CommandExecutionOptions, execute_commands};
 use crate::config::{self, RuntimeOptionOverrides};
 use crate::context;
 use crate::discovery;
@@ -112,10 +113,6 @@ pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport
             let plan_options = env_options.resolve(&config.options, options.strict);
             let plan = crate::plan_run_config(&path, &config, &context, plan_options.into())?;
 
-            if !options.skip_commands && !plan.commands.is_empty() {
-                return Err(Error::CommandExecutionNotImplemented(path));
-            }
-
             apply_file_operations(
                 &plan,
                 FileApplyOptions {
@@ -125,6 +122,16 @@ pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport
                 },
                 reporter,
             )?;
+
+            if !options.skip_commands {
+                execute_commands(
+                    &plan,
+                    CommandExecutionOptions {
+                        dry_run: options.dry_run,
+                    },
+                    reporter,
+                )?;
+            }
 
             Ok(RunReport {
                 context,
