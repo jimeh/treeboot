@@ -1,5 +1,5 @@
 use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::config::RuntimeOptionOverrides;
 use crate::context;
@@ -321,7 +321,14 @@ fn manual_target(
 }
 
 fn source_candidates(root: &Path, current: &Path) -> Vec<String> {
-    if current.is_absolute() {
+    if current.is_absolute()
+        || current.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
         return Vec::new();
     }
 
@@ -545,9 +552,17 @@ mod tests {
 
     #[test]
     fn manual_target_should_reject_absolute_source_without_file_name() {
+        let temp_dir = std::env::temp_dir();
+        let root_source = temp_dir
+            .ancestors()
+            .last()
+            .expect("temp dir should have a filesystem root");
+        assert!(root_source.is_absolute());
+        assert!(root_source.file_name().is_none());
+
         let error = manual_target(
             FileOperationKind::Copy,
-            Path::new("/"),
+            root_source,
             Some(Path::new("local")),
             true,
         )
@@ -725,6 +740,15 @@ mod tests {
         let (root, _worktree) = temp_workspace("source-candidates-absolute");
 
         assert!(source_candidates(&root, Path::new("/tmp")).is_empty());
+    }
+
+    #[test]
+    fn source_candidates_should_not_escape_root_with_parent_segments() {
+        let (root, _worktree) = temp_workspace("source-candidates-parent");
+        std::fs::write(root.join("inside"), "ok\n").expect("file should be written");
+
+        assert!(source_candidates(&root, Path::new("../")).is_empty());
+        assert!(source_candidates(&root, Path::new("nested/../../")).is_empty());
     }
 
     #[test]
