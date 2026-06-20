@@ -38,20 +38,23 @@ Useful deeper docs:
 
 The current code implements the milestone 1 foundation, milestone 2 config
 parsing, milestone 3 declarative validation/planning, milestone 4 config
-runtime options, milestone 5 file operations, milestone 6 command runtime, and
-milestone 7 shell completions:
+runtime options, milestone 5 file operations, milestone 6 command runtime,
+milestone 7 shell completions, and milestone 8 manual file operations:
 
-- CLI parsing for `run`, `config`, `init`, and `completions`
+- CLI parsing for `run`, `config`, `init`, `copy`, `symlink`, `sync`, and
+  `completions`
 - Git worktree/root/default-branch discovery
 - treeboot environment aliases
 - init script discovery and execution
 - declarative TOML config parsing and normalization
 - declarative TOML validation and run-plan construction
 - config/env/CLI runtime option precedence for declarative validation
+- manual root-to-worktree file operation planning and execution
 - view-only normalized config inspection
 - generated JSON Schema for the config file format
 - starter config/script generation
-- static shell completion generation
+- shell completion generation with root-relative source completion for manual
+  file operations
 - structured output events
 
 Declarative TOML config execution currently applies `copy`, `symlink`, and
@@ -131,3 +134,5 @@ and CI mapping.
 - Coverage uses `cargo-llvm-cov` through `mise run coverage`; the first run may
   install `llvm-tools-preview` for the active Rust toolchain.
 - Pre-commit hooks are managed by Lefthook and installed by `mise run setup`.
+- If `mise run check` fails because `RUSTC_WRAPPER` points at an inactive
+  `sccache`, rerun with `RUSTC_WRAPPER=` to use `rustc` directly.

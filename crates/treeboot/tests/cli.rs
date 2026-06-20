@@ -52,22 +52,42 @@ fn completions_supported_shells_should_emit_scripts() {
             .assert()
             .success()
             .stderr(predicate::str::is_empty())
-            .stdout(predicate::str::contains("treeboot").and(predicate::str::contains("config")));
+            .stdout(predicate::str::contains("treeboot"))
+            .stdout(predicate::str::contains("COMPLETE"));
     }
 }
 
 #[test]
 fn completions_should_include_current_subcommands_and_flags() {
     treeboot()
-        .args(["completions", "bash"])
+        .env("COMPLETE", "fish")
+        .args(["--", "treeboot", ""])
         .assert()
         .success()
+        .stdout(predicate::str::contains("copy"))
+        .stdout(predicate::str::contains("symlink"))
+        .stdout(predicate::str::contains("sync"))
         .stdout(predicate::str::contains("run"))
         .stdout(predicate::str::contains("config"))
         .stdout(predicate::str::contains("init"))
         .stdout(predicate::str::contains("--root"))
         .stdout(predicate::str::contains("--config"))
         .stdout(predicate::str::contains("--dry-run"));
+}
+
+#[test]
+fn dynamic_completions_should_include_manual_command_flags() {
+    treeboot()
+        .env("COMPLETE", "fish")
+        .args(["--", "treeboot", "sync", "--"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--target"))
+        .stdout(predicate::str::contains("--required"))
+        .stdout(predicate::str::contains("--compare"))
+        .stdout(predicate::str::contains("--delete"))
+        .stdout(predicate::str::contains("--no-delete"))
+        .stdout(predicate::str::contains("--symlinks"));
 }
 
 #[test]

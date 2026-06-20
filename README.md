@@ -23,11 +23,12 @@ The initial implementation contract lives in
 [docs/SPEC.html](./docs/SPEC.html). This README is the short human-facing
 version.
 
-The current implementation is in progress. It supports the initial `run`,
-`config`, `init`, and `completions` command surfaces, path discovery,
-init-script discovery/execution, config parsing/inspection, declarative
-validation, declarative file operations, declarative command execution, shell
-completion generation, and missing-config behavior.
+The current implementation is in progress. It supports the `run`, `config`,
+`init`, `copy`, `symlink`, `sync`, and `completions` command surfaces, path
+discovery, init-script discovery/execution, config parsing/inspection,
+declarative validation, declarative file operations, declarative command
+execution, shell completion generation, root-relative manual source
+completion, and missing-config behavior.
 
 ## Why
 
@@ -151,16 +152,21 @@ treeboot run
 treeboot config
 treeboot config --format json
 treeboot config --json
+treeboot copy .env
+treeboot symlink .tool-versions
+treeboot sync shared/config --compare checksum
 treeboot completions bash
 ```
 
-Useful planned options:
+Useful options:
 
 ```sh
 treeboot run --dry-run
 treeboot run --strict
 treeboot run --force
 treeboot run --root /path/to/root-checkout
+treeboot copy .env .npmrc --target local
+treeboot sync shared/config --delete --dry-run
 treeboot init
 ```
 
@@ -180,8 +186,11 @@ treeboot completions powershell
 treeboot completions elvish
 ```
 
-The command does not install files or inspect the current repository. Redirect
-the output to the path your shell or package manager expects.
+The command does not install files or inspect the current repository while
+printing the script. The generated script calls back into `treeboot` at
+completion time, so source arguments for `copy`, `symlink`, and `sync` complete
+from the resolved root checkout. Redirect the output to the path your shell or
+package manager expects.
 
 ## Safety
 
