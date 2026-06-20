@@ -2334,10 +2334,17 @@ Direct:  program + args</code></pre>
             <h3>Failures</h3>
             <p>
               Fatal singleton failures exit non-zero immediately and later
-              commands do not run. Fatal async batch failures are reported only
-              after every started command in the batch exits, and the error
-              lists every failed command label. Allowed failures always emit a
-              warning and do not make the run fail by themselves.
+              commands do not run. If a non-async command cannot be spawned,
+              treeboot reports
+              <code>treeboot: failed to run command &lt;label&gt;: &lt;io-error&gt;</code>
+              to stderr and exits non-zero unless
+              <code>allow_failure = true</code>. Fatal async batch failures are
+              reported only after every started command in the batch exits, and
+              the error lists every failed command label. A command that cannot
+              be spawned in an async batch counts as a failed command label, and
+              treeboot still waits for every sibling command that did start.
+              Allowed failures always emit a warning and do not make the run
+              fail by themselves.
             </p>
           </section>
         </div>
@@ -2385,7 +2392,12 @@ treeboot: warning: command optional lint: npm run lint failed with exit status: 
           uses <code>treeboot: would run &lt;label&gt;</code> and does not spawn
           commands. Fatal singleton command failures are reported as
           <code>treeboot: command &lt;label&gt; failed with &lt;status&gt;</code>.
-          Fatal async batch failures are reported after the batch drains as
+          Fatal singleton spawn failures are reported as
+          <code>treeboot: failed to run command &lt;label&gt;: &lt;io-error&gt;</code>.
+          Allowed spawn failures are reported as
+          <code>treeboot: warning: command &lt;label&gt; failed to start: &lt;io-error&gt;</code>.
+          Fatal async batch failures, including failed spawns, are reported
+          after the batch drains as
           <code>treeboot: N async commands failed: &lt;labels&gt;</code>.
         </p>
 
