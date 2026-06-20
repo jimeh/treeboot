@@ -868,6 +868,13 @@ treeboot completions elvish</code></pre>
             <code>.env</code> to <code>local/.env</code> and
             <code>.npmrc</code> to <code>local/.npmrc</code>.
           </p>
+          <p>
+            Operation-specific flags are valid only on the commands listed in
+            the option table. For example, using <code>--compare</code> on
+            <code>copy</code> or <code>--symlinks</code> on
+            <code>symlink</code> is a CLI usage error and exits with code
+            <code>2</code>.
+          </p>
         </div>
 
         <table>
@@ -1055,6 +1062,13 @@ treeboot completions elvish</code></pre>
             <code>--strict</code> or <code>TREEBOOT_STRICT</code>, treeboot
             prints the same info message and exits non-zero. Config-level
             <code>strict</code> is not loaded before this check.
+          </p>
+          <p>
+            The same root-checkout behavior applies to manual
+            <code>copy</code>, <code>symlink</code>, and <code>sync</code>
+            commands. In default mode they exit successfully without applying
+            file operations. In strict mode they exit non-zero before applying
+            file operations.
           </p>
         </section>
 
@@ -1916,6 +1930,11 @@ args = ["install"]</code></pre>
             candidates should be relative to the root path so completed values
             can be reused as default targets.
           </p>
+          <p>
+            Root-relative source completion is part of the completion contract
+            for every shell supported by <code>treeboot completions</code>:
+            Bash, Zsh, Fish, PowerShell, and Elvish.
+          </p>
         </div>
 
         <div class="callout">
@@ -2400,6 +2419,13 @@ treeboot: warning: command optional lint: npm run lint failed with exit status: 
           Fatal async batch failures, including failed spawns, are reported
           after the batch drains in declaration order as
           <code>treeboot: N async commands failed: &lt;labels&gt;</code>.
+        </p>
+
+        <p>
+          Manual file operation validation errors should identify the CLI
+          operation, source, and target involved. They must not report synthetic
+          config file paths, TOML line numbers, or TOML column numbers for
+          command-line arguments.
         </p>
 
         <table>
