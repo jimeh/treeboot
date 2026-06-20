@@ -134,5 +134,5 @@ and CI mapping.
 - Coverage uses `cargo-llvm-cov` through `mise run coverage`; the first run may
   install `llvm-tools-preview` for the active Rust toolchain.
 - Pre-commit hooks are managed by Lefthook and installed by `mise run setup`.
-- If `mise run check` fails because `RUSTC_WRAPPER` points at an inactive
-  `sccache`, rerun with `RUSTC_WRAPPER=` to use `rustc` directly.
+- `mise.toml` pins `sccache` and sets `RUSTC_WRAPPER=sccache` so Cargo tasks use
+  the project-managed compiler cache instead of relying on global shell setup.
