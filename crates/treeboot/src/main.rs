@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
+use clap_complete::Shell;
 use treeboot_core::{
     CommandKind, CommandOperation, ConfigOptions, ConfigReport, Error, FileOperation,
     FileOperationKind, InitKind, InitOptions, OutputEvent, OutputStream, Reporter, RunOptions,
@@ -31,6 +32,8 @@ enum Command {
     Config(ConfigArgs),
     /// Create a starter config or init script.
     Init(InitArgs),
+    /// Print shell completion scripts.
+    Completions(CompletionsArgs),
 }
 
 #[derive(Debug, Args, Clone, Default)]
@@ -98,6 +101,12 @@ struct ConfigArgs {
     json: bool,
 }
 
+#[derive(Debug, Args, Clone, Copy)]
+struct CompletionsArgs {
+    /// Shell to generate completions for.
+    shell: Shell,
+}
+
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
 enum ConfigFormat {
     #[default]
@@ -112,6 +121,10 @@ fn main() -> ExitCode {
         Some(Command::Run(args)) => treeboot_core::run(args.into(), &mut reporter).map(|_| ()),
         Some(Command::Config(args)) => run_config_command(args),
         Some(Command::Init(args)) => treeboot_core::init(args.into(), &mut reporter).map(|_| ()),
+        Some(Command::Completions(args)) => {
+            run_completions_command(args);
+            Ok(())
+        }
         None => treeboot_core::run(cli.run.into(), &mut reporter).map(|_| ()),
     };
 
@@ -122,6 +135,15 @@ fn main() -> ExitCode {
             ExitCode::from(error.exit_code())
         }
     }
+}
+
+fn run_completions_command(args: CompletionsArgs) {
+    let mut command = Cli::command();
+    let name = command.get_name().to_owned();
+    let stdout = std::io::stdout();
+    let mut handle = stdout.lock();
+
+    clap_complete::generate(args.shell, &mut command, name, &mut handle);
 }
 
 fn run_config_command(args: ConfigArgs) -> treeboot_core::Result<()> {
