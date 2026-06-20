@@ -127,7 +127,7 @@ fn run_async_batch(
     let mut streams = 0;
     let mut failures = Vec::new();
 
-    for command in batch {
+    for (index, command) in batch.iter().enumerate() {
         let label = command_label(command);
         report(
             reporter,
@@ -145,7 +145,7 @@ fn run_async_batch(
                 if command.allow_failure {
                     report_allowed_failure(reporter, label, format!("failed to start: {source}"))?;
                 } else {
-                    failures.push(label);
+                    failures.push(AsyncFailure { index, label });
                 }
                 continue;
             }
@@ -177,6 +177,7 @@ fn run_async_batch(
         handles.push(thread::spawn(move || {
             let result = child.wait();
             let _ = exit_sender.send(AsyncMessage::Exit {
+                index,
                 label,
                 allow_failure,
                 result,
@@ -195,11 +196,17 @@ fn run_async_batch(
     if failures.is_empty() {
         Ok(())
     } else {
+        failures.sort_by_key(|failure| failure.index);
         let count = failures.len();
+        let labels = failures
+            .into_iter()
+            .map(|failure| failure.label)
+            .collect::<Vec<_>>();
+        let labels = labels.join(", ");
         Err(Error::CommandBatchFailed {
             count,
             plural: if count == 1 { "" } else { "s" },
-            labels: failures.join(", "),
+            labels,
         })
     }
 }
@@ -209,7 +216,7 @@ fn collect_async_messages(
     expected_exits: usize,
     expected_streams: usize,
     reporter: &mut dyn Reporter,
-    failures: &mut Vec<String>,
+    failures: &mut Vec<AsyncFailure>,
 ) -> Result<()> {
     let mut exits = 0;
     let mut streams = 0;
@@ -232,6 +239,7 @@ fn collect_async_messages(
                 streams += 1;
             }
             Ok(AsyncMessage::Exit {
+                index,
                 label,
                 allow_failure,
                 result,
@@ -242,7 +250,7 @@ fn collect_async_messages(
                     Ok(status) if allow_failure => {
                         report_allowed_failure(reporter, label, format!("failed with {status}"))?;
                     }
-                    Ok(_) => failures.push(label),
+                    Ok(_) => failures.push(AsyncFailure { index, label }),
                     Err(source) if allow_failure => {
                         report_allowed_failure(
                             reporter,
@@ -250,7 +258,7 @@ fn collect_async_messages(
                             format!("failed to wait: {source}"),
                         )?;
                     }
-                    Err(_) => failures.push(label),
+                    Err(_) => failures.push(AsyncFailure { index, label }),
                 }
             }
             Err(_) => break,
@@ -387,10 +395,16 @@ enum AsyncMessage {
     },
     StreamDone,
     Exit {
+        index: usize,
         label: String,
         allow_failure: bool,
         result: std::io::Result<ExitStatus>,
     },
+}
+
+struct AsyncFailure {
+    index: usize,
+    label: String,
 }
 
 #[cfg(test)]

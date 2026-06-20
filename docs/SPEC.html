@@ -2343,6 +2343,7 @@ Direct:  program + args</code></pre>
               the error lists every failed command label. A command that cannot
               be spawned in an async batch counts as a failed command label, and
               treeboot still waits for every sibling command that did start.
+              Failed async command labels are listed in declaration order.
               Allowed failures always emit a warning and do not make the run
               fail by themselves.
             </p>
@@ -2397,7 +2398,7 @@ treeboot: warning: command optional lint: npm run lint failed with exit status: 
           Allowed spawn failures are reported as
           <code>treeboot: warning: command &lt;label&gt; failed to start: &lt;io-error&gt;</code>.
           Fatal async batch failures, including failed spawns, are reported
-          after the batch drains as
+          after the batch drains in declaration order as
           <code>treeboot: N async commands failed: &lt;labels&gt;</code>.
         </p>
 
