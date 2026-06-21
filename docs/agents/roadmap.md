@@ -139,7 +139,7 @@ Validation focus:
 
 ## Milestone 8: Manual File Operation Commands
 
-Status: pending.
+Status: implemented.
 
 Scope:
 
