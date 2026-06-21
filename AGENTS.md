@@ -154,3 +154,6 @@ and CI mapping.
 - Release-please must use the repo's `RELEASE_BOT_CLIENT_ID` variable and
   `RELEASE_BOT_PRIVATE_KEY` secret so tags created by release automation trigger
   the tag-based release workflow.
+- Android release targets use the hosted runner's Android NDK clang linkers
+  instead of `cross`; the cross Android images fail with Rust 1.96 due to
+  missing `libunwind` during binary linking.
