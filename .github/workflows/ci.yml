@@ -33,7 +33,7 @@ jobs:
           cache_key: mise-v1-${{ github.event_name }}-{{platform}}-{{file_hash}}
       - run: mise run actions:lint
 
-  fmt:
+  format:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -44,7 +44,7 @@ jobs:
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           cache_key: mise-v1-${{ github.event_name }}-{{platform}}-{{file_hash}}
-      - run: mise run fmt
+      - run: mise run format:check
 
   generate:
     runs-on: ubuntu-latest

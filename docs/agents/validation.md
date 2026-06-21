@@ -9,12 +9,15 @@ Use this guide to pick the smallest useful feedback loop for a change.
 Use while iterating on a narrow change:
 
 ```sh
+mise run format
+mise run format:check
 mise run test:core
 mise run test:cli
 ```
 
 Use `test:core` for library behavior and `test:cli` for user-visible command
 behavior. Running `mise run test` executes both through mise dependencies.
+`format` applies Rust formatting, while `format:check` is non-mutating.
 
 ### Check
 
@@ -24,7 +27,8 @@ Use before handoff for most code changes:
 mise run check
 ```
 
-This runs formatting, clippy, and tests.
+This runs formatting checks, generated-artifact freshness checks, clippy, and
+tests.
 
 ### Verify
 
@@ -42,7 +46,7 @@ gate; it is a sensor for finding untested behavior.
 GitHub Actions runs these mise tasks:
 
 - `mise run actions:lint`
-- `mise run fmt`
+- `mise run format:check`
 - `mise run generate:check`
   - currently wraps `mise run generate:schema:check`
 - `mise run lint`
