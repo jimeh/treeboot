@@ -68,5 +68,5 @@ Useful follow-up coverage areas:
 
 - declarative validation before side effects
 - file-operation validation before side effects
-- command runtime and async batching
+- command runtime sequencing and failure behavior
 - sync conflict and explicit delete behavior

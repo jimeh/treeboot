@@ -25,7 +25,7 @@ pub use manual::{
     FileOperationAction, FileOperationCompletionOptions, FileOperationOptions, FileOperationReport,
     file_operation_source_candidates, run_file_operation,
 };
-pub use output::{OutputEvent, OutputStream, Reporter};
+pub use output::{OutputEvent, Reporter};
 pub use run::{RunAction, RunOptions, RunReport, run};
 pub use validation::{
     PlannedCommand, PlannedFileOperation, PlannedFileStatus, RunPlan, RunPlanOptions,

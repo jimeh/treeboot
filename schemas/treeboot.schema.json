@@ -75,10 +75,6 @@
           },
           "type": "array"
         },
-        "async": {
-          "description": "Whether this command can run in an async batch.",
-          "type": "boolean"
-        },
         "cwd": {
           "description": "Command working directory, relative to the worktree unless absolute.",
           "type": "string"
@@ -210,10 +206,6 @@
       "properties": {
         "allow_failure": {
           "description": "Whether a non-zero exit status should be non-fatal.",
-          "type": "boolean"
-        },
-        "async": {
-          "description": "Whether this command can run in an async batch.",
           "type": "boolean"
         },
         "cwd": {

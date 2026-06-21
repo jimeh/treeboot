@@ -1,11 +1,7 @@
-use std::io::{BufRead, BufReader, Read};
-use std::process::{Command, ExitStatus, Stdio};
-use std::sync::mpsc;
-use std::thread;
+use std::process::{Command, ExitStatus};
 
 use crate::{
-    CommandKind, Error, OutputEvent, OutputStream, PlannedCommand, Reporter, Result, RunContext,
-    RunPlan,
+    CommandKind, Error, OutputEvent, PlannedCommand, Reporter, Result, RunContext, RunPlan,
 };
 
 /// Options that affect command execution.
@@ -20,52 +16,17 @@ pub(crate) fn execute_commands(
     options: CommandExecutionOptions,
     reporter: &mut dyn Reporter,
 ) -> Result<()> {
-    let mut index = 0;
-
-    while index < plan.commands.len() {
-        let command = &plan.commands[index];
-
-        if command.async_command {
-            let batch_start = index;
-            while index < plan.commands.len() && plan.commands[index].async_command {
-                index += 1;
-            }
-            let batch = &plan.commands[batch_start..index];
-
-            if options.dry_run {
-                report_would_run_batch(batch, reporter)?;
-            } else {
-                run_async_batch(batch, &plan.context, reporter)?;
-            }
+    for command in &plan.commands {
+        if options.dry_run {
+            report(
+                reporter,
+                OutputEvent::CommandWouldRun {
+                    label: command_label(command),
+                },
+            )?;
         } else {
-            if options.dry_run {
-                report(
-                    reporter,
-                    OutputEvent::CommandWouldRun {
-                        label: command_label(command),
-                    },
-                )?;
-            } else {
-                run_sequential(command, &plan.context, reporter)?;
-            }
-            index += 1;
+            run_sequential(command, &plan.context, reporter)?;
         }
-    }
-
-    Ok(())
-}
-
-fn report_would_run_batch(batch: &[PlannedCommand], reporter: &mut dyn Reporter) -> Result<()> {
-    let labels = batch.iter().map(command_label).collect::<Vec<_>>();
-    report(
-        reporter,
-        OutputEvent::CommandWouldRunBatch {
-            labels: labels.clone(),
-        },
-    )?;
-
-    for label in labels {
-        report(reporter, OutputEvent::CommandWouldRun { label })?;
     }
 
     Ok(())
@@ -113,206 +74,6 @@ fn handle_exit_status(
         report_allowed_failure(reporter, label, format!("failed with {status}"))
     } else {
         Err(Error::CommandFailed { label, status })
-    }
-}
-
-fn run_async_batch(
-    batch: &[PlannedCommand],
-    context: &RunContext,
-    reporter: &mut dyn Reporter,
-) -> Result<()> {
-    let (sender, receiver) = mpsc::channel();
-    let mut handles = Vec::new();
-    let mut started = 0;
-    let mut streams = 0;
-    let mut failures = Vec::new();
-
-    for (index, command) in batch.iter().enumerate() {
-        let label = command_label(command);
-        report(
-            reporter,
-            OutputEvent::CommandStarted {
-                label: label.clone(),
-            },
-        )?;
-
-        let mut process = build_command(command, context);
-        process.stdout(Stdio::piped()).stderr(Stdio::piped());
-
-        let mut child = match process.spawn() {
-            Ok(child) => child,
-            Err(source) => {
-                if command.allow_failure {
-                    report_allowed_failure(reporter, label, format!("failed to start: {source}"))?;
-                } else {
-                    failures.push(AsyncFailure { index, label });
-                }
-                continue;
-            }
-        };
-
-        started += 1;
-
-        if let Some(stdout) = child.stdout.take() {
-            streams += 1;
-            handles.push(spawn_output_reader(
-                stdout,
-                OutputStream::Stdout,
-                label.clone(),
-                sender.clone(),
-            ));
-        }
-        if let Some(stderr) = child.stderr.take() {
-            streams += 1;
-            handles.push(spawn_output_reader(
-                stderr,
-                OutputStream::Stderr,
-                label.clone(),
-                sender.clone(),
-            ));
-        }
-
-        let allow_failure = command.allow_failure;
-        let exit_sender = sender.clone();
-        handles.push(thread::spawn(move || {
-            let result = child.wait();
-            let _ = exit_sender.send(AsyncMessage::Exit {
-                index,
-                label,
-                allow_failure,
-                result,
-            });
-        }));
-    }
-
-    drop(sender);
-
-    collect_async_messages(receiver, started, streams, reporter, &mut failures)?;
-
-    for handle in handles {
-        let _ = handle.join();
-    }
-
-    if failures.is_empty() {
-        Ok(())
-    } else {
-        failures.sort_by_key(|failure| failure.index);
-        let count = failures.len();
-        let labels = failures
-            .into_iter()
-            .map(|failure| failure.label)
-            .collect::<Vec<_>>();
-        let labels = labels.join(", ");
-        Err(Error::CommandBatchFailed {
-            count,
-            plural: if count == 1 { "" } else { "s" },
-            labels,
-        })
-    }
-}
-
-fn collect_async_messages(
-    receiver: mpsc::Receiver<AsyncMessage>,
-    expected_exits: usize,
-    expected_streams: usize,
-    reporter: &mut dyn Reporter,
-    failures: &mut Vec<AsyncFailure>,
-) -> Result<()> {
-    let mut exits = 0;
-    let mut streams = 0;
-
-    while exits < expected_exits || streams < expected_streams {
-        match receiver.recv() {
-            Ok(AsyncMessage::Line {
-                label,
-                stream,
-                line,
-            }) => report(
-                reporter,
-                OutputEvent::CommandOutput {
-                    label,
-                    stream,
-                    line,
-                },
-            )?,
-            Ok(AsyncMessage::StreamDone) => {
-                streams += 1;
-            }
-            Ok(AsyncMessage::Exit {
-                index,
-                label,
-                allow_failure,
-                result,
-            }) => {
-                exits += 1;
-                match result {
-                    Ok(status) if status.success() => {}
-                    Ok(status) if allow_failure => {
-                        report_allowed_failure(reporter, label, format!("failed with {status}"))?;
-                    }
-                    Ok(_) => failures.push(AsyncFailure { index, label }),
-                    Err(source) if allow_failure => {
-                        report_allowed_failure(
-                            reporter,
-                            label,
-                            format!("failed to wait: {source}"),
-                        )?;
-                    }
-                    Err(_) => failures.push(AsyncFailure { index, label }),
-                }
-            }
-            Err(_) => break,
-        }
-    }
-
-    Ok(())
-}
-
-fn spawn_output_reader<R>(
-    reader: R,
-    stream: OutputStream,
-    label: String,
-    sender: mpsc::Sender<AsyncMessage>,
-) -> thread::JoinHandle<()>
-where
-    R: Read + Send + 'static,
-{
-    thread::spawn(move || {
-        let mut reader = BufReader::new(reader);
-        let mut buffer = Vec::new();
-
-        loop {
-            buffer.clear();
-            match reader.read_until(b'\n', &mut buffer) {
-                Ok(0) => break,
-                Ok(_) => {
-                    trim_line_ending(&mut buffer);
-                    let line = String::from_utf8_lossy(&buffer).into_owned();
-                    if sender
-                        .send(AsyncMessage::Line {
-                            label: label.clone(),
-                            stream,
-                            line,
-                        })
-                        .is_err()
-                    {
-                        return;
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-
-        let _ = sender.send(AsyncMessage::StreamDone);
-    })
-}
-
-fn trim_line_ending(buffer: &mut Vec<u8>) {
-    if buffer.ends_with(b"\n") {
-        buffer.pop();
-    }
-    if buffer.ends_with(b"\r") {
-        buffer.pop();
     }
 }
 
@@ -387,26 +148,6 @@ fn report(reporter: &mut dyn Reporter, event: OutputEvent) -> Result<()> {
         .map_err(|source| Error::Output { source })
 }
 
-enum AsyncMessage {
-    Line {
-        label: String,
-        stream: OutputStream,
-        line: String,
-    },
-    StreamDone,
-    Exit {
-        index: usize,
-        label: String,
-        allow_failure: bool,
-        result: std::io::Result<ExitStatus>,
-    },
-}
-
-struct AsyncFailure {
-    index: usize,
-    label: String,
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -442,15 +183,6 @@ mod tests {
         );
 
         assert_eq!(command_label(&command.inner), "cargo test --locked");
-    }
-
-    #[test]
-    fn trim_line_ending_should_flush_trailing_fragment() {
-        let mut line = b"partial".to_vec();
-
-        trim_line_ending(&mut line);
-
-        assert_eq!(line, b"partial");
     }
 
     #[cfg(unix)]
@@ -516,8 +248,8 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn execute_commands_should_report_dry_run_async_batch_without_spawning() {
-        let (temp, context) = context("dry-run-async");
+    fn execute_commands_should_report_each_dry_run_command_without_spawning() {
+        let (temp, context) = context("dry-run-sequential");
         let first_marker = temp.path().join("worktree/first");
         let second_marker = temp.path().join("worktree/second");
         let first = planned_command(
@@ -525,15 +257,13 @@ mod tests {
             CommandKind::Shell {
                 run: format!("touch {}", shell_path(&first_marker)),
             },
-        )
-        .with_async();
+        );
         let second = planned_command(
             Some("second"),
             CommandKind::Shell {
                 run: format!("touch {}", shell_path(&second_marker)),
             },
-        )
-        .with_async();
+        );
         let plan = plan(context, vec![first, second]);
         let mut reporter = Recorder::default();
 
@@ -549,11 +279,6 @@ mod tests {
         assert_eq!(
             reporter.messages(),
             vec![
-                format!(
-                    "treeboot: would run async batch: first: touch {}, second: touch {}",
-                    first_marker.display(),
-                    second_marker.display()
-                ),
                 format!(
                     "treeboot: would run first: touch {}",
                     first_marker.display()
@@ -632,106 +357,33 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn execute_commands_should_buffer_async_output_and_flush_trailing_fragments() {
-        let (_temp, context) = context("async-output");
+    fn execute_commands_should_run_commands_in_declaration_order() {
+        let (temp, context) = context("sequential-order");
+        let marker = temp.path().join("worktree/order");
         let first = planned_command(
             Some("first"),
             CommandKind::Shell {
-                run: "printf 'out'; printf 'err\\n' >&2".to_owned(),
+                run: format!("printf 'a' >> {}", shell_path(&marker)),
             },
-        )
-        .with_async();
+        );
         let second = planned_command(
             Some("second"),
             CommandKind::Shell {
-                run: "printf 'line\\n'; printf 'tail' >&2".to_owned(),
+                run: format!("printf 'b' >> {}", shell_path(&marker)),
             },
-        )
-        .with_async();
+        );
         let plan = plan(context, vec![first, second]);
-        let mut reporter = Recorder::default();
 
-        execute_commands(&plan, CommandExecutionOptions::default(), &mut reporter)
-            .expect("async commands should run");
-
-        assert!(reporter.events.iter().any(|event| {
-            matches!(
-                event,
-                OutputEvent::CommandOutput {
-                    label,
-                    stream: OutputStream::Stdout,
-                    line,
-                } if label == "first: printf 'out'; printf 'err\\n' >&2"
-                    && line == "out"
-            )
-        }));
-        assert!(reporter.events.iter().any(|event| {
-            matches!(
-                event,
-                OutputEvent::CommandOutput {
-                    label,
-                    stream: OutputStream::Stderr,
-                    line,
-                } if label == "second: printf 'line\\n'; printf 'tail' >&2"
-                    && line == "tail"
-            )
-        }));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn execute_commands_should_wait_for_all_async_failures() {
-        let (temp, context) = context("async-failures");
-        let marker = temp.path().join("worktree/marker");
-        let allowed = planned_command(
-            Some("allowed"),
-            CommandKind::Shell {
-                run: "exit 3".to_owned(),
-            },
+        execute_commands(
+            &plan,
+            CommandExecutionOptions::default(),
+            &mut Recorder::default(),
         )
-        .with_async()
-        .with_allow_failure();
-        let fatal_one = planned_command(
-            Some("fatal one"),
-            CommandKind::Shell {
-                run: format!("touch {}; exit 4", shell_path(&marker)),
-            },
-        )
-        .with_async();
-        let fatal_two = planned_command(
-            Some("fatal two"),
-            CommandKind::Shell {
-                run: "exit 5".to_owned(),
-            },
-        )
-        .with_async();
-        let later = planned_command(
-            Some("later"),
-            CommandKind::Shell {
-                run: "exit 0".to_owned(),
-            },
-        );
-        let plan = plan(context, vec![allowed, fatal_one, fatal_two, later]);
-        let mut reporter = Recorder::default();
+        .expect("commands should run");
 
-        let error = execute_commands(&plan, CommandExecutionOptions::default(), &mut reporter)
-            .expect_err("batch should fail");
-
-        assert!(marker.exists());
         assert_eq!(
-            error.to_string(),
-            "2 async commands failed: fatal one: touch ".to_owned()
-                + marker.to_str().expect("marker path should be utf-8")
-                + "; exit 4, fatal two: exit 5"
-        );
-        assert!(reporter.messages().iter().any(|message| {
-            message == "treeboot: warning: command allowed: exit 3 failed with exit status: 3"
-        }));
-        assert!(
-            !reporter
-                .messages()
-                .iter()
-                .any(|message| message == "treeboot: run later: exit 0")
+            std::fs::read_to_string(marker).expect("marker should be readable"),
+            "ab"
         );
     }
 
@@ -771,8 +423,8 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn execute_commands_should_wait_for_async_sibling_after_spawn_failure() {
-        let (temp, context) = context("async-spawn-failure");
+    fn execute_commands_should_stop_after_fatal_spawn_failure() {
+        let (temp, context) = context("fatal-spawn");
         let marker = temp.path().join("worktree/marker");
         let missing = planned_command(
             Some("missing"),
@@ -780,29 +432,24 @@ mod tests {
                 program: "treeboot-missing-program-for-test".to_owned(),
                 args: Vec::new(),
             },
-        )
-        .with_async();
-        let sibling = planned_command(
-            Some("sibling"),
+        );
+        let later = planned_command(
+            Some("later"),
             CommandKind::Shell {
                 run: format!("touch {}", shell_path(&marker)),
             },
-        )
-        .with_async();
-        let plan = plan(context, vec![missing, sibling]);
+        );
+        let plan = plan(context, vec![missing, later]);
 
         let error = execute_commands(
             &plan,
             CommandExecutionOptions::default(),
             &mut Recorder::default(),
         )
-        .expect_err("batch should fail");
+        .expect_err("spawn failure should fail");
 
-        assert!(marker.exists());
-        assert_eq!(
-            error.to_string(),
-            "1 async command failed: missing: treeboot-missing-program-for-test"
-        );
+        assert!(!marker.exists());
+        assert!(error.to_string().contains("failed to run command missing:"));
     }
 
     struct TestCommand {
@@ -810,11 +457,6 @@ mod tests {
     }
 
     impl TestCommand {
-        fn with_async(mut self) -> Self {
-            self.inner.async_command = true;
-            self
-        }
-
         fn with_allow_failure(mut self) -> Self {
             self.inner.allow_failure = true;
             self
@@ -845,7 +487,6 @@ mod tests {
                 cwd: None,
                 cwd_path: PathBuf::new(),
                 env: BTreeMap::new(),
-                async_command: false,
                 allow_failure: false,
                 declaration: SourceSpan {
                     start: 0,

@@ -217,9 +217,6 @@ struct ShellCommandObject {
     /// Extra environment variables for this command.
     #[serde(skip_serializing_if = "Option::is_none")]
     env: Option<BTreeMap<String, String>>,
-    /// Whether this command can run in an async batch.
-    #[serde(rename = "async", skip_serializing_if = "Option::is_none")]
-    async_command: Option<bool>,
     /// Whether a non-zero exit status should be non-fatal.
     #[serde(skip_serializing_if = "Option::is_none")]
     allow_failure: Option<bool>,
@@ -242,9 +239,6 @@ struct DirectCommandObject {
     /// Extra environment variables for this command.
     #[serde(skip_serializing_if = "Option::is_none")]
     env: Option<BTreeMap<String, String>>,
-    /// Whether this command can run in an async batch.
-    #[serde(rename = "async", skip_serializing_if = "Option::is_none")]
-    async_command: Option<bool>,
     /// Whether a non-zero exit status should be non-fatal.
     #[serde(skip_serializing_if = "Option::is_none")]
     allow_failure: Option<bool>,

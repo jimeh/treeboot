@@ -96,8 +96,6 @@ pub struct PlannedCommand {
     pub cwd_path: PathBuf,
     /// Extra environment variables for this command.
     pub env: BTreeMap<String, String>,
-    /// Whether this command can run in an async batch.
-    pub async_command: bool,
     /// Whether a non-zero exit status should be non-fatal.
     pub allow_failure: bool,
     /// Source location for the command declaration.
@@ -434,7 +432,6 @@ fn plan_commands(
             cwd: command.cwd.clone(),
             cwd_path,
             env: command.env.clone(),
-            async_command: command.async_command,
             allow_failure: command.allow_failure,
             declaration: command.declaration,
         });
@@ -863,7 +860,6 @@ mod tests {
                 cwd: Some(PathBuf::from("app")),
                 cwd_path: Some(app_dir.clone()),
                 env: BTreeMap::from([("NODE_ENV".to_owned(), "development".to_owned())]),
-                async_command: true,
                 allow_failure: true,
                 declaration: span(),
             }],
@@ -875,7 +871,6 @@ mod tests {
             plan.commands[0].cwd_path,
             std::fs::canonicalize(app_dir).expect("app dir should canonicalize")
         );
-        assert!(plan.commands[0].async_command);
         assert!(plan.commands[0].allow_failure);
     }
 
@@ -1090,7 +1085,6 @@ mod tests {
                 cwd: None,
                 cwd_path: None,
                 env: BTreeMap::new(),
-                async_command: false,
                 allow_failure: false,
                 declaration: span(),
             }],

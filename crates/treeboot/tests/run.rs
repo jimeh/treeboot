@@ -935,68 +935,13 @@ commands = [{{
 
 #[cfg(unix)]
 #[test]
-fn run_async_batch_should_finish_before_following_sequential_command() {
-    let repo = git_worktree();
-    let config = repo.worktree_path().join(".treeboot.toml");
-    let one = repo.worktree_path().join("one.done");
-    let two = repo.worktree_path().join("two.done");
-    let order = repo.worktree_path().join("order.out");
-    write_file(
-        &config,
-        &format!(
-            r#"
-[[command]]
-name = "one"
-run = "printf a >> {}; touch {}"
-async = true
-
-[[command]]
-name = "two"
-run = "while [ ! -f {} ]; do sleep 0.01; done; printf b >> {}; touch {}"
-async = true
-
-[[command]]
-name = "after"
-run = "if [ -f {} ]; then printf C >> {}; else printf X >> {}; fi"
-"#,
-            toml_string_path(&order),
-            toml_string_path(&one),
-            toml_string_path(&one),
-            toml_string_path(&order),
-            toml_string_path(&two),
-            toml_string_path(&two),
-            toml_string_path(&order),
-            toml_string_path(&order),
-        ),
-    );
-
-    treeboot()
-        .arg("run")
-        .current_dir(repo.worktree_path())
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("treeboot: run one:"))
-        .stdout(predicate::str::contains("treeboot: run two:"))
-        .stdout(predicate::str::contains("treeboot: run after:"));
-
-    assert_eq!(
-        std::fs::read_to_string(order).expect("order marker should be readable"),
-        "abC"
-    );
-}
-
-#[cfg(unix)]
-#[test]
-fn run_async_output_should_prefix_stdout_and_stderr_lines() {
+fn run_should_reject_async_command_field() {
     let repo = git_worktree();
     let config = repo.worktree_path().join(".treeboot.toml");
     write_file(
         &config,
         r#"
-[[command]]
-name = "lines"
-run = "printf 'out'; printf 'err\\n' >&2"
-async = true
+commands = [{ run = "npm install", async = true }]
 "#,
     );
 
@@ -1004,13 +949,8 @@ async = true
         .arg("run")
         .current_dir(repo.worktree_path())
         .assert()
-        .success()
-        .stdout(predicate::str::contains(
-            "[lines: printf 'out'; printf 'err\\n' >&2] out",
-        ))
-        .stderr(predicate::str::contains(
-            "[lines: printf 'out'; printf 'err\\n' >&2] err",
-        ));
+        .failure()
+        .stderr(predicate::str::contains("unknown field"));
 }
 
 #[cfg(unix)]

@@ -120,17 +120,6 @@ pub enum Error {
         status: ExitStatus,
     },
 
-    /// One or more async commands failed after the whole batch completed.
-    #[error("{count} async command{plural} failed: {labels}")]
-    CommandBatchFailed {
-        /// Number of failed commands.
-        count: usize,
-        /// Grammar suffix for the formatted message.
-        plural: &'static str,
-        /// Failed command labels.
-        labels: String,
-    },
-
     /// A file operation encountered an unsupported conflict.
     #[error("{operation} file operation cannot use {path:?}: {message}")]
     FileOperationConflict {
