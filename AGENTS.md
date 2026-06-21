@@ -23,6 +23,8 @@ implementation plans or roadmap notes. Keep implementation tactics in
 - `crates/treeboot` is the CLI package and should stay thin.
 - `crates/treeboot-core` is the public library crate, exposed as
   `treeboot_core`.
+- `tools/release-helper` contains release workflow helper logic behind thin
+  shell wrappers in `scripts/`.
 - `docs/agents/` contains deeper guidance for future agent work.
 - `mise.toml` is the canonical task and tool surface.
 
@@ -39,7 +41,8 @@ Useful deeper docs:
 The current code implements the milestone 1 foundation, milestone 2 config
 parsing, milestone 3 declarative validation/planning, milestone 4 config
 runtime options, milestone 5 file operations, milestone 6 command runtime,
-milestone 7 shell completions, and milestone 8 manual file operations:
+milestone 7 shell completions, milestone 8 manual file operations, and the
+first pass of milestone 9 release packaging:
 
 - CLI parsing for `run`, `config`, `init`, `copy`, `symlink`, `sync`, and
   `completions`
@@ -57,6 +60,8 @@ milestone 7 shell completions, and milestone 8 manual file operations:
 - starter config/script generation
 - shell completion generation with root-relative source completion for manual
   file operations
+- release-please version/changelog automation
+- tag-triggered and manual release asset packaging
 - structured output events
 
 Declarative TOML config execution currently applies `copy`, `symlink`, and
@@ -146,3 +151,6 @@ and CI mapping.
   the project-managed compiler cache instead of relying on global shell setup.
 - CI sets `MISE_RUSTUP_HOME` under the mise data directory so `mise-action`
   caches the rustup toolchains and components declared in `mise.toml`.
+- Release-please must use the repo's `RELEASE_BOT_CLIENT_ID` variable and
+  `RELEASE_BOT_PRIVATE_KEY` secret so tags created by release automation trigger
+  the tag-based release workflow.

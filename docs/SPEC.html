@@ -2461,10 +2461,6 @@ treeboot-x86_64-unknown-linux-musl.tar.gz
 treeboot-aarch64-unknown-linux-musl.tar.gz
 treeboot-x86_64-pc-windows-msvc.zip
 treeboot-aarch64-pc-windows-msvc.zip
-treeboot-x86_64-unknown-freebsd.tar.gz
-treeboot-aarch64-unknown-freebsd.tar.gz
-treeboot-x86_64-unknown-openbsd.tar.gz
-treeboot-aarch64-unknown-openbsd.tar.gz
 treeboot-x86_64-linux-android.tar.gz
 treeboot-aarch64-linux-android.tar.gz</code></pre>
 
@@ -2475,18 +2471,12 @@ treeboot-x86_64-unknown-linux-musl
 treeboot-aarch64-unknown-linux-musl
 treeboot-x86_64-pc-windows-msvc.exe
 treeboot-aarch64-pc-windows-msvc.exe
-treeboot-x86_64-unknown-freebsd
-treeboot-aarch64-unknown-freebsd
-treeboot-x86_64-unknown-openbsd
-treeboot-aarch64-unknown-openbsd
 treeboot-x86_64-linux-android
 treeboot-aarch64-linux-android</code></pre>
 
         <p>Release metadata assets:</p>
         <pre><code>treeboot-checksums.txt
-treeboot-checksums.txt.asc
-treeboot-sbom.spdx.json
-treeboot-slsa-attestation.intoto.jsonl</code></pre>
+treeboot-sbom.spdx.json</code></pre>
 
         <div class="timeline">
           <div class="timeline-item">
@@ -2504,17 +2494,17 @@ treeboot-slsa-attestation.intoto.jsonl</code></pre>
           <div class="timeline-item">
             <strong>Checksums</strong>
             <span>
-              Publish a checksum manifest that covers every non-signature
-              release asset, including archives, raw executables, SBOMs, and
-              attestations.
+              Publish a checksum manifest that covers every release asset
+              uploaded to the GitHub Release, including archives, raw
+              executables, and SBOMs.
             </span>
           </div>
           <div class="timeline-item">
             <strong>GPG signatures</strong>
             <span>
-              Publish one detached GPG signature for
-              <code>treeboot-checksums.txt</code>. The checksum manifest is the
-              signed statement for the other release assets.
+              Planned distribution hardening should publish one detached GPG
+              signature for <code>treeboot-checksums.txt</code>. The checksum
+              manifest is the signed statement for the other release assets.
             </span>
           </div>
           <div class="timeline-item">
@@ -2527,23 +2517,25 @@ treeboot-slsa-attestation.intoto.jsonl</code></pre>
           <div class="timeline-item">
             <strong>Attestations</strong>
             <span>
-              Publish provenance attestations from release automation, using
-              SLSA/in-toto compatible output where practical.
+              Publish provenance attestations from GitHub Actions release
+              automation. Consumers should be able to verify release assets
+              with <code>gh attestation verify</code>.
             </span>
           </div>
           <div class="timeline-item">
             <strong>Apple signing</strong>
             <span>
-              Sign macOS CLI binaries with Apple Developer ID and notarize them
-              through Apple's developer tooling before publication.
+              Planned distribution hardening should sign macOS CLI binaries
+              with Apple Developer ID and notarize them through Apple's
+              developer tooling before publication.
             </span>
           </div>
           <div class="timeline-item">
             <strong>Release targets</strong>
             <span>
               macOS Apple Silicon, macOS Intel, Linux x86_64 musl,
-              Linux ARM64 musl, Windows x86_64/ARM64 MSVC, FreeBSD
-              x86_64/ARM64, OpenBSD x86_64/ARM64, and Android x86_64/ARM64.
+              Linux ARM64 musl, Windows x86_64/ARM64 MSVC, and Android
+              x86_64/ARM64.
             </span>
           </div>
           <div class="timeline-item">
@@ -2551,7 +2543,19 @@ treeboot-slsa-attestation.intoto.jsonl</code></pre>
             <span>
               The expanded target list uses triples available from
               <code>rustc --print target-list</code>. Release automation should
-              only publish targets that build and pass a smoke test.
+              only publish targets that build and pass the configured release
+              smoke test on the selected runner.
+            </span>
+          </div>
+          <div class="timeline-item">
+            <strong>Release flow</strong>
+            <span>
+              Release PR automation updates version files and
+              <code>CHANGELOG.md</code>, creates a <code>vX.Y.Z</code> tag, and
+              leaves a draft GitHub Release. Tag-triggered release automation
+              builds assets, reuses that draft when present, falls back to the
+              matching changelog section for release notes when needed, uploads
+              assets, and publishes the release only after uploads complete.
             </span>
           </div>
         </div>

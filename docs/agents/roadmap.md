@@ -160,13 +160,13 @@ Validation focus:
 
 ## Milestone 9: Release Packaging
 
-Status: pending.
+Status: first pass implemented; signing hardening pending.
 
 Scope:
 
 - release target matrix from the spec
 - archive and raw executable assets
-- checksums and checksum signature
+- checksums
 - SBOM and provenance artifacts
 - macOS signing/notarization notes
 - release smoke tests

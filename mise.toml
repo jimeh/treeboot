@@ -41,6 +41,26 @@ run = "cargo build --workspace --all-targets --locked"
 description = "Build optimized release binaries"
 run = "cargo build --workspace --release --locked"
 
+[tasks."build:release:target"]
+description = "Build an optimized treeboot binary for a target triple"
+run = '''
+target="${1:?target triple required}"
+cargo build -p treeboot --locked --release --target "$target"
+'''
+
+[tasks."release:version"]
+description = "Print the release version derived from git describe"
+run = "scripts/release-version.sh"
+
+[tasks."release:package:local"]
+description = "Build and package the current host release binary into dist/"
+run = '''
+target="$(rustc -vV | sed -n 's/^host: //p')"
+version="$(scripts/release-version.sh)"
+cargo build -p treeboot --locked --release --target "$target"
+scripts/package-release-asset.sh "$target" "$version" dist
+'''
+
 [tasks.generate]
 description = "Generate checked-in artifacts"
 run = ["mise run generate:schema"]
