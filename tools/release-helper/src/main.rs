@@ -11,6 +11,7 @@ use markdown::{ParseOptions, to_mdast};
 use zip::CompressionMethod;
 use zip::write::SimpleFileOptions;
 
+/// Top-level release helper command-line arguments.
 #[derive(Debug, Parser)]
 #[command(name = "treeboot-release-helper")]
 #[command(about = "Release workflow helper for treeboot")]
@@ -19,6 +20,7 @@ struct Args {
     command: Commands,
 }
 
+/// Release helper subcommands used by workflow wrapper scripts.
 #[derive(Debug, Subcommand)]
 enum Commands {
     /// Derive a release version from an override, GitHub tag ref, or git describe.
@@ -57,6 +59,7 @@ enum Commands {
     },
 }
 
+/// Run the helper and report errors in a workflow-friendly format.
 fn main() {
     if let Err(error) = run() {
         eprintln!("error: {error}");
@@ -64,6 +67,7 @@ fn main() {
     }
 }
 
+/// Dispatch the selected release helper subcommand.
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     match Args::parse().command {
         Commands::Version {
@@ -101,6 +105,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Resolved release version metadata shared across workflow jobs.
 #[derive(Debug, Eq, PartialEq)]
 struct VersionInfo {
     tag: String,
@@ -109,6 +114,7 @@ struct VersionInfo {
     is_tag: bool,
 }
 
+/// Resolve the release version from explicit input, GitHub tag context, or Git.
 fn resolve_version(
     override_version: Option<&str>,
     github_ref_type: Option<&str>,
@@ -119,13 +125,17 @@ fn resolve_version(
         return Ok(version_info(format!("v{version}"), version, false));
     }
 
-    if github_ref_type == Some("tag")
-        && let Some(ref_name) = github_ref_name
-        && ref_name.starts_with('v')
-    {
-        let tag = ref_name.to_owned();
-        let version = tag.trim_start_matches('v').to_owned();
-        return Ok(version_info(tag, version, true));
+    if github_ref_type == Some("tag") {
+        let ref_name = github_ref_name.ok_or("missing github ref name for tag event")?;
+        let version = ref_name
+            .strip_prefix('v')
+            .ok_or_else(|| format!("invalid release tag '{ref_name}', expected vX.Y.Z"))?;
+        if !is_strict_release_version(version) {
+            return Err(format!("invalid release tag '{ref_name}', expected vX.Y.Z").into());
+        }
+
+        let version = version.to_owned();
+        return Ok(version_info(format!("v{version}"), version, true));
     }
 
     let describe = git_output([
@@ -138,6 +148,7 @@ fn resolve_version(
     Ok(version_info(tag, version, false))
 }
 
+/// Build the normalized version metadata used by release workflow outputs.
 fn version_info(tag: String, version: String, is_tag: bool) -> VersionInfo {
     let safe_version = version
         .chars()
@@ -155,6 +166,22 @@ fn version_info(tag: String, version: String, is_tag: bool) -> VersionInfo {
     }
 }
 
+/// Return whether a tag version has the strict numeric X.Y.Z release shape.
+fn is_strict_release_version(version: &str) -> bool {
+    let mut parts = version.split('.');
+    matches!(
+        (parts.next(), parts.next(), parts.next(), parts.next()),
+        (Some(major), Some(minor), Some(patch), None)
+            if !major.is_empty()
+                && !minor.is_empty()
+                && !patch.is_empty()
+                && major.chars().all(|character| character.is_ascii_digit())
+                && minor.chars().all(|character| character.is_ascii_digit())
+                && patch.chars().all(|character| character.is_ascii_digit())
+    )
+}
+
+/// Run a Git command and return trimmed UTF-8 stdout.
 fn git_output<I, S>(args: I) -> Result<String, Box<dyn std::error::Error>>
 where
     I: IntoIterator<Item = S>,
@@ -168,6 +195,7 @@ where
     Ok(String::from_utf8(output.stdout)?.trim().to_owned())
 }
 
+/// Append release version metadata to the GitHub Actions output file.
 fn write_version_outputs(
     version: &VersionInfo,
     output: &Path,
@@ -184,19 +212,31 @@ fn write_version_outputs(
     Ok(())
 }
 
+/// Package a built treeboot binary into raw and archived release assets.
 fn package_release_asset(
+    target: &str,
+    version: &str,
+    dist_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    package_release_asset_in_project(Path::new("."), target, version, dist_dir)
+}
+
+/// Package release assets from a specific project root.
+fn package_release_asset_in_project(
+    project_dir: &Path,
     target: &str,
     version: &str,
     dist_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let windows = target.contains("windows");
     let exe_suffix = if windows { ".exe" } else { "" };
-    let binary = PathBuf::from(format!("target/{target}/release/treeboot{exe_suffix}"));
+    let binary = project_dir.join(format!("target/{target}/release/treeboot{exe_suffix}"));
     if !binary.is_file() {
         return Err(format!("missing release binary: {}", binary.display()).into());
     }
 
-    fs::create_dir_all(dist_dir)?;
+    let dist_dir = resolve_project_path(project_dir, dist_dir);
+    fs::create_dir_all(&dist_dir)?;
     let raw_asset = dist_dir.join(format!("treeboot-{target}{exe_suffix}"));
     fs::copy(&binary, &raw_asset)?;
     make_executable(&raw_asset)?;
@@ -217,8 +257,8 @@ fn package_release_asset(
     let payload_binary = payload_dir.join(format!("treeboot{exe_suffix}"));
     fs::copy(&binary, &payload_binary)?;
     make_executable(&payload_binary)?;
-    fs::copy("README.md", payload_dir.join("README.md"))?;
-    fs::copy("LICENSE", payload_dir.join("LICENSE"))?;
+    fs::copy(project_dir.join("README.md"), payload_dir.join("README.md"))?;
+    fs::copy(project_dir.join("LICENSE"), payload_dir.join("LICENSE"))?;
 
     let result = if windows {
         create_zip_archive(
@@ -240,7 +280,17 @@ fn package_release_asset(
     Ok(())
 }
 
+/// Resolve a path relative to the project root unless it is already absolute.
+fn resolve_project_path(project_dir: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_owned()
+    } else {
+        project_dir.join(path)
+    }
+}
+
 #[cfg(unix)]
+/// Mark a packaged Unix binary as executable.
 fn make_executable(path: &Path) -> io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
 
@@ -250,10 +300,12 @@ fn make_executable(path: &Path) -> io::Result<()> {
 }
 
 #[cfg(not(unix))]
+/// Leave executable metadata unchanged on non-Unix platforms.
 fn make_executable(_path: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Create the Windows zip archive for a target release payload.
 fn create_zip_archive(
     archive: &Path,
     payload_dir: &Path,
@@ -274,6 +326,7 @@ fn create_zip_archive(
     Ok(())
 }
 
+/// Create the non-Windows tar.gz archive for a target release payload.
 fn create_tar_archive(
     archive: &Path,
     payload_dir: &Path,
@@ -297,6 +350,7 @@ fn create_tar_archive(
     Ok(())
 }
 
+/// Return release notes for a version, falling back when no changelog exists.
 fn release_notes(changelog: &Path, version: &str) -> Result<String, Box<dyn std::error::Error>> {
     if !changelog.is_file() {
         return Ok(fallback_notes(version));
@@ -309,6 +363,7 @@ fn release_notes(changelog: &Path, version: &str) -> Result<String, Box<dyn std:
     )
 }
 
+/// Extract the body under a matching level-2 changelog heading.
 fn extract_release_notes<'a>(markdown: &'a str, version: &str) -> Option<&'a str> {
     let root = to_mdast(markdown, &ParseOptions::default()).ok()?;
     let children = root.children()?;
@@ -341,6 +396,7 @@ fn extract_release_notes<'a>(markdown: &'a str, version: &str) -> Option<&'a str
     None
 }
 
+/// Trim surrounding whitespace and keep one trailing newline for release notes.
 fn normalize_notes(notes: &str) -> String {
     let trimmed = notes.trim_matches(|character: char| character.is_whitespace());
     if trimmed.is_empty() {
@@ -350,15 +406,18 @@ fn normalize_notes(notes: &str) -> String {
     }
 }
 
+/// Build default release notes when the changelog has no matching section.
 fn fallback_notes(version: &str) -> String {
     format!("Release v{}\n", normalize_version(version))
 }
 
+/// Normalize a Markdown heading node into a comparable version string.
 fn normalize_heading_text(heading: &Heading) -> String {
     let text = plain_text(&heading.children);
     normalize_version_heading(&text)
 }
 
+/// Extract and normalize the version token from a changelog heading.
 fn normalize_version_heading(text: &str) -> String {
     let text = text.trim();
     let text = text.strip_prefix('[').unwrap_or(text);
@@ -367,10 +426,12 @@ fn normalize_version_heading(text: &str) -> String {
     normalize_version(text)
 }
 
+/// Normalize a version by trimming whitespace and a leading v prefix.
 fn normalize_version(version: &str) -> String {
     version.trim().trim_start_matches('v').to_owned()
 }
 
+/// Flatten a sequence of phrasing Markdown nodes into plain text.
 fn plain_text(nodes: &[Node]) -> String {
     let mut output = String::new();
     for node in nodes {
@@ -379,6 +440,7 @@ fn plain_text(nodes: &[Node]) -> String {
     output
 }
 
+/// Append supported text-bearing Markdown nodes to a plain-text buffer.
 fn append_plain_text(node: &Node, output: &mut String) {
     match node {
         Node::Text(text) => output.push_str(&text.value),
@@ -395,7 +457,9 @@ fn append_plain_text(node: &Node, output: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Read as _;
 
+    /// Explicit version overrides accept a leading v but do not mark a tag run.
     #[test]
     fn normalizes_explicit_version() {
         assert_eq!(
@@ -409,6 +473,7 @@ mod tests {
         );
     }
 
+    /// GitHub tag refs resolve to a tag release when the ref is vX.Y.Z.
     #[test]
     fn detects_github_tag_version() {
         assert_eq!(
@@ -422,6 +487,50 @@ mod tests {
         );
     }
 
+    /// GitHub tag events fail when GitHub did not provide a ref name.
+    #[test]
+    fn rejects_missing_github_tag_ref_name() {
+        let error = resolve_version(None, Some("tag"), None)
+            .unwrap_err()
+            .to_string();
+
+        assert_eq!(error, "missing github ref name for tag event");
+    }
+
+    /// GitHub tag events fail when the ref does not start with v.
+    #[test]
+    fn rejects_github_tag_without_v_prefix() {
+        let error = resolve_version(None, Some("tag"), Some("1.2.3"))
+            .unwrap_err()
+            .to_string();
+
+        assert_eq!(error, "invalid release tag '1.2.3', expected vX.Y.Z");
+    }
+
+    /// GitHub tag events fail when the ref is not strict vX.Y.Z.
+    #[test]
+    fn rejects_non_strict_github_tag_version() {
+        let error = resolve_version(None, Some("tag"), Some("v1.2.3-beta.1"))
+            .unwrap_err()
+            .to_string();
+
+        assert_eq!(
+            error,
+            "invalid release tag 'v1.2.3-beta.1', expected vX.Y.Z"
+        );
+    }
+
+    /// Strict release versions require exactly three numeric segments.
+    #[test]
+    fn validates_strict_release_versions() {
+        assert!(is_strict_release_version("1.2.3"));
+        assert!(!is_strict_release_version("1.2"));
+        assert!(!is_strict_release_version("1.2.3.4"));
+        assert!(!is_strict_release_version("1.2.beta"));
+        assert!(!is_strict_release_version("1..3"));
+    }
+
+    /// Artifact names replace characters that are unsafe in workflow artifacts.
     #[test]
     fn safe_version_replaces_artifact_unsafe_characters() {
         assert_eq!(
@@ -430,6 +539,7 @@ mod tests {
         );
     }
 
+    /// Git-derived non-tag runs use the full described version as their tag.
     #[test]
     fn derived_non_tag_version_uses_full_version_as_tag() {
         let version = resolve_version(None, None, None).unwrap();
@@ -438,6 +548,7 @@ mod tests {
         assert!(!version.is_tag);
     }
 
+    /// Version metadata appends key-value pairs to GitHub output files.
     #[test]
     fn writes_github_outputs() {
         let dir = tempfile::tempdir().unwrap();
@@ -460,6 +571,91 @@ mod tests {
         );
     }
 
+    /// Packaging creates raw and tar.gz assets for Unix-style targets.
+    #[test]
+    fn packages_tar_release_assets() {
+        let project = fixture_project("x86_64-unknown-linux-musl", "");
+        let dist_dir = project.path().join("dist");
+
+        package_release_asset_in_project(
+            project.path(),
+            "x86_64-unknown-linux-musl",
+            "1.2.3",
+            &dist_dir,
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read(dist_dir.join("treeboot-x86_64-unknown-linux-musl")).unwrap(),
+            b"binary"
+        );
+
+        let output = Command::new("tar")
+            .arg("-tzf")
+            .arg(dist_dir.join("treeboot-x86_64-unknown-linux-musl.tar.gz"))
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let entries = String::from_utf8(output.stdout).unwrap();
+        assert!(entries.contains("treeboot-1.2.3-x86_64-unknown-linux-musl/treeboot"));
+        assert!(entries.contains("treeboot-1.2.3-x86_64-unknown-linux-musl/README.md"));
+        assert!(entries.contains("treeboot-1.2.3-x86_64-unknown-linux-musl/LICENSE"));
+    }
+
+    /// Packaging creates raw and zip assets for Windows targets.
+    #[test]
+    fn packages_zip_release_assets() {
+        let project = fixture_project("x86_64-pc-windows-msvc", ".exe");
+        let dist_dir = project.path().join("dist");
+
+        package_release_asset_in_project(
+            project.path(),
+            "x86_64-pc-windows-msvc",
+            "1.2.3",
+            &dist_dir,
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read(dist_dir.join("treeboot-x86_64-pc-windows-msvc.exe")).unwrap(),
+            b"binary"
+        );
+
+        let archive = File::open(dist_dir.join("treeboot-x86_64-pc-windows-msvc.zip")).unwrap();
+        let mut zip = zip::ZipArchive::new(archive).unwrap();
+        let mut names = zip.file_names().map(str::to_owned).collect::<Vec<String>>();
+        names.sort();
+        assert_eq!(
+            names,
+            [
+                "treeboot-1.2.3-x86_64-pc-windows-msvc/LICENSE",
+                "treeboot-1.2.3-x86_64-pc-windows-msvc/README.md",
+                "treeboot-1.2.3-x86_64-pc-windows-msvc/treeboot.exe",
+            ]
+        );
+
+        let mut binary = String::new();
+        zip.by_name("treeboot-1.2.3-x86_64-pc-windows-msvc/treeboot.exe")
+            .unwrap()
+            .read_to_string(&mut binary)
+            .unwrap();
+        assert_eq!(binary, "binary");
+    }
+
+    /// Package fixtures mirror the release workflow's expected project layout.
+    fn fixture_project(target: &str, exe_suffix: &str) -> tempfile::TempDir {
+        let project = tempfile::tempdir().unwrap();
+        fs::write(project.path().join("README.md"), "readme").unwrap();
+        fs::write(project.path().join("LICENSE"), "license").unwrap();
+
+        let binary_dir = project.path().join(format!("target/{target}/release"));
+        fs::create_dir_all(&binary_dir).unwrap();
+        fs::write(binary_dir.join(format!("treeboot{exe_suffix}")), "binary").unwrap();
+
+        project
+    }
+
+    /// Changelog extraction preserves Markdown inside a linked release section.
     #[test]
     fn extracts_matching_release_section() {
         let changelog = "\
@@ -497,6 +693,7 @@ mod tests {
         );
     }
 
+    /// Markdown offsets remain valid when Unicode appears before the heading.
     #[test]
     fn extracts_release_section_after_unicode_content() {
         let changelog = "\
@@ -515,6 +712,7 @@ Intro with unicode: cafe\u{301}
         );
     }
 
+    /// Plain headings match version inputs with or without a leading v.
     #[test]
     fn extracts_unlinked_version_heading() {
         let changelog = "\
@@ -531,6 +729,7 @@ Intro with unicode: cafe\u{301}
         );
     }
 
+    /// Extraction stops at a same-or-higher-level heading.
     #[test]
     fn stops_at_higher_heading() {
         let changelog = "\
@@ -551,11 +750,13 @@ Intro with unicode: cafe\u{301}
         );
     }
 
+    /// Missing changelog sections return no extracted body.
     #[test]
     fn returns_none_when_version_is_missing() {
         assert_eq!(extract_release_notes("# Changelog\n", "1.2.3"), None);
     }
 
+    /// Missing changelog files produce fallback release notes.
     #[test]
     fn release_notes_falls_back_when_changelog_is_missing() {
         let dir = tempfile::tempdir().unwrap();
