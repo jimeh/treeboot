@@ -1121,7 +1121,8 @@
           </svg>
           <p class="caption">
             <code>run.rs</code> is the broad orchestrator. Manual file commands
-            bypass config and command execution but reuse validation and files.
+            load top-level config policy when present, skip configured commands,
+            and reuse validation and files.
           </p>
         </div>
 
@@ -1334,7 +1335,7 @@
             <h3>Core unit tests</h3>
             <ul>
               <li>Config parsing and normalization.</li>
-              <li>Run plan validation.</li>
+              <li>ActionPlan validation.</li>
               <li>File action planning and application.</li>
               <li>Command labels and failure policy.</li>
               <li>Output event formatting.</li>

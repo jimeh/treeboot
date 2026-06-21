@@ -2,7 +2,8 @@ use std::ffi::OsStr;
 use std::path::{Component, Path, PathBuf};
 
 use crate::config::{
-    Config, FileOperationSettingsInput, RuntimeOptionOverrides, normalize_file_operation_settings,
+    Config, FileOperationSettings, FileOperationSettingsInput, RuntimeOptionOverrides,
+    normalize_file_operation_settings,
 };
 use crate::context;
 use crate::{
@@ -59,14 +60,14 @@ impl FileOperation {
         context: &Worktree,
         options: ManualFileOperationOptions,
     ) -> Result<Vec<Self>> {
-        validate_manual_options(
+        let settings = validate_manual_options(
             options.operation,
             &options.sources,
             options.symlinks,
             options.compare,
             options.delete,
         )?;
-        manual_operations(options, context)
+        manual_operations(options, context, settings)
     }
 }
 
@@ -255,7 +256,7 @@ fn validate_manual_options(
     symlinks: Option<SymlinkMode>,
     compare: Option<SyncCompare>,
     delete: Option<bool>,
-) -> Result<()> {
+) -> Result<FileOperationSettings> {
     if sources.is_empty() {
         return invalid_manual(operation, "at least one source is required");
     }
@@ -275,41 +276,22 @@ fn validate_manual_options(
             field.name(),
             field.allowed_operations()
         ),
-    })?;
-
-    Ok(())
+    })
 }
 
 fn manual_operations(
     options: ManualFileOperationOptions,
     context: &Worktree,
+    settings: FileOperationSettings,
 ) -> Result<Vec<FileOperation>> {
     let ManualFileOperationOptions {
         operation,
         sources,
         target,
         required,
-        symlinks,
-        compare,
-        delete,
+        ..
     } = options;
     let multiple_sources = sources.len() > 1;
-    let settings = normalize_file_operation_settings(
-        operation,
-        FileOperationSettingsInput {
-            compare,
-            delete,
-            symlinks,
-        },
-    )
-    .map_err(|field| Error::FileOperationInvalid {
-        operation: operation.as_str(),
-        message: format!(
-            "`{}` is only valid for {}",
-            field.name(),
-            field.allowed_operations()
-        ),
-    })?;
     sources
         .into_iter()
         .map(|source| {

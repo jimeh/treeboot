@@ -1,4 +1,3 @@
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -90,15 +89,13 @@ fn temp_worktree(name: &str) -> (TempDir, Worktree) {
     let worktree = temp.path().join(format!("{name}-worktree"));
     std::fs::create_dir_all(&root).expect("root should be created");
     std::fs::create_dir_all(&worktree).expect("worktree should be created");
+    let root_env = root.as_os_str().to_os_string();
 
     let context = Worktree {
         root_path: root,
         worktree_path: worktree,
         default_branch: "main".to_owned(),
-        environment: Environment::from([(
-            "TREEBOOT_ROOT_PATH".to_owned(),
-            OsString::from(temp.path()),
-        )]),
+        environment: Environment::from([("TREEBOOT_ROOT_PATH".to_owned(), root_env)]),
     };
 
     (temp, context)

@@ -869,11 +869,11 @@ treeboot completions elvish</code></pre>
             not run init scripts or run configured commands.
           </p>
           <p>
-            Manual file operation commands discover and parse config when one is
-            present only to load top-level runtime policy. They ignore the
-            config's file operations and commands. If a config file is present
-            but invalid, the manual command fails before applying file
-            operations.
+            After worktree/root context checks, manual file operation commands
+            discover and parse config when one is present only to load top-level
+            runtime policy. They ignore the config's file operations and
+            commands. If config parsing is reached and the config is invalid,
+            the manual command fails before applying file operations.
           </p>
           <p>
             With one source, <code>--target</code> is the exact target path. With
