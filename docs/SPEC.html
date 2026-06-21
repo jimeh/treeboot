@@ -2476,6 +2476,7 @@ treeboot-aarch64-linux-android</code></pre>
 
         <p>Release metadata assets:</p>
         <pre><code>treeboot-checksums.txt
+config.schema.json
 treeboot-sbom.spdx.json</code></pre>
 
         <div class="timeline">
@@ -2492,11 +2493,20 @@ treeboot-sbom.spdx.json</code></pre>
             </span>
           </div>
           <div class="timeline-item">
+            <strong>Config schema</strong>
+            <span>
+              Publish the config JSON Schema as
+              <code>config.schema.json</code>. It should match the checked-in
+              <code>schemas/treeboot.schema.json</code> generated from the
+              Rust schema model.
+            </span>
+          </div>
+          <div class="timeline-item">
             <strong>Checksums</strong>
             <span>
               Publish a checksum manifest that covers every release asset
               uploaded to the GitHub Release, including archives, raw
-              executables, and SBOMs.
+              executables, the config schema, and SBOMs.
             </span>
           </div>
           <div class="timeline-item">

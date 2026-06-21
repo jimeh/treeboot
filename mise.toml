@@ -59,6 +59,7 @@ target="$(rustc -vV | sed -n 's/^host: //p')"
 version="$(scripts/release-version.sh)"
 cargo build -p treeboot --locked --release --target "$target"
 scripts/package-release-asset.sh "$target" "$version" dist
+scripts/package-config-schema.sh dist
 '''
 
 [tasks.generate]

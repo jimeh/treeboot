@@ -10,6 +10,7 @@ The spec expects:
 
 - archive assets for each supported target
 - raw executable assets for direct installers
+- `config.schema.json`
 - `treeboot-checksums.txt`
 - SPDX SBOM
 - GitHub artifact attestations for release provenance

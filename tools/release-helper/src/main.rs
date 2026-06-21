@@ -47,6 +47,11 @@ enum Commands {
         /// Output directory for release assets.
         dist_dir: PathBuf,
     },
+    /// Package the checked-in config JSON Schema into dist assets.
+    Schema {
+        /// Output directory for release assets.
+        dist_dir: PathBuf,
+    },
     /// Extract release notes for a version from CHANGELOG.md.
     Notes {
         /// Release version, with or without a leading v.
@@ -92,6 +97,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             version,
             dist_dir,
         } => package_release_asset(&target, &version, &dist_dir)?,
+        Commands::Schema { dist_dir } => package_config_schema(&dist_dir)?,
         Commands::Notes {
             version,
             output,
@@ -276,6 +282,28 @@ fn package_release_asset_in_project(
 
     fs::remove_dir_all(&temp_dir)?;
     result?;
+
+    Ok(())
+}
+
+/// Copy the config JSON Schema into the release asset directory.
+fn package_config_schema(dist_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    package_config_schema_in_project(Path::new("."), dist_dir)
+}
+
+/// Copy the project config JSON Schema into a specific release asset directory.
+fn package_config_schema_in_project(
+    project_dir: &Path,
+    dist_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let schema = project_dir.join("schemas/treeboot.schema.json");
+    if !schema.is_file() {
+        return Err(format!("missing config schema: {}", schema.display()).into());
+    }
+
+    let dist_dir = resolve_project_path(project_dir, dist_dir);
+    fs::create_dir_all(&dist_dir)?;
+    fs::copy(schema, dist_dir.join("config.schema.json"))?;
 
     Ok(())
 }
@@ -640,6 +668,26 @@ mod tests {
             .read_to_string(&mut binary)
             .unwrap();
         assert_eq!(binary, "binary");
+    }
+
+    /// Packaging copies the config schema under its release asset name.
+    #[test]
+    fn packages_config_schema_asset() {
+        let project = fixture_project("x86_64-unknown-linux-musl", "");
+        fs::create_dir(project.path().join("schemas")).unwrap();
+        fs::write(
+            project.path().join("schemas/treeboot.schema.json"),
+            r#"{"title":"treeboot"}"#,
+        )
+        .unwrap();
+        let dist_dir = project.path().join("dist");
+
+        package_config_schema_in_project(project.path(), &dist_dir).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dist_dir.join("config.schema.json")).unwrap(),
+            r#"{"title":"treeboot"}"#
+        );
     }
 
     /// Package fixtures mirror the release workflow's expected project layout.
