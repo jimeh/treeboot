@@ -10,8 +10,5 @@
     ".": {
       "package-name": "treeboot"
     }
-  },
-  "plugins": [
-    "cargo-workspace"
-  ]
+  }
 }
