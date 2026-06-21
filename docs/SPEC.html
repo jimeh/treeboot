@@ -779,6 +779,15 @@ treeboot config --json</code></pre>
               inspecting config parsing behavior; editing config values is out
               of scope.
             </p>
+            <p>
+              Human-readable text output lists normalized source and target
+              values plus behavior-affecting normalized fields such as
+              <code>required</code>, <code>compare</code>,
+              <code>delete</code>, <code>symlinks</code>,
+              <code>allow_failure</code>, <code>cwd</code>, and
+              command <code>env</code> values when present. JSON output emits
+              the full normalized config structure.
+            </p>
           </section>
 
           <section class="panel">
