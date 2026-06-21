@@ -24,10 +24,13 @@ commands = ["mise install"]
         .assert()
         .success()
         .stdout(predicate::str::contains("treeboot: config"))
-        .stdout(predicate::str::contains("copy .env.local -> .env.local"))
         .stdout(predicate::str::contains(
-            "sync shared/config -> shared/config compare=metadata delete=false",
+            "copy .env.local -> .env.local symlinks=preserve",
         ))
+        .stdout(predicate::str::contains(concat!(
+            "sync shared/config -> shared/config ",
+            "compare=metadata delete=false symlinks=preserve"
+        )))
         .stdout(predicate::str::contains("run \"mise install\""));
 }
 
@@ -127,6 +130,7 @@ commands = [{
   args = ["install"],
   cwd = "app",
   allow_failure = true,
+  env = { NODE_ENV = "development" },
 }]
 "#,
     );
@@ -142,9 +146,10 @@ commands = [{
         .stdout(predicate::str::contains(
             "symlink shared/tool -> shared/tool",
         ))
-        .stdout(predicate::str::contains(
-            "exec npm install allow_failure=true cwd=app",
-        ));
+        .stdout(predicate::str::contains(concat!(
+            "exec npm install allow_failure=true cwd=app ",
+            "env={NODE_ENV=\"development\"}"
+        )));
 }
 
 #[test]

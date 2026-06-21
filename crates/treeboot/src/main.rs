@@ -365,6 +365,9 @@ fn file_operation_summary(operation: &FileOperation) -> String {
     if let Some(delete) = operation.delete {
         summary.push_str(&format!(" delete={delete}"));
     }
+    if let Some(symlinks) = operation.symlinks {
+        summary.push_str(&format!(" symlinks={symlinks:?}").to_lowercase());
+    }
 
     summary
 }
@@ -392,6 +395,15 @@ fn command_summary(command: &CommandOperation) -> String {
     }
     if let Some(cwd) = &command.cwd {
         summary.push_str(&format!(" cwd={}", cwd.display()));
+    }
+    if !command.env.is_empty() {
+        let env = command
+            .env
+            .iter()
+            .map(|(name, value)| format!("{name}={value:?}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        summary.push_str(&format!(" env={{{env}}}"));
     }
 
     summary
