@@ -256,6 +256,23 @@ fn root_checkout_should_skip_manual_file_operations() {
 }
 
 #[test]
+fn root_checkout_should_skip_manual_config_parsing() {
+    let repo = git_repo();
+    write_file(&repo.path().join(".env"), "TOKEN=1\n");
+    write_file(&repo.path().join(".treeboot.toml"), "invalid = [\n");
+
+    treeboot()
+        .args(["copy", ".env"])
+        .current_dir(repo.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "treeboot: This is not a work tree",
+        ))
+        .stderr(predicate::str::contains("invalid config").not());
+}
+
+#[test]
 fn strict_root_checkout_should_fail_manual_file_operations() {
     let repo = git_repo();
 
@@ -391,6 +408,135 @@ fn manual_commands_should_use_config_runtime_policy() {
             .expect("outside source should be copied"),
         "TOKEN=1\n"
     );
+}
+
+#[test]
+fn manual_commands_should_reject_targets_outside_worktree_by_default() {
+    let repo = git_worktree();
+    let outside = repo
+        .worktree_path()
+        .parent()
+        .expect("worktree should have parent")
+        .join("outside-target.env");
+    write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
+
+    treeboot()
+        .args([
+            OsStr::new("copy"),
+            OsStr::new("--target"),
+            outside.as_os_str(),
+            OsStr::new(".env"),
+        ])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("invalid copy file operation"))
+        .stderr(predicate::str::contains("target resolves outside worktree"));
+
+    assert!(!outside.exists());
+}
+
+#[test]
+fn manual_commands_should_allow_configured_targets_outside_worktree() {
+    let repo = git_worktree();
+    let outside = repo
+        .worktree_path()
+        .parent()
+        .expect("worktree should have parent")
+        .join("outside-target.env");
+    write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        "dangerously_allow_targets_outside_worktree = true\n",
+    );
+
+    treeboot()
+        .args([
+            OsStr::new("copy"),
+            OsStr::new("--target"),
+            outside.as_os_str(),
+            OsStr::new(".env"),
+        ])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("treeboot: copy .env ->"));
+
+    assert_eq!(
+        std::fs::read_to_string(&outside).expect("outside target should be copied"),
+        "TOKEN=1\n"
+    );
+}
+
+#[test]
+fn manual_config_strict_should_reject_sync_before_side_effects() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("shared/config"), "value\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        "strict = true\n",
+    );
+
+    treeboot()
+        .args(["sync", "shared"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("invalid sync file operation"))
+        .stderr(predicate::str::contains("cannot be used with sync"));
+
+    assert!(!repo.worktree_path().join("shared").exists());
+}
+
+#[test]
+fn manual_env_false_should_override_config_strict() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("shared/config"), "value\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        "strict = true\n",
+    );
+
+    treeboot()
+        .args(["sync", "shared"])
+        .env("TREEBOOT_STRICT", "false")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("invalid sync file operation").not());
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("shared/config"))
+            .expect("synced file should be readable"),
+        "value\n"
+    );
+}
+
+#[test]
+fn manual_cli_strict_should_override_env_and_config_false() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("shared/config"), "value\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        "strict = false\n",
+    );
+
+    treeboot()
+        .args(["sync", "--strict", "shared"])
+        .env("TREEBOOT_STRICT", "false")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("invalid sync file operation"))
+        .stderr(predicate::str::contains("cannot be used with sync"));
+
+    assert!(!repo.worktree_path().join("shared").exists());
 }
 
 #[cfg(unix)]
