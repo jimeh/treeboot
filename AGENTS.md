@@ -94,6 +94,7 @@ mise run lint
 mise run test
 mise run test:core
 mise run test:cli
+mise run test:release-helper
 mise run msrv
 mise run actions:lint
 mise run clean
@@ -149,8 +150,9 @@ and CI mapping.
 - Pre-commit hooks are managed by Lefthook and installed by `mise run setup`.
 - `mise.toml` pins `sccache` and sets `RUSTC_WRAPPER=sccache` so Cargo tasks use
   the project-managed compiler cache instead of relying on global shell setup.
-- CI sets `MISE_RUSTUP_HOME` under the mise data directory so `mise-action`
-  caches the rustup toolchains and components declared in `mise.toml`.
+- CI sets `MISE_RUSTUP_HOME` so `mise-action` caches the rustup toolchains and
+  components declared in `mise.toml`; cross-OS test jobs use a workspace-local
+  path instead of the Ubuntu-only default.
 - Release-please must use the repo's `RELEASE_BOT_CLIENT_ID` variable and
   `RELEASE_BOT_PRIVATE_KEY` secret so tags created by release automation trigger
   the tag-based release workflow.

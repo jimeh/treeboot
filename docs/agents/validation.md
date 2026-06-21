@@ -13,11 +13,13 @@ mise run format
 mise run format:check
 mise run test:core
 mise run test:cli
+mise run test:release-helper
 ```
 
 Use `test:core` for library behavior and `test:cli` for user-visible command
-behavior. Running `mise run test` executes both through mise dependencies.
-`format` applies Rust formatting, while `format:check` is non-mutating.
+behavior. Use `test:release-helper` for release workflow helper logic. Running
+`mise run test` executes all test tasks through mise dependencies. `format`
+applies Rust formatting, while `format:check` is non-mutating.
 
 ### Check
 
@@ -53,6 +55,7 @@ GitHub Actions runs these mise tasks:
 - `mise run msrv`
 - `mise run test:core`
 - `mise run test:cli`
+- `mise run test:release-helper`
 
 The local `mise run ci` task mirrors those checks.
 
