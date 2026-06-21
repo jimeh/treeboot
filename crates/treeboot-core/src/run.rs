@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use crate::commands::{CommandExecutionOptions, execute_commands};
 use crate::config::{self, RuntimeOptionOverrides};
 use crate::context;
 use crate::discovery;
-use crate::files::{FileApplyOptions, apply_file_operations};
-use crate::{Error, OutputEvent, Reporter, Result, RunContext};
+use crate::{
+    Error, ExecuteOptions, Executor, OutputEvent, Reporter, Result, RunContext, WorktreeOptions,
+};
 
 /// Options for running worktree bootstrap.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -79,7 +79,10 @@ pub struct RunReport {
 pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport> {
     let env_options = RuntimeOptionOverrides::from_env()?;
     let pre_config_strict = env_options.pre_config_strict(options.strict);
-    let context = context::resolve(&options)?;
+    let context = context::resolve(&WorktreeOptions {
+        cwd: options.cwd.clone(),
+        root: options.root.clone(),
+    })?;
 
     if context.root_path == context.worktree_path {
         report(reporter, OutputEvent::RootWorktreeDetected)?;
@@ -112,26 +115,13 @@ pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport
             let config = config::load_config(&path, &context)?;
             let plan_options = env_options.resolve(&config.options, options.strict);
             let plan = crate::plan_run_config(&path, &config, &context, plan_options.into())?;
-
-            apply_file_operations(
-                &plan,
-                FileApplyOptions {
-                    strict: plan_options.strict,
-                    force: options.force,
-                    dry_run: options.dry_run,
-                },
-                reporter,
-            )?;
-
-            if !options.skip_commands {
-                execute_commands(
-                    &plan,
-                    CommandExecutionOptions {
-                        dry_run: options.dry_run,
-                    },
-                    reporter,
-                )?;
-            }
+            Executor::new(ExecuteOptions {
+                strict: plan_options.strict,
+                force: options.force,
+                dry_run: options.dry_run,
+                skip_commands: options.skip_commands,
+            })
+            .execute(&plan, reporter)?;
 
             Ok(RunReport {
                 context,

@@ -34,17 +34,115 @@ pub(super) enum FilePlanOrigin<'a> {
     Manual { operation: FileOperationKind },
 }
 
-/// A validated declarative run plan.
+/// Source of a validated action plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RunPlan {
+pub enum PlanOrigin {
+    /// Plan was built from a treeboot manifest.
+    Manifest {
+        /// Manifest path.
+        path: PathBuf,
+    },
+    /// Plan was built from a manual file operation command.
+    Manual {
+        /// Manual operation kind.
+        operation: FileOperationKind,
+    },
+}
+
+/// A validated set of file operations and commands ready for execution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActionPlan {
     /// Runtime context used while building the plan.
     pub context: RunContext,
-    /// Config file used for this plan.
-    pub config_path: PathBuf,
+    /// Origin of this plan.
+    pub origin: PlanOrigin,
+    /// Config file used for this plan, when it came from a manifest.
+    pub config_path: Option<PathBuf>,
     /// Planned file operations.
     pub files: Vec<PlannedFileOperation>,
     /// Planned command operations.
     pub commands: Vec<PlannedCommand>,
+}
+
+/// Backwards-compatible name for a validated action plan.
+pub type RunPlan = ActionPlan;
+
+impl ActionPlan {
+    /// Builds a validated action plan from a parsed treeboot manifest.
+    ///
+    /// This does not apply file operations or execute commands. It normalizes
+    /// paths that may not exist yet, rejects invalid declarative behavior, and
+    /// marks optional missing-source file operations as skipped.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if manifest validation fails.
+    pub fn from_manifest(
+        path: &Path,
+        manifest: &Config,
+        context: &RunContext,
+        options: RunPlanOptions,
+    ) -> Result<Self> {
+        let worktree_path = normalize_existing(&context.worktree_path).map_err(|source| {
+            invalid_config_error(
+                path,
+                None,
+                format!("failed to resolve worktree path: {source}"),
+            )
+        })?;
+        let files = plan_file_operations(
+            FilePlanOrigin::Config(path),
+            &manifest.files,
+            context,
+            options,
+        )?;
+        let commands = plan_commands(path, &manifest.commands, context, worktree_path.as_path())?;
+
+        Ok(Self {
+            context: context.clone(),
+            origin: PlanOrigin::Manifest {
+                path: path.to_path_buf(),
+            },
+            config_path: Some(path.to_path_buf()),
+            files,
+            commands,
+        })
+    }
+
+    /// Builds a validated action plan from explicit file operations.
+    ///
+    /// This is intended for manual commands and other callers that already
+    /// have a discovered worktree context and operation list.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if file operation validation fails.
+    pub fn from_file_operations(
+        context: &RunContext,
+        origin: PlanOrigin,
+        files: &[FileOperation],
+        options: RunPlanOptions,
+    ) -> Result<Self> {
+        let file_origin = match &origin {
+            PlanOrigin::Manifest { path } => FilePlanOrigin::Config(path),
+            PlanOrigin::Manual { operation } => FilePlanOrigin::Manual {
+                operation: *operation,
+            },
+        };
+        let files = plan_file_operations(file_origin, files, context, options)?;
+        let config_path = match &origin {
+            PlanOrigin::Manifest { path } => Some(path.clone()),
+            PlanOrigin::Manual { .. } => None,
+        };
+
+        Ok(Self {
+            context: context.clone(),
+            origin,
+            config_path,
+            files,
+            commands: Vec::new(),
+        })
+    }
 }
 
 /// A validated file operation ready for execution.
@@ -117,27 +215,7 @@ pub fn plan_run_config(
     context: &RunContext,
     options: RunPlanOptions,
 ) -> Result<RunPlan> {
-    let worktree_path = normalize_existing(&context.worktree_path).map_err(|source| {
-        invalid_config_error(
-            path,
-            None,
-            format!("failed to resolve worktree path: {source}"),
-        )
-    })?;
-    let files = plan_file_operations(
-        FilePlanOrigin::Config(path),
-        &config.files,
-        context,
-        options,
-    )?;
-    let commands = plan_commands(path, &config.commands, context, worktree_path.as_path())?;
-
-    Ok(RunPlan {
-        context: context.clone(),
-        config_path: path.to_path_buf(),
-        files,
-        commands,
-    })
+    ActionPlan::from_manifest(path, config, context, options)
 }
 
 pub(super) fn plan_file_operations(
@@ -544,7 +622,7 @@ fn source_exists(
 fn operation_summary(origin: FilePlanOrigin<'_>, operation: &FileOperation) -> String {
     let summary = format!(
         "{} {} -> {}",
-        operation_name(operation.operation),
+        operation.operation,
         operation.source.display(),
         operation.target.display()
     );
@@ -555,14 +633,6 @@ fn operation_summary(origin: FilePlanOrigin<'_>, operation: &FileOperation) -> S
             summary, operation.declaration.line, operation.declaration.column
         ),
         FilePlanOrigin::Manual { .. } => summary,
-    }
-}
-
-const fn operation_name(operation: FileOperationKind) -> &'static str {
-    match operation {
-        FileOperationKind::Copy => "copy",
-        FileOperationKind::Symlink => "symlink",
-        FileOperationKind::Sync => "sync",
     }
 }
 
@@ -611,7 +681,7 @@ fn file_plan_error(
     match origin {
         FilePlanOrigin::Config(path) => invalid_config_error(path, span, message),
         FilePlanOrigin::Manual { operation } => Error::FileOperationInvalid {
-            operation: operation_name(operation),
+            operation: operation.as_str(),
             message: message.into(),
         },
     }

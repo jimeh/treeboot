@@ -511,7 +511,10 @@ mod tests {
             .collect();
 
         RunPlan {
-            config_path: context.worktree_path.join(".treeboot.toml"),
+            origin: crate::PlanOrigin::Manifest {
+                path: context.worktree_path.join(".treeboot.toml"),
+            },
+            config_path: Some(context.worktree_path.join(".treeboot.toml")),
             files: Vec::new(),
             commands,
             context,

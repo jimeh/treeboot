@@ -10,6 +10,7 @@ mod config;
 mod context;
 mod discovery;
 mod error;
+mod executor;
 mod files;
 mod git;
 mod init;
@@ -18,8 +19,9 @@ mod output;
 mod run;
 mod validation;
 
-pub use context::{Environment, RunContext};
+pub use context::{Environment, RunContext, Worktree, WorktreeOptions};
 pub use error::Error;
+pub use executor::{ExecuteOptions, ExecutionReport, Executor};
 pub use init::{InitKind, InitOptions, InitReport, init};
 pub use manual::{
     FileOperationAction, FileOperationCompletionOptions, FileOperationOptions, FileOperationReport,
@@ -28,8 +30,8 @@ pub use manual::{
 pub use output::{OutputEvent, Reporter};
 pub use run::{RunAction, RunOptions, RunReport, run};
 pub use validation::{
-    PlannedCommand, PlannedFileOperation, PlannedFileStatus, RunPlan, RunPlanOptions,
-    plan_run_config,
+    ActionPlan, PlanOrigin, PlannedCommand, PlannedFileOperation, PlannedFileStatus, RunPlan,
+    RunPlanOptions, plan_run_config,
 };
 
 /// Convenient result type used by `treeboot-core`.
@@ -39,3 +41,21 @@ pub use config::{
     FileOperation, FileOperationKind, RuntimeOptionOverrides, SourceSpan, SymlinkMode, SyncCompare,
     inspect_config,
 };
+
+/// Parsed treeboot manifest.
+pub type Manifest = Config;
+
+/// Options for inspecting a treeboot manifest.
+pub type ManifestOptions = ConfigOptions;
+
+/// Result summary for manifest inspection.
+pub type ManifestReport = ConfigReport;
+
+/// Raw file operation intent used to build an action plan.
+pub type FileOperationSpec = FileOperation;
+
+/// Raw command intent used to build an action plan.
+pub type CommandSpec = CommandOperation;
+
+/// Resolved runtime policy from defaults, config, environment, and CLI flags.
+pub type RuntimePolicy = ConfigRuntimeOptions;

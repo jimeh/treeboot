@@ -3,7 +3,7 @@ use std::ffi::OsString;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::*;
-use crate::{RunContext, SourceSpan};
+use crate::{PlanOrigin, RunContext, SourceSpan};
 
 #[derive(Default)]
 struct VecReporter {
@@ -84,7 +84,10 @@ fn sync_operation(
 fn run_plan(root: &Path, worktree: &Path, files: Vec<PlannedFileOperation>) -> RunPlan {
     RunPlan {
         context: context(root, worktree),
-        config_path: worktree.join(".treeboot.toml"),
+        origin: PlanOrigin::Manifest {
+            path: worktree.join(".treeboot.toml"),
+        },
+        config_path: Some(worktree.join(".treeboot.toml")),
         files,
         commands: Vec::new(),
     }

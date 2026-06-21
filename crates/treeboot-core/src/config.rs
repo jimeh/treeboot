@@ -8,8 +8,7 @@ use toml::Spanned;
 
 use crate::context;
 use crate::discovery;
-use crate::run::RunOptions;
-use crate::{Error, Result, RunContext};
+use crate::{Error, Result, RunContext, WorktreeOptions};
 
 /// Options for inspecting a treeboot config.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -43,6 +42,38 @@ pub struct Config {
     pub files: Vec<FileOperation>,
     /// Ordered command operations.
     pub commands: Vec<CommandOperation>,
+}
+
+impl Config {
+    /// Loads and parses a treeboot config from disk.
+    ///
+    /// Relative paths inside the config are normalized against the supplied
+    /// worktree context.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the config cannot be read or TOML parsing and
+    /// normalization fails.
+    pub fn load(path: &Path, context: &RunContext) -> Result<Self> {
+        let content = std::fs::read_to_string(path).map_err(|source| Error::ConfigIo {
+            path: path.to_path_buf(),
+            source,
+        })?;
+
+        Self::parse(path, &content, context)
+    }
+
+    /// Parses a treeboot config string.
+    ///
+    /// The path is used for diagnostics. Relative paths inside the config are
+    /// normalized against the supplied worktree context.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if TOML parsing or normalization fails.
+    pub fn parse(path: &Path, content: &str, context: &RunContext) -> Result<Self> {
+        parse_config(path, content, context)
+    }
 }
 
 /// A normalized file operation.
@@ -80,6 +111,24 @@ pub enum FileOperationKind {
     Symlink,
     /// Reconcile target content with source content.
     Sync,
+}
+
+impl FileOperationKind {
+    /// Returns the stable lowercase operation name.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Copy => "copy",
+            Self::Symlink => "symlink",
+            Self::Sync => "sync",
+        }
+    }
+}
+
+impl fmt::Display for FileOperationKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
 }
 
 /// Sync comparison mode.
@@ -218,6 +267,85 @@ pub struct SourceSpan {
     pub column: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FileOperationSettingsInput {
+    pub(crate) compare: Option<SyncCompare>,
+    pub(crate) delete: Option<bool>,
+    pub(crate) symlinks: Option<SymlinkMode>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FileOperationSettings {
+    pub(crate) compare: Option<SyncCompare>,
+    pub(crate) delete: Option<bool>,
+    pub(crate) symlinks: Option<SymlinkMode>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InvalidFileOperationField {
+    Compare,
+    Delete,
+    Symlinks,
+}
+
+impl InvalidFileOperationField {
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            Self::Compare => "compare",
+            Self::Delete => "delete",
+            Self::Symlinks => "symlinks",
+        }
+    }
+
+    pub(crate) const fn allowed_operations(self) -> &'static str {
+        match self {
+            Self::Compare | Self::Delete => "sync",
+            Self::Symlinks => "copy and sync",
+        }
+    }
+}
+
+pub(crate) fn normalize_file_operation_settings(
+    operation: FileOperationKind,
+    input: FileOperationSettingsInput,
+) -> std::result::Result<FileOperationSettings, InvalidFileOperationField> {
+    let compare = match operation {
+        FileOperationKind::Sync => Some(input.compare.unwrap_or(SyncCompare::Metadata)),
+        FileOperationKind::Copy | FileOperationKind::Symlink => {
+            if input.compare.is_some() {
+                return Err(InvalidFileOperationField::Compare);
+            }
+            None
+        }
+    };
+    let delete = match operation {
+        FileOperationKind::Sync => Some(input.delete.unwrap_or(false)),
+        FileOperationKind::Copy | FileOperationKind::Symlink => {
+            if input.delete.is_some() {
+                return Err(InvalidFileOperationField::Delete);
+            }
+            None
+        }
+    };
+    let symlinks = match operation {
+        FileOperationKind::Copy | FileOperationKind::Sync => {
+            Some(input.symlinks.unwrap_or(SymlinkMode::Preserve))
+        }
+        FileOperationKind::Symlink => {
+            if input.symlinks.is_some() {
+                return Err(InvalidFileOperationField::Symlinks);
+            }
+            None
+        }
+    };
+
+    Ok(FileOperationSettings {
+        compare,
+        delete,
+        symlinks,
+    })
+}
+
 /// Parses, normalizes, and returns the selected config file.
 ///
 /// # Errors
@@ -226,13 +354,11 @@ pub struct SourceSpan {
 /// config path does not exist, the config cannot be read, or TOML parsing and
 /// normalization fails.
 pub fn inspect_config(options: ConfigOptions) -> Result<ConfigReport> {
-    let run_options = RunOptions {
+    let worktree_options = WorktreeOptions {
         cwd: options.cwd,
         root: options.root,
-        config: options.config.clone(),
-        ..RunOptions::default()
     };
-    let context = context::resolve(&run_options)?;
+    let context = context::resolve(&worktree_options)?;
     let path = discovery::discover_config(&context.worktree_path, options.config.as_deref())?
         .ok_or(Error::NoConfigDetectedStrict)?;
     let config = load_config(&path, &context)?;
@@ -245,12 +371,7 @@ pub fn inspect_config(options: ConfigOptions) -> Result<ConfigReport> {
 }
 
 pub(crate) fn load_config(path: &Path, context: &RunContext) -> Result<Config> {
-    let content = std::fs::read_to_string(path).map_err(|source| Error::ConfigIo {
-        path: path.to_path_buf(),
-        source,
-    })?;
-
-    parse_config(path, &content, context)
+    Config::load(path, context)
 }
 
 fn parse_config(path: &Path, content: &str, context: &RunContext) -> Result<Config> {
@@ -393,29 +514,26 @@ fn normalize_file_object(
         )
     })?;
     let target = object.target.unwrap_or_else(|| source.clone());
-    let compare = match operation {
-        FileOperationKind::Sync => Some(object.compare.unwrap_or(SyncCompare::Metadata)),
-        FileOperationKind::Copy | FileOperationKind::Symlink => {
-            reject_non_sync_field(path, content, span, "compare", object.compare)?;
-            None
-        }
-    };
-    let delete = match operation {
-        FileOperationKind::Sync => Some(object.delete.unwrap_or(false)),
-        FileOperationKind::Copy | FileOperationKind::Symlink => {
-            reject_non_sync_field(path, content, span, "delete", object.delete)?;
-            None
-        }
-    };
-    let symlinks = match operation {
-        FileOperationKind::Copy | FileOperationKind::Sync => {
-            Some(object.symlinks.unwrap_or(SymlinkMode::Preserve))
-        }
-        FileOperationKind::Symlink => {
-            reject_non_symlink_field(path, content, span, "symlinks", object.symlinks)?;
-            None
-        }
-    };
+    let settings = normalize_file_operation_settings(
+        operation,
+        FileOperationSettingsInput {
+            compare: object.compare,
+            delete: object.delete,
+            symlinks: object.symlinks,
+        },
+    )
+    .map_err(|field| {
+        invalid_config_error(
+            path,
+            content,
+            span,
+            format!(
+                "`{}` is only valid for {} file operations",
+                field.name(),
+                field.allowed_operations()
+            ),
+        )
+    })?;
 
     Ok(FileOperation {
         operation,
@@ -424,9 +542,9 @@ fn normalize_file_object(
         source: PathBuf::from(source),
         target: PathBuf::from(target),
         required: object.required,
-        compare,
-        delete,
-        symlinks,
+        compare: settings.compare,
+        delete: settings.delete,
+        symlinks: settings.symlinks,
         declaration: span,
     })
 }
@@ -445,44 +563,6 @@ fn required_operation(
             "file operation is missing required `operation`",
         )
     })
-}
-
-fn reject_non_sync_field<T>(
-    path: &Path,
-    content: &str,
-    span: SourceSpan,
-    name: &str,
-    value: Option<T>,
-) -> Result<()> {
-    if value.is_some() {
-        return invalid_config(
-            path,
-            content,
-            span,
-            format!("`{name}` is only valid for sync file operations"),
-        );
-    }
-
-    Ok(())
-}
-
-fn reject_non_symlink_field<T>(
-    path: &Path,
-    content: &str,
-    span: SourceSpan,
-    name: &str,
-    value: Option<T>,
-) -> Result<()> {
-    if value.is_some() {
-        return invalid_config(
-            path,
-            content,
-            span,
-            format!("`{name}` is only valid for copy and sync file operations"),
-        );
-    }
-
-    Ok(())
 }
 
 fn normalize_command_entries(

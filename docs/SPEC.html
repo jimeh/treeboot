@@ -634,7 +634,7 @@
     <main>
       <header class="hero" id="overview">
         <div>
-          <p class="eyebrow">Specification v1.5.1</p>
+          <p class="eyebrow">Specification v1.6.0</p>
           <h1>treeboot</h1>
           <p class="lede">
             A portable worktree bootstrapper that lets every coding agent,
@@ -812,8 +812,8 @@ treeboot init --force</code></pre>
           <section class="panel">
             <h3><code>treeboot copy</code></h3>
             <p>
-              Runs one or more copy operations without reading declarative
-              config or running configured commands.
+              Runs one or more copy operations without running declarative
+              config file operations or configured commands.
             </p>
             <pre><code class="shell">treeboot copy .env
 treeboot copy .env .npmrc --target local
@@ -835,8 +835,8 @@ treeboot symlink shared/bin --target bin</code></pre>
           <section class="panel">
             <h3><code>treeboot sync</code></h3>
             <p>
-              Runs one or more sync operations without reading declarative
-              config or running configured commands.
+              Runs one or more sync operations without running declarative
+              config file operations or configured commands.
             </p>
             <pre><code class="shell">treeboot sync shared/config
 treeboot sync shared/config shared/editor --target .config
@@ -866,8 +866,14 @@ treeboot completions elvish</code></pre>
             Each command requires at least one source argument. Multiple source
             arguments create multiple independent file operations. These
             commands still discover the root path and worktree path, but they do
-            not discover config files, run init scripts, or run configured
-            commands.
+            not run init scripts or run configured commands.
+          </p>
+          <p>
+            Manual file operation commands discover and parse config when one is
+            present only to load top-level runtime policy. They ignore the
+            config's file operations and commands. If a config file is present
+            but invalid, the manual command fails before applying file
+            operations.
           </p>
           <p>
             With one source, <code>--target</code> is the exact target path. With
@@ -1843,10 +1849,10 @@ args = ["install"]</code></pre>
             <code>dangerously_allow_targets_outside_worktree = true</code>
             disables the target-boundary check.
             <code>dangerously_allow_sources_outside_root</code> separately
-            disables the source-boundary check. These checks only affect
-            declarative file operations. Manual file operation commands always
-            apply the boundary checks, and init scripts are unrestricted because
-            treeboot cannot safely validate arbitrary script behavior.
+            disables the source-boundary check. These checks affect
+            declarative file operations and manual file operation commands.
+            Init scripts are unrestricted because treeboot cannot safely
+            validate arbitrary script behavior.
           </p>
         </div>
 
@@ -1936,6 +1942,11 @@ args = ["install"]</code></pre>
             for every shell supported by <code>treeboot completions</code>:
             Bash, Zsh, Fish, PowerShell, and Elvish.
           </p>
+          <p>
+            Completion candidate generation uses root/worktree discovery only.
+            It must not parse config files, run init scripts, run configured
+            commands, or fail because config is missing or invalid.
+          </p>
         </div>
 
         <div class="callout">
@@ -1948,6 +1959,12 @@ args = ["install"]</code></pre>
             <code>required = true</code>, and operation-specific flags supply
             <code>symlinks</code>, <code>compare</code>, or
             <code>delete</code>.
+          </p>
+          <p>
+            Manual normalization happens under the same resolved runtime policy
+            as declarative file operations: defaults, then config top-level
+            policy when a config is present, then environment overrides, then
+            CLI strictness.
           </p>
           <p>
             If <code>--target</code> is omitted, each target defaults to its
@@ -2395,7 +2412,9 @@ treeboot: warning: command optional lint: npm run lint failed with exit status: 
           Manual file operation validation errors should identify the CLI
           operation, source, and target involved. They must not report synthetic
           config file paths, TOML line numbers, or TOML column numbers for
-          command-line arguments.
+          command-line arguments. Config parse or normalization errors found
+          while loading manual command policy still report the real config path
+          and TOML location.
         </p>
 
         <table>

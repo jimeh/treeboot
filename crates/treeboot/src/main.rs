@@ -351,7 +351,7 @@ fn print_config_text(report: &ConfigReport) -> std::io::Result<()> {
 fn file_operation_summary(operation: &FileOperation) -> String {
     let mut summary = format!(
         "{} {} -> {}",
-        file_operation_name(operation.operation),
+        operation.operation.as_str(),
         operation.source.display(),
         operation.target.display()
     );
@@ -370,14 +370,6 @@ fn file_operation_summary(operation: &FileOperation) -> String {
     }
 
     summary
-}
-
-fn file_operation_name(operation: FileOperationKind) -> &'static str {
-    match operation {
-        FileOperationKind::Copy => "copy",
-        FileOperationKind::Symlink => "symlink",
-        FileOperationKind::Sync => "sync",
-    }
 }
 
 fn command_summary(command: &CommandOperation) -> String {

@@ -345,7 +345,7 @@ fn unsafe_source_symlink_should_fail_before_side_effects() {
 }
 
 #[test]
-fn manual_commands_should_ignore_invalid_config() {
+fn manual_commands_should_fail_on_invalid_config_before_side_effects() {
     let repo = git_worktree();
     write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
     write_file(
@@ -357,10 +357,40 @@ fn manual_commands_should_ignore_invalid_config() {
         .args(["copy", ".env"])
         .current_dir(repo.worktree_path())
         .assert()
-        .success()
-        .stderr(predicate::str::contains("invalid config").not());
+        .code(1)
+        .stderr(predicate::str::contains("invalid config"));
 
-    assert!(repo.worktree_path().join(".env").is_file());
+    assert!(!repo.worktree_path().join(".env").exists());
+}
+
+#[test]
+fn manual_commands_should_use_config_runtime_policy() {
+    let repo = git_worktree();
+    let outside = repo
+        .root_path()
+        .parent()
+        .expect("root should have parent")
+        .join("outside.env");
+    write_file(&outside, "TOKEN=1\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        "dangerously_allow_sources_outside_root = true\n",
+    );
+
+    treeboot()
+        .args(["copy", "--target", "copied.env", "../outside.env"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "treeboot: copy ../outside.env -> copied.env",
+        ));
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("copied.env"))
+            .expect("outside source should be copied"),
+        "TOKEN=1\n"
+    );
 }
 
 #[cfg(unix)]
@@ -389,6 +419,10 @@ fn manual_commands_should_ignore_executable_init_script() {
 fn dynamic_completion_should_list_root_relative_sources() {
     let repo = git_worktree();
     write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        "invalid = [\n",
+    );
     std::fs::create_dir_all(repo.root_path().join("shared"))
         .expect("source directory should be created");
 

@@ -232,12 +232,12 @@ fn plan_tree_directory(
     }
 
     for child in fs::read_dir(entry.source_path).map_err(|source| Error::FileOperationIo {
-        operation: operation_name(operation.operation),
+        operation: operation.operation.as_str(),
         path: entry.source_path.to_path_buf(),
         source,
     })? {
         let child = child.map_err(|source| Error::FileOperationIo {
-            operation: operation_name(operation.operation),
+            operation: operation.operation.as_str(),
             path: entry.source_path.to_path_buf(),
             source,
         })?;
@@ -384,7 +384,7 @@ fn plan_sync_symlink_action(plan: SymlinkActionPlan, actions: &mut Vec<FileActio
         Some(metadata) if metadata.file_type().is_symlink() => {
             let existing =
                 fs::read_link(&plan.target_path).map_err(|source| Error::FileOperationIo {
-                    operation: operation_name(plan.operation),
+                    operation: plan.operation.as_str(),
                     path: plan.target_path.clone(),
                     source,
                 })?;
@@ -518,12 +518,12 @@ fn plan_sync_deletes(
     }
 
     for child in fs::read_dir(entry.target_path).map_err(|source| Error::FileOperationIo {
-        operation: operation_name(operation.operation),
+        operation: operation.operation.as_str(),
         path: entry.target_path.to_path_buf(),
         source,
     })? {
         let child = child.map_err(|source| Error::FileOperationIo {
-            operation: operation_name(operation.operation),
+            operation: operation.operation.as_str(),
             path: entry.target_path.to_path_buf(),
             source,
         })?;
@@ -572,14 +572,14 @@ fn metadata_changed(
     let source_modified = source_metadata
         .modified()
         .map_err(|source| Error::FileOperationIo {
-            operation: operation_name(operation.operation),
+            operation: operation.operation.as_str(),
             path: source_path.to_path_buf(),
             source,
         })?;
     let target_modified = target_metadata
         .modified()
         .map_err(|source| Error::FileOperationIo {
-            operation: operation_name(operation.operation),
+            operation: operation.operation.as_str(),
             path: target_path.to_path_buf(),
             source,
         })?;
@@ -599,12 +599,12 @@ fn contents_changed(
     }
 
     let mut source_file = File::open(source_path).map_err(|source| Error::FileOperationIo {
-        operation: operation_name(operation.operation),
+        operation: operation.operation.as_str(),
         path: source_path.to_path_buf(),
         source,
     })?;
     let mut target_file = File::open(target_path).map_err(|source| Error::FileOperationIo {
-        operation: operation_name(operation.operation),
+        operation: operation.operation.as_str(),
         path: target_path.to_path_buf(),
         source,
     })?;
@@ -616,7 +616,7 @@ fn contents_changed(
             source_file
                 .read(&mut source_buf)
                 .map_err(|source| Error::FileOperationIo {
-                    operation: operation_name(operation.operation),
+                    operation: operation.operation.as_str(),
                     path: source_path.to_path_buf(),
                     source,
                 })?;
@@ -624,7 +624,7 @@ fn contents_changed(
             target_file
                 .read(&mut target_buf)
                 .map_err(|source| Error::FileOperationIo {
-                    operation: operation_name(operation.operation),
+                    operation: operation.operation.as_str(),
                     path: target_path.to_path_buf(),
                     source,
                 })?;
@@ -737,7 +737,7 @@ fn apply_action(action: &FileAction, reporter: &mut dyn Reporter) -> Result<()> 
             target_path,
         } => {
             fs::create_dir_all(target_path).map_err(|source| Error::FileOperationIo {
-                operation: operation_name(*operation),
+                operation: operation.as_str(),
                 path: target_path.clone(),
                 source,
             })?;
@@ -831,7 +831,7 @@ fn create_parent_dir(operation: FileOperationKind, target_path: &Path) -> Result
     };
 
     fs::create_dir_all(parent).map_err(|source| Error::FileOperationIo {
-        operation: operation_name(operation),
+        operation: operation.as_str(),
         path: parent.to_path_buf(),
         source,
     })
@@ -844,7 +844,7 @@ fn copy_file_with_metadata(
 ) -> Result<()> {
     let metadata = metadata(source_path, operation)?;
     fs::copy(source_path, target_path).map_err(|source| Error::FileOperationIo {
-        operation: operation_name(operation),
+        operation: operation.as_str(),
         path: target_path.to_path_buf(),
         source,
     })?;
@@ -861,14 +861,14 @@ fn copy_file_with_metadata(
         .open(target_path)
         .and_then(|file| file.set_times(times))
         .map_err(|source| Error::FileOperationIo {
-            operation: operation_name(operation),
+            operation: operation.as_str(),
             path: target_path.to_path_buf(),
             source,
         })?;
 
     fs::set_permissions(target_path, metadata.permissions()).map_err(|source| {
         Error::FileOperationIo {
-            operation: operation_name(operation),
+            operation: operation.as_str(),
             path: target_path.to_path_buf(),
             source,
         }
@@ -877,7 +877,7 @@ fn copy_file_with_metadata(
 
 fn remove_file(operation: FileOperationKind, path: &Path) -> Result<()> {
     fs::remove_file(path).map_err(|source| Error::FileOperationIo {
-        operation: operation_name(operation),
+        operation: operation.as_str(),
         path: path.to_path_buf(),
         source,
     })
@@ -887,7 +887,7 @@ fn remove_any(operation: FileOperationKind, path: &Path) -> Result<()> {
     let metadata = metadata(path, operation)?;
     if metadata.is_dir() {
         fs::remove_dir_all(path).map_err(|source| Error::FileOperationIo {
-            operation: operation_name(operation),
+            operation: operation.as_str(),
             path: path.to_path_buf(),
             source,
         })
@@ -903,7 +903,7 @@ fn create_symlink(
     target: &Path,
 ) -> Result<()> {
     create_symlink_impl(source, target, target_is_dir).map_err(|source| Error::FileOperationIo {
-        operation: operation_name(operation),
+        operation: operation.as_str(),
         path: target.to_path_buf(),
         source,
     })
@@ -930,7 +930,7 @@ fn preserved_source_link(
     target_path: &Path,
 ) -> Result<(PathBuf, PathBuf, bool)> {
     let raw_target = fs::read_link(source_path).map_err(|source| Error::FileOperationIo {
-        operation: operation_name(operation),
+        operation: operation.as_str(),
         path: source_path.to_path_buf(),
         source,
     })?;
@@ -973,7 +973,7 @@ fn raw_source_path(plan: &RunPlan, operation: &PlannedFileOperation) -> PathBuf 
 
 fn metadata(path: &Path, operation: FileOperationKind) -> Result<Metadata> {
     fs::symlink_metadata(path).map_err(|source| Error::FileOperationIo {
-        operation: operation_name(operation),
+        operation: operation.as_str(),
         path: path.to_path_buf(),
         source,
     })
@@ -984,7 +984,7 @@ fn maybe_metadata(path: &Path, operation: FileOperationKind) -> Result<Option<Me
         Ok(metadata) => Ok(Some(metadata)),
         Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(source) => Err(Error::FileOperationIo {
-            operation: operation_name(operation),
+            operation: operation.as_str(),
             path: path.to_path_buf(),
             source,
         }),
@@ -997,7 +997,7 @@ fn conflict<T>(
     message: impl Into<String>,
 ) -> Result<T> {
     Err(Error::FileOperationConflict {
-        operation: operation_name(operation),
+        operation: operation.as_str(),
         path,
         message: message.into(),
     })
@@ -1007,14 +1007,6 @@ fn report(reporter: &mut dyn Reporter, event: OutputEvent) -> Result<()> {
     reporter
         .report(event)
         .map_err(|source| Error::Output { source })
-}
-
-fn operation_name(operation: FileOperationKind) -> &'static str {
-    match operation {
-        FileOperationKind::Copy => "copy",
-        FileOperationKind::Symlink => "symlink",
-        FileOperationKind::Sync => "sync",
-    }
 }
 
 fn relative_path(from: &Path, to: &Path) -> Option<PathBuf> {
