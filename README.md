@@ -172,8 +172,8 @@ treeboot sync shared/config --delete --dry-run
 treeboot init
 ```
 
-`treeboot init` creates a starter config or script. In an interactive shell it
-prompts for which one to create.
+`treeboot init` creates `.treeboot.toml` by default. Use
+`treeboot init --script` to create `.treeboot.sh` instead.
 
 ## Shell Completions
 

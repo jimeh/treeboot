@@ -179,14 +179,6 @@ pub enum Error {
         source: std::io::Error,
     },
 
-    /// `treeboot init` needs a concrete output type.
-    #[error("treeboot init requires --config or --script")]
-    InitTypeRequired,
-
-    /// `treeboot init` received conflicting output types.
-    #[error("treeboot init cannot use --config and --script together")]
-    ConflictingInitTypes,
-
     /// `treeboot init` refused to replace an existing target.
     #[error("init target already exists: {0:?}")]
     InitTargetExists(PathBuf),

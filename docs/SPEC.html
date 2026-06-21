@@ -793,8 +793,8 @@ treeboot config --json</code></pre>
           <section class="panel">
             <h3><code>treeboot init</code></h3>
             <p>
-              Creates a starter config or script. Interactive runs prompt for
-              the type. Non-interactive runs must specify it.
+              Creates a starter config by default. Script generation is
+              selected explicitly with <code>--script</code>.
             </p>
             <pre><code class="shell">treeboot init
 treeboot init --config
@@ -1412,9 +1412,12 @@ treeboot.toml
             <pre><code>config: .treeboot.toml
 script: .treeboot.sh</code></pre>
             <p>
-              <code>treeboot init</code> prompts interactively for which type
-              to create. Non-interactive use must specify <code>--config</code>
-              or <code>--script</code>.
+              <code>treeboot init</code> creates
+              <code>.treeboot.toml</code> by default.
+              <code>treeboot init --config</code> is an explicit spelling of
+              the same config output. <code>treeboot init --script</code>
+              creates <code>.treeboot.sh</code>. The command never prompts
+              interactively.
             </p>
           </section>
         </div>
@@ -2581,9 +2584,9 @@ treeboot-slsa-attestation.intoto.jsonl</code></pre>
             <h3>CLI tests</h3>
             <ul>
               <li><code>treeboot</code> equals <code>treeboot run</code>.</li>
+              <li><code>init</code> creates config by default.</li>
               <li><code>init --config</code> creates config.</li>
               <li><code>init --script</code> creates executable script.</li>
-              <li>Non-interactive init without type fails.</li>
               <li><code>copy</code>, <code>symlink</code>, and <code>sync</code> require sources.</li>
               <li>Manual <code>--target</code> handles one and many sources.</li>
               <li>Manual operation source completion reads from root path.</li>

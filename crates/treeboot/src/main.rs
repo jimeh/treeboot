@@ -526,11 +526,10 @@ impl From<InitArgs> for InitOptions {
     }
 }
 
-fn init_kind(args: &InitArgs) -> Option<InitKind> {
+fn init_kind(args: &InitArgs) -> InitKind {
     match (args.config, args.script) {
-        (true, false) => Some(InitKind::Config),
-        (false, true) => Some(InitKind::Script),
-        _ => None,
+        (false, true) => InitKind::Script,
+        _ => InitKind::Config,
     }
 }
 
