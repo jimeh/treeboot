@@ -1,7 +1,7 @@
 use std::process::{Command, ExitStatus};
 
 use crate::{
-    CommandKind, Error, OutputEvent, PlannedCommand, Reporter, Result, RunContext, RunPlan,
+    ActionPlan, CommandKind, Error, OutputEvent, PlannedCommand, Reporter, Result, Worktree,
 };
 
 /// Options that affect command execution.
@@ -12,7 +12,7 @@ pub(crate) struct CommandExecutionOptions {
 }
 
 pub(crate) fn execute_commands(
-    plan: &RunPlan,
+    plan: &ActionPlan,
     options: CommandExecutionOptions,
     reporter: &mut dyn Reporter,
 ) -> Result<()> {
@@ -34,7 +34,7 @@ pub(crate) fn execute_commands(
 
 fn run_sequential(
     command: &PlannedCommand,
-    context: &RunContext,
+    context: &Worktree,
     reporter: &mut dyn Reporter,
 ) -> Result<()> {
     let label = command_label(command);
@@ -88,7 +88,7 @@ fn report_allowed_failure(
     )
 }
 
-fn build_command(command: &PlannedCommand, context: &RunContext) -> Command {
+fn build_command(command: &PlannedCommand, context: &Worktree) -> Command {
     let mut process = match &command.command {
         CommandKind::Shell { run } => build_shell_command(run),
         CommandKind::Direct { program, args } => {
@@ -155,7 +155,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::*;
-    use crate::{RunPlan, SourceSpan};
+    use crate::{ActionPlan, SourceSpan};
 
     #[test]
     fn command_label_should_include_name_and_invocation() {
@@ -498,7 +498,7 @@ mod tests {
         }
     }
 
-    fn plan(context: RunContext, commands: Vec<impl Into<PlannedCommand>>) -> RunPlan {
+    fn plan(context: Worktree, commands: Vec<impl Into<PlannedCommand>>) -> ActionPlan {
         let commands = commands
             .into_iter()
             .map(Into::into)
@@ -510,7 +510,7 @@ mod tests {
             })
             .collect();
 
-        RunPlan {
+        ActionPlan {
             origin: crate::PlanOrigin::Manifest {
                 path: context.worktree_path.join(".treeboot.toml"),
             },
@@ -521,7 +521,7 @@ mod tests {
         }
     }
 
-    fn context(name: &str) -> (tempfile::TempDir, RunContext) {
+    fn context(name: &str) -> (tempfile::TempDir, Worktree) {
         let temp = tempfile::TempDir::new().expect("tempdir should be created");
         let root = temp.path().join("root");
         let worktree = temp.path().join("worktree");
@@ -540,7 +540,7 @@ mod tests {
 
         (
             temp,
-            RunContext {
+            Worktree {
                 root_path: root,
                 worktree_path: worktree,
                 default_branch: format!("main-{name}"),

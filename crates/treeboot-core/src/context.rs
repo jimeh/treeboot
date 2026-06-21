@@ -50,9 +50,6 @@ impl Worktree {
     }
 }
 
-/// Backwards-compatible name for resolved worktree metadata.
-pub type RunContext = Worktree;
-
 pub(crate) fn resolve(options: &WorktreeOptions) -> Result<Worktree> {
     let cwd = options.cwd.as_ref().map_or_else(
         || std::env::current_dir().map_err(|source| Error::CurrentDir { source }),

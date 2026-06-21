@@ -2,15 +2,73 @@ use std::ffi::OsStr;
 use std::path::{Component, Path, PathBuf};
 
 use crate::config::{
-    self, FileOperationSettingsInput, RuntimeOptionOverrides, normalize_file_operation_settings,
+    Config, FileOperationSettingsInput, RuntimeOptionOverrides, normalize_file_operation_settings,
 };
 use crate::context;
-use crate::discovery;
 use crate::{
-    ActionPlan, Error, ExecuteOptions, Executor, FileOperation, FileOperationKind, OutputEvent,
-    PlanOrigin, Reporter, Result, RunContext, RunPlanOptions, SourceSpan, SymlinkMode, SyncCompare,
-    WorktreeOptions,
+    ActionPlan, ActionPlanOptions, Error, ExecuteOptions, Executor, FileOperation,
+    FileOperationKind, OutputEvent, PlanOrigin, Reporter, Result, SourceSpan, SymlinkMode,
+    SyncCompare, Worktree, WorktreeOptions,
 };
+
+/// Options for building manual file operation specs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ManualFileOperationOptions {
+    /// File operation kind to build.
+    pub operation: FileOperationKind,
+    /// Source paths resolved from the root checkout.
+    pub sources: Vec<PathBuf>,
+    /// Optional target path resolved from the current worktree.
+    pub target: Option<PathBuf>,
+    /// Fails when a source is missing.
+    pub required: bool,
+    /// How copy and sync should treat source symlinks.
+    pub symlinks: Option<SymlinkMode>,
+    /// Sync comparison mode.
+    pub compare: Option<SyncCompare>,
+    /// Whether sync should delete target-only files.
+    pub delete: Option<bool>,
+}
+
+impl Default for ManualFileOperationOptions {
+    fn default() -> Self {
+        Self {
+            operation: FileOperationKind::Copy,
+            sources: Vec::new(),
+            target: None,
+            required: false,
+            symlinks: None,
+            compare: None,
+            delete: None,
+        }
+    }
+}
+
+impl FileOperation {
+    /// Builds normalized manual file operation specs for an action plan.
+    ///
+    /// This applies the same target derivation and option validation used by
+    /// `treeboot copy`, `treeboot symlink`, and `treeboot sync`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the manual operation has no sources, when an
+    /// option is not valid for the selected operation kind, or when a target
+    /// cannot be derived for an absolute source.
+    pub fn from_manual_options(
+        context: &Worktree,
+        options: ManualFileOperationOptions,
+    ) -> Result<Vec<Self>> {
+        validate_manual_options(
+            options.operation,
+            &options.sources,
+            options.symlinks,
+            options.compare,
+            options.delete,
+        )?;
+        manual_operations(options, context)
+    }
+}
 
 /// Options for running one manual file operation command.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,7 +131,7 @@ pub enum FileOperationAction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileOperationReport {
     /// Runtime context used by the operation.
-    pub context: RunContext,
+    pub context: Worktree,
     /// File operation kind that ran.
     pub operation: FileOperationKind,
     /// Completed action.
@@ -91,17 +149,6 @@ pub struct FileOperationCompletionOptions {
     pub root: Option<PathBuf>,
     /// Current partial value being completed.
     pub current: PathBuf,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ManualOperationRequest {
-    operation: FileOperationKind,
-    sources: Vec<PathBuf>,
-    target: Option<PathBuf>,
-    required: bool,
-    symlinks: Option<SymlinkMode>,
-    compare: Option<SyncCompare>,
-    delete: Option<bool>,
 }
 
 /// Runs a manual copy, symlink, or sync file operation.
@@ -129,8 +176,7 @@ pub fn run_file_operation(
         force,
         dry_run,
     } = options;
-    validate_manual_options(operation, &sources, symlinks, compare, delete)?;
-    let request = ManualOperationRequest {
+    let manual_options = ManualFileOperationOptions {
         operation,
         sources,
         target,
@@ -159,17 +205,16 @@ pub fn run_file_operation(
         });
     }
 
-    let config_options = match discovery::discover_config(&context.worktree_path, None)? {
-        Some(path) => config::load_config(&path, &context)?.options,
-        None => Default::default(),
-    };
+    let config_options = Config::load_discovered(&context, None)?
+        .map(|loaded| loaded.config.options)
+        .unwrap_or_default();
     let plan_options = env_options.resolve(&config_options, strict);
-    let operations = manual_operations(request, &context)?;
+    let operations = FileOperation::from_manual_options(&context, manual_options)?;
     let plan = ActionPlan::from_file_operations(
         &context,
         PlanOrigin::Manual { operation },
         &operations,
-        RunPlanOptions::from(plan_options),
+        ActionPlanOptions::from(plan_options),
     )?;
     let report = Executor::new(ExecuteOptions {
         strict: plan_options.strict,
@@ -236,10 +281,10 @@ fn validate_manual_options(
 }
 
 fn manual_operations(
-    request: ManualOperationRequest,
-    context: &RunContext,
+    options: ManualFileOperationOptions,
+    context: &Worktree,
 ) -> Result<Vec<FileOperation>> {
-    let ManualOperationRequest {
+    let ManualFileOperationOptions {
         operation,
         sources,
         target,
@@ -247,7 +292,7 @@ fn manual_operations(
         symlinks,
         compare,
         delete,
-    } = request;
+    } = options;
     let multiple_sources = sources.len() > 1;
     let settings = normalize_file_operation_settings(
         operation,
@@ -423,8 +468,8 @@ mod tests {
         (root, worktree)
     }
 
-    fn context(root_path: &Path, worktree_path: &Path) -> RunContext {
-        RunContext {
+    fn context(root_path: &Path, worktree_path: &Path) -> Worktree {
+        Worktree {
             root_path: root_path.to_path_buf(),
             worktree_path: worktree_path.to_path_buf(),
             default_branch: "main".to_owned(),
@@ -435,23 +480,15 @@ mod tests {
         }
     }
 
-    fn options(operation: FileOperationKind, sources: &[&str]) -> FileOperationOptions {
-        FileOperationOptions {
+    fn options(operation: FileOperationKind, sources: &[&str]) -> ManualFileOperationOptions {
+        ManualFileOperationOptions {
             operation,
             sources: sources.iter().map(PathBuf::from).collect(),
-            ..FileOperationOptions::default()
-        }
-    }
-
-    fn request(options: FileOperationOptions) -> ManualOperationRequest {
-        ManualOperationRequest {
-            operation: options.operation,
-            sources: options.sources,
-            target: options.target,
-            required: options.required,
-            symlinks: options.symlinks,
-            compare: options.compare,
-            delete: options.delete,
+            target: None,
+            required: false,
+            symlinks: None,
+            compare: None,
+            delete: None,
         }
     }
 
@@ -460,8 +497,8 @@ mod tests {
         let (root, worktree) = temp_workspace("single-default-target");
         let context = context(&root, &worktree);
         let options = options(FileOperationKind::Copy, &[".env"]);
-        let request = request(options);
-        let operations = manual_operations(request, &context).expect("operation should normalize");
+        let operations = FileOperation::from_manual_options(&context, options)
+            .expect("operation should normalize");
 
         assert_eq!(operations[0].source, PathBuf::from(".env"));
         assert_eq!(operations[0].target, PathBuf::from(".env"));
@@ -475,9 +512,9 @@ mod tests {
         let context = context(&root, &worktree);
         let mut options = options(FileOperationKind::Copy, &[".env"]);
         options.target = Some(PathBuf::from("local/.env"));
-        let request = request(options);
 
-        let operations = manual_operations(request, &context).expect("operation should normalize");
+        let operations = FileOperation::from_manual_options(&context, options)
+            .expect("operation should normalize");
 
         assert_eq!(operations[0].target, PathBuf::from("local/.env"));
         assert_eq!(operations[0].target_path, worktree.join("local/.env"));
@@ -488,8 +525,8 @@ mod tests {
         let (root, worktree) = temp_workspace("multi-default-target");
         let context = context(&root, &worktree);
         let options = options(FileOperationKind::Copy, &[".env", ".npmrc"]);
-        let request = request(options);
-        let operations = manual_operations(request, &context).expect("operation should normalize");
+        let operations = FileOperation::from_manual_options(&context, options)
+            .expect("operation should normalize");
 
         assert_eq!(operations[0].target_path, worktree.join(".env"));
         assert_eq!(operations[1].target_path, worktree.join(".npmrc"));
@@ -501,9 +538,9 @@ mod tests {
         let context = context(&root, &worktree);
         let mut options = options(FileOperationKind::Copy, &["a", "nested/c"]);
         options.target = Some(PathBuf::from("local"));
-        let request = request(options);
 
-        let operations = manual_operations(request, &context).expect("operation should normalize");
+        let operations = FileOperation::from_manual_options(&context, options)
+            .expect("operation should normalize");
 
         assert_eq!(operations[0].source_path, root.join("a"));
         assert_eq!(operations[0].target_path, worktree.join("local/a"));
@@ -516,16 +553,20 @@ mod tests {
         let (root, worktree) = temp_workspace("multi-absolute-target-prefix");
         let context = context(&root, &worktree);
         let source = root.join("a");
-        let mut options = FileOperationOptions {
+        let mut options = ManualFileOperationOptions {
             operation: FileOperationKind::Copy,
             sources: vec![source.clone()],
-            ..FileOperationOptions::default()
+            target: None,
+            required: false,
+            symlinks: None,
+            compare: None,
+            delete: None,
         };
         options.sources.push(root.join("b"));
         options.target = Some(PathBuf::from("local"));
-        let request = request(options);
 
-        let operations = manual_operations(request, &context).expect("operation should normalize");
+        let operations = FileOperation::from_manual_options(&context, options)
+            .expect("operation should normalize");
 
         assert_eq!(operations[0].source_path, source);
         assert_eq!(operations[0].target_path, worktree.join("local/a"));
@@ -682,9 +723,9 @@ mod tests {
         options.compare = Some(SyncCompare::Checksum);
         options.delete = Some(true);
         options.symlinks = Some(SymlinkMode::Preserve);
-        let request = request(options);
 
-        let operations = manual_operations(request, &context).expect("operation should normalize");
+        let operations = FileOperation::from_manual_options(&context, options)
+            .expect("operation should normalize");
 
         assert_eq!(operations[0].compare, Some(SyncCompare::Checksum));
         assert_eq!(operations[0].delete, Some(true));
@@ -767,7 +808,7 @@ mod tests {
                 symlinks: Some(SymlinkMode::Preserve),
                 declaration: manual_span(),
             }],
-            RunPlanOptions::default(),
+            ActionPlanOptions::default(),
         )
         .expect_err("outside source should fail");
 
@@ -798,9 +839,9 @@ mod tests {
                 symlinks: Some(SymlinkMode::Preserve),
                 declaration: manual_span(),
             }],
-            RunPlanOptions {
+            ActionPlanOptions {
                 strict: true,
-                ..RunPlanOptions::default()
+                ..ActionPlanOptions::default()
             },
         )
         .expect_err("strict sync should fail");

@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use crate::config::{self, RuntimeOptionOverrides};
+use crate::config::RuntimeOptionOverrides;
 use crate::context;
-use crate::discovery;
 use crate::{
-    Error, ExecuteOptions, Executor, OutputEvent, Reporter, Result, RunContext, WorktreeOptions,
+    ActionPlan, Config, Error, ExecuteOptions, Executor, InitScriptDiscovery, OutputEvent,
+    Reporter, Result, Worktree, WorktreeOptions,
 };
 
 /// Options for running worktree bootstrap.
@@ -60,7 +60,7 @@ pub enum RunAction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunReport {
     /// Runtime context used by the run.
-    pub context: RunContext,
+    pub context: Worktree,
     /// Action taken by the run flow.
     pub action: RunAction,
 }
@@ -98,7 +98,7 @@ pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport
     }
 
     if options.config.is_none() {
-        let scripts = discovery::discover_scripts(&context.worktree_path);
+        let scripts = InitScriptDiscovery::discover(&context);
 
         for path in scripts.ignored {
             report(reporter, OutputEvent::IgnoredInitScript { path })?;
@@ -109,12 +109,12 @@ pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport
         }
     }
 
-    match discovery::discover_config(&context.worktree_path, options.config.as_deref())? {
+    match Config::discover_path(&context, options.config.as_deref())? {
         Some(path) => {
             report(reporter, OutputEvent::ConfigDetected { path: path.clone() })?;
-            let config = config::load_config(&path, &context)?;
+            let config = Config::load(&path, &context)?;
             let plan_options = env_options.resolve(&config.options, options.strict);
-            let plan = crate::plan_run_config(&path, &config, &context, plan_options.into())?;
+            let plan = ActionPlan::from_manifest(&path, &config, &context, plan_options.into())?;
             Executor::new(ExecuteOptions {
                 strict: plan_options.strict,
                 force: options.force,
@@ -145,7 +145,7 @@ pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport
 
 fn run_init_script(
     path: PathBuf,
-    context: RunContext,
+    context: Worktree,
     options: &RunOptions,
     reporter: &mut dyn Reporter,
 ) -> Result<RunReport> {

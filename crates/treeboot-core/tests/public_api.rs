@@ -4,9 +4,11 @@ use std::process::Command;
 
 use tempfile::TempDir;
 use treeboot_core::{
-    ActionPlan, Config, Environment, Error, ExecuteOptions, Executor, FileOperation,
-    FileOperationKind, OutputEvent, PlanOrigin, Reporter, RunPlanOptions, SourceSpan, SymlinkMode,
-    Worktree, WorktreeOptions,
+    ActionPlan, ActionPlanOptions, Config, ConfigOptions, Environment, Error, ExecuteOptions,
+    Executor, FileOperation, FileOperationAction, FileOperationKind, FileOperationOptions,
+    InitScriptDiscovery, LoadedConfig, ManualFileOperationOptions, OutputEvent, PlanOrigin,
+    Reporter, RunAction, RunOptions, SourceSpan, SymlinkMode, Worktree, WorktreeOptions,
+    inspect_config, run, run_file_operation,
 };
 
 #[derive(Default)]
@@ -106,6 +108,20 @@ fn write_file(path: &Path, content: &str) {
     std::fs::write(path, content).expect("file should be written");
 }
 
+#[cfg(unix)]
+fn make_executable(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut permissions = std::fs::metadata(path)
+        .expect("script metadata should load")
+        .permissions();
+    permissions.set_mode(permissions.mode() | 0o111);
+    std::fs::set_permissions(path, permissions).expect("script permissions should update");
+}
+
+#[cfg(not(unix))]
+fn make_executable(_path: &Path) {}
+
 fn span() -> SourceSpan {
     SourceSpan {
         start: 0,
@@ -143,9 +159,13 @@ fn public_api_should_discover_load_plan_and_execute_manifest() {
     })
     .expect("worktree should be discovered");
     let config = Config::load(&config_path, &worktree).expect("config should load");
-    let plan =
-        ActionPlan::from_manifest(&config_path, &config, &worktree, RunPlanOptions::default())
-            .expect("manifest plan should build");
+    let plan = ActionPlan::from_manifest(
+        &config_path,
+        &config,
+        &worktree,
+        ActionPlanOptions::default(),
+    )
+    .expect("manifest plan should build");
 
     assert_eq!(plan.context, worktree);
     assert_eq!(plan.config_path.as_deref(), Some(config_path.as_path()));
@@ -177,6 +197,95 @@ fn public_api_should_discover_load_plan_and_execute_manifest() {
 }
 
 #[test]
+fn public_api_should_load_discovered_manifest() {
+    let repo = git_worktree();
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = ["README.md"]"#,
+    );
+    let worktree = Worktree::discover(WorktreeOptions {
+        cwd: Some(repo.worktree_path().to_path_buf()),
+        root: None,
+    })
+    .expect("worktree should be discovered");
+    let config_path = worktree.worktree_path.join(".treeboot.toml");
+
+    let report: LoadedConfig = Config::load_discovered(&worktree, None)
+        .expect("config discovery should succeed")
+        .expect("config should be found");
+
+    assert_eq!(report.path, config_path);
+    assert_eq!(report.context, worktree);
+    assert_eq!(report.config.files.len(), 1);
+}
+
+#[test]
+fn public_api_should_return_none_when_manifest_is_not_discovered() {
+    let (_temp, worktree) = temp_worktree("missing-discovered-config");
+
+    let report =
+        Config::load_discovered(&worktree, None).expect("optional config discovery should succeed");
+
+    assert_eq!(report, None);
+}
+
+#[test]
+fn public_api_should_error_when_requested_manifest_is_missing() {
+    let (_temp, worktree) = temp_worktree("missing-requested-config");
+    let requested = Path::new("missing.toml");
+    let error =
+        Config::discover_path(&worktree, Some(requested)).expect_err("missing config should fail");
+
+    match error {
+        Error::ConfigNotFound(path) => {
+            assert_eq!(path, worktree.worktree_path.join(requested));
+        }
+        other => panic!("expected missing config error, got {other:?}"),
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn public_api_should_discover_executable_init_script_after_ignored_script() {
+    let (_temp, worktree) = temp_worktree("init-script-discovery");
+    let ignored = worktree.worktree_path.join(".treeboot.sh");
+    let executable = worktree.worktree_path.join(".treebootrc");
+    write_file(&ignored, "#!/bin/sh\n");
+    write_file(&executable, "#!/bin/sh\n");
+    make_executable(&executable);
+
+    let discovery = InitScriptDiscovery::discover(&worktree);
+
+    assert_eq!(discovery.executable.as_deref(), Some(executable.as_path()));
+    assert_eq!(discovery.ignored, vec![ignored]);
+}
+
+#[test]
+fn public_api_run_should_report_init_script_in_dry_run() {
+    let repo = git_worktree();
+    let script = repo.worktree_path().join(".treeboot.sh");
+    write_file(&script, "#!/usr/bin/env sh\nexit 0\n");
+    make_executable(&script);
+    let expected_script = std::fs::canonicalize(&script).expect("script path should canonicalize");
+
+    let mut reporter = VecReporter::default();
+    let report = run(
+        RunOptions {
+            cwd: Some(repo.worktree_path().to_path_buf()),
+            dry_run: true,
+            ..RunOptions::default()
+        },
+        &mut reporter,
+    )
+    .expect("run should dry-run init script");
+
+    assert!(matches!(
+        report.action,
+        RunAction::WouldRunInitScript { path } if path == expected_script
+    ));
+}
+
+#[test]
 fn public_api_should_parse_manifest_and_dry_run_commands() {
     let (_temp, context) = temp_worktree("dry-run-command");
     let config = Config::parse(
@@ -189,7 +298,7 @@ fn public_api_should_parse_manifest_and_dry_run_commands() {
         Path::new(".treeboot.toml"),
         &config,
         &context,
-        RunPlanOptions::default(),
+        ActionPlanOptions::default(),
     )
     .expect("manifest plan should build");
 
@@ -223,7 +332,7 @@ fn public_api_executor_should_skip_commands_when_requested() {
         Path::new(".treeboot.toml"),
         &config,
         &context,
-        RunPlanOptions::default(),
+        ActionPlanOptions::default(),
     )
     .expect("manifest plan should build");
 
@@ -244,7 +353,19 @@ fn public_api_executor_should_skip_commands_when_requested() {
 fn public_api_should_build_manual_file_plan_without_config_path() {
     let (_temp, context) = temp_worktree("manual-plan");
     write_file(&context.root_path.join(".env"), "TOKEN=1\n");
-    let files = vec![copy_spec(&context, ".env", "local.env")];
+    let files = FileOperation::from_manual_options(
+        &context,
+        ManualFileOperationOptions {
+            operation: FileOperationKind::Copy,
+            sources: vec![PathBuf::from(".env")],
+            target: Some(PathBuf::from("local.env")),
+            required: false,
+            symlinks: Some(SymlinkMode::Preserve),
+            compare: None,
+            delete: None,
+        },
+    )
+    .expect("manual file specs should build");
 
     let plan = ActionPlan::from_file_operations(
         &context,
@@ -252,7 +373,7 @@ fn public_api_should_build_manual_file_plan_without_config_path() {
             operation: FileOperationKind::Copy,
         },
         &files,
-        RunPlanOptions::default(),
+        ActionPlanOptions::default(),
     )
     .expect("manual file plan should build");
 
@@ -269,6 +390,50 @@ fn public_api_should_build_manual_file_plan_without_config_path() {
 }
 
 #[test]
+fn public_api_run_file_operation_should_apply_manual_copy() {
+    let repo = git_worktree();
+    write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
+    let mut reporter = VecReporter::default();
+
+    let report = run_file_operation(
+        FileOperationOptions {
+            cwd: Some(repo.worktree_path().to_path_buf()),
+            operation: FileOperationKind::Copy,
+            sources: vec![PathBuf::from(".env")],
+            ..FileOperationOptions::default()
+        },
+        &mut reporter,
+    )
+    .expect("manual copy should run");
+
+    assert_eq!(report.action, FileOperationAction::Applied);
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join(".env"))
+            .expect("copied file should be readable"),
+        "TOKEN=1\n"
+    );
+}
+
+#[test]
+fn public_api_inspect_config_should_load_normalized_manifest() {
+    let repo = git_worktree();
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        "copy = [\"README.md\"]\n",
+    );
+
+    let report = inspect_config(ConfigOptions {
+        cwd: Some(repo.worktree_path().to_path_buf()),
+        root: None,
+        config: None,
+    })
+    .expect("config should inspect");
+
+    assert_eq!(report.config.files.len(), 1);
+    assert_eq!(report.config.files[0].source, PathBuf::from("README.md"));
+}
+
+#[test]
 fn public_api_file_operation_plan_should_preserve_manifest_origin() {
     let (_temp, context) = temp_worktree("manifest-file-plan");
     write_file(&context.root_path.join(".env"), "TOKEN=1\n");
@@ -281,7 +446,7 @@ fn public_api_file_operation_plan_should_preserve_manifest_origin() {
             path: config_path.clone(),
         },
         &files,
-        RunPlanOptions::default(),
+        ActionPlanOptions::default(),
     )
     .expect("manifest-origin file plan should build");
 

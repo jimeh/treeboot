@@ -8,7 +8,7 @@ use toml::Spanned;
 
 use crate::context;
 use crate::discovery;
-use crate::{Error, Result, RunContext, WorktreeOptions};
+use crate::{Error, Result, Worktree, WorktreeOptions};
 
 /// Options for inspecting a treeboot config.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -21,16 +21,19 @@ pub struct ConfigOptions {
     pub config: Option<PathBuf>,
 }
 
-/// Result summary for a `treeboot config` invocation.
+/// Loaded treeboot config selected for a worktree.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConfigReport {
+pub struct LoadedConfig {
     /// Runtime context used while resolving config paths.
-    pub context: RunContext,
+    pub context: Worktree,
     /// Config file path.
     pub path: PathBuf,
     /// Parsed and normalized config.
     pub config: Config,
 }
+
+/// Result summary for a `treeboot config` invocation.
+pub type ConfigReport = LoadedConfig;
 
 /// Parsed and normalized treeboot config.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -54,7 +57,7 @@ impl Config {
     ///
     /// Returns an error if the config cannot be read or TOML parsing and
     /// normalization fails.
-    pub fn load(path: &Path, context: &RunContext) -> Result<Self> {
+    pub fn load(path: &Path, context: &Worktree) -> Result<Self> {
         let content = std::fs::read_to_string(path).map_err(|source| Error::ConfigIo {
             path: path.to_path_buf(),
             source,
@@ -71,8 +74,49 @@ impl Config {
     /// # Errors
     ///
     /// Returns an error if TOML parsing or normalization fails.
-    pub fn parse(path: &Path, content: &str, context: &RunContext) -> Result<Self> {
+    pub fn parse(path: &Path, content: &str, context: &Worktree) -> Result<Self> {
         parse_config(path, content, context)
+    }
+
+    /// Discovers the selected treeboot config path for a worktree.
+    ///
+    /// When `requested_config` is provided, it is resolved relative to the
+    /// worktree path and must exist. When omitted, standard treeboot config
+    /// paths are searched in precedence order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a requested config path does not exist.
+    pub fn discover_path(
+        context: &Worktree,
+        requested_config: Option<&Path>,
+    ) -> Result<Option<PathBuf>> {
+        discovery::discover_config(&context.worktree_path, requested_config)
+    }
+
+    /// Discovers, loads, and parses the selected treeboot config.
+    ///
+    /// Returns `Ok(None)` when no config was requested and no standard config
+    /// path exists.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a requested config path does not exist, the selected
+    /// config cannot be read, or TOML parsing and normalization fails.
+    pub fn load_discovered(
+        context: &Worktree,
+        requested_config: Option<&Path>,
+    ) -> Result<Option<LoadedConfig>> {
+        let Some(path) = Self::discover_path(context, requested_config)? else {
+            return Ok(None);
+        };
+        let config = Self::load(&path, context)?;
+
+        Ok(Some(LoadedConfig {
+            context: context.clone(),
+            path,
+            config,
+        }))
     }
 }
 
@@ -359,22 +403,11 @@ pub fn inspect_config(options: ConfigOptions) -> Result<ConfigReport> {
         root: options.root,
     };
     let context = context::resolve(&worktree_options)?;
-    let path = discovery::discover_config(&context.worktree_path, options.config.as_deref())?
-        .ok_or(Error::NoConfigDetectedStrict)?;
-    let config = load_config(&path, &context)?;
-
-    Ok(ConfigReport {
-        context,
-        path,
-        config,
-    })
+    Config::load_discovered(&context, options.config.as_deref())?
+        .ok_or(Error::NoConfigDetectedStrict)
 }
 
-pub(crate) fn load_config(path: &Path, context: &RunContext) -> Result<Config> {
-    Config::load(path, context)
-}
-
-fn parse_config(path: &Path, content: &str, context: &RunContext) -> Result<Config> {
+fn parse_config(path: &Path, content: &str, context: &Worktree) -> Result<Config> {
     let raw: RawConfig = toml::from_str(content).map_err(|source| {
         let message = parse_error_message(content, &source);
         Error::ConfigParse {
@@ -430,7 +463,7 @@ fn parse_config(path: &Path, content: &str, context: &RunContext) -> Result<Conf
 fn normalize_file_group(
     path: &Path,
     content: &str,
-    context: &RunContext,
+    context: &Worktree,
     files: &mut Vec<FileOperation>,
     operation: FileOperationKind,
     entries: Vec<Spanned<RawFileEntry>>,
@@ -471,7 +504,7 @@ fn normalize_file_group(
 fn normalize_mixed_files(
     path: &Path,
     content: &str,
-    context: &RunContext,
+    context: &Worktree,
     files: &mut Vec<FileOperation>,
     entries: Vec<Spanned<RawFileObject>>,
 ) -> Result<()> {
@@ -490,7 +523,7 @@ fn normalize_mixed_files(
 fn normalize_file_tables(
     path: &Path,
     content: &str,
-    context: &RunContext,
+    context: &Worktree,
     files: &mut Vec<FileOperation>,
     entries: Vec<Spanned<RawFileObject>>,
 ) -> Result<()> {
@@ -500,7 +533,7 @@ fn normalize_file_tables(
 fn normalize_file_object(
     path: &Path,
     content: &str,
-    context: &RunContext,
+    context: &Worktree,
     operation: FileOperationKind,
     object: RawFileObject,
     span: SourceSpan,
@@ -568,7 +601,7 @@ fn required_operation(
 fn normalize_command_entries(
     path: &Path,
     content: &str,
-    context: &RunContext,
+    context: &Worktree,
     commands: &mut Vec<CommandOperation>,
     entries: Vec<Spanned<RawCommandEntry>>,
 ) -> Result<()> {
@@ -598,7 +631,7 @@ fn normalize_command_entries(
 fn normalize_command_tables(
     path: &Path,
     content: &str,
-    context: &RunContext,
+    context: &Worktree,
     commands: &mut Vec<CommandOperation>,
     entries: Vec<Spanned<RawCommandObject>>,
 ) -> Result<()> {
@@ -619,7 +652,7 @@ fn normalize_command_tables(
 fn normalize_command_object(
     path: &Path,
     content: &str,
-    context: &RunContext,
+    context: &Worktree,
     object: RawCommandObject,
     span: SourceSpan,
 ) -> Result<CommandOperation> {
@@ -910,8 +943,8 @@ mod tests {
 
     use super::*;
 
-    fn context() -> RunContext {
-        RunContext {
+    fn context() -> Worktree {
+        Worktree {
             root_path: PathBuf::from("/repo"),
             worktree_path: PathBuf::from("/repo-worktree"),
             default_branch: "main".to_owned(),

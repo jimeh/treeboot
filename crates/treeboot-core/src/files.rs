@@ -4,8 +4,8 @@ use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
 use crate::{
-    Error, FileOperationKind, OutputEvent, PlannedFileOperation, PlannedFileStatus, Reporter,
-    Result, RunPlan, SyncCompare,
+    ActionPlan, Error, FileOperationKind, OutputEvent, PlannedFileOperation, PlannedFileStatus,
+    Reporter, Result, SyncCompare,
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -87,7 +87,7 @@ enum TreePlanMode {
 }
 
 pub(crate) fn apply_file_operations(
-    plan: &RunPlan,
+    plan: &ActionPlan,
     options: FileApplyOptions,
     reporter: &mut dyn Reporter,
 ) -> Result<FileApplyReport> {
@@ -111,7 +111,7 @@ pub(crate) fn apply_file_operations(
 }
 
 fn plan_operation(
-    plan: &RunPlan,
+    plan: &ActionPlan,
     operation: &PlannedFileOperation,
     options: FileApplyOptions,
     actions: &mut Vec<FileAction>,
@@ -135,7 +135,7 @@ fn plan_operation(
 }
 
 fn plan_tree(
-    plan: &RunPlan,
+    plan: &ActionPlan,
     operation: &PlannedFileOperation,
     mode: TreePlanMode,
     actions: &mut Vec<FileAction>,
@@ -158,7 +158,7 @@ fn plan_tree(
 }
 
 fn plan_tree_entry(
-    plan: &RunPlan,
+    plan: &ActionPlan,
     operation: &PlannedFileOperation,
     entry: CopyEntry<'_>,
     source_metadata: &Metadata,
@@ -183,7 +183,7 @@ fn plan_tree_entry(
 }
 
 fn plan_tree_directory(
-    plan: &RunPlan,
+    plan: &ActionPlan,
     operation: &PlannedFileOperation,
     entry: CopyEntry<'_>,
     mode: TreePlanMode,
@@ -348,7 +348,7 @@ fn plan_tree_file(
 }
 
 fn plan_tree_symlink(
-    plan: &RunPlan,
+    plan: &ActionPlan,
     operation: &PlannedFileOperation,
     entry: CopyEntry<'_>,
     mode: TreePlanMode,
@@ -924,7 +924,7 @@ fn create_symlink_impl(source: &Path, target: &Path, target_is_dir: bool) -> std
 }
 
 fn preserved_source_link(
-    plan: &RunPlan,
+    plan: &ActionPlan,
     operation: FileOperationKind,
     source_path: &Path,
     target_path: &Path,
@@ -963,7 +963,7 @@ fn preserved_source_link(
     Ok((link_target, final_target, target_is_dir))
 }
 
-fn raw_source_path(plan: &RunPlan, operation: &PlannedFileOperation) -> PathBuf {
+fn raw_source_path(plan: &ActionPlan, operation: &PlannedFileOperation) -> PathBuf {
     if operation.source.is_absolute() {
         operation.source.clone()
     } else {

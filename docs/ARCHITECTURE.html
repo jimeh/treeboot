@@ -517,7 +517,7 @@
               <text class="title" x="410" y="88">treeboot_core public API</text>
               <text class="meta" x="410" y="116">run / inspect_config / init</text>
               <text class="meta" x="410" y="137">run_file_operation</text>
-              <text class="meta" x="410" y="158">plan_run_config</text>
+              <text class="meta" x="410" y="158">Worktree / Config / ActionPlan</text>
               <text class="meta" x="410" y="179">OutputEvent / Reporter</text>
             </g>
 
@@ -606,7 +606,11 @@
           <p class="section-note">
             Every command maps to a small public core API. The default
             <code>treeboot</code> invocation is an alias for
-            <code>treeboot run</code>.
+            <code>treeboot run</code>. The core API has two layers:
+            command-shaped facade functions for full treeboot behavior, and
+            composable primitives for callers that want to discover a
+            <code>Worktree</code>, load a <code>LoadedConfig</code>, build an
+            <code>ActionPlan</code>, and execute it themselves.
           </p>
         </div>
 
@@ -695,10 +699,10 @@
         <div class="diagram-wrap">
           <svg class="diagram" viewBox="0 0 1040 380" role="img"
             aria-labelledby="context-title context-desc">
-            <title id="context-title">RunContext resolution graph</title>
+            <title id="context-title">Worktree resolution graph</title>
             <desc id="context-desc">
               Context resolution uses cwd, optional root override, environment
-              aliases, and Git worktree queries to build RunContext.
+              aliases, and Git worktree queries to build Worktree.
             </desc>
             <defs>
               <marker id="context-arrow" markerWidth="10" markerHeight="10"
@@ -735,7 +739,7 @@
             </g>
             <g class="node warn">
               <rect x="730" y="230" width="250" height="100" rx="8"></rect>
-              <text class="title" x="754" y="264">RunContext</text>
+              <text class="title" x="754" y="264">Worktree</text>
               <text class="meta" x="754" y="290">root_path / worktree_path</text>
               <text class="meta" x="754" y="311">default_branch / environment</text>
             </g>
@@ -976,8 +980,8 @@
           <section class="card">
             <h3>Declarative config path</h3>
             <ol>
-              <li><code>discover_config</code> finds or validates a config path.</li>
-              <li><code>Config::load</code> reads TOML from disk.</li>
+              <li><code>Config::discover_path</code> finds or validates a config path.</li>
+              <li><code>Config::load_discovered</code> returns a <code>LoadedConfig</code>.</li>
               <li><code>Config::parse</code> builds <code>RawConfig</code>.</li>
               <li>Normalization emits <code>Config</code> plus source spans.</li>
               <li><code>ActionPlan::from_manifest</code> validates files and commands.</li>
@@ -988,7 +992,7 @@
             <h3>Manual file path</h3>
             <ol>
               <li>CLI converts subcommand args to <code>FileOperationOptions</code>.</li>
-              <li><code>manual</code> validates operation-specific options.</li>
+              <li><code>FileOperation::from_manual_options</code> validates operation-specific options.</li>
               <li>Config is loaded for top-level runtime policy when present.</li>
               <li>Sources and target prefix become <code>FileOperation</code>s.</li>
               <li><code>ActionPlan::from_file_operations</code> validates files.</li>
@@ -1053,7 +1057,7 @@
             <g class="node blue">
               <rect x="342" y="96" width="170" height="76" rx="8"></rect>
               <text class="title" x="366" y="128">context.rs</text>
-              <text class="meta" x="366" y="154">RunContext</text>
+              <text class="meta" x="366" y="154">Worktree</text>
             </g>
             <g class="node">
               <rect x="342" y="238" width="170" height="76" rx="8"></rect>
