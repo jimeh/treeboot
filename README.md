@@ -15,7 +15,7 @@ treeboot
 
 ## Status
 
-This project is bootstrapped for implementation against spec v1.5.1. The
+This project is bootstrapped for implementation against spec v1.6.0. The
 planned implementation target is Rust, distributed as small prebuilt binaries
 from GitHub Releases.
 

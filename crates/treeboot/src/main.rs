@@ -312,7 +312,7 @@ fn run_config_command(args: ConfigArgs) -> treeboot_core::Result<()> {
 
     let plan_options = env_options.resolve(&report.config.options, false);
 
-    if let Err(error) = treeboot_core::plan_run_config(
+    if let Err(error) = treeboot_core::ActionPlan::from_manifest(
         &report.path,
         &report.config,
         &report.context,
@@ -351,7 +351,7 @@ fn print_config_text(report: &ConfigReport) -> std::io::Result<()> {
 fn file_operation_summary(operation: &FileOperation) -> String {
     let mut summary = format!(
         "{} {} -> {}",
-        file_operation_name(operation.operation),
+        operation.operation.as_str(),
         operation.source.display(),
         operation.target.display()
     );
@@ -370,14 +370,6 @@ fn file_operation_summary(operation: &FileOperation) -> String {
     }
 
     summary
-}
-
-fn file_operation_name(operation: FileOperationKind) -> &'static str {
-    match operation {
-        FileOperationKind::Copy => "copy",
-        FileOperationKind::Symlink => "symlink",
-        FileOperationKind::Sync => "sync",
-    }
 }
 
 fn command_summary(command: &CommandOperation) -> String {

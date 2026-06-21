@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use crate::commands::{CommandExecutionOptions, execute_commands};
-use crate::config::{self, RuntimeOptionOverrides};
+use crate::config::RuntimeOptionOverrides;
 use crate::context;
-use crate::discovery;
-use crate::files::{FileApplyOptions, apply_file_operations};
-use crate::{Error, OutputEvent, Reporter, Result, RunContext};
+use crate::{
+    ActionPlan, Config, Error, ExecuteOptions, Executor, InitScriptDiscovery, OutputEvent,
+    Reporter, Result, Worktree, WorktreeOptions,
+};
 
 /// Options for running worktree bootstrap.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -60,7 +60,7 @@ pub enum RunAction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunReport {
     /// Runtime context used by the run.
-    pub context: RunContext,
+    pub context: Worktree,
     /// Action taken by the run flow.
     pub action: RunAction,
 }
@@ -79,7 +79,10 @@ pub struct RunReport {
 pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport> {
     let env_options = RuntimeOptionOverrides::from_env()?;
     let pre_config_strict = env_options.pre_config_strict(options.strict);
-    let context = context::resolve(&options)?;
+    let context = context::resolve(&WorktreeOptions {
+        cwd: options.cwd.clone(),
+        root: options.root.clone(),
+    })?;
 
     if context.root_path == context.worktree_path {
         report(reporter, OutputEvent::RootWorktreeDetected)?;
@@ -95,7 +98,7 @@ pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport
     }
 
     if options.config.is_none() {
-        let scripts = discovery::discover_scripts(&context.worktree_path);
+        let scripts = InitScriptDiscovery::discover(&context);
 
         for path in scripts.ignored {
             report(reporter, OutputEvent::IgnoredInitScript { path })?;
@@ -106,32 +109,19 @@ pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport
         }
     }
 
-    match discovery::discover_config(&context.worktree_path, options.config.as_deref())? {
+    match Config::discover_path(&context, options.config.as_deref())? {
         Some(path) => {
             report(reporter, OutputEvent::ConfigDetected { path: path.clone() })?;
-            let config = config::load_config(&path, &context)?;
+            let config = Config::load(&path, &context)?;
             let plan_options = env_options.resolve(&config.options, options.strict);
-            let plan = crate::plan_run_config(&path, &config, &context, plan_options.into())?;
-
-            apply_file_operations(
-                &plan,
-                FileApplyOptions {
-                    strict: plan_options.strict,
-                    force: options.force,
-                    dry_run: options.dry_run,
-                },
-                reporter,
-            )?;
-
-            if !options.skip_commands {
-                execute_commands(
-                    &plan,
-                    CommandExecutionOptions {
-                        dry_run: options.dry_run,
-                    },
-                    reporter,
-                )?;
-            }
+            let plan = ActionPlan::from_manifest(&path, &config, &context, plan_options.into())?;
+            Executor::new(ExecuteOptions {
+                strict: plan_options.strict,
+                force: options.force,
+                dry_run: options.dry_run,
+                skip_commands: options.skip_commands,
+            })
+            .execute(&plan, reporter)?;
 
             Ok(RunReport {
                 context,
@@ -155,7 +145,7 @@ pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport
 
 fn run_init_script(
     path: PathBuf,
-    context: RunContext,
+    context: Worktree,
     options: &RunOptions,
     reporter: &mut dyn Reporter,
 ) -> Result<RunReport> {

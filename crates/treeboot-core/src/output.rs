@@ -151,7 +151,7 @@ impl OutputEvent {
                 target,
             } => format!(
                 "treeboot: {} {} -> {}",
-                operation_name(*operation),
+                operation.as_str(),
                 source.display(),
                 target.display()
             ),
@@ -161,7 +161,7 @@ impl OutputEvent {
                 target,
             } => format!(
                 "treeboot: would {} {} -> {}",
-                operation_name(*operation),
+                operation.as_str(),
                 source.display(),
                 target.display()
             ),
@@ -171,7 +171,7 @@ impl OutputEvent {
                 reason,
             } => format!(
                 "treeboot: skip {} {}; {}",
-                operation_name(*operation),
+                operation.as_str(),
                 target.display(),
                 reason
             ),
@@ -181,7 +181,7 @@ impl OutputEvent {
                 reason,
             } => format!(
                 "treeboot: would skip {} {}; {}",
-                operation_name(*operation),
+                operation.as_str(),
                 target.display(),
                 reason
             ),
@@ -207,14 +207,6 @@ impl OutputEvent {
                 format!("treeboot: created {}", path.display())
             }
         }
-    }
-}
-
-fn operation_name(operation: FileOperationKind) -> &'static str {
-    match operation {
-        FileOperationKind::Copy => "copy",
-        FileOperationKind::Symlink => "symlink",
-        FileOperationKind::Sync => "sync",
     }
 }
 

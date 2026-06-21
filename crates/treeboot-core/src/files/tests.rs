@@ -3,7 +3,7 @@ use std::ffi::OsString;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::*;
-use crate::{RunContext, SourceSpan};
+use crate::{PlanOrigin, SourceSpan, Worktree};
 
 #[derive(Default)]
 struct VecReporter {
@@ -41,8 +41,8 @@ fn temp_workspace(name: &str) -> (PathBuf, PathBuf) {
     (root, worktree)
 }
 
-fn context(root_path: &Path, worktree_path: &Path) -> RunContext {
-    RunContext {
+fn context(root_path: &Path, worktree_path: &Path) -> Worktree {
+    Worktree {
         root_path: root_path.to_path_buf(),
         worktree_path: worktree_path.to_path_buf(),
         default_branch: "main".to_owned(),
@@ -81,10 +81,13 @@ fn sync_operation(
     operation(FileOperationKind::Sync, root, worktree, source, target)
 }
 
-fn run_plan(root: &Path, worktree: &Path, files: Vec<PlannedFileOperation>) -> RunPlan {
-    RunPlan {
+fn run_plan(root: &Path, worktree: &Path, files: Vec<PlannedFileOperation>) -> ActionPlan {
+    ActionPlan {
         context: context(root, worktree),
-        config_path: worktree.join(".treeboot.toml"),
+        origin: PlanOrigin::Manifest {
+            path: worktree.join(".treeboot.toml"),
+        },
+        config_path: Some(worktree.join(".treeboot.toml")),
         files,
         commands: Vec::new(),
     }

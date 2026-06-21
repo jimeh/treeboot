@@ -47,9 +47,11 @@ milestone 7 shell completions, and milestone 8 manual file operations:
 - treeboot environment aliases
 - init script discovery and execution
 - declarative TOML config parsing and normalization
-- declarative TOML validation and run-plan construction
+- declarative TOML validation and action-plan construction
 - config/env/CLI runtime option precedence for declarative validation
 - manual root-to-worktree file operation planning and execution
+- public Worktree/Manifest/ActionPlan/Executor API surface, with command-shaped
+  workflow facades for full treeboot behavior
 - view-only normalized config inspection
 - generated JSON Schema for the config file format
 - starter config/script generation

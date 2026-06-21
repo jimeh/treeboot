@@ -3,12 +3,12 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::{
     CommandKind, CommandOperation, Config, ConfigRuntimeOptions, Error, FileOperation,
-    FileOperationKind, Result, RunContext, SourceSpan, SymlinkMode, SyncCompare,
+    FileOperationKind, Result, SourceSpan, SymlinkMode, SyncCompare, Worktree,
 };
 
 /// Options that affect declarative run planning.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct RunPlanOptions {
+pub struct ActionPlanOptions {
     /// Rejects sync operations and other strict-mode conflicts.
     pub strict: bool,
     /// Allows file operation sources outside the root checkout.
@@ -17,7 +17,7 @@ pub struct RunPlanOptions {
     pub dangerously_allow_targets_outside_worktree: bool,
 }
 
-impl From<ConfigRuntimeOptions> for RunPlanOptions {
+impl From<ConfigRuntimeOptions> for ActionPlanOptions {
     fn from(options: ConfigRuntimeOptions) -> Self {
         Self {
             strict: options.strict,
@@ -34,17 +34,112 @@ pub(super) enum FilePlanOrigin<'a> {
     Manual { operation: FileOperationKind },
 }
 
-/// A validated declarative run plan.
+/// Source of a validated action plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RunPlan {
+pub enum PlanOrigin {
+    /// Plan was built from a treeboot manifest.
+    Manifest {
+        /// Manifest path.
+        path: PathBuf,
+    },
+    /// Plan was built from a manual file operation command.
+    Manual {
+        /// Manual operation kind.
+        operation: FileOperationKind,
+    },
+}
+
+/// A validated set of file operations and commands ready for execution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActionPlan {
     /// Runtime context used while building the plan.
-    pub context: RunContext,
-    /// Config file used for this plan.
-    pub config_path: PathBuf,
+    pub context: Worktree,
+    /// Origin of this plan.
+    pub origin: PlanOrigin,
+    /// Config file used for this plan, when it came from a manifest.
+    pub config_path: Option<PathBuf>,
     /// Planned file operations.
     pub files: Vec<PlannedFileOperation>,
     /// Planned command operations.
     pub commands: Vec<PlannedCommand>,
+}
+
+impl ActionPlan {
+    /// Builds a validated action plan from a parsed treeboot manifest.
+    ///
+    /// This does not apply file operations or execute commands. It normalizes
+    /// paths that may not exist yet, rejects invalid declarative behavior, and
+    /// marks optional missing-source file operations as skipped.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if manifest validation fails.
+    pub fn from_manifest(
+        path: &Path,
+        manifest: &Config,
+        context: &Worktree,
+        options: ActionPlanOptions,
+    ) -> Result<Self> {
+        let worktree_path = normalize_existing(&context.worktree_path).map_err(|source| {
+            invalid_config_error(
+                path,
+                None,
+                format!("failed to resolve worktree path: {source}"),
+            )
+        })?;
+        let files = plan_file_operations(
+            FilePlanOrigin::Config(path),
+            &manifest.files,
+            context,
+            options,
+        )?;
+        let commands = plan_commands(path, &manifest.commands, context, worktree_path.as_path())?;
+
+        Ok(Self {
+            context: context.clone(),
+            origin: PlanOrigin::Manifest {
+                path: path.to_path_buf(),
+            },
+            config_path: Some(path.to_path_buf()),
+            files,
+            commands,
+        })
+    }
+
+    /// Builds a validated action plan from explicit file operations.
+    ///
+    /// This is intended for manual commands and other callers that already
+    /// have a discovered worktree context and operation list.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if file operation validation fails.
+    pub fn from_file_operations(
+        context: &Worktree,
+        origin: PlanOrigin,
+        files: &[FileOperation],
+        options: ActionPlanOptions,
+    ) -> Result<Self> {
+        let file_origin = match &origin {
+            PlanOrigin::Manifest { path } => FilePlanOrigin::Config(path),
+            PlanOrigin::Manual { operation } => FilePlanOrigin::Manual {
+                operation: *operation,
+            },
+        };
+        let files = plan_file_operations(file_origin, files, context, options)?;
+        let config_path = match &origin {
+            PlanOrigin::Manifest { path } => Some(path.clone()),
+            PlanOrigin::Manual { .. } => None,
+        };
+
+        Ok(Self {
+            context: context.clone(),
+            origin,
+            config_path,
+            files,
+            commands: Vec::new(),
+        })
+    }
 }
 
 /// A validated file operation ready for execution.
@@ -102,49 +197,11 @@ pub struct PlannedCommand {
     pub declaration: SourceSpan,
 }
 
-/// Builds a validated declarative run plan.
-///
-/// This does not apply file operations or execute commands. It normalizes paths
-/// that may not exist yet, rejects invalid declarative behavior, and marks
-/// optional missing-source file operations as skipped.
-///
-/// # Errors
-///
-/// Returns an error if declarative validation fails.
-pub fn plan_run_config(
-    path: &Path,
-    config: &Config,
-    context: &RunContext,
-    options: RunPlanOptions,
-) -> Result<RunPlan> {
-    let worktree_path = normalize_existing(&context.worktree_path).map_err(|source| {
-        invalid_config_error(
-            path,
-            None,
-            format!("failed to resolve worktree path: {source}"),
-        )
-    })?;
-    let files = plan_file_operations(
-        FilePlanOrigin::Config(path),
-        &config.files,
-        context,
-        options,
-    )?;
-    let commands = plan_commands(path, &config.commands, context, worktree_path.as_path())?;
-
-    Ok(RunPlan {
-        context: context.clone(),
-        config_path: path.to_path_buf(),
-        files,
-        commands,
-    })
-}
-
 pub(super) fn plan_file_operations(
     origin: FilePlanOrigin<'_>,
     files: &[FileOperation],
-    context: &RunContext,
-    options: RunPlanOptions,
+    context: &Worktree,
+    options: ActionPlanOptions,
 ) -> Result<Vec<PlannedFileOperation>> {
     let root_path = normalize_existing(&context.root_path).map_err(|source| {
         file_plan_error(
@@ -270,7 +327,7 @@ fn validate_strict_sync(
 fn build_file_operations(
     origin: FilePlanOrigin<'_>,
     files: &[FileOperation],
-    options: RunPlanOptions,
+    options: ActionPlanOptions,
     target_paths: &[PathBuf],
     root_path: &Path,
     worktree_path: &Path,
@@ -336,7 +393,7 @@ fn build_file_operations(
 
 fn validate_target_boundary(
     origin: FilePlanOrigin<'_>,
-    options: RunPlanOptions,
+    options: ActionPlanOptions,
     operation: &FileOperation,
     target_path: &Path,
     worktree_path: &Path,
@@ -361,7 +418,7 @@ fn validate_target_boundary(
 
 fn validate_source_boundary(
     origin: FilePlanOrigin<'_>,
-    options: RunPlanOptions,
+    options: ActionPlanOptions,
     operation: &FileOperation,
     source_path: &Path,
     root_path: &Path,
@@ -387,7 +444,7 @@ fn validate_source_boundary(
 fn plan_commands(
     path: &Path,
     commands: &[CommandOperation],
-    context: &RunContext,
+    context: &Worktree,
     worktree_path: &Path,
 ) -> Result<Vec<PlannedCommand>> {
     let mut planned = Vec::with_capacity(commands.len());
@@ -544,7 +601,7 @@ fn source_exists(
 fn operation_summary(origin: FilePlanOrigin<'_>, operation: &FileOperation) -> String {
     let summary = format!(
         "{} {} -> {}",
-        operation_name(operation.operation),
+        operation.operation,
         operation.source.display(),
         operation.target.display()
     );
@@ -555,14 +612,6 @@ fn operation_summary(origin: FilePlanOrigin<'_>, operation: &FileOperation) -> S
             summary, operation.declaration.line, operation.declaration.column
         ),
         FilePlanOrigin::Manual { .. } => summary,
-    }
-}
-
-const fn operation_name(operation: FileOperationKind) -> &'static str {
-    match operation {
-        FileOperationKind::Copy => "copy",
-        FileOperationKind::Symlink => "symlink",
-        FileOperationKind::Sync => "sync",
     }
 }
 
@@ -611,7 +660,7 @@ fn file_plan_error(
     match origin {
         FilePlanOrigin::Config(path) => invalid_config_error(path, span, message),
         FilePlanOrigin::Manual { operation } => Error::FileOperationInvalid {
-            operation: operation_name(operation),
+            operation: operation.as_str(),
             message: message.into(),
         },
     }
@@ -713,8 +762,8 @@ mod tests {
         (root, worktree)
     }
 
-    fn context(root_path: &Path, worktree_path: &Path) -> RunContext {
-        RunContext {
+    fn context(root_path: &Path, worktree_path: &Path) -> Worktree {
+        Worktree {
             root_path: root_path.to_path_buf(),
             worktree_path: worktree_path.to_path_buf(),
             default_branch: "main".to_owned(),
@@ -763,12 +812,12 @@ mod tests {
         }
     }
 
-    fn plan(config: &Config, root: &Path, worktree: &Path) -> Result<RunPlan> {
-        plan_run_config(
+    fn plan(config: &Config, root: &Path, worktree: &Path) -> Result<ActionPlan> {
+        ActionPlan::from_manifest(
             Path::new(".treeboot.toml"),
             config,
             &context(root, worktree),
-            RunPlanOptions::default(),
+            ActionPlanOptions::default(),
         )
     }
 
@@ -789,7 +838,7 @@ mod tests {
     }
 
     #[test]
-    fn plan_run_config_should_mark_optional_missing_sources_skipped() {
+    fn action_plan_from_manifest_should_mark_optional_missing_sources_skipped() {
         let (root, worktree) = temp_workspace("missing-source");
         let config = Config {
             options: Default::default(),
@@ -808,11 +857,11 @@ mod tests {
             commands: Vec::new(),
         };
 
-        let plan = plan_run_config(
+        let plan = ActionPlan::from_manifest(
             Path::new(".treeboot.toml"),
             &config,
             &context(&root, &worktree),
-            RunPlanOptions::default(),
+            ActionPlanOptions::default(),
         )
         .expect("optional missing source should plan");
 
@@ -823,7 +872,7 @@ mod tests {
     }
 
     #[test]
-    fn plan_run_config_should_build_ready_file_operation() {
+    fn action_plan_from_manifest_should_build_ready_file_operation() {
         let (root, worktree) = temp_workspace("ready-file");
         std::fs::write(root.join(".env"), "TOKEN=1\n").expect("source should be written");
         let config = Config {
@@ -844,7 +893,7 @@ mod tests {
     }
 
     #[test]
-    fn plan_run_config_should_build_command_metadata() {
+    fn action_plan_from_manifest_should_build_command_metadata() {
         let (root, worktree) = temp_workspace("command-metadata");
         let app_dir = worktree.join("app");
         std::fs::create_dir_all(&app_dir).expect("command cwd should be created");
@@ -875,7 +924,7 @@ mod tests {
     }
 
     #[test]
-    fn plan_run_config_should_allow_explicit_boundary_escapes() {
+    fn action_plan_from_manifest_should_allow_explicit_boundary_escapes() {
         let (root, worktree) = temp_workspace("boundary-escapes");
         let outside_source = root
             .parent()
@@ -903,14 +952,14 @@ mod tests {
             commands: Vec::new(),
         };
 
-        let plan = plan_run_config(
+        let plan = ActionPlan::from_manifest(
             Path::new(".treeboot.toml"),
             &config,
             &context(&root, &worktree),
-            RunPlanOptions {
+            ActionPlanOptions {
                 dangerously_allow_sources_outside_root: true,
                 dangerously_allow_targets_outside_worktree: true,
-                ..RunPlanOptions::default()
+                ..ActionPlanOptions::default()
             },
         )
         .expect("escaped paths should plan");
@@ -919,14 +968,14 @@ mod tests {
     }
 
     #[test]
-    fn plan_run_config_should_reject_missing_root_path() {
+    fn action_plan_from_manifest_should_reject_missing_root_path() {
         let (_root, worktree) = temp_workspace("missing-root");
         let missing_root = worktree.join("missing-root");
-        let error = plan_run_config(
+        let error = ActionPlan::from_manifest(
             Path::new(".treeboot.toml"),
             &empty_config(),
             &context(&missing_root, &worktree),
-            RunPlanOptions::default(),
+            ActionPlanOptions::default(),
         )
         .expect_err("missing root should fail");
 
@@ -934,14 +983,14 @@ mod tests {
     }
 
     #[test]
-    fn plan_run_config_should_reject_missing_worktree_path() {
+    fn action_plan_from_manifest_should_reject_missing_worktree_path() {
         let (root, worktree) = temp_workspace("missing-worktree");
         let missing_worktree = worktree.join("missing-worktree");
-        let error = plan_run_config(
+        let error = ActionPlan::from_manifest(
             Path::new(".treeboot.toml"),
             &empty_config(),
             &context(&root, &missing_worktree),
-            RunPlanOptions::default(),
+            ActionPlanOptions::default(),
         )
         .expect_err("missing worktree should fail");
 
@@ -953,16 +1002,16 @@ mod tests {
     }
 
     #[test]
-    fn plan_run_config_should_allow_strict_when_no_sync_exists() {
+    fn action_plan_from_manifest_should_allow_strict_when_no_sync_exists() {
         let (root, worktree) = temp_workspace("strict-no-sync");
 
-        let plan = plan_run_config(
+        let plan = ActionPlan::from_manifest(
             Path::new(".treeboot.toml"),
             &empty_config(),
             &context(&root, &worktree),
-            RunPlanOptions {
+            ActionPlanOptions {
                 strict: true,
-                ..RunPlanOptions::default()
+                ..ActionPlanOptions::default()
             },
         )
         .expect("strict mode should allow configs without sync");
@@ -971,7 +1020,7 @@ mod tests {
     }
 
     #[test]
-    fn plan_run_config_should_walk_source_directories() {
+    fn action_plan_from_manifest_should_walk_source_directories() {
         let (root, worktree) = temp_workspace("source-directory");
         let source_dir = root.join("shared");
         std::fs::create_dir_all(&source_dir).expect("source dir should be created");
@@ -994,7 +1043,7 @@ mod tests {
     }
 
     #[test]
-    fn plan_run_config_should_preserve_sync_options() {
+    fn action_plan_from_manifest_should_preserve_sync_options() {
         let (root, worktree) = temp_workspace("sync-options");
         let source_dir = root.join("shared");
         std::fs::create_dir_all(&source_dir).expect("source dir should be created");
@@ -1022,7 +1071,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn plan_run_config_should_allow_safe_source_symlink() {
+    fn action_plan_from_manifest_should_allow_safe_source_symlink() {
         let (root, worktree) = temp_workspace("safe-symlink");
         std::fs::write(root.join("source"), "value\n").expect("source should be written");
         std::os::unix::fs::symlink(root.join("source"), root.join("link"))
@@ -1046,7 +1095,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn plan_run_config_should_reject_broken_source_symlink() {
+    fn action_plan_from_manifest_should_reject_broken_source_symlink() {
         let (root, worktree) = temp_workspace("broken-symlink");
         std::os::unix::fs::symlink(root.join("missing"), root.join("link"))
             .expect("broken source symlink should be created");
@@ -1072,7 +1121,7 @@ mod tests {
     }
 
     #[test]
-    fn plan_run_config_should_default_command_cwd_to_worktree() {
+    fn action_plan_from_manifest_should_default_command_cwd_to_worktree() {
         let (root, worktree) = temp_workspace("command-cwd");
         let config = Config {
             options: Default::default(),
@@ -1090,11 +1139,11 @@ mod tests {
             }],
         };
 
-        let plan = plan_run_config(
+        let plan = ActionPlan::from_manifest(
             Path::new(".treeboot.toml"),
             &config,
             &context(&root, &worktree),
-            RunPlanOptions::default(),
+            ActionPlanOptions::default(),
         )
         .expect("command should plan");
 

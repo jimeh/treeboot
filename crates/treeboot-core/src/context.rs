@@ -3,7 +3,6 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use crate::git::Git;
-use crate::run::RunOptions;
 use crate::{Error, Result};
 
 const ROOT_ENV_KEYS: &[&str] = &[
@@ -16,9 +15,18 @@ const ROOT_ENV_KEYS: &[&str] = &[
 /// Environment variable map built for scripts and configured commands.
 pub type Environment = BTreeMap<String, OsString>;
 
-/// Resolved runtime context for a `treeboot run` invocation.
+/// Options for discovering a Git worktree.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WorktreeOptions {
+    /// Directory from which discovery starts. Defaults to the process cwd.
+    pub cwd: Option<PathBuf>,
+    /// Overrides the root checkout used as the file-operation source.
+    pub root: Option<PathBuf>,
+}
+
+/// Resolved Git worktree metadata used by treeboot operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RunContext {
+pub struct Worktree {
     /// Source checkout used for file operations.
     pub root_path: PathBuf,
     /// Current worktree root where targets and commands are anchored.
@@ -29,7 +37,20 @@ pub struct RunContext {
     pub environment: Environment,
 }
 
-pub(crate) fn resolve(options: &RunOptions) -> Result<RunContext> {
+impl Worktree {
+    /// Discovers worktree metadata from the provided options.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the current directory cannot be read, the directory
+    /// is not inside a Git worktree, Git discovery fails, or no root checkout
+    /// path can be determined.
+    pub fn discover(options: WorktreeOptions) -> Result<Self> {
+        resolve(&options)
+    }
+}
+
+pub(crate) fn resolve(options: &WorktreeOptions) -> Result<Worktree> {
     let cwd = options.cwd.as_ref().map_or_else(
         || std::env::current_dir().map_err(|source| Error::CurrentDir { source }),
         |path| Ok(path.clone()),
@@ -40,7 +61,7 @@ pub(crate) fn resolve(options: &RunOptions) -> Result<RunContext> {
     let default_branch = discover_default_branch(&git)?;
     let environment = build_environment(&root_path, &worktree_path, &default_branch);
 
-    Ok(RunContext {
+    Ok(Worktree {
         root_path,
         worktree_path,
         default_branch,
@@ -48,7 +69,7 @@ pub(crate) fn resolve(options: &RunOptions) -> Result<RunContext> {
     })
 }
 
-fn discover_root_path(options: &RunOptions, cwd: &Path, git: &Git) -> Result<PathBuf> {
+fn discover_root_path(options: &WorktreeOptions, cwd: &Path, git: &Git) -> Result<PathBuf> {
     if let Some(path) = &options.root {
         return normalize_existing_path(&resolve_input_path(cwd, path));
     }

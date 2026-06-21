@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::context::resolve_worktree_path;
-use crate::{Error, Result};
+use crate::{Error, Result, Worktree};
 
 const INIT_SCRIPT_PATHS: &[&str] = &[".treeboot.sh", ".treebootrc", ".config/treeboot/init"];
 const CONFIG_PATHS: &[&str] = &[
@@ -10,12 +10,25 @@ const CONFIG_PATHS: &[&str] = &[
     ".config/treeboot/config.toml",
 ];
 
-pub(crate) struct ScriptDiscovery {
-    pub(crate) executable: Option<PathBuf>,
-    pub(crate) ignored: Vec<PathBuf>,
+/// Discovered treeboot init scripts for a worktree.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct InitScriptDiscovery {
+    /// First executable init script found in treeboot precedence order.
+    pub executable: Option<PathBuf>,
+    /// Existing init script paths that were ignored because they are not
+    /// executable on this platform.
+    pub ignored: Vec<PathBuf>,
 }
 
-pub(crate) fn discover_scripts(worktree_path: &Path) -> ScriptDiscovery {
+impl InitScriptDiscovery {
+    /// Discovers executable and ignored init scripts for a worktree.
+    #[must_use]
+    pub fn discover(context: &Worktree) -> Self {
+        discover_scripts(&context.worktree_path)
+    }
+}
+
+pub(crate) fn discover_scripts(worktree_path: &Path) -> InitScriptDiscovery {
     let mut ignored = Vec::new();
 
     for relative in INIT_SCRIPT_PATHS {
@@ -26,7 +39,7 @@ pub(crate) fn discover_scripts(worktree_path: &Path) -> ScriptDiscovery {
         }
 
         if is_executable(&path) {
-            return ScriptDiscovery {
+            return InitScriptDiscovery {
                 executable: Some(path),
                 ignored,
             };
@@ -35,7 +48,7 @@ pub(crate) fn discover_scripts(worktree_path: &Path) -> ScriptDiscovery {
         ignored.push(path);
     }
 
-    ScriptDiscovery {
+    InitScriptDiscovery {
         executable: None,
         ignored,
     }

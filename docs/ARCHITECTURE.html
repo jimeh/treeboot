@@ -1,0 +1,1460 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>treeboot Architecture</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101614;
+      --panel: #151d1a;
+      --panel-soft: #19231f;
+      --ink: #e7eee8;
+      --muted: #9baaa4;
+      --line: #2a3934;
+      --line-strong: #4f625a;
+      --accent: #49b99b;
+      --accent-strong: #7dd7bd;
+      --warn: #d8b45b;
+      --danger: #ee896d;
+      --blue: #82a9c8;
+      --code-bg: #07100d;
+      --shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+      --radius: 8px;
+      --sans: "Avenir Next", "Segoe UI", sans-serif;
+      --mono: "SFMono-Regular", "Cascadia Code", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background:
+        linear-gradient(90deg, rgba(125, 215, 189, 0.045) 1px,
+          transparent 1px),
+        linear-gradient(rgba(125, 215, 189, 0.035) 1px, transparent 1px),
+        var(--bg);
+      background-size: 44px 44px;
+      color: var(--ink);
+      font-family: var(--sans);
+      line-height: 1.58;
+    }
+
+    a {
+      color: var(--accent-strong);
+      text-underline-offset: 3px;
+    }
+
+    code,
+    pre {
+      font-family: var(--mono);
+      font-size: 0.92em;
+    }
+
+    code {
+      padding: 0.1rem 0.32rem;
+      border: 1px solid rgba(125, 215, 189, 0.24);
+      border-radius: 5px;
+      background: rgba(73, 185, 155, 0.13);
+      color: var(--accent-strong);
+      white-space: nowrap;
+    }
+
+    pre {
+      margin: 1rem 0 0;
+      padding: 1rem;
+      overflow-x: auto;
+      border-radius: var(--radius);
+      background: var(--code-bg);
+      color: #dff6ee;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    }
+
+    pre code {
+      display: block;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      white-space: pre;
+    }
+
+    .page {
+      display: grid;
+      grid-template-columns: minmax(232px, 300px) minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .toc {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 1.25rem;
+      overflow-y: auto;
+      border-right: 1px solid var(--line);
+      background:
+        linear-gradient(180deg, rgba(21, 29, 26, 0.94),
+          rgba(16, 22, 20, 0.98)),
+        var(--bg);
+    }
+
+    .toc-title {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      margin: 0 0 1.25rem;
+      color: var(--ink);
+      font-size: 1rem;
+      font-weight: 700;
+    }
+
+    .mark {
+      display: inline-grid;
+      width: 2rem;
+      height: 2rem;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--accent-strong);
+      color: #07100d;
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+
+    .toc a {
+      display: block;
+      margin: 0.3rem 0;
+      padding: 0.45rem 0.55rem;
+      border-radius: 6px;
+      color: var(--ink);
+      text-decoration: none;
+    }
+
+    .toc a:hover {
+      background: rgba(125, 215, 189, 0.11);
+      color: var(--accent-strong);
+    }
+
+    main {
+      min-width: 0;
+    }
+
+    .hero {
+      padding: 4.5rem min(6vw, 4rem) 3rem;
+      border-bottom: 1px solid var(--line);
+      background:
+        radial-gradient(circle at 80% 10%, rgba(130, 169, 200, 0.14),
+          transparent 24rem),
+        radial-gradient(circle at 16% 0%, rgba(73, 185, 155, 0.16),
+          transparent 22rem),
+        linear-gradient(180deg, rgba(21, 29, 26, 0.72),
+          rgba(16, 22, 20, 0.96));
+    }
+
+    .eyebrow {
+      margin: 0 0 0.7rem;
+      color: var(--accent-strong);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      line-height: 1.12;
+    }
+
+    h1 {
+      max-width: 980px;
+      font-size: clamp(2.5rem, 6vw, 5.3rem);
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      font-size: clamp(1.65rem, 3vw, 2.4rem);
+      letter-spacing: 0;
+    }
+
+    h3 {
+      font-size: 1.05rem;
+    }
+
+    .lede {
+      max-width: 78ch;
+      margin: 1.25rem 0 0;
+      color: var(--muted);
+      font-size: 1.1rem;
+    }
+
+    .badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.55rem;
+      margin-top: 1.6rem;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 2rem;
+      padding: 0.35rem 0.62rem;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      background: rgba(16, 22, 20, 0.78);
+      color: var(--ink);
+      font-size: 0.86rem;
+      font-weight: 650;
+    }
+
+    .section {
+      padding: 3rem min(6vw, 4rem);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 2rem;
+      align-items: end;
+      margin-bottom: 1.5rem;
+    }
+
+    .section-note {
+      max-width: 44ch;
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .grid {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .grid.two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .grid.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .card {
+      min-width: 0;
+      padding: 1rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(21, 29, 26, 0.86);
+      box-shadow: var(--shadow);
+    }
+
+    .card p,
+    .card ul,
+    .card ol {
+      margin-bottom: 0;
+      color: var(--muted);
+    }
+
+    .callout {
+      margin-top: 1rem;
+      padding: 1rem;
+      border: 1px solid rgba(216, 180, 91, 0.42);
+      border-radius: var(--radius);
+      background: rgba(216, 180, 91, 0.08);
+    }
+
+    .callout p,
+    .callout ul {
+      margin-bottom: 0;
+      color: var(--ink);
+    }
+
+    .diagram-wrap {
+      margin: 1rem 0;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background:
+        linear-gradient(180deg, rgba(25, 35, 31, 0.86),
+          rgba(16, 22, 20, 0.96));
+      box-shadow: var(--shadow);
+    }
+
+    .diagram {
+      display: block;
+      width: 100%;
+      min-width: 760px;
+      height: auto;
+    }
+
+    .node rect,
+    .node path {
+      stroke: var(--line-strong);
+      stroke-width: 1.5;
+      fill: rgba(21, 29, 26, 0.92);
+    }
+
+    .node .title {
+      fill: var(--ink);
+      font-family: var(--sans);
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .node .meta {
+      fill: var(--muted);
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+
+    .node.accent rect,
+    .node.accent path {
+      stroke: rgba(125, 215, 189, 0.7);
+      fill: rgba(73, 185, 155, 0.12);
+    }
+
+    .node.warn rect {
+      stroke: rgba(216, 180, 91, 0.62);
+      fill: rgba(216, 180, 91, 0.09);
+    }
+
+    .node.blue rect {
+      stroke: rgba(130, 169, 200, 0.66);
+      fill: rgba(130, 169, 200, 0.1);
+    }
+
+    .edge {
+      fill: none;
+      stroke: rgba(125, 215, 189, 0.58);
+      stroke-width: 2;
+    }
+
+    .edge-muted {
+      fill: none;
+      stroke: rgba(155, 170, 164, 0.48);
+      stroke-width: 1.5;
+    }
+
+    .edge-warn {
+      fill: none;
+      stroke: rgba(216, 180, 91, 0.66);
+      stroke-width: 2;
+    }
+
+    .caption {
+      margin: 0;
+      padding: 0 1rem 1rem;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    table {
+      width: 100%;
+      margin-top: 1rem;
+      border-collapse: collapse;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(21, 29, 26, 0.7);
+    }
+
+    th,
+    td {
+      padding: 0.75rem;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--accent-strong);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+    }
+
+    td {
+      color: var(--muted);
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    ul,
+    ol {
+      padding-left: 1.25rem;
+    }
+
+    li {
+      margin: 0.35rem 0;
+    }
+
+    .footer {
+      padding: 2rem min(6vw, 4rem);
+      color: var(--muted);
+    }
+
+    @media (max-width: 900px) {
+      .page {
+        display: block;
+      }
+
+      .toc {
+        position: static;
+        height: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .grid.two,
+      .grid.three {
+        grid-template-columns: 1fr;
+      }
+
+      .section-head {
+        display: block;
+      }
+
+      .section-note {
+        margin-top: 0.75rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <aside class="toc">
+      <div class="toc-title">
+        <span class="mark">A</span>
+        <span>Architecture</span>
+      </div>
+      <nav>
+        <a href="#summary">Summary</a>
+        <a href="#crates">Crates</a>
+        <a href="#surface">Command Surface</a>
+        <a href="#context">Runtime Context</a>
+        <a href="#run-flow">Run Flow</a>
+        <a href="#pipeline">Data Pipeline</a>
+        <a href="#modules">Module Graph</a>
+        <a href="#file-engine">File Engine</a>
+        <a href="#commands">Command Engine</a>
+        <a href="#output">Output And Errors</a>
+        <a href="#testing">Testing Boundaries</a>
+        <a href="#extension">Extension Points</a>
+      </nav>
+    </aside>
+
+    <main>
+      <section class="hero" id="summary">
+        <p class="eyebrow">Implementation architecture</p>
+        <h1>treeboot Architecture</h1>
+        <p class="lede">
+          <code>treeboot</code> is a Rust CLI and public core library for
+          bootstrapping Git worktrees from a repo-local setup contract. The
+          binary crate owns argument parsing and presentation; the core crate
+          owns discovery, normalization, validation, planning, and execution.
+        </p>
+        <div class="badges">
+          <span class="badge">CLI adapter</span>
+          <span class="badge">Public core library</span>
+          <span class="badge">Validated action plans</span>
+          <span class="badge">Structured output</span>
+          <span class="badge">Git worktree anchored</span>
+        </div>
+      </section>
+
+      <section class="section" id="crates">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Workspace boundary</p>
+            <h2>Crates And Responsibilities</h2>
+          </div>
+          <p class="section-note">
+            The workspace has one thin binary crate and one reusable library
+            crate. Keep behavior in core unless it is purely CLI presentation.
+          </p>
+        </div>
+
+        <div class="diagram-wrap">
+          <svg class="diagram" viewBox="0 0 1040 500" role="img"
+            aria-labelledby="system-title system-desc">
+            <title id="system-title">High-level treeboot system map</title>
+            <desc id="system-desc">
+              CLI arguments flow into treeboot-core APIs. Core modules call Git,
+              filesystem, and shell process boundaries and emit output events.
+            </desc>
+            <defs>
+              <marker id="arrow" markerWidth="10" markerHeight="10"
+                refX="8" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L9,3 z" fill="#7dd7bd"></path>
+              </marker>
+              <marker id="arrow-muted" markerWidth="10" markerHeight="10"
+                refX="8" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L9,3 z" fill="#9baaa4"></path>
+              </marker>
+            </defs>
+
+            <g class="node accent">
+              <rect x="40" y="70" width="210" height="132" rx="8"></rect>
+              <text class="title" x="62" y="106">crates/treeboot</text>
+              <text class="meta" x="62" y="132">clap commands</text>
+              <text class="meta" x="62" y="153">stdout/stderr reporting</text>
+              <text class="meta" x="62" y="174">exit-code mapping</text>
+            </g>
+
+            <g class="node blue">
+              <rect x="385" y="52" width="270" height="168" rx="8"></rect>
+              <text class="title" x="410" y="88">treeboot_core public API</text>
+              <text class="meta" x="410" y="116">run / inspect_config / init</text>
+              <text class="meta" x="410" y="137">run_file_operation</text>
+              <text class="meta" x="410" y="158">Worktree / Config / ActionPlan</text>
+              <text class="meta" x="410" y="179">OutputEvent / Reporter</text>
+            </g>
+
+            <g class="node">
+              <rect x="760" y="28" width="220" height="116" rx="8"></rect>
+              <text class="title" x="782" y="62">Git boundary</text>
+              <text class="meta" x="782" y="88">rev-parse</text>
+              <text class="meta" x="782" y="109">worktree list</text>
+              <text class="meta" x="782" y="130">origin/HEAD</text>
+            </g>
+
+            <g class="node">
+              <rect x="760" y="192" width="220" height="116" rx="8"></rect>
+              <text class="title" x="782" y="226">Filesystem boundary</text>
+              <text class="meta" x="782" y="252">copy / symlink / sync</text>
+              <text class="meta" x="782" y="273">read config</text>
+              <text class="meta" x="782" y="294">write init files</text>
+            </g>
+
+            <g class="node">
+              <rect x="760" y="356" width="220" height="96" rx="8"></rect>
+              <text class="title" x="782" y="390">Process boundary</text>
+              <text class="meta" x="782" y="416">init scripts</text>
+              <text class="meta" x="782" y="437">configured commands</text>
+            </g>
+
+            <g class="node warn">
+              <rect x="375" y="302" width="290" height="118" rx="8"></rect>
+              <text class="title" x="400" y="336">Structured output</text>
+              <text class="meta" x="400" y="364">OutputEvent values</text>
+              <text class="meta" x="400" y="385">Reporter trait</text>
+              <text class="meta" x="400" y="406">CLI text presentation</text>
+            </g>
+
+            <path class="edge" marker-end="url(#arrow)"
+              d="M250 136 C300 136 330 136 385 136"></path>
+            <path class="edge-muted" marker-end="url(#arrow-muted)"
+              d="M655 90 C700 90 720 86 760 86"></path>
+            <path class="edge-muted" marker-end="url(#arrow-muted)"
+              d="M655 150 C715 166 710 238 760 250"></path>
+            <path class="edge-muted" marker-end="url(#arrow-muted)"
+              d="M655 192 C718 230 706 382 760 404"></path>
+            <path class="edge-warn" marker-end="url(#arrow)"
+              d="M520 220 L520 302"></path>
+            <path class="edge-warn" marker-end="url(#arrow)"
+              d="M375 360 C300 360 284 175 250 160"></path>
+          </svg>
+          <p class="caption">
+            Core owns behavior and side effects. The CLI converts arguments
+            into core option structs and prints core output events.
+          </p>
+        </div>
+
+        <div class="grid two">
+          <section class="card">
+            <h3><code>treeboot</code> binary crate</h3>
+            <ul>
+              <li>Defines <code>clap</code> commands and value enums.</li>
+              <li>Converts CLI structs into core option structs.</li>
+              <li>Prints <code>OutputEvent::message()</code> to stdout.</li>
+              <li>Prints errors to stderr and maps exit codes.</li>
+              <li>Generates shell completion registration scripts.</li>
+            </ul>
+          </section>
+
+          <section class="card">
+            <h3><code>treeboot-core</code> library crate</h3>
+            <ul>
+              <li>Discovers Git worktree context and repo root source.</li>
+              <li>Discovers init scripts and config files.</li>
+              <li>Parses and normalizes declarative TOML config.</li>
+              <li>Builds validated <code>ActionPlan</code> values.</li>
+              <li>Executes plans through <code>Executor</code>.</li>
+              <li>Provides typed errors and structured output events.</li>
+            </ul>
+          </section>
+        </div>
+      </section>
+
+      <section class="section" id="surface">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Entry points</p>
+            <h2>Command Surface</h2>
+          </div>
+          <p class="section-note">
+            Every command maps to a small public core API. The default
+            <code>treeboot</code> invocation is an alias for
+            <code>treeboot run</code>. The core API has two layers:
+            command-shaped facade functions for full treeboot behavior, and
+            composable primitives for callers that want to discover a
+            <code>Worktree</code>, load a <code>LoadedConfig</code>, build an
+            <code>ActionPlan</code>, and execute it themselves.
+          </p>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>CLI command</th>
+              <th>Core API</th>
+              <th>Primary modules</th>
+              <th>Side effects</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>treeboot</code>, <code>treeboot run</code></td>
+              <td><code>run(RunOptions, Reporter)</code></td>
+              <td>
+                <code>run</code>, <code>context</code>,
+                <code>discovery</code>, <code>config</code>,
+                <code>validation</code>, <code>executor</code>,
+                <code>files</code>, <code>commands</code>
+              </td>
+              <td>
+                May execute init scripts, apply file operations, and run
+                configured commands.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>treeboot copy</code>, <code>symlink</code>,
+                <code>sync</code>
+              </td>
+              <td>
+                <code>run_file_operation(FileOperationOptions, Reporter)</code>
+              </td>
+              <td>
+                <code>manual</code>, <code>context</code>,
+                <code>config</code>, <code>validation</code>,
+                <code>executor</code>, <code>files</code>
+              </td>
+              <td>
+                Applies one manual file-operation batch. Skips init scripts and
+                configured actions, but loads config policy when present.
+              </td>
+            </tr>
+            <tr>
+              <td><code>treeboot config</code></td>
+              <td><code>inspect_config(ConfigOptions)</code></td>
+              <td><code>config</code>, <code>context</code>, <code>validation</code></td>
+              <td>
+                View-only. Prints normalized config and warns when run
+                validation would fail.
+              </td>
+            </tr>
+            <tr>
+              <td><code>treeboot init</code></td>
+              <td><code>init(InitOptions, Reporter)</code></td>
+              <td><code>init</code>, <code>context</code>, <code>output</code></td>
+              <td>Writes a starter config or executable init script.</td>
+            </tr>
+            <tr>
+              <td><code>treeboot completions</code></td>
+              <td>CLI-owned completion registration</td>
+              <td><code>main.rs</code>, <code>manual</code></td>
+              <td>
+                Prints shell registration. Dynamic source candidates delegate
+                to <code>file_operation_source_candidates</code>.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section" id="context">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Anchors</p>
+            <h2>Runtime Context</h2>
+          </div>
+          <p class="section-note">
+            Almost every core flow starts by resolving the Git worktree, root
+            source checkout, default branch, and treeboot-owned environment.
+          </p>
+        </div>
+
+        <div class="diagram-wrap">
+          <svg class="diagram" viewBox="0 0 1040 380" role="img"
+            aria-labelledby="context-title context-desc">
+            <title id="context-title">Worktree resolution graph</title>
+            <desc id="context-desc">
+              Context resolution uses cwd, optional root override, environment
+              aliases, and Git worktree queries to build Worktree.
+            </desc>
+            <defs>
+              <marker id="context-arrow" markerWidth="10" markerHeight="10"
+                refX="8" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L9,3 z" fill="#7dd7bd"></path>
+              </marker>
+            </defs>
+
+            <g class="node blue">
+              <rect x="40" y="52" width="200" height="92" rx="8"></rect>
+              <text class="title" x="62" y="84">RunOptions</text>
+              <text class="meta" x="62" y="110">cwd</text>
+              <text class="meta" x="62" y="131">root override</text>
+            </g>
+            <g class="node">
+              <rect x="40" y="212" width="200" height="92" rx="8"></rect>
+              <text class="title" x="62" y="244">Environment</text>
+              <text class="meta" x="62" y="270">TREEBOOT_ROOT_PATH</text>
+              <text class="meta" x="62" y="291">compat aliases</text>
+            </g>
+            <g class="node accent">
+              <rect x="360" y="132" width="260" height="126" rx="8"></rect>
+              <text class="title" x="384" y="166">context::resolve</text>
+              <text class="meta" x="384" y="192">normalize current worktree</text>
+              <text class="meta" x="384" y="213">discover root source</text>
+              <text class="meta" x="384" y="234">build environment map</text>
+            </g>
+            <g class="node">
+              <rect x="730" y="46" width="250" height="110" rx="8"></rect>
+              <text class="title" x="754" y="80">Git queries</text>
+              <text class="meta" x="754" y="106">rev-parse --show-toplevel</text>
+              <text class="meta" x="754" y="127">worktree list --porcelain</text>
+              <text class="meta" x="754" y="148">origin/HEAD</text>
+            </g>
+            <g class="node warn">
+              <rect x="730" y="230" width="250" height="100" rx="8"></rect>
+              <text class="title" x="754" y="264">Worktree</text>
+              <text class="meta" x="754" y="290">root_path / worktree_path</text>
+              <text class="meta" x="754" y="311">default_branch / environment</text>
+            </g>
+
+            <path class="edge" marker-end="url(#context-arrow)"
+              d="M240 98 C285 104 312 150 360 174"></path>
+            <path class="edge" marker-end="url(#context-arrow)"
+              d="M240 258 C286 254 314 224 360 206"></path>
+            <path class="edge" marker-end="url(#context-arrow)"
+              d="M620 168 C676 124 674 104 730 104"></path>
+            <path class="edge" marker-end="url(#context-arrow)"
+              d="M620 218 C680 244 674 278 730 280"></path>
+          </svg>
+          <p class="caption">
+            Root source precedence is explicit <code>--root</code>, then
+            treeboot-compatible environment aliases, then Git's main worktree.
+          </p>
+        </div>
+
+        <div class="grid three">
+          <section class="card">
+            <h3>Source root</h3>
+            <p>
+              File operation sources are anchored to <code>root_path</code>,
+              normally Git's main worktree or an explicit override.
+            </p>
+          </section>
+
+          <section class="card">
+            <h3>Target worktree</h3>
+            <p>
+              File operation targets and command working directories are
+              anchored to <code>worktree_path</code>.
+            </p>
+          </section>
+
+          <section class="card">
+            <h3>Environment aliases</h3>
+            <p>
+              Scripts and configured commands receive treeboot variables plus
+              compatibility aliases for Codex, Conductor, and Superset flows.
+            </p>
+          </section>
+        </div>
+      </section>
+
+      <section class="section" id="run-flow">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Primary orchestration</p>
+            <h2><code>treeboot run</code> Flow</h2>
+          </div>
+          <p class="section-note">
+            Run mode first checks for root-checkout no-op behavior, then
+            prefers executable init scripts unless a config file is explicit.
+          </p>
+        </div>
+
+        <div class="diagram-wrap">
+          <svg class="diagram" viewBox="0 0 1040 540" role="img"
+            aria-labelledby="run-title run-desc">
+            <title id="run-title">treeboot run orchestration flow</title>
+            <desc id="run-desc">
+              treeboot run resolves context, handles root checkout, discovers
+              scripts or config, plans config, applies files, and runs commands.
+            </desc>
+            <defs>
+              <marker id="run-arrow" markerWidth="10" markerHeight="10"
+                refX="8" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L9,3 z" fill="#7dd7bd"></path>
+              </marker>
+              <marker id="run-warn-arrow" markerWidth="10" markerHeight="10"
+                refX="8" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L9,3 z" fill="#d8b45b"></path>
+              </marker>
+            </defs>
+
+            <g class="node accent">
+              <rect x="40" y="70" width="200" height="82" rx="8"></rect>
+              <text class="title" x="62" y="102">CLI dispatch</text>
+              <text class="meta" x="62" y="128">RunOptions</text>
+            </g>
+            <g class="node blue">
+              <rect x="320" y="70" width="200" height="82" rx="8"></rect>
+              <text class="title" x="342" y="102">Resolve context</text>
+              <text class="meta" x="342" y="128">context::resolve</text>
+            </g>
+            <g class="node warn">
+              <path d="M650 82 L790 82 L850 112 L790 142 L650 142 Z"></path>
+              <text class="title" x="675" y="106">Root checkout?</text>
+              <text class="meta" x="682" y="128">root == worktree</text>
+            </g>
+
+            <g class="node">
+              <rect x="82" y="238" width="220" height="92" rx="8"></rect>
+              <text class="title" x="106" y="272">Discover init</text>
+              <text class="meta" x="106" y="298">unless --config supplied</text>
+              <text class="meta" x="106" y="319">report ignored scripts</text>
+            </g>
+            <g class="node warn">
+              <path d="M390 248 L548 248 L612 284 L548 320 L390 320 Z"></path>
+              <text class="title" x="428" y="278">Executable?</text>
+              <text class="meta" x="434" y="302">run or dry-run script</text>
+            </g>
+            <g class="node">
+              <rect x="710" y="238" width="230" height="92" rx="8"></rect>
+              <text class="title" x="734" y="272">Discover config</text>
+              <text class="meta" x="734" y="298">requested or default path</text>
+              <text class="meta" x="734" y="319">load TOML</text>
+            </g>
+
+            <g class="node blue">
+              <rect x="70" y="418" width="200" height="82" rx="8"></rect>
+              <text class="title" x="92" y="450">Plan config</text>
+              <text class="meta" x="92" y="476">ActionPlan</text>
+            </g>
+            <g class="node">
+              <rect x="350" y="418" width="200" height="82" rx="8"></rect>
+              <text class="title" x="372" y="450">Apply files</text>
+              <text class="meta" x="372" y="476">copy / symlink / sync</text>
+            </g>
+            <g class="node">
+              <rect x="630" y="418" width="200" height="82" rx="8"></rect>
+              <text class="title" x="652" y="450">Run commands</text>
+              <text class="meta" x="652" y="476">unless --skip-commands</text>
+            </g>
+
+            <path class="edge" marker-end="url(#run-arrow)"
+              d="M240 111 L320 111"></path>
+            <path class="edge" marker-end="url(#run-arrow)"
+              d="M520 111 L650 111"></path>
+            <path class="edge" marker-end="url(#run-arrow)"
+              d="M730 142 C660 206 432 210 302 259"></path>
+            <path class="edge-warn" marker-end="url(#run-warn-arrow)"
+              d="M850 112 C918 112 960 166 960 236"></path>
+            <path class="edge" marker-end="url(#run-arrow)"
+              d="M302 284 L390 284"></path>
+            <path class="edge" marker-end="url(#run-arrow)"
+              d="M612 284 L710 284"></path>
+            <path class="edge-warn" marker-end="url(#run-warn-arrow)"
+              d="M500 320 C490 365 242 362 172 418"></path>
+            <path class="edge" marker-end="url(#run-arrow)"
+              d="M825 330 C790 390 288 380 178 418"></path>
+            <path class="edge" marker-end="url(#run-arrow)"
+              d="M270 459 L350 459"></path>
+            <path class="edge" marker-end="url(#run-arrow)"
+              d="M550 459 L630 459"></path>
+          </svg>
+          <p class="caption">
+            The root-checkout branch reports <code>RootWorktreeDetected</code>
+            and only becomes an error when pre-config strict mode is active.
+          </p>
+        </div>
+      </section>
+
+      <section class="section" id="pipeline">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Normalized data</p>
+            <h2>Config And Manual Pipelines</h2>
+          </div>
+          <p class="section-note">
+            Declarative config and manual file commands converge before file
+            effects. Config also carries planned commands.
+          </p>
+        </div>
+
+        <div class="diagram-wrap">
+          <svg class="diagram" viewBox="0 0 1040 500" role="img"
+            aria-labelledby="pipeline-title pipeline-desc">
+            <title id="pipeline-title">Data model pipeline</title>
+            <desc id="pipeline-desc">
+              Raw TOML and CLI options normalize into FileOperation values,
+              validation builds an ActionPlan, then Executor emits OutputEvent.
+            </desc>
+            <defs>
+              <marker id="pipe-arrow" markerWidth="10" markerHeight="10"
+                refX="8" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L9,3 z" fill="#7dd7bd"></path>
+              </marker>
+            </defs>
+
+            <g class="node">
+              <rect x="42" y="72" width="210" height="96" rx="8"></rect>
+              <text class="title" x="66" y="106">Raw TOML</text>
+              <text class="meta" x="66" y="132">RawConfig</text>
+              <text class="meta" x="66" y="153">spanned entries</text>
+            </g>
+            <g class="node">
+              <rect x="42" y="292" width="210" height="96" rx="8"></rect>
+              <text class="title" x="66" y="326">Manual CLI args</text>
+              <text class="meta" x="66" y="352">FileOperationOptions</text>
+              <text class="meta" x="66" y="373">root source completion</text>
+            </g>
+            <g class="node accent">
+              <rect x="340" y="184" width="230" height="112" rx="8"></rect>
+              <text class="title" x="364" y="218">Normalized model</text>
+              <text class="meta" x="364" y="244">Config</text>
+              <text class="meta" x="364" y="265">FileOperation</text>
+              <text class="meta" x="364" y="286">CommandOperation</text>
+            </g>
+            <g class="node blue">
+              <rect x="658" y="184" width="190" height="112" rx="8"></rect>
+              <text class="title" x="682" y="218">Validation</text>
+              <text class="meta" x="682" y="244">ActionPlan</text>
+              <text class="meta" x="682" y="265">PlannedFileOperation</text>
+              <text class="meta" x="682" y="286">PlannedCommand</text>
+            </g>
+            <g class="node warn">
+              <rect x="870" y="102" width="140" height="86" rx="8"></rect>
+              <text class="title" x="892" y="136">Files</text>
+              <text class="meta" x="892" y="162">FileAction</text>
+            </g>
+            <g class="node warn">
+              <rect x="870" y="292" width="140" height="86" rx="8"></rect>
+              <text class="title" x="892" y="326">Commands</text>
+              <text class="meta" x="892" y="352">Command</text>
+            </g>
+
+            <path class="edge" marker-end="url(#pipe-arrow)"
+              d="M252 120 C302 142 300 206 340 226"></path>
+            <path class="edge" marker-end="url(#pipe-arrow)"
+              d="M252 340 C302 316 302 274 340 258"></path>
+            <path class="edge" marker-end="url(#pipe-arrow)"
+              d="M570 240 L658 240"></path>
+            <path class="edge" marker-end="url(#pipe-arrow)"
+              d="M848 220 C872 196 864 160 870 145"></path>
+            <path class="edge" marker-end="url(#pipe-arrow)"
+              d="M848 262 C872 286 864 326 870 335"></path>
+          </svg>
+          <p class="caption">
+            The normalized model is intentionally separate from the validated
+            plan. Parsing/defaulting happens before path-boundary validation.
+          </p>
+        </div>
+
+        <div class="grid two">
+          <section class="card">
+            <h3>Declarative config path</h3>
+            <ol>
+              <li><code>Config::discover_path</code> finds or validates a config path.</li>
+              <li><code>Config::load_discovered</code> returns a <code>LoadedConfig</code>.</li>
+              <li><code>Config::parse</code> builds <code>RawConfig</code>.</li>
+              <li>Normalization emits <code>Config</code> plus source spans.</li>
+              <li><code>ActionPlan::from_manifest</code> validates files and commands.</li>
+            </ol>
+          </section>
+
+          <section class="card">
+            <h3>Manual file path</h3>
+            <ol>
+              <li>CLI converts subcommand args to <code>FileOperationOptions</code>.</li>
+              <li><code>FileOperation::from_manual_options</code> validates operation-specific options.</li>
+              <li>Config is loaded for top-level runtime policy when present.</li>
+              <li>Sources and target prefix become <code>FileOperation</code>s.</li>
+              <li><code>ActionPlan::from_file_operations</code> validates files.</li>
+              <li><code>Executor::execute_files</code> applies or dry-runs effects.</li>
+            </ol>
+          </section>
+        </div>
+      </section>
+
+      <section class="section" id="modules">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Core internals</p>
+            <h2>Module Dependency Graph</h2>
+          </div>
+          <p class="section-note">
+            The public API is re-exported from <code>lib.rs</code>; most
+            implementation modules remain private or crate-private.
+          </p>
+        </div>
+
+        <div class="diagram-wrap">
+          <svg class="diagram" viewBox="0 0 1040 620" role="img"
+            aria-labelledby="modules-title modules-desc">
+            <title id="modules-title">treeboot-core module graph</title>
+            <desc id="modules-desc">
+              Public modules call context and discovery, config feeds
+              validation, validation feeds files and commands.
+            </desc>
+            <defs>
+              <marker id="module-arrow" markerWidth="10" markerHeight="10"
+                refX="8" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L9,3 z" fill="#7dd7bd"></path>
+              </marker>
+              <marker id="module-muted" markerWidth="10" markerHeight="10"
+                refX="8" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L9,3 z" fill="#9baaa4"></path>
+              </marker>
+            </defs>
+
+            <g class="node accent">
+              <rect x="64" y="54" width="160" height="76" rx="8"></rect>
+              <text class="title" x="88" y="86">run.rs</text>
+              <text class="meta" x="88" y="112">orchestrator</text>
+            </g>
+            <g class="node accent">
+              <rect x="64" y="196" width="160" height="76" rx="8"></rect>
+              <text class="title" x="88" y="228">manual.rs</text>
+              <text class="meta" x="88" y="254">manual files</text>
+            </g>
+            <g class="node accent">
+              <rect x="64" y="338" width="160" height="76" rx="8"></rect>
+              <text class="title" x="88" y="370">config.rs</text>
+              <text class="meta" x="88" y="396">parse + normalize</text>
+            </g>
+            <g class="node accent">
+              <rect x="64" y="480" width="160" height="76" rx="8"></rect>
+              <text class="title" x="88" y="512">init.rs</text>
+              <text class="meta" x="88" y="538">starter files</text>
+            </g>
+
+            <g class="node blue">
+              <rect x="342" y="96" width="170" height="76" rx="8"></rect>
+              <text class="title" x="366" y="128">context.rs</text>
+              <text class="meta" x="366" y="154">Worktree</text>
+            </g>
+            <g class="node">
+              <rect x="342" y="238" width="170" height="76" rx="8"></rect>
+              <text class="title" x="366" y="270">discovery.rs</text>
+              <text class="meta" x="366" y="296">scripts + config</text>
+            </g>
+            <g class="node">
+              <rect x="342" y="380" width="170" height="76" rx="8"></rect>
+              <text class="title" x="366" y="412">git.rs</text>
+              <text class="meta" x="366" y="438">Git wrapper</text>
+            </g>
+
+            <g class="node warn">
+              <rect x="612" y="170" width="190" height="96" rx="8"></rect>
+              <text class="title" x="636" y="204">validation.rs</text>
+              <text class="meta" x="636" y="230">ActionPlan</text>
+              <text class="meta" x="636" y="251">boundary checks</text>
+            </g>
+            <g class="node">
+              <rect x="856" y="84" width="144" height="76" rx="8"></rect>
+              <text class="title" x="880" y="116">files.rs</text>
+              <text class="meta" x="880" y="142">FileAction</text>
+            </g>
+            <g class="node">
+              <rect x="856" y="278" width="144" height="76" rx="8"></rect>
+              <text class="title" x="880" y="310">commands.rs</text>
+              <text class="meta" x="880" y="336">processes</text>
+            </g>
+            <g class="node">
+              <rect x="856" y="472" width="144" height="76" rx="8"></rect>
+              <text class="title" x="880" y="504">output.rs</text>
+              <text class="meta" x="880" y="530">events</text>
+            </g>
+
+            <path class="edge" marker-end="url(#module-arrow)"
+              d="M224 92 C270 98 298 122 342 134"></path>
+            <path class="edge" marker-end="url(#module-arrow)"
+              d="M224 92 C292 132 284 242 342 276"></path>
+            <path class="edge" marker-end="url(#module-arrow)"
+              d="M224 234 C282 208 288 154 342 134"></path>
+            <path class="edge" marker-end="url(#module-arrow)"
+              d="M224 376 C288 346 294 178 342 134"></path>
+            <path class="edge-muted" marker-end="url(#module-muted)"
+              d="M512 134 C552 134 568 190 612 210"></path>
+            <path class="edge-muted" marker-end="url(#module-muted)"
+              d="M512 276 C558 266 570 236 612 224"></path>
+            <path class="edge-muted" marker-end="url(#module-muted)"
+              d="M512 418 C562 386 566 258 612 238"></path>
+            <path class="edge" marker-end="url(#module-arrow)"
+              d="M224 376 C390 390 470 192 612 210"></path>
+            <path class="edge" marker-end="url(#module-arrow)"
+              d="M224 234 C405 236 458 226 612 224"></path>
+            <path class="edge" marker-end="url(#module-arrow)"
+              d="M802 202 C838 178 836 132 856 122"></path>
+            <path class="edge" marker-end="url(#module-arrow)"
+              d="M802 242 C838 262 834 304 856 316"></path>
+            <path class="edge-muted" marker-end="url(#module-muted)"
+              d="M224 518 C548 558 748 528 856 510"></path>
+            <path class="edge-muted" marker-end="url(#module-muted)"
+              d="M928 160 L928 472"></path>
+          </svg>
+          <p class="caption">
+            <code>run.rs</code> is the broad orchestrator. Manual file commands
+            load top-level config policy when present, skip configured commands,
+            and reuse validation and files.
+          </p>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Module</th>
+              <th>Owns</th>
+              <th>Does not own</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>context.rs</code></td>
+              <td>Git-derived root/worktree/default branch and env aliases.</td>
+              <td>Config parsing, script discovery, or side effects.</td>
+            </tr>
+            <tr>
+              <td><code>config.rs</code></td>
+              <td>TOML parsing, defaulting, normalized config data.</td>
+              <td>Boundary validation or execution.</td>
+            </tr>
+            <tr>
+              <td><code>validation.rs</code></td>
+              <td>
+                Pre-side-effect checks, path normalization, duplicate targets,
+                strict sync rejection, command cwd/env checks.
+              </td>
+              <td>Parsing or filesystem mutation.</td>
+            </tr>
+            <tr>
+              <td><code>files.rs</code></td>
+              <td>
+                Planning concrete filesystem actions and applying copy,
+                symlink, sync, delete, skip, warning events.
+              </td>
+              <td>Config semantics or CLI argument validation.</td>
+            </tr>
+            <tr>
+              <td><code>commands.rs</code></td>
+              <td>Sequential configured command spawning and dry-run output.</td>
+              <td>Parsing command config or deciding command order.</td>
+            </tr>
+            <tr>
+              <td><code>output.rs</code></td>
+              <td>Structured output events and message formatting.</td>
+              <td>Choosing when events happen.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section" id="file-engine">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Filesystem effects</p>
+            <h2>File Operation Engine</h2>
+          </div>
+          <p class="section-note">
+            File execution is two-stage: validated file operations become
+            concrete <code>FileAction</code>s, then actions are reported or
+            applied depending on dry-run mode.
+          </p>
+        </div>
+
+        <div class="grid two">
+          <section class="card">
+            <h3>Planning inside <code>files.rs</code></h3>
+            <ul>
+              <li>Skips optional missing sources before filesystem traversal.</li>
+              <li>Plans copy and sync through shared tree traversal.</li>
+              <li>Plans symlink creation and replacement separately.</li>
+              <li>Plans sync delete actions for target-only paths.</li>
+              <li>Adds warnings for preserved symlinks to uncopied targets.</li>
+            </ul>
+          </section>
+
+          <section class="card">
+            <h3>Applying actions</h3>
+            <ul>
+              <li><code>dry_run</code> emits would-apply events only.</li>
+              <li><code>force</code> controls supported replacements.</li>
+              <li><code>strict</code> converts some default skips into conflicts.</li>
+              <li>Actual filesystem mutations happen after all actions plan.</li>
+              <li>Reporter failures become typed output errors.</li>
+            </ul>
+          </section>
+        </div>
+
+        <pre><code>ActionPlan.files
+  -&gt; plan_operation
+  -&gt; FileAction::{CreateDirectory, CopyFile, CreateSymlink, Delete, Skip, Warning}
+  -&gt; report_dry_run(action) or apply_action(action)
+  -&gt; OutputEvent::{FileWouldApply, FileApplied, FileWarning, ...}</code></pre>
+      </section>
+
+      <section class="section" id="commands">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Process effects</p>
+            <h2>Command Runtime</h2>
+          </div>
+          <p class="section-note">
+            Configured commands run sequentially in declaration order. Parallel
+            work is intentionally delegated to project-local task runners.
+          </p>
+        </div>
+
+        <div class="grid three">
+          <section class="card">
+            <h3>Planning</h3>
+            <p>
+              <code>validation.rs</code> resolves command cwd to the worktree,
+              rejects cwd escapes, and prevents command env entries from
+              overriding treeboot-owned environment variables.
+            </p>
+          </section>
+
+          <section class="card">
+            <h3>Execution</h3>
+            <p>
+              <code>commands.rs</code> builds either a shell process
+              (<code>sh -c</code> or <code>cmd /C</code>) or a direct program
+              invocation, then runs it in sequence.
+            </p>
+          </section>
+
+          <section class="card">
+            <h3>Failure policy</h3>
+            <p>
+              <code>allow_failure</code> turns spawn or non-zero exit failures
+              into warning output. Otherwise failures become typed command
+              errors and stop the run.
+            </p>
+          </section>
+        </div>
+      </section>
+
+      <section class="section" id="output">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Presentation</p>
+            <h2>Output And Errors</h2>
+          </div>
+          <p class="section-note">
+            Core reports structured events and typed errors. The CLI decides
+            how those become stdout, stderr, and process status.
+          </p>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Surface</th>
+              <th>Type</th>
+              <th>Role</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>OutputEvent</code></td>
+              <td>Public enum</td>
+              <td>
+                Captures non-error user-visible events such as config detected,
+                file applied, command started, and init created.
+              </td>
+            </tr>
+            <tr>
+              <td><code>Reporter</code></td>
+              <td>Public trait</td>
+              <td>
+                Lets CLI and tests receive events without hard-coding stdout
+                into the core implementation.
+              </td>
+            </tr>
+            <tr>
+              <td><code>Error</code></td>
+              <td>Public enum</td>
+              <td>
+                Represents typed failure categories for Git, config, planning,
+                file operations, commands, init, output, and environment.
+              </td>
+            </tr>
+            <tr>
+              <td><code>StdoutReporter</code></td>
+              <td>CLI adapter</td>
+              <td>
+                Prints <code>OutputEvent::message()</code>. Errors are printed
+                separately by <code>main</code>.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section" id="testing">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Verification boundaries</p>
+            <h2>Testing Architecture</h2>
+          </div>
+          <p class="section-note">
+            Tests are split by behavior layer. Use core unit tests for pure
+            helpers and CLI integration tests for user-visible command behavior.
+          </p>
+        </div>
+
+        <div class="grid three">
+          <section class="card">
+            <h3>Core unit tests</h3>
+            <ul>
+              <li>Config parsing and normalization.</li>
+              <li>ActionPlan validation.</li>
+              <li>File action planning and application.</li>
+              <li>Command labels and failure policy.</li>
+              <li>Output event formatting.</li>
+            </ul>
+          </section>
+
+          <section class="card">
+            <h3>CLI integration tests</h3>
+            <ul>
+              <li>Run/config/init/manual command behavior.</li>
+              <li>Actual Git linked worktree fixtures.</li>
+              <li>Stdout/stderr and exit status.</li>
+              <li>Shell completion surface.</li>
+              <li>Root-checkout edge cases.</li>
+            </ul>
+          </section>
+
+          <section class="card">
+            <h3>Generated artifacts</h3>
+            <ul>
+              <li>JSON Schema is generated by a core example.</li>
+              <li><code>mise run generate:check</code> guards freshness.</li>
+              <li><code>mise run check</code> is normal handoff validation.</li>
+              <li><code>mise run verify</code> adds broader CI/coverage checks.</li>
+            </ul>
+          </section>
+        </div>
+      </section>
+
+      <section class="section" id="extension">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Change guide</p>
+            <h2>Extension Points And Invariants</h2>
+          </div>
+          <p class="section-note">
+            These are the boundaries to preserve when adding new behavior or
+            refactoring existing modules.
+          </p>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>If changing</th>
+              <th>Touch</th>
+              <th>Keep invariant</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Config file format</td>
+              <td>
+                <code>docs/SPEC.html</code>, <code>config.rs</code>,
+                schema generator, schema file, parser tests.
+              </td>
+              <td>The spec is the contract; generated schema must be fresh.</td>
+            </tr>
+            <tr>
+              <td>File operation behavior</td>
+              <td>
+                <code>config.rs</code>, <code>manual.rs</code>,
+                <code>validation.rs</code>, <code>files.rs</code>, CLI tests.
+              </td>
+              <td>
+                Declarative config and manual commands must share planning and
+                file execution semantics.
+              </td>
+            </tr>
+            <tr>
+              <td>Command runtime</td>
+              <td>
+                <code>config.rs</code>, <code>validation.rs</code>,
+                <code>commands.rs</code>, run tests, spec.
+              </td>
+              <td>
+                Commands run after file operations and inherit treeboot-owned
+                environment variables.
+              </td>
+            </tr>
+            <tr>
+              <td>CLI-only surface</td>
+              <td><code>crates/treeboot/src/main.rs</code> and CLI tests.</td>
+              <td>
+                CLI stays an adapter. Core owns reusable behavior and typed
+                semantics.
+              </td>
+            </tr>
+            <tr>
+              <td>Output wording</td>
+              <td><code>output.rs</code>, CLI integration tests, spec if contractual.</td>
+              <td>
+                Structured events stay separate from command-line formatting
+                decisions where practical.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="callout">
+          <h3>Current refactor pressure</h3>
+          <p>
+            The most visible architecture debt is duplicate file-operation
+            display and defaulting logic across config, manual operations,
+            validation, files, output, and CLI text summaries. Consolidating
+            those rules should improve the model without changing the pipeline
+            described in this document.
+          </p>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <p>
+          This document describes the current implementation architecture. It is
+          not a replacement for <a href="SPEC.html">docs/SPEC.html</a>, which
+          remains the user-visible compatibility contract.
+        </p>
+      </footer>
+    </main>
+  </div>
+</body>
+</html>
