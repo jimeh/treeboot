@@ -142,3 +142,5 @@ and CI mapping.
 - Pre-commit hooks are managed by Lefthook and installed by `mise run setup`.
 - `mise.toml` pins `sccache` and sets `RUSTC_WRAPPER=sccache` so Cargo tasks use
   the project-managed compiler cache instead of relying on global shell setup.
+- CI sets `MISE_RUSTUP_HOME` under the mise data directory so `mise-action`
+  caches the rustup toolchains and components declared in `mise.toml`.
