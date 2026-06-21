@@ -78,9 +78,8 @@ mise run generate   # refresh checked-in generated artifacts
 Targeted commands:
 
 ```sh
-mise run fmt
-mise run fmt:check
-mise run fmt:write
+mise run format
+mise run format:check
 mise run generate
 mise run generate:check
 mise run generate:schema:check

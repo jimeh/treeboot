@@ -276,9 +276,8 @@ mise run coverage
 mise run coverage:missing
 mise run deps
 mise run doctor
-mise run fmt
-mise run fmt:check
-mise run fmt:write
+mise run format
+mise run format:check
 mise run generate
 mise run generate:check
 mise run generate:schema:check

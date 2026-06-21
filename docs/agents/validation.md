@@ -9,15 +9,15 @@ Use this guide to pick the smallest useful feedback loop for a change.
 Use while iterating on a narrow change:
 
 ```sh
-mise run fmt:check
-mise run fmt:write
+mise run format
+mise run format:check
 mise run test:core
 mise run test:cli
 ```
 
 Use `test:core` for library behavior and `test:cli` for user-visible command
 behavior. Running `mise run test` executes both through mise dependencies.
-`fmt:check` is non-mutating, while `fmt:write` applies Rust formatting.
+`format` applies Rust formatting, while `format:check` is non-mutating.
 
 ### Check
 
@@ -46,7 +46,7 @@ gate; it is a sensor for finding untested behavior.
 GitHub Actions runs these mise tasks:
 
 - `mise run actions:lint`
-- `mise run fmt:check`
+- `mise run format:check`
 - `mise run generate:check`
   - currently wraps `mise run generate:schema:check`
 - `mise run lint`
@@ -54,8 +54,7 @@ GitHub Actions runs these mise tasks:
 - `mise run test:core`
 - `mise run test:cli`
 
-The local `mise run ci` task mirrors those checks. `mise run fmt` is kept as a
-compatibility alias for `mise run fmt:check`.
+The local `mise run ci` task mirrors those checks.
 
 ## Coverage
 

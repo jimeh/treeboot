@@ -21,17 +21,13 @@ run = ["mise install", "mise run deps", "mise run hooks:install"]
 description = "Fetch Rust dependencies"
 run = "cargo fetch --locked"
 
-[tasks.fmt]
-description = "Check Rust formatting (alias for fmt:check)"
-depends = ["fmt:check"]
-
-[tasks."fmt:check"]
-description = "Check Rust formatting without writing changes"
-run = "cargo fmt --all -- --check"
-
-[tasks."fmt:write"]
+[tasks.format]
 description = "Format Rust code"
 run = "cargo fmt --all"
+
+[tasks."format:check"]
+description = "Check Rust formatting without writing changes"
+run = "cargo fmt --all -- --check"
 
 [tasks.lint]
 description = "Run Rust lints"
@@ -93,7 +89,7 @@ tools."cargo:cargo-llvm-cov" = "0.8.7"
 run = "cargo llvm-cov --workspace --all-targets --all-features --locked --summary-only --show-missing-lines"
 
 [tasks.check]
-depends = ["fmt", "generate:check", "lint", "test"]
+depends = ["format:check", "generate:check", "lint", "test"]
 description = "Run normal pre-handoff checks"
 
 [tasks.verify]
@@ -101,7 +97,7 @@ description = "Run broad local verification"
 run = ["mise run ci", "mise run coverage"]
 
 [tasks.ci]
-depends = ["actions:lint", "fmt:check", "generate:check", "lint", "msrv", "test"]
+depends = ["actions:lint", "format:check", "generate:check", "lint", "msrv", "test"]
 description = "Run all CI checks"
 
 [tasks.clean]
