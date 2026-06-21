@@ -133,6 +133,8 @@ and CI mapping.
 - Workflow syntax/security checks are wrapped by `mise run actions:lint`.
 - Coverage uses `cargo-llvm-cov` through `mise run coverage`; the first run may
   install `llvm-tools-preview` for the active Rust toolchain.
+- Keep optional heavyweight tools task-scoped in `mise.toml`; GitHub Actions
+  installs top-level mise tools in every job.
 - Pre-commit hooks are managed by Lefthook and installed by `mise run setup`.
 - `mise.toml` pins `sccache` and sets `RUSTC_WRAPPER=sccache` so Cargo tasks use
   the project-managed compiler cache instead of relying on global shell setup.

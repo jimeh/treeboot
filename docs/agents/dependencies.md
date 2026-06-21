@@ -14,7 +14,8 @@ dependencies for small wrappers around the standard library.
 - `schemars` and `serde_json` are dev-dependencies in `treeboot-core` for the
   JSON Schema generator example.
 - `assert_cmd`, `predicates`, and `tempfile` support CLI integration tests.
-- `cargo-llvm-cov` is a mise-managed development tool, not a Cargo dependency.
+- `cargo-llvm-cov` is a task-scoped mise development tool, not a Cargo
+  dependency.
 
 ## Guidelines
 

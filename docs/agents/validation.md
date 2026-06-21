@@ -60,6 +60,9 @@ For quick coverage feedback:
 mise run coverage
 ```
 
+The coverage tasks install `cargo-llvm-cov` through task-scoped mise tooling
+instead of the top-level tool set used by every CI job.
+
 The current suite is intentionally strongest around milestone 1 behavior:
 script discovery/execution, config detection, init output creation, environment
 propagation, and output formatting.
