@@ -113,9 +113,6 @@ pub struct CommandOperation {
     pub cwd_path: Option<PathBuf>,
     /// Extra environment variables for this command.
     pub env: BTreeMap<String, String>,
-    /// Whether this command can run in an async batch.
-    #[serde(rename = "async")]
-    pub async_command: bool,
     /// Whether a non-zero exit status should be non-fatal.
     pub allow_failure: bool,
     /// Source location for the command declaration.
@@ -505,7 +502,6 @@ fn normalize_command_entries(
                 args: None,
                 cwd: None,
                 env: BTreeMap::new(),
-                async_command: false,
                 allow_failure: false,
             },
             RawCommandEntry::Object(object) => object,
@@ -584,7 +580,6 @@ fn normalize_command_object(
         cwd: object.cwd.map(PathBuf::from),
         cwd_path,
         env: object.env,
-        async_command: object.async_command,
         allow_failure: object.allow_failure,
         declaration: span,
     })
@@ -798,8 +793,6 @@ struct RawCommandObject {
     args: Option<Vec<String>>,
     cwd: Option<String>,
     env: BTreeMap<String, String>,
-    #[serde(rename = "async")]
-    async_command: bool,
     allow_failure: bool,
 }
 
@@ -1009,7 +1002,7 @@ commands = [{ program = "make", cwd = "/worktree/app" }]
             r#"
 commands = [
   "mise install",
-  { run = "bundle install", async = true },
+  { run = "bundle install" },
 ]
 
 [[command]]
@@ -1027,7 +1020,6 @@ allow_failure = true
                 run: "mise install".to_owned()
             }
         );
-        assert!(config.commands[1].async_command);
         assert_eq!(
             config.commands[2].command,
             CommandKind::Direct {
@@ -1057,8 +1049,19 @@ commands = [{
 
         assert_eq!(command.name.as_deref(), Some("Install"));
         assert_eq!(command.env["NODE_ENV"], "development");
-        assert!(!command.async_command);
         assert!(!command.allow_failure);
+    }
+
+    #[test]
+    fn parse_config_should_reject_async_command_field() {
+        assert_parse_error_contains(
+            r#"commands = [{ run = "npm install", async = true }]"#,
+            "unknown field",
+        );
+        assert_parse_error_contains(
+            r#"commands = [{ run = "npm install", async = false }]"#,
+            "unknown field",
+        );
     }
 
     #[test]

@@ -15,7 +15,7 @@ treeboot
 
 ## Status
 
-This project is bootstrapped for implementation against spec v1.5.0. The
+This project is bootstrapped for implementation against spec v1.5.1. The
 planned implementation target is Rust, distributed as small prebuilt binaries
 from GitHub Releases.
 
@@ -60,8 +60,7 @@ symlink = [
 
 commands = [
   "mise install",
-  { name = "Install Ruby gems", run = "bundle install", async = true },
-  { name = "Install Node packages", run = "pnpm install", async = true },
+  { name = "Install dependencies", run = "mise run setup" },
 ]
 ```
 
@@ -106,8 +105,7 @@ sync = [
 
 commands = [
   "mise install",
-  { run = "bundle install", async = true },
-  { run = "pnpm install", async = true },
+  { run = "mise run setup" },
 ]
 ```
 
@@ -119,6 +117,10 @@ target when needed. Missing sources are skipped by default; set
 Use `sync` when the target should be actively reconciled with the source.
 Directory sync preserves target-only files by default. Set `delete = true` when
 target-only files and directories should be removed.
+
+Commands run sequentially in declaration order. If setup work should run in
+parallel, put that behind one project-local task-runner command such as
+`mise run setup`.
 
 ## Scripts
 

@@ -634,7 +634,7 @@
     <main>
       <header class="hero" id="overview">
         <div>
-          <p class="eyebrow">Specification v1.5.0</p>
+          <p class="eyebrow">Specification v1.5.1</p>
           <h1>treeboot</h1>
           <p class="lede">
             A portable worktree bootstrapper that lets every coding agent,
@@ -1471,8 +1471,7 @@ sync = [
 
 commands = [
   "mise install",
-  { name = "Install Ruby gems", run = "bundle install", async = true },
-  { name = "Install Node packages", run = "pnpm install", async = true },
+  { name = "Install dependencies", run = "mise run setup" },
 ]
 
 files = [
@@ -1643,8 +1642,7 @@ target = ".editorconfig"</code></pre>
           </p>
           <pre><code>commands = [
   "mise install",
-  { run = "bundle install", async = true },
-  { run = "pnpm install", async = true, env = { NODE_ENV = "development" } },
+  { run = "mise run setup", env = { NODE_ENV = "development" } },
 ]
 
 [[command]]
@@ -1652,8 +1650,6 @@ name = "Install dependencies"
 run = "npm install"
 cwd = "."
 allow_failure = false
-async = false
-
 [command.env]
 NODE_ENV = "development"
 
@@ -1692,13 +1688,6 @@ args = ["install"]</code></pre>
               <td>
                 Extra environment variables merged into the treeboot env set.
                 Treeboot-owned variables and aliases cannot be overridden.
-              </td>
-            </tr>
-            <tr>
-              <td><code>async</code></td>
-              <td>
-                Defaults to <code>false</code>. Consecutive async commands run
-                as one parallel batch.
               </td>
             </tr>
             <tr>
@@ -2249,18 +2238,7 @@ args = ["install"]</code></pre>
             <ul>
               <li>Run after file operations complete successfully.</li>
               <li>Run even if every file operation was skipped.</li>
-              <li>Commands run sequentially by default, in declaration order.</li>
-              <li>
-                Consecutive commands with <code>async = true</code> form one
-                parallel batch. treeboot starts every command in the batch,
-                waits for all of them to finish, then continues with the next
-                non-async command.
-              </li>
-              <li>
-                If any command in an async batch exits non-zero without
-                <code>allow_failure = true</code>, treeboot waits for the rest
-                of the batch, then exits non-zero.
-              </li>
+              <li>Commands run sequentially in declaration order.</li>
               <li>
                 A command with <code>allow_failure = true</code> warns when it
                 cannot be spawned or exits non-zero, then later commands
@@ -2301,12 +2279,12 @@ Direct:  program + args</code></pre>
         </div>
 
         <div class="callout">
-          <h3>Async batching example</h3>
+          <h3>Parallel setup work</h3>
           <p>
-            With <code>mise install</code>, then async <code>bundle install</code>
-            and <code>pnpm install</code>, then a final build command, treeboot
-            runs <code>mise install</code> first, runs the Ruby and Node install
-            commands in parallel, waits for both, then runs the build.
+            treeboot does not parallelize configured commands. Projects that
+            want parallel setup work should delegate to one project-local task,
+            such as <code>mise run setup</code>, <code>make setup</code>, or
+            another task runner command.
           </p>
         </div>
 
@@ -2316,11 +2294,8 @@ Direct:  program + args</code></pre>
             <p>
               treeboot reports <code>treeboot: run &lt;label&gt;</code> before
               spawning each command. In dry-run it reports
-              <code>treeboot: would run &lt;label&gt;</code> instead. Async
-              batches may also report
-              <code>treeboot: would run async batch: &lt;labels&gt;</code> in
-              dry-run. A successful command does not produce a separate success
-              event.
+              <code>treeboot: would run &lt;label&gt;</code> instead. A
+              successful command does not produce a separate success event.
             </p>
           </section>
 
@@ -2340,31 +2315,20 @@ Direct:  program + args</code></pre>
           <section class="panel">
             <h3>Child output</h3>
             <p>
-              Sequential commands inherit stdout and stderr directly. Async
-              commands pipe stdout and stderr, buffer complete lines, flush any
-              trailing fragment at EOF, prefix each line with
-              <code>[&lt;label&gt;]</code>, and serialize writes so output never
-              interleaves mid-line. stdout lines remain on stdout; stderr
-              lines remain on stderr.
+              Commands inherit stdout and stderr directly.
             </p>
           </section>
 
           <section class="panel">
             <h3>Failures</h3>
             <p>
-              Fatal singleton failures exit non-zero immediately and later
-              commands do not run. If a non-async command cannot be spawned,
+              Fatal command failures exit non-zero immediately and later
+              commands do not run. If a command cannot be spawned,
               treeboot reports
               <code>treeboot: failed to run command &lt;label&gt;: &lt;io-error&gt;</code>
               to stderr and exits non-zero unless
-              <code>allow_failure = true</code>. Fatal async batch failures are
-              reported only after every started command in the batch exits, and
-              the error lists every failed command label. A command that cannot
-              be spawned in an async batch counts as a failed command label, and
-              treeboot still waits for every sibling command that did start.
-              Failed async command labels are listed in declaration order.
-              Allowed failures always emit a warning and do not make the run
-              fail by themselves.
+              <code>allow_failure = true</code>. Allowed failures always emit a
+              warning and do not make the run fail by themselves.
             </p>
           </section>
         </div>
@@ -2396,29 +2360,23 @@ treeboot: skip copy .env.local; target exists
 treeboot: symlink .tool-versions -&gt; ../repo/.tool-versions
 treeboot: sync shared/config -&gt; .config
 treeboot: run Install packages: npm install
-[Install Node packages: pnpm install] Lockfile is up to date
 treeboot: warning: command optional lint: npm run lint failed with exit status: 1</code></pre>
 
         <p>
           Unchanged sync files and directories produce no output. Sync reports
           creates, updates, and deletes when deletion is explicitly enabled.
-          Sequential command child output is inherited directly. Async command
-          child output is prefixed with the command label and written to the
-          same stream, stdout or stderr, that the child used.
+          Command child output is inherited directly.
         </p>
 
         <p>
           Command start lines use <code>treeboot: run &lt;label&gt;</code>. Dry-run
           uses <code>treeboot: would run &lt;label&gt;</code> and does not spawn
-          commands. Fatal singleton command failures are reported as
+          commands. Fatal command failures are reported as
           <code>treeboot: command &lt;label&gt; failed with &lt;status&gt;</code>.
-          Fatal singleton spawn failures are reported as
+          Fatal spawn failures are reported as
           <code>treeboot: failed to run command &lt;label&gt;: &lt;io-error&gt;</code>.
           Allowed spawn failures are reported as
           <code>treeboot: warning: command &lt;label&gt; failed to start: &lt;io-error&gt;</code>.
-          Fatal async batch failures, including failed spawns, are reported
-          after the batch drains in declaration order as
-          <code>treeboot: N async commands failed: &lt;labels&gt;</code>.
         </p>
 
         <p>

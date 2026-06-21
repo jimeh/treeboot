@@ -109,11 +109,8 @@ Scope:
 - apply treeboot environment plus per-command env
 - support command `cwd`
 - implement `allow_failure`
-- implement async command batching
+- run configured commands sequentially in declaration order
 - support `--skip-commands` and `--dry-run`
-
-Async implementation should be decided here. Keep milestone 1 synchronous until
-command batching needs concurrency.
 
 ## Milestone 7: Shell Completion
 

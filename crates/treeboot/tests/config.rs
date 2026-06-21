@@ -126,7 +126,6 @@ commands = [{
   program = "npm",
   args = ["install"],
   cwd = "app",
-  async = true,
   allow_failure = true,
 }]
 "#,
@@ -144,8 +143,27 @@ commands = [{
             "symlink shared/tool -> shared/tool",
         ))
         .stdout(predicate::str::contains(
-            "exec npm install async=true allow_failure=true cwd=app",
+            "exec npm install allow_failure=true cwd=app",
         ));
+}
+
+#[test]
+fn config_command_should_reject_async_command_field() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(
+        &config,
+        r#"
+commands = [{ run = "npm install", async = true }]
+"#,
+    );
+
+    treeboot()
+        .arg("config")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unknown field"));
 }
 
 #[test]

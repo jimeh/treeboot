@@ -7,8 +7,7 @@ use clap_complete::{ArgValueCompleter, CompletionCandidate, Shell};
 use treeboot_core::{
     CommandKind, CommandOperation, ConfigOptions, ConfigReport, Error, FileOperation,
     FileOperationCompletionOptions, FileOperationKind, FileOperationOptions, InitKind, InitOptions,
-    OutputEvent, OutputStream, Reporter, RunOptions, RuntimeOptionOverrides, SymlinkMode,
-    SyncCompare,
+    OutputEvent, Reporter, RunOptions, RuntimeOptionOverrides, SymlinkMode, SyncCompare,
 };
 
 #[derive(Debug, Parser)]
@@ -388,9 +387,6 @@ fn command_summary(command: &CommandOperation) -> String {
         }
     };
 
-    if command.async_command {
-        summary.push_str(" async=true");
-    }
     if command.allow_failure {
         summary.push_str(" allow_failure=true");
     }
@@ -530,17 +526,7 @@ struct StdoutReporter;
 
 impl Reporter for StdoutReporter {
     fn report(&mut self, event: OutputEvent) -> std::io::Result<()> {
-        if matches!(
-            event,
-            OutputEvent::CommandOutput {
-                stream: OutputStream::Stderr,
-                ..
-            }
-        ) {
-            eprintln!("{}", event.message());
-        } else {
-            println!("{}", event.message());
-        }
+        println!("{}", event.message());
         Ok(())
     }
 }

@@ -2,15 +2,6 @@ use std::path::PathBuf;
 
 use crate::FileOperationKind;
 
-/// Output stream for command child process lines.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OutputStream {
-    /// Standard output.
-    Stdout,
-    /// Standard error.
-    Stderr,
-}
-
 /// A structured message produced during a treeboot operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OutputEvent {
@@ -118,28 +109,12 @@ pub enum OutputEvent {
         label: String,
     },
 
-    /// A dry run would execute an async command batch.
-    CommandWouldRunBatch {
-        /// Human-readable command labels in the batch.
-        labels: Vec<String>,
-    },
-
     /// A command failure was allowed and execution will continue.
     CommandAllowedFailure {
         /// Human-readable command label.
         label: String,
         /// Failure detail.
         reason: String,
-    },
-
-    /// A line of async child process output.
-    CommandOutput {
-        /// Human-readable command label.
-        label: String,
-        /// Output destination stream.
-        stream: OutputStream,
-        /// Complete output line, without the line ending.
-        line: String,
     },
 
     /// An init file was created.
@@ -225,14 +200,8 @@ impl OutputEvent {
             Self::CommandWouldRun { label } => {
                 format!("treeboot: would run {label}")
             }
-            Self::CommandWouldRunBatch { labels } => {
-                format!("treeboot: would run async batch: {}", labels.join(", "))
-            }
             Self::CommandAllowedFailure { label, reason } => {
                 format!("treeboot: warning: command {label} {reason}")
-            }
-            Self::CommandOutput { label, line, .. } => {
-                format!("[{label}] {line}")
             }
             Self::InitCreated { path } => {
                 format!("treeboot: created {}", path.display())
@@ -401,16 +370,5 @@ mod tests {
             event.message(),
             "treeboot: warning: command lint failed with exit status: 1"
         );
-    }
-
-    #[test]
-    fn message_should_format_command_output() {
-        let event = OutputEvent::CommandOutput {
-            label: "Build: cargo build".to_owned(),
-            stream: OutputStream::Stdout,
-            line: "Compiling treeboot".to_owned(),
-        };
-
-        assert_eq!(event.message(), "[Build: cargo build] Compiling treeboot");
     }
 }
