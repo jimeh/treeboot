@@ -1,6 +1,5 @@
 [tools]
 actionlint = "1.7.12"
-"cargo:cargo-llvm-cov" = "0.8.7"
 lefthook = "2.1.9"
 rust = { version = "1.96.0", components = "clippy,rust-analyzer,rust-src,rustfmt" }
 sccache = "0.16.0"
@@ -74,10 +73,12 @@ run = "cargo test -p treeboot --all-targets --all-features --locked"
 
 [tasks.coverage]
 description = "Run tests and print Rust coverage summary"
+tools."cargo:cargo-llvm-cov" = "0.8.7"
 run = "cargo llvm-cov --workspace --all-targets --all-features --locked"
 
 [tasks."coverage:missing"]
 description = "Show uncovered Rust lines"
+tools."cargo:cargo-llvm-cov" = "0.8.7"
 run = "cargo llvm-cov --workspace --all-targets --all-features --locked --summary-only --show-missing-lines"
 
 [tasks.check]
@@ -98,6 +99,7 @@ run = "lefthook install"
 
 [tasks.doctor]
 description = "Check required local tools"
+tools."cargo:cargo-llvm-cov" = "0.8.7"
 run = [
     "git --version",
     "cargo --version",

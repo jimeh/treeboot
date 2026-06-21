@@ -29,7 +29,8 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
-          cache: false
+          cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          cache_key: mise-v1-${{ github.event_name }}-{{platform}}-{{file_hash}}
       - run: mise run actions:lint
 
   fmt:
@@ -41,7 +42,8 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
-          cache: false
+          cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          cache_key: mise-v1-${{ github.event_name }}-{{platform}}-{{file_hash}}
       - run: mise run fmt
 
   generate:
@@ -53,7 +55,8 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
-          cache: false
+          cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          cache_key: mise-v1-${{ github.event_name }}-{{platform}}-{{file_hash}}
       - run: mise run generate:check
 
   lint:
@@ -65,7 +68,8 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
-          cache: false
+          cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          cache_key: mise-v1-${{ github.event_name }}-{{platform}}-{{file_hash}}
       - run: mise run lint
 
   msrv:
@@ -77,7 +81,8 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
-          cache: false
+          cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          cache_key: mise-v1-${{ github.event_name }}-{{platform}}-{{file_hash}}
       - run: mise run msrv
 
   test:
@@ -96,5 +101,6 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
-          cache: false
+          cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          cache_key: mise-v1-${{ github.event_name }}-{{platform}}-{{file_hash}}
       - run: mise run ${{ matrix.task }}
