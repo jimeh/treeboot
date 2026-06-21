@@ -30,9 +30,10 @@ printf 'treeboot root: %s\n' "$root_path"
 "#;
 
 /// Init file type to create.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum InitKind {
     /// Create a starter TOML config.
+    #[default]
     Config,
     /// Create an executable init script.
     Script,
@@ -43,8 +44,8 @@ pub enum InitKind {
 pub struct InitOptions {
     /// Directory in which the init target is created.
     pub cwd: Option<PathBuf>,
-    /// Init file type to create.
-    pub kind: Option<InitKind>,
+    /// Init file type to create. Defaults to a starter TOML config.
+    pub kind: InitKind,
     /// Output path. Defaults depend on the selected kind.
     pub path: Option<PathBuf>,
     /// Replace an existing output file.
@@ -67,15 +68,15 @@ pub struct InitReport {
 ///
 /// # Errors
 ///
-/// Returns an error if the current directory cannot be resolved, no init kind
-/// was selected, both init kinds were selected, the target already exists
-/// without `force`, or the target directory or file cannot be written.
+/// Returns an error if the current directory cannot be resolved, the target
+/// already exists without `force`, or the target directory or file cannot be
+/// written.
 pub fn init(options: InitOptions, reporter: &mut dyn Reporter) -> Result<InitReport> {
     let cwd = options.cwd.as_ref().map_or_else(
         || std::env::current_dir().map_err(|source| Error::CurrentDir { source }),
         |path| Ok(path.clone()),
     )?;
-    let kind = options.kind.ok_or(Error::InitTypeRequired)?;
+    let kind = options.kind;
     let path = options.path.unwrap_or_else(|| default_path(kind));
     let path = resolve_worktree_path(&cwd, &path);
 

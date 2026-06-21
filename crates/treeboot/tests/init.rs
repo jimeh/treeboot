@@ -20,17 +20,17 @@ fn init_config_should_create_starter_config() {
 }
 
 #[test]
-fn init_without_kind_should_exit_with_runtime_failure() {
+fn init_without_kind_should_create_starter_config() {
     let dir = TempDir::new().expect("tempdir should be created");
 
     treeboot()
         .arg("init")
         .current_dir(dir.path())
         .assert()
-        .code(1)
-        .stderr(predicate::str::contains(
-            "treeboot init requires --config or --script",
-        ));
+        .success()
+        .stdout(predicate::str::contains("treeboot: created"));
+
+    assert!(dir.path().join(".treeboot.toml").is_file());
 }
 
 #[test]
@@ -70,12 +70,24 @@ fn init_path_should_create_parent_directories() {
     let dir = TempDir::new().expect("tempdir should be created");
 
     treeboot()
-        .args(["init", "--config", "-p", "nested/.treeboot.toml"])
+        .args(["init", "-p", "nested/.treeboot.toml"])
         .current_dir(dir.path())
         .assert()
         .success();
 
     assert!(dir.path().join("nested/.treeboot.toml").is_file());
+}
+
+#[test]
+fn init_config_and_script_should_be_usage_error() {
+    let dir = TempDir::new().expect("tempdir should be created");
+
+    treeboot()
+        .args(["init", "--config", "--script"])
+        .current_dir(dir.path())
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("cannot be used with"));
 }
 
 #[cfg(unix)]
