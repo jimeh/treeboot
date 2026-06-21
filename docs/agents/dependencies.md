@@ -16,6 +16,8 @@ dependencies for small wrappers around the standard library.
 - `assert_cmd`, `predicates`, and `tempfile` support CLI integration tests.
 - `cargo-llvm-cov` is a task-scoped mise development tool, not a Cargo
   dependency.
+- Mise-managed tools use a 7-day `minimum_release_age` cooldown to avoid
+  adopting freshly published binaries by default.
 
 ## Guidelines
 
@@ -26,6 +28,8 @@ dependencies for small wrappers around the standard library.
 - Prefer the Git CLI over a Git library unless the spec requires behavior that
   the CLI cannot provide reliably.
 - Add a dependency only when the reason is clear in the surrounding change.
+- For urgent security or CI-maintenance updates that must bypass the mise
+  cooldown, use the narrowest one-off override and call it out in the PR.
 
 ## Review Checklist
 

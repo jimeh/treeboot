@@ -68,7 +68,7 @@ Use `mise` tasks unless a narrower raw Cargo command is clearly better.
 
 ```sh
 mise run setup      # install tools/deps and hooks
-mise run check      # normal pre-handoff confidence
+mise run check      # normal pre-handoff confidence and generated freshness
 mise run verify     # broad local verification
 mise run doctor     # local tool sanity check
 mise run coverage   # coverage summary for test-gap work
@@ -79,6 +79,8 @@ Targeted commands:
 
 ```sh
 mise run fmt
+mise run fmt:check
+mise run fmt:write
 mise run generate
 mise run generate:check
 mise run generate:schema:check
@@ -88,6 +90,7 @@ mise run test:core
 mise run test:cli
 mise run msrv
 mise run actions:lint
+mise run clean
 mise run coverage:missing
 ```
 
@@ -131,6 +134,8 @@ and CI mapping.
 
 - GitHub Actions are pinned and checked with `pinact`.
 - Workflow syntax/security checks are wrapped by `mise run actions:lint`.
+- Mise-managed tools use a 7-day release-age cooldown; use a narrow override
+  only for urgent security or CI-maintenance updates.
 - Coverage uses `cargo-llvm-cov` through `mise run coverage`; the first run may
   install `llvm-tools-preview` for the active Rust toolchain.
 - Keep optional heavyweight tools task-scoped in `mise.toml`; GitHub Actions

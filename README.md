@@ -271,11 +271,14 @@ Useful individual tasks:
 mise run actions:lint
 mise run build
 mise run build:release
+mise run clean
 mise run coverage
 mise run coverage:missing
 mise run deps
 mise run doctor
 mise run fmt
+mise run fmt:check
+mise run fmt:write
 mise run generate
 mise run generate:check
 mise run generate:schema:check
