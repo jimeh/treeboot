@@ -157,6 +157,9 @@ and CI mapping.
 - Android release targets use the hosted runner's Android NDK clang linkers
   instead of `cross`; the cross Android images fail with Rust 1.96 due to
   missing `libunwind` during binary linking.
-- Release-please's `cargo-workspace` plugin expects every workspace member
-  manifest to contain a string `package.version`; keep member crate versions
-  explicit instead of inheriting them from `[workspace.package]`.
+- Release-please intentionally uses one root Rust release unit without the
+  `cargo-workspace` plugin. The root `treeboot-workspace` package exists only
+  so release-please can update the root manifest and all workspace member
+  versions together while creating the single `vX.Y.Z` product tag. Keep
+  `workspace.default-members` aligned with the real build/test packages so the
+  inert root package does not replace the normal default Cargo task surface.
