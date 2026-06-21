@@ -22,7 +22,7 @@ description = "Fetch Rust dependencies"
 run = "cargo fetch --locked"
 
 [tasks.fmt]
-description = "Check Rust formatting"
+description = "Check Rust formatting (alias for fmt:check)"
 depends = ["fmt:check"]
 
 [tasks."fmt:check"]
