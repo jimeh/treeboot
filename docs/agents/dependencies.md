@@ -14,6 +14,10 @@ dependencies for small wrappers around the standard library.
 - `schemars` and `serde_json` are dev-dependencies in `treeboot-core` for the
   JSON Schema generator example.
 - `assert_cmd`, `predicates`, and `tempfile` support CLI integration tests.
+- `markdown` belongs in `tools/release-helper` so release-note extraction can
+  identify changelog sections structurally while preserving source Markdown.
+- `zip` belongs in `tools/release-helper` so Windows release archives do not
+  depend on Python or platform-specific zip tools in CI.
 - `cargo-llvm-cov` is a task-scoped mise development tool, not a Cargo
   dependency.
 - Mise-managed tools use a 7-day `minimum_release_age` cooldown to avoid

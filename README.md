@@ -247,8 +247,8 @@ After installing the binary, generate shell completion scripts with
 package manager conventions.
 
 Releases are expected to include archives, raw executable assets, checksums,
-a signed checksum manifest, SBOMs, attestations, and signed/notarized macOS
-binaries.
+SBOMs, and provenance attestations. GPG checksum signing and macOS
+signing/notarization are planned distribution hardening work.
 
 ## Name
 
