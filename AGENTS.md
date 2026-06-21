@@ -157,3 +157,7 @@ and CI mapping.
 - Android release targets use the hosted runner's Android NDK clang linkers
   instead of `cross`; the cross Android images fail with Rust 1.96 due to
   missing `libunwind` during binary linking.
+- Release-please uses the `simple` strategy with root `Cargo.toml` as its
+  version file because the `cargo-workspace` plugin rejects
+  `version.workspace = true`; keep the root `x-release-please-version` comment
+  and Cargo.lock `extra-files` entries together.

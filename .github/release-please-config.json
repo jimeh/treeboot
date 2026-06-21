@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
-  "release-type": "rust",
+  "release-type": "simple",
   "always-update": true,
   "include-component-in-tag": false,
   "include-v-in-tag": true,
@@ -8,10 +8,25 @@
   "force-tag-creation": true,
   "packages": {
     ".": {
-      "package-name": "treeboot"
+      "package-name": "treeboot",
+      "version-file": "Cargo.toml",
+      "extra-files": [
+        {
+          "type": "toml",
+          "path": "Cargo.lock",
+          "jsonpath": "$.package[?(@.name.value == 'treeboot')].version"
+        },
+        {
+          "type": "toml",
+          "path": "Cargo.lock",
+          "jsonpath": "$.package[?(@.name.value == 'treeboot-core')].version"
+        },
+        {
+          "type": "toml",
+          "path": "Cargo.lock",
+          "jsonpath": "$.package[?(@.name.value == 'treeboot-release-helper')].version"
+        }
+      ]
     }
-  },
-  "plugins": [
-    "cargo-workspace"
-  ]
+  }
 }
