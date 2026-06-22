@@ -27,18 +27,23 @@ with a GitHub App token so tag pushes trigger the release workflow.
 
 The tag-triggered release workflow should reuse the draft GitHub Release for
 the pushed tag. If no draft exists, it should extract the matching changelog
-section as release notes, create a draft, upload all assets, and publish only
-after uploads complete.
+section as release notes, create a draft, upload all assets, publish the
+crates.io packages, and publish the GitHub Release only after uploads and crate
+publication complete.
 
 The manual release workflow path should generate the same build assets but
-default to workflow artifacts only. It should not publish a GitHub Release
-unless explicitly requested.
+default to workflow artifacts only. It must not publish a GitHub Release or
+crates.io packages.
 
 Crates.io publishing uses two packages: publish `treeboot-core` first, then
 publish `treeboot` after the registry index can resolve the matching
 `treeboot-core` version. The CLI package must keep its `treeboot-core`
 dependency as both a local `path` and the matching registry `version` so local
 workspace development and published dependency resolution both work.
+Publishing is authenticated with crates.io Trusted Publishing, bound to the
+GitHub Actions `release` environment in `.github/workflows/release.yml`.
+Reruns should check crates.io first and skip any package version that is already
+published.
 
 Release workflow scripts in `scripts/` are thin wrappers around the Rust
 `treeboot-release-helper` workspace package. Keep release version derivation,
@@ -53,8 +58,6 @@ Before the first real release, add or document commands for:
 
 - generating shell completion scripts for bash, zsh, fish, powershell, and
   elvish from the built binary
-- publishing `treeboot-core` and `treeboot` to crates.io, or explicitly
-  deferring crates.io publication for the release
 - signing checksums
 - signing/notarizing macOS binaries
 
@@ -73,17 +76,18 @@ command that does not publish anything:
 mise run release:check
 mise run release:package:local
 cargo publish --dry-run -p treeboot-core --locked
+cargo publish --dry-run -p treeboot --locked
 ```
 
 Use `release:check` as the default release-maintenance gate. It packages the
 current host artifact and smoke-checks completion generation for every supported
 shell.
 
-Before the first crates.io publish, `cargo publish --dry-run -p treeboot
---locked` cannot fully verify because `treeboot-core` is not in the registry
-index yet. Run it after the matching `treeboot-core` version has been
-published. Use `cargo package -p treeboot --list` before then to inspect the
-CLI package contents.
+Before publishing a new version, dry-run both crates in publish order. If
+`treeboot-core` has not been published for that version yet, the `treeboot`
+dry-run may only fully verify after the matching core version reaches the
+registry index; use `cargo package -p treeboot --list` to inspect the CLI
+package contents before then.
 
 Before publishing, review install notes for shell completion paths and run
 completion generation for every supported shell.

@@ -7,11 +7,6 @@ on:
         description: "Version to use for manual artifacts, without the v prefix"
         required: false
         type: string
-      publish_release:
-        description: "Publish a GitHub Release for the selected version"
-        required: false
-        default: false
-        type: boolean
   push:
     tags: ["v*"]
 
@@ -36,7 +31,6 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       safe_version: ${{ steps.version.outputs.safe_version }}
       is_tag: ${{ steps.version.outputs.is_tag }}
-      publish_release: ${{ steps.publish.outputs.publish_release }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -52,17 +46,6 @@ jobs:
         env:
           TREEBOOT_RELEASE_VERSION: ${{ inputs.version }}
         run: scripts/release-version.sh
-
-      - id: publish
-        env:
-          IS_TAG: ${{ steps.version.outputs.is_tag }}
-          REQUESTED_PUBLISH: ${{ inputs.publish_release }}
-        run: |
-          publish_release="false"
-          if [[ "${IS_TAG}" == "true" || "${REQUESTED_PUBLISH}" == "true" ]]; then
-            publish_release="true"
-          fi
-          echo "publish_release=${publish_release}" >>"${GITHUB_OUTPUT}"
 
   build:
     needs: prepare
@@ -190,15 +173,13 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  publish:
+  assemble:
     needs: [prepare, build]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       actions: read
-      attestations: write
-      contents: write
-      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -208,7 +189,7 @@ jobs:
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-          cache_key: mise-v2-${{ github.event_name }}-release-publish-{{platform}}-{{file_hash}}
+          cache_key: mise-v2-${{ github.event_name }}-release-assemble-{{platform}}-{{file_hash}}
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -233,24 +214,48 @@ jobs:
             shasum -a 256 config.schema.json treeboot-* > treeboot-checksums.txt
           )
 
-      - if: needs.prepare.outputs.publish_release == 'true'
-        name: Generate artifact attestations
-        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
-        with:
-          subject-path: |
-            dist/config.schema.json
-            dist/treeboot-*
-
-      - if: needs.prepare.outputs.publish_release != 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: treeboot-release-${{ needs.prepare.outputs.safe_version }}
           path: dist/*
           if-no-files-found: error
           retention-days: 14
 
-      - if: needs.prepare.outputs.publish_release == 'true'
-        name: Resolve release notes
+  publish:
+    if: needs.prepare.outputs.is_tag == 'true'
+    needs: [prepare, assemble]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      actions: read
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          cache: false
+          cache_key: mise-v2-${{ github.event_name }}-release-publish-{{platform}}-{{file_hash}}
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: treeboot-release-${{ needs.prepare.outputs.safe_version }}
+          path: dist
+
+      - name: Generate artifact attestations
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-path: |
+            dist/config.schema.json
+            dist/treeboot-*
+
+      - name: Resolve release notes
         id: notes
         env:
           TAG: ${{ needs.prepare.outputs.tag }}
@@ -264,7 +269,7 @@ jobs:
             scripts/extract-release-notes.sh "${VERSION}" /tmp/treeboot-release-notes.md
           fi
 
-      - if: needs.prepare.outputs.publish_release == 'true' && steps.notes.outputs.existing_release == 'false'
+      - if: steps.notes.outputs.existing_release == 'false'
         name: Create draft release
         env:
           TAG: ${{ needs.prepare.outputs.tag }}
@@ -276,15 +281,95 @@ jobs:
             --title "${TAG}" \
             --notes-file /tmp/treeboot-release-notes.md
 
-      - if: needs.prepare.outputs.publish_release == 'true'
-        name: Upload release assets
+      - name: Upload release assets
         env:
           TAG: ${{ needs.prepare.outputs.tag }}
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${TAG}" dist/* --clobber
 
-      - if: needs.prepare.outputs.publish_release == 'true'
-        name: Publish release
+      - name: Authenticate to crates.io
+        id: crates-auth
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
+
+      - name: Publish crates.io packages
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-auth.outputs.token }}
+          USER_AGENT: treeboot-release/${{ needs.prepare.outputs.version }} (https://github.com/jimeh/treeboot)
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          crate_version_exists() {
+            local crate="$1"
+            local version="$2"
+            local status
+
+            if ! status="$(
+              curl \
+                --silent \
+                --show-error \
+                --connect-timeout 10 \
+                --max-time 30 \
+                --retry 3 \
+                --retry-connrefused \
+                --retry-delay 2 \
+                --output /dev/null \
+                --user-agent "${USER_AGENT}" \
+                --write-out "%{http_code}" \
+                "https://crates.io/api/v1/crates/${crate}/${version}"
+            )"; then
+              echo "::error::failed to query crates.io for ${crate} ${version}"
+              exit 1
+            fi
+
+            case "${status}" in
+              200)
+                return 0
+                ;;
+              404)
+                return 1
+                ;;
+              *)
+                echo "::error::unexpected crates.io status ${status} for ${crate} ${version}"
+                exit 1
+                ;;
+            esac
+          }
+
+          wait_for_crate_version() {
+            local crate="$1"
+            local version="$2"
+
+            for _ in {1..30}; do
+              if crate_version_exists "${crate}" "${version}"; then
+                return 0
+              fi
+              sleep 10
+            done
+
+            echo "::error::${crate} ${version} did not appear in crates.io in time"
+            return 1
+          }
+
+          publish_crate() {
+            local package="$1"
+            local crate="$2"
+            local version="$3"
+
+            if crate_version_exists "${crate}" "${version}"; then
+              echo "${crate} ${version} is already published; skipping"
+              return 0
+            fi
+
+            cargo publish -p "${package}" --locked
+          }
+
+          publish_crate treeboot-core treeboot-core "${VERSION}"
+          wait_for_crate_version treeboot-core "${VERSION}"
+          publish_crate treeboot treeboot "${VERSION}"
+          wait_for_crate_version treeboot "${VERSION}"
+
+      - name: Publish release
         env:
           TAG: ${{ needs.prepare.outputs.tag }}
           GH_TOKEN: ${{ github.token }}
