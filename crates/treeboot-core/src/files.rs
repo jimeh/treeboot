@@ -848,6 +848,7 @@ fn copy_file_with_metadata(
         path: target_path.to_path_buf(),
         source,
     })?;
+    make_target_writable(operation, target_path)?;
 
     let mut times = FileTimes::new();
     if let Ok(accessed) = metadata.accessed() {
@@ -857,7 +858,7 @@ fn copy_file_with_metadata(
         times = times.set_modified(modified);
     }
     File::options()
-        .read(true)
+        .write(true)
         .open(target_path)
         .and_then(|file| file.set_times(times))
         .map_err(|source| Error::FileOperationIo {
@@ -873,6 +874,39 @@ fn copy_file_with_metadata(
             source,
         }
     })
+}
+
+fn make_target_writable(operation: FileOperationKind, target_path: &Path) -> Result<()> {
+    let mut permissions = fs::metadata(target_path)
+        .map_err(|source| Error::FileOperationIo {
+            operation: operation.as_str(),
+            path: target_path.to_path_buf(),
+            source,
+        })?
+        .permissions();
+
+    if !permissions.readonly() {
+        return Ok(());
+    }
+
+    make_permissions_writable(&mut permissions);
+    fs::set_permissions(target_path, permissions).map_err(|source| Error::FileOperationIo {
+        operation: operation.as_str(),
+        path: target_path.to_path_buf(),
+        source,
+    })
+}
+
+#[cfg(unix)]
+fn make_permissions_writable(permissions: &mut fs::Permissions) {
+    use std::os::unix::fs::PermissionsExt;
+
+    permissions.set_mode(permissions.mode() | 0o200);
+}
+
+#[cfg(not(unix))]
+fn make_permissions_writable(permissions: &mut fs::Permissions) {
+    permissions.set_readonly(false);
 }
 
 fn remove_file(operation: FileOperationKind, path: &Path) -> Result<()> {

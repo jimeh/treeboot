@@ -57,7 +57,8 @@ GitHub Actions runs these mise tasks:
 - `mise run test:cli`
 - `mise run test:release-helper`
 
-The local `mise run ci` task mirrors those checks.
+The test tasks run on Ubuntu, macOS, and Windows in CI. The local
+`mise run ci` task mirrors the task set, but only on the current host platform.
 
 ## Coverage
 
