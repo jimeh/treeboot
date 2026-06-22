@@ -87,15 +87,33 @@ jobs:
       - run: mise run msrv
 
   test:
-    name: test (${{ matrix.task }})
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }}, ${{ matrix.task }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
+    env:
+      MISE_RUSTUP_HOME: ${{ github.workspace }}/.mise-rustup
     strategy:
       fail-fast: false
       matrix:
-        task:
-          - test:core
-          - test:cli
+        include:
+          - os: ubuntu-latest
+            task: test:core
+          - os: ubuntu-latest
+            task: test:cli
+          - os: ubuntu-latest
+            task: test:release-helper
+          - os: macos-26
+            task: test:core
+          - os: macos-26
+            task: test:cli
+          - os: macos-26
+            task: test:release-helper
+          - os: windows-2025
+            task: test:core
+          - os: windows-2025
+            task: test:cli
+          - os: windows-2025
+            task: test:release-helper
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:

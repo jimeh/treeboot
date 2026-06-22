@@ -6,6 +6,10 @@ use std::process::Command as StdCommand;
 use assert_cmd::Command;
 use tempfile::TempDir;
 
+pub fn display_path(path: &str) -> String {
+    path.split('/').collect::<PathBuf>().display().to_string()
+}
+
 pub fn treeboot() -> Command {
     let mut command = Command::cargo_bin("treeboot").expect("treeboot binary should build");
     command

@@ -41,6 +41,22 @@ fn temp_workspace(name: &str) -> (PathBuf, PathBuf) {
     (root, worktree)
 }
 
+#[cfg(unix)]
+fn short_temp_workspace(name: &str) -> (PathBuf, PathBuf) {
+    let id = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock should be after Unix epoch")
+        .as_nanos();
+    let base = PathBuf::from(format!("/tmp/tb-{name}-{}-{id}", std::process::id()));
+    let root = base.join("r");
+    let worktree = base.join("w");
+
+    fs::create_dir_all(&root).expect("root should be created");
+    fs::create_dir_all(&worktree).expect("worktree should be created");
+
+    (root, worktree)
+}
+
 fn context(root_path: &Path, worktree_path: &Path) -> Worktree {
     Worktree {
         root_path: root_path.to_path_buf(),
@@ -377,7 +393,7 @@ fn apply_file_operations_should_reject_directory_to_symlink_target() {
 fn apply_file_operations_should_reject_unsupported_source_file_type() {
     use std::os::unix::net::UnixListener;
 
-    let (root, worktree) = temp_workspace("unsupported-source");
+    let (root, worktree) = short_temp_workspace("us");
     let socket_path = root.join("socket");
     let _listener = UnixListener::bind(&socket_path).expect("source socket should be created");
     let plan = run_plan(
@@ -408,7 +424,7 @@ fn apply_file_operations_should_reject_unsupported_source_file_type() {
 fn apply_file_operations_should_reject_unsupported_directory_target_file_type() {
     use std::os::unix::net::UnixListener;
 
-    let (root, worktree) = temp_workspace("unsupported-directory-target");
+    let (root, worktree) = short_temp_workspace("ud");
     fs::create_dir_all(root.join("shared")).expect("source dir should be created");
     let socket_path = worktree.join("shared");
     let _listener = UnixListener::bind(&socket_path).expect("target socket should be created");
@@ -440,7 +456,7 @@ fn apply_file_operations_should_reject_unsupported_directory_target_file_type() 
 fn apply_file_operations_should_reject_unsupported_sync_file_target_type() {
     use std::os::unix::net::UnixListener;
 
-    let (root, worktree) = temp_workspace("unsupported-sync-target");
+    let (root, worktree) = short_temp_workspace("ut");
     fs::write(root.join(".env"), "TOKEN=1\n").expect("source should be written");
     let socket_path = worktree.join(".env");
     let _listener = UnixListener::bind(&socket_path).expect("target socket should be created");
@@ -700,7 +716,7 @@ fn apply_file_operations_should_update_checksum_sync_when_metadata_matches() {
         .expect("source mtime should be readable");
     let times = FileTimes::new().set_modified(modified);
     File::options()
-        .read(true)
+        .write(true)
         .open(&target)
         .and_then(|file| file.set_times(times))
         .expect("target mtime should be aligned");
@@ -1168,6 +1184,46 @@ fn apply_file_operations_should_copy_read_only_file() {
         & 0o777;
     assert_eq!(copied, "TOKEN=1\n");
     assert_eq!(mode, 0o444);
+}
+
+#[cfg(unix)]
+#[test]
+fn apply_file_operations_should_copy_file_without_owner_write() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (root, worktree) = temp_workspace("owner-write-copy");
+    let source = root.join(".env");
+    let target = worktree.join(".env");
+    fs::write(&source, "TOKEN=1\n").expect("source should be written");
+    let mut permissions = fs::metadata(&source)
+        .expect("source metadata should be readable")
+        .permissions();
+    permissions.set_mode(0o420);
+    fs::set_permissions(&source, permissions).expect("source permissions should change");
+    let plan = run_plan(
+        &root,
+        &worktree,
+        vec![operation(
+            FileOperationKind::Copy,
+            &root,
+            &worktree,
+            ".env",
+            ".env",
+        )],
+    );
+    let mut reporter = VecReporter::default();
+
+    apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+        .expect("source without owner write should copy");
+
+    let copied = fs::read_to_string(&target).expect("target should be readable");
+    let mode = fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(copied, "TOKEN=1\n");
+    assert_eq!(mode, 0o420);
 }
 
 #[cfg(unix)]

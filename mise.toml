@@ -87,7 +87,7 @@ description = "Check Rust MSRV compatibility"
 run = "mise exec rust@1.96.0 -- cargo check --locked"
 
 [tasks.test]
-depends = ["test:core", "test:cli"]
+depends = ["test:core", "test:cli", "test:release-helper"]
 description = "Run all Rust tests"
 
 [tasks."test:core"]
@@ -97,6 +97,10 @@ run = "cargo test -p treeboot-core --all-targets --all-features --locked"
 [tasks."test:cli"]
 description = "Run treeboot CLI tests"
 run = "cargo test -p treeboot --all-targets --all-features --locked"
+
+[tasks."test:release-helper"]
+description = "Run release helper tests"
+run = "cargo test -p treeboot-release-helper --all-targets --all-features --locked"
 
 [tasks.coverage]
 description = "Run tests and print Rust coverage summary"
