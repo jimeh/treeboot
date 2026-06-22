@@ -282,9 +282,11 @@ mise run format:check
 mise run generate
 mise run generate:check
 mise run generate:schema:check
+mise run harness:check
 mise run hooks:install
 mise run lint
 mise run msrv
+mise run release:check
 mise run test
 mise run test:core
 mise run test:cli

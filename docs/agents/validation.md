@@ -30,7 +30,7 @@ mise run check
 ```
 
 This runs formatting checks, generated-artifact freshness checks, clippy, and
-tests.
+repo harness invariants, then tests.
 
 ### Verify
 
@@ -51,6 +51,7 @@ GitHub Actions runs these mise tasks:
 - `mise run format:check`
 - `mise run generate:check`
   - currently wraps `mise run generate:schema:check`
+- `mise run harness:check`
 - `mise run lint`
 - `mise run msrv`
 - `mise run test:core`
