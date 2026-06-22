@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/jimeh/treeboot/compare/v0.2.0...v0.3.0) (2026-06-22)
+
+
+### Features
+
+* harden treeboot setup boundaries ([#39](https://github.com/jimeh/treeboot/issues/39)) ([8da560c](https://github.com/jimeh/treeboot/commit/8da560c6636457d17214ec2d3d05d330596da2ff))
+
+
+### Bug Fixes
+
+* reject overlapping file operation targets ([#35](https://github.com/jimeh/treeboot/issues/35)) ([e221130](https://github.com/jimeh/treeboot/commit/e221130a85e7959974bb920dde994d7d78f7ff96))
+
 ## [0.2.0](https://github.com/jimeh/treeboot/compare/v0.1.0...v0.2.0) (2026-06-21)
 
 

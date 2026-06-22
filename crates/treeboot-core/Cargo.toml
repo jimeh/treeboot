@@ -1,6 +1,6 @@
 [package]
 name = "treeboot-core"
-version = "0.2.0"
+version = "0.3.0"
 description = "Reusable worktree bootstrap engine for the treeboot CLI."
 edition.workspace = true
 rust-version.workspace = true
