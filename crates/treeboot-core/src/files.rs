@@ -885,7 +885,7 @@ fn make_target_writable(operation: FileOperationKind, target_path: &Path) -> Res
         })?
         .permissions();
 
-    if !permissions.readonly() {
+    if target_is_writable_for_metadata(&permissions) {
         return Ok(());
     }
 
@@ -895,6 +895,18 @@ fn make_target_writable(operation: FileOperationKind, target_path: &Path) -> Res
         path: target_path.to_path_buf(),
         source,
     })
+}
+
+#[cfg(unix)]
+fn target_is_writable_for_metadata(permissions: &fs::Permissions) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+
+    permissions.mode() & 0o200 != 0
+}
+
+#[cfg(not(unix))]
+fn target_is_writable_for_metadata(permissions: &fs::Permissions) -> bool {
+    !permissions.readonly()
 }
 
 #[cfg(unix)]

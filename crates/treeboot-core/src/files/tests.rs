@@ -1188,6 +1188,46 @@ fn apply_file_operations_should_copy_read_only_file() {
 
 #[cfg(unix)]
 #[test]
+fn apply_file_operations_should_copy_file_without_owner_write() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (root, worktree) = temp_workspace("owner-write-copy");
+    let source = root.join(".env");
+    let target = worktree.join(".env");
+    fs::write(&source, "TOKEN=1\n").expect("source should be written");
+    let mut permissions = fs::metadata(&source)
+        .expect("source metadata should be readable")
+        .permissions();
+    permissions.set_mode(0o420);
+    fs::set_permissions(&source, permissions).expect("source permissions should change");
+    let plan = run_plan(
+        &root,
+        &worktree,
+        vec![operation(
+            FileOperationKind::Copy,
+            &root,
+            &worktree,
+            ".env",
+            ".env",
+        )],
+    );
+    let mut reporter = VecReporter::default();
+
+    apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+        .expect("source without owner write should copy");
+
+    let copied = fs::read_to_string(&target).expect("target should be readable");
+    let mode = fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(copied, "TOKEN=1\n");
+    assert_eq!(mode, 0o420);
+}
+
+#[cfg(unix)]
+#[test]
 fn apply_file_operations_should_force_symlink_over_existing_symlink() {
     let (root, worktree) = temp_workspace("force-symlink-over-symlink");
     fs::write(root.join("tool"), "tool\n").expect("source should be written");
