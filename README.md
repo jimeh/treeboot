@@ -173,7 +173,8 @@ treeboot init
 ```
 
 `treeboot init` creates `.treeboot.toml` by default. Use
-`treeboot init --script` to create `.treeboot.sh` instead.
+`treeboot init --script` to create `.treeboot.sh` instead. Existing init
+targets, including symlinks, are never replaced.
 
 ## Shell Completions
 
@@ -202,7 +203,7 @@ package manager expects.
 - duplicate configured targets are config errors
 - file targets must stay inside the current worktree
 - `--strict` fails on existing copy/symlink targets and rejects sync operations
-- `--force` is the explicit mode for replacing existing targets
+- `--force` is the explicit mode for replacing existing file-operation targets
 
 If no config or executable init script is found, `treeboot` prints an info
 message and exits successfully. With `--strict`, that same case exits non-zero.

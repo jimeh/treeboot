@@ -1,4 +1,5 @@
-use std::path::PathBuf;
+use std::io::ErrorKind;
+use std::path::{Path, PathBuf};
 
 use crate::context::resolve_worktree_path;
 use crate::{Error, OutputEvent, Reporter, Result};
@@ -48,8 +49,6 @@ pub struct InitOptions {
     pub kind: InitKind,
     /// Output path. Defaults depend on the selected kind.
     pub path: Option<PathBuf>,
-    /// Replace an existing output file.
-    pub force: bool,
 }
 
 /// Result summary for `treeboot init`.
@@ -69,8 +68,7 @@ pub struct InitReport {
 /// # Errors
 ///
 /// Returns an error if the current directory cannot be resolved, the target
-/// already exists without `force`, or the target directory or file cannot be
-/// written.
+/// already exists, or the target directory or file cannot be written.
 pub fn init(options: InitOptions, reporter: &mut dyn Reporter) -> Result<InitReport> {
     let cwd = options.cwd.as_ref().map_or_else(
         || std::env::current_dir().map_err(|source| Error::CurrentDir { source }),
@@ -80,7 +78,7 @@ pub fn init(options: InitOptions, reporter: &mut dyn Reporter) -> Result<InitRep
     let path = options.path.unwrap_or_else(|| default_path(kind));
     let path = resolve_worktree_path(&cwd, &path);
 
-    if path.exists() && !options.force {
+    if target_exists(&path)? {
         return Err(Error::InitTargetExists(path));
     }
 
@@ -119,6 +117,17 @@ fn default_path(kind: InitKind) -> PathBuf {
     }
 }
 
+fn target_exists(path: &Path) -> Result<bool> {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(source) if source.kind() == ErrorKind::NotFound => Ok(false),
+        Err(source) => Err(Error::InitIo {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
 #[cfg(unix)]
 fn make_executable(path: &std::path::Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
@@ -139,4 +148,90 @@ fn make_executable(path: &std::path::Path) -> Result<()> {
 #[cfg(not(unix))]
 fn make_executable(_path: &std::path::Path) -> Result<()> {
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use tempfile::TempDir;
+
+    #[derive(Default)]
+    struct VecReporter {
+        events: Vec<OutputEvent>,
+    }
+
+    impl Reporter for VecReporter {
+        fn report(&mut self, event: OutputEvent) -> std::io::Result<()> {
+            self.events.push(event);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn init_should_refuse_existing_file() {
+        let dir = TempDir::new().expect("tempdir should be created");
+        let config = dir.path().join(".treeboot.toml");
+        std::fs::write(&config, "old\n").expect("config should be written");
+        let mut reporter = VecReporter::default();
+
+        let err = init(
+            InitOptions {
+                cwd: Some(dir.path().to_path_buf()),
+                kind: InitKind::Config,
+                path: None,
+            },
+            &mut reporter,
+        )
+        .expect_err("existing target should be rejected");
+
+        match err {
+            Error::InitTargetExists(path) => assert_eq!(path, config),
+            other => panic!("expected InitTargetExists, got {other:?}"),
+        }
+        assert_eq!(
+            std::fs::read_to_string(config).expect("config should be readable"),
+            "old\n"
+        );
+        assert!(reporter.events.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn init_should_refuse_existing_symlink_without_writing_through_it() {
+        use std::os::unix::fs::symlink;
+
+        let dir = TempDir::new().expect("tempdir should be created");
+        let target = dir.path().join("target.toml");
+        let link = dir.path().join(".treeboot.toml");
+        std::fs::write(&target, "old\n").expect("target should be written");
+        symlink(&target, &link).expect("symlink should be created");
+        let mut reporter = VecReporter::default();
+
+        let err = init(
+            InitOptions {
+                cwd: Some(dir.path().to_path_buf()),
+                kind: InitKind::Config,
+                path: None,
+            },
+            &mut reporter,
+        )
+        .expect_err("existing symlink should be rejected");
+
+        match err {
+            Error::InitTargetExists(path) => assert_eq!(path, link),
+            other => panic!("expected InitTargetExists, got {other:?}"),
+        }
+        assert_eq!(
+            std::fs::read_to_string(target).expect("target should be readable"),
+            "old\n"
+        );
+        assert!(
+            std::fs::symlink_metadata(link)
+                .expect("link metadata should load")
+                .file_type()
+                .is_symlink()
+        );
+        assert!(reporter.events.is_empty());
+    }
 }

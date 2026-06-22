@@ -157,10 +157,6 @@ struct InitArgs {
     /// Output path for the generated file.
     #[arg(short, long)]
     path: Option<PathBuf>,
-
-    /// Replace an existing init output file.
-    #[arg(short, long)]
-    force: bool,
 }
 
 #[derive(Debug, Args, Clone, Default)]
@@ -513,7 +509,6 @@ impl From<InitArgs> for InitOptions {
             cwd: None,
             kind: init_kind(&args),
             path: args.path,
-            force: args.force,
         }
     }
 }
