@@ -72,6 +72,7 @@ fn completions_should_include_current_subcommands_and_flags() {
         .stdout(predicate::str::contains("init"))
         .stdout(predicate::str::contains("--root"))
         .stdout(predicate::str::contains("--config"))
+        .stdout(predicate::str::contains("--no-init-script"))
         .stdout(predicate::str::contains("--dry-run"));
 }
 

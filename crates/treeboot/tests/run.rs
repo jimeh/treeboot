@@ -1394,6 +1394,29 @@ fn config_option_should_skip_executable_script_discovery() {
 
 #[cfg(unix)]
 #[test]
+fn no_init_script_should_skip_executable_script_and_discover_config() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    let script = repo.worktree_path().join(".treeboot.sh");
+    let marker = repo.worktree_path().join("script.out");
+    write_file(&config, "commands = []\n");
+    write_executable_script(
+        &script,
+        &format!("#!/bin/sh\nprintf 'ran\\n' > {}\n", marker.display()),
+    );
+
+    treeboot()
+        .args(["--no-init-script"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("treeboot: config detected"));
+
+    assert!(!marker.exists());
+}
+
+#[cfg(unix)]
+#[test]
 fn non_executable_init_script_should_be_ignored() {
     let repo = git_worktree();
     write_file(

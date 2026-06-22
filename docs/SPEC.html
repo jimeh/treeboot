@@ -634,7 +634,7 @@
     <main>
       <header class="hero" id="overview">
         <div>
-          <p class="eyebrow">Specification v1.6.0</p>
+          <p class="eyebrow">Specification v1.7.0</p>
           <h1>treeboot</h1>
           <p class="lede">
             A portable worktree bootstrapper that lets every coding agent,
@@ -761,6 +761,7 @@ treeboot run --strict
 treeboot run --force
 treeboot run --root /path/to/root-checkout
 treeboot run --config .treeboot.toml
+treeboot run --no-init-script
 treeboot run --skip-commands</code></pre>
           </section>
 
@@ -799,11 +800,11 @@ treeboot config --json</code></pre>
             <pre><code class="shell">treeboot init
 treeboot init --config
 treeboot init --script
-treeboot init --path .treeboot.toml
-treeboot init --force</code></pre>
+treeboot init --path .treeboot.toml</code></pre>
             <p>
               Default paths are <code>.treeboot.toml</code> for config and
-              <code>.treeboot.sh</code> for scripts.
+              <code>.treeboot.sh</code> for scripts. Existing init targets,
+              including symlinks, are never replaced.
             </p>
           </section>
         </div>
@@ -915,6 +916,14 @@ treeboot completions elvish</code></pre>
               </td>
             </tr>
             <tr>
+              <td><code>--no-init-script</code></td>
+              <td>run</td>
+              <td>
+                Skips init script discovery while preserving normal config
+                discovery.
+              </td>
+            </tr>
+            <tr>
               <td><code>-o</code>, <code>--format &lt;text|json&gt;</code></td>
               <td>config</td>
               <td>
@@ -942,8 +951,8 @@ treeboot completions elvish</code></pre>
             </tr>
             <tr>
               <td><code>-f</code>, <code>--force</code></td>
-              <td>run/init/copy/symlink/sync</td>
-              <td>Replaces existing file-operation targets or init output.</td>
+              <td>run/copy/symlink/sync</td>
+              <td>Replaces existing file-operation targets where supported.</td>
             </tr>
             <tr>
               <td><code>-n</code>, <code>--dry-run</code></td>
@@ -1269,7 +1278,11 @@ SUPERSET_ROOT_PATH</code></pre>
           <div class="flow-step">
             <div>
               <strong>Check init scripts</strong>
-              <span>Run the first executable script and skip config if found.</span>
+              <span>
+                Unless <code>--no-init-script</code> or <code>--config</code>
+                is provided, run the first executable script and skip config if
+                found.
+              </span>
             </div>
           </div>
           <div class="flow-step">
@@ -1326,7 +1339,10 @@ SUPERSET_ROOT_PATH</code></pre>
             <p>
               Discovery is relative to <code>TREEBOOT_WORKTREE_PATH</code>.
               Only executable files are treated as init scripts. The first
-              executable script wins.
+              executable script wins. <code>--no-init-script</code> disables
+              this discovery step and continues to config discovery.
+              <code>--config</code> also disables init script discovery because
+              it selects one explicit config file.
             </p>
           </section>
 
@@ -1361,6 +1377,10 @@ mise install</code></pre>
             <tr>
               <td>Executable script found</td>
               <td>Run script and skip declarative config.</td>
+            </tr>
+            <tr>
+              <td><code>--no-init-script</code></td>
+              <td>Skip script discovery and use declarative config discovery.</td>
             </tr>
             <tr>
               <td>Script exits non-zero</td>
@@ -1408,7 +1428,9 @@ treeboot.toml
             <p>
               The first existing config file wins. If <code>--config</code> is
               provided, only that file is used and init script discovery is
-              skipped. Relative config paths resolve from
+              skipped. If <code>--no-init-script</code> is provided,
+              executable init scripts are ignored and this normal config
+              discovery order is used. Relative config paths resolve from
               <code>TREEBOOT_WORKTREE_PATH</code>.
             </p>
           </section>
@@ -1423,7 +1445,8 @@ script: .treeboot.sh</code></pre>
               <code>treeboot init --config</code> is an explicit spelling of
               the same config output. <code>treeboot init --script</code>
               creates <code>.treeboot.sh</code>. The command never prompts
-              interactively.
+              interactively and fails if the output path already exists,
+              including when that path is a symlink.
             </p>
           </section>
         </div>
@@ -1756,7 +1779,12 @@ args = ["install"]</code></pre>
             <p>
               Every file operation target must resolve inside
               <code>TREEBOOT_WORKTREE_PATH</code>. Targets outside the current
-              worktree are validation errors by default.
+              worktree are validation errors by default. Immediately before a
+              file operation mutates a target, treeboot must re-check the live
+              target ancestor chain. Existing target ancestors must be
+              directories, not symlinks. Force and sync may still replace the
+              final target path itself when the conflict matrix allows replacing
+              an existing file or symlink.
             </p>
           </section>
 
@@ -1795,6 +1823,10 @@ args = ["install"]</code></pre>
             <tr>
               <td>Target resolves outside the worktree</td>
               <td>Fail before any file operation or command runs.</td>
+            </tr>
+            <tr>
+              <td>Target ancestor is a symlink at apply time</td>
+              <td>Fail that operation before mutating the target.</td>
             </tr>
             <tr>
               <td>Source resolves outside the root path</td>
@@ -2106,6 +2138,22 @@ args = ["install"]</code></pre>
             The default mode is optimized for repeated worktree setup. Strict
             mode is for CI-like validation. Force mode is intentionally
             destructive and should be explicit.
+          </p>
+        </div>
+
+        <div class="callout">
+          <h3>Trusted setup inputs</h3>
+          <p>
+            <code>treeboot run</code> is intended for repositories whose setup
+            contract the user trusts. The trust boundary includes declarative
+            config files, executable init scripts
+            (<code>.treeboot.sh</code>, <code>.treebootrc</code>, and
+            <code>.config/treeboot/init</code>), and configured commands. By
+            default, executable init scripts are discovered before TOML config
+            and can run arbitrary project setup code. Use
+            <code>treeboot config</code> to inspect TOML without execution, or
+            <code>treeboot run --no-init-script</code> to skip executable init
+            scripts while still using normal config discovery.
           </p>
         </div>
 

@@ -15,7 +15,7 @@ treeboot
 
 ## Status
 
-This project is bootstrapped for implementation against spec v1.6.0. The
+This project is bootstrapped for implementation against spec v1.7.0. The
 planned implementation target is Rust, distributed as small prebuilt binaries
 from GitHub Releases.
 
@@ -144,6 +144,9 @@ ln -s "$root_path/.env" .env
 mise install
 ```
 
+Use `treeboot run --no-init-script` to ignore executable init scripts and use
+normal config discovery instead.
+
 ## Commands
 
 `treeboot` and `treeboot run` are equivalent:
@@ -167,13 +170,15 @@ treeboot run --dry-run
 treeboot run --strict
 treeboot run --force
 treeboot run --root /path/to/root-checkout
+treeboot run --no-init-script
 treeboot copy .env .npmrc --target local
 treeboot sync shared/config --delete --dry-run
 treeboot init
 ```
 
 `treeboot init` creates `.treeboot.toml` by default. Use
-`treeboot init --script` to create `.treeboot.sh` instead.
+`treeboot init --script` to create `.treeboot.sh` instead. Existing init
+targets, including symlinks, are never replaced.
 
 ## Shell Completions
 
@@ -201,8 +206,16 @@ package manager expects.
 - existing copy and symlink targets are skipped
 - duplicate configured targets are config errors
 - file targets must stay inside the current worktree
+- `treeboot run` only belongs in repositories whose setup files you trust
+- executable init scripts run before TOML config unless `--no-init-script` or
+  `--config <path>` is provided
 - `--strict` fails on existing copy/symlink targets and rejects sync operations
-- `--force` is the explicit mode for replacing existing targets
+- `--force` is the explicit mode for replacing existing file-operation targets
+
+The trust boundary includes `.treeboot.toml`, `treeboot.toml`,
+`.config/treeboot/config.toml`, executable `.treeboot.sh`, `.treebootrc`,
+`.config/treeboot/init`, and configured commands. Use `treeboot config` to
+inspect TOML without execution.
 
 If no config or executable init script is found, `treeboot` prints an info
 message and exits successfully. With `--strict`, that same case exits non-zero.

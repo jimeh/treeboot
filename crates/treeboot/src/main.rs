@@ -127,6 +127,10 @@ struct RunArgs {
     #[arg(short, long)]
     config: Option<PathBuf>,
 
+    /// Skip init script discovery and use declarative config discovery.
+    #[arg(long)]
+    no_init_script: bool,
+
     /// Fail on missing config and stricter file-operation conflicts.
     #[arg(short = 'S', long)]
     strict: bool,
@@ -157,10 +161,6 @@ struct InitArgs {
     /// Output path for the generated file.
     #[arg(short, long)]
     path: Option<PathBuf>,
-
-    /// Replace an existing init output file.
-    #[arg(short, long)]
-    force: bool,
 }
 
 #[derive(Debug, Args, Clone, Default)]
@@ -407,6 +407,7 @@ impl From<RunArgs> for RunOptions {
             cwd: None,
             root: args.root,
             config: args.config,
+            no_init_script: args.no_init_script,
             strict: args.strict,
             force: args.force,
             dry_run: args.dry_run,
@@ -513,7 +514,6 @@ impl From<InitArgs> for InitOptions {
             cwd: None,
             kind: init_kind(&args),
             path: args.path,
-            force: args.force,
         }
     }
 }

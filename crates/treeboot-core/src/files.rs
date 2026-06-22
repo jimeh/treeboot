@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 use std::fs::{self, File, FileTimes, Metadata};
-use std::io::Read;
+use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
 
 use crate::{
@@ -101,7 +101,7 @@ pub(crate) fn apply_file_operations(
         if options.dry_run {
             report_dry_run(action, reporter)?;
         } else {
-            apply_action(action, reporter)?;
+            apply_action(plan, action, reporter)?;
         }
     }
 
@@ -728,7 +728,7 @@ fn report_dry_run(action: &FileAction, reporter: &mut dyn Reporter) -> Result<()
     }
 }
 
-fn apply_action(action: &FileAction, reporter: &mut dyn Reporter) -> Result<()> {
+fn apply_action(plan: &ActionPlan, action: &FileAction, reporter: &mut dyn Reporter) -> Result<()> {
     match action {
         FileAction::CreateDirectory {
             operation,
@@ -736,11 +736,7 @@ fn apply_action(action: &FileAction, reporter: &mut dyn Reporter) -> Result<()> 
             target,
             target_path,
         } => {
-            fs::create_dir_all(target_path).map_err(|source| Error::FileOperationIo {
-                operation: operation.as_str(),
-                path: target_path.clone(),
-                source,
-            })?;
+            create_target_dir(*operation, target_path, &plan.context.worktree_path)?;
             report_applied(reporter, *operation, source, target)
         }
         FileAction::CopyFile {
@@ -751,11 +747,17 @@ fn apply_action(action: &FileAction, reporter: &mut dyn Reporter) -> Result<()> 
             target_path,
             replace,
         } => {
-            create_parent_dir(*operation, target_path)?;
+            create_parent_dir(*operation, target_path, &plan.context.worktree_path)?;
             if *replace {
-                remove_file(*operation, target_path)?;
+                remove_file_checked(*operation, target_path, &plan.context.worktree_path)?;
             }
-            copy_file_with_metadata(*operation, source_path, target_path)?;
+            copy_file_with_metadata(
+                *operation,
+                source_path,
+                target_path,
+                &plan.context.root_path,
+                &plan.context.worktree_path,
+            )?;
             report_applied(reporter, *operation, source, target)
         }
         FileAction::CreateSymlink {
@@ -768,18 +770,28 @@ fn apply_action(action: &FileAction, reporter: &mut dyn Reporter) -> Result<()> 
             target_is_dir,
             replace,
         } => {
-            create_parent_dir(*operation, target_path)?;
+            create_parent_dir(*operation, target_path, &plan.context.worktree_path)?;
             if *replace {
-                remove_file(*operation, target_path)?;
+                remove_file_checked(*operation, target_path, &plan.context.worktree_path)?;
             }
-            create_symlink(*operation, link_target, *target_is_dir, target_path)?;
+            create_symlink(
+                *operation,
+                link_target,
+                *target_is_dir,
+                target_path,
+                &plan.context.worktree_path,
+            )?;
             report_applied(reporter, *operation, source, target)
         }
         FileAction::Delete {
             target,
             target_path,
         } => {
-            remove_any(FileOperationKind::Sync, target_path)?;
+            remove_any(
+                FileOperationKind::Sync,
+                target_path,
+                &plan.context.worktree_path,
+            )?;
             report(
                 reporter,
                 OutputEvent::FileDeleted {
@@ -825,30 +837,139 @@ fn report_applied(
     )
 }
 
-fn create_parent_dir(operation: FileOperationKind, target_path: &Path) -> Result<()> {
-    let Some(parent) = target_path.parent() else {
-        return Ok(());
-    };
+fn create_parent_dir(
+    operation: FileOperationKind,
+    target_path: &Path,
+    worktree_path: &Path,
+) -> Result<()> {
+    let parent = target_parent(target_path, worktree_path);
+
+    if target_path.starts_with(worktree_path) {
+        ensure_target_ancestors(operation, parent, worktree_path, false)?;
+    }
 
     fs::create_dir_all(parent).map_err(|source| Error::FileOperationIo {
         operation: operation.as_str(),
         path: parent.to_path_buf(),
         source,
-    })
+    })?;
+    if target_path.starts_with(worktree_path) {
+        ensure_target_ancestors(operation, parent, worktree_path, true)?;
+    }
+
+    Ok(())
+}
+
+fn create_target_dir(
+    operation: FileOperationKind,
+    target_path: &Path,
+    worktree_path: &Path,
+) -> Result<()> {
+    if target_path.starts_with(worktree_path) {
+        ensure_target_ancestors(operation, target_path, worktree_path, false)?;
+    }
+    fs::create_dir_all(target_path).map_err(|source| Error::FileOperationIo {
+        operation: operation.as_str(),
+        path: target_path.to_path_buf(),
+        source,
+    })?;
+    if target_path.starts_with(worktree_path) {
+        ensure_target_ancestors(operation, target_path, worktree_path, true)?;
+    }
+
+    Ok(())
+}
+
+fn ensure_target_ancestors(
+    operation: FileOperationKind,
+    path: &Path,
+    worktree_path: &Path,
+    require_exists: bool,
+) -> Result<()> {
+    if !path.starts_with(worktree_path) {
+        return conflict(
+            operation,
+            path.to_path_buf(),
+            "target resolves outside worktree during apply",
+        );
+    }
+
+    let mut chain = Vec::new();
+    let mut current = path;
+    loop {
+        chain.push(current.to_path_buf());
+        if current == worktree_path {
+            break;
+        }
+        let Some(parent) = current.parent() else {
+            return conflict(
+                operation,
+                path.to_path_buf(),
+                "target resolves outside worktree during apply",
+            );
+        };
+        current = parent;
+    }
+
+    for ancestor in chain.iter().rev() {
+        match fs::symlink_metadata(ancestor) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return conflict(operation, ancestor.clone(), "target parent is a symlink");
+            }
+            Ok(metadata) if !metadata.is_dir() => {
+                return conflict(
+                    operation,
+                    ancestor.clone(),
+                    "target parent is not a directory",
+                );
+            }
+            Ok(_) => {}
+            Err(source) if source.kind() == std::io::ErrorKind::NotFound && !require_exists => {
+                return Ok(());
+            }
+            Err(source) => {
+                return Err(Error::FileOperationIo {
+                    operation: operation.as_str(),
+                    path: ancestor.clone(),
+                    source,
+                });
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn copy_file_with_metadata(
     operation: FileOperationKind,
     source_path: &Path,
     target_path: &Path,
+    root_path: &Path,
+    worktree_path: &Path,
 ) -> Result<()> {
-    let metadata = metadata(source_path, operation)?;
-    fs::copy(source_path, target_path).map_err(|source| Error::FileOperationIo {
+    ensure_source_file_safe(operation, source_path, root_path)?;
+    let mut source_file = File::open(source_path).map_err(|source| Error::FileOperationIo {
+        operation: operation.as_str(),
+        path: source_path.to_path_buf(),
+        source,
+    })?;
+    let metadata = ensure_source_file_safe(operation, source_path, root_path)?;
+    ensure_target_parent_exists(operation, target_path, worktree_path)?;
+    let mut target_file = File::options()
+        .write(true)
+        .create_new(true)
+        .open(target_path)
+        .map_err(|source| Error::FileOperationIo {
+            operation: operation.as_str(),
+            path: target_path.to_path_buf(),
+            source,
+        })?;
+
+    io::copy(&mut source_file, &mut target_file).map_err(|source| Error::FileOperationIo {
         operation: operation.as_str(),
         path: target_path.to_path_buf(),
         source,
     })?;
-    make_target_writable(operation, target_path)?;
 
     let mut times = FileTimes::new();
     if let Ok(accessed) = metadata.accessed() {
@@ -857,68 +978,98 @@ fn copy_file_with_metadata(
     if let Ok(modified) = metadata.modified() {
         times = times.set_modified(modified);
     }
-    File::options()
-        .write(true)
-        .open(target_path)
-        .and_then(|file| file.set_times(times))
+    target_file
+        .set_times(times)
         .map_err(|source| Error::FileOperationIo {
             operation: operation.as_str(),
             path: target_path.to_path_buf(),
             source,
         })?;
-
-    fs::set_permissions(target_path, metadata.permissions()).map_err(|source| {
-        Error::FileOperationIo {
-            operation: operation.as_str(),
-            path: target_path.to_path_buf(),
-            source,
-        }
-    })
-}
-
-fn make_target_writable(operation: FileOperationKind, target_path: &Path) -> Result<()> {
-    let mut permissions = fs::metadata(target_path)
+    target_file
+        .set_permissions(metadata.permissions())
         .map_err(|source| Error::FileOperationIo {
             operation: operation.as_str(),
             path: target_path.to_path_buf(),
             source,
-        })?
-        .permissions();
+        })?;
+    drop(target_file);
+    Ok(())
+}
 
-    if target_is_writable_for_metadata(&permissions) {
-        return Ok(());
+fn ensure_source_file_safe(
+    operation: FileOperationKind,
+    source_path: &Path,
+    root_path: &Path,
+) -> Result<Metadata> {
+    let metadata = metadata(source_path, operation)?;
+    if metadata.file_type().is_symlink() {
+        return conflict(
+            operation,
+            source_path.to_path_buf(),
+            "source changed to a symlink before apply",
+        );
+    }
+    if !metadata.is_file() {
+        return conflict(
+            operation,
+            source_path.to_path_buf(),
+            "source file type changed before apply",
+        );
     }
 
-    make_permissions_writable(&mut permissions);
-    fs::set_permissions(target_path, permissions).map_err(|source| Error::FileOperationIo {
+    let source_should_stay_in_root = source_path.starts_with(root_path);
+    let source_path = fs::canonicalize(source_path).map_err(|source| Error::FileOperationIo {
         operation: operation.as_str(),
-        path: target_path.to_path_buf(),
+        path: source_path.to_path_buf(),
         source,
-    })
+    })?;
+    let root_path = fs::canonicalize(root_path).map_err(|source| Error::FileOperationIo {
+        operation: operation.as_str(),
+        path: root_path.to_path_buf(),
+        source,
+    })?;
+    if source_should_stay_in_root && !source_path.starts_with(&root_path) {
+        return conflict(
+            operation,
+            source_path,
+            "source resolves outside root during apply",
+        );
+    }
+
+    Ok(metadata)
 }
 
-#[cfg(unix)]
-fn target_is_writable_for_metadata(permissions: &fs::Permissions) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-
-    permissions.mode() & 0o200 != 0
+fn remove_file_checked(
+    operation: FileOperationKind,
+    path: &Path,
+    worktree_path: &Path,
+) -> Result<()> {
+    if path.starts_with(worktree_path) {
+        ensure_target_ancestors(
+            operation,
+            target_parent(path, worktree_path),
+            worktree_path,
+            true,
+        )?;
+    }
+    remove_file(operation, path)
 }
 
-#[cfg(not(unix))]
-fn target_is_writable_for_metadata(permissions: &fs::Permissions) -> bool {
-    !permissions.readonly()
-}
+fn ensure_target_parent_exists(
+    operation: FileOperationKind,
+    path: &Path,
+    worktree_path: &Path,
+) -> Result<()> {
+    if path.starts_with(worktree_path) {
+        ensure_target_ancestors(
+            operation,
+            target_parent(path, worktree_path),
+            worktree_path,
+            true,
+        )?;
+    }
 
-#[cfg(unix)]
-fn make_permissions_writable(permissions: &mut fs::Permissions) {
-    use std::os::unix::fs::PermissionsExt;
-
-    permissions.set_mode(permissions.mode() | 0o200);
-}
-
-#[cfg(not(unix))]
-fn make_permissions_writable(permissions: &mut fs::Permissions) {
-    permissions.set_readonly(false);
+    Ok(())
 }
 
 fn remove_file(operation: FileOperationKind, path: &Path) -> Result<()> {
@@ -929,7 +1080,16 @@ fn remove_file(operation: FileOperationKind, path: &Path) -> Result<()> {
     })
 }
 
-fn remove_any(operation: FileOperationKind, path: &Path) -> Result<()> {
+fn remove_any(operation: FileOperationKind, path: &Path, worktree_path: &Path) -> Result<()> {
+    if path.starts_with(worktree_path) {
+        ensure_target_ancestors(
+            operation,
+            target_parent(path, worktree_path),
+            worktree_path,
+            true,
+        )?;
+    }
+
     let metadata = metadata(path, operation)?;
     if metadata.is_dir() {
         fs::remove_dir_all(path).map_err(|source| Error::FileOperationIo {
@@ -942,12 +1102,22 @@ fn remove_any(operation: FileOperationKind, path: &Path) -> Result<()> {
     }
 }
 
+fn target_parent<'a>(path: &'a Path, worktree_path: &'a Path) -> &'a Path {
+    if path == worktree_path {
+        return worktree_path;
+    }
+
+    path.parent().unwrap_or(worktree_path)
+}
+
 fn create_symlink(
     operation: FileOperationKind,
     source: &Path,
     target_is_dir: bool,
     target: &Path,
+    worktree_path: &Path,
 ) -> Result<()> {
+    ensure_target_parent_exists(operation, target, worktree_path)?;
     create_symlink_impl(source, target, target_is_dir).map_err(|source| Error::FileOperationIo {
         operation: operation.as_str(),
         path: target.to_path_buf(),

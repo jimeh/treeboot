@@ -577,7 +577,7 @@ fn apply_file_operations_should_leave_unchanged_metadata_sync_silent() {
     let source = root.join(".env");
     let target = worktree.join(".env");
     fs::write(&source, "TOKEN=1\n").expect("source should be written");
-    copy_file_with_metadata(FileOperationKind::Sync, &source, &target)
+    copy_file_with_metadata(FileOperationKind::Sync, &source, &target, &root, &worktree)
         .expect("target should be seeded");
     let plan = run_plan(
         &root,
@@ -598,7 +598,7 @@ fn apply_file_operations_should_leave_unchanged_sync_silent_in_dry_run() {
     let source = root.join(".env");
     let target = worktree.join(".env");
     fs::write(&source, "TOKEN=1\n").expect("source should be written");
-    copy_file_with_metadata(FileOperationKind::Sync, &source, &target)
+    copy_file_with_metadata(FileOperationKind::Sync, &source, &target, &root, &worktree)
         .expect("target should be seeded");
     let plan = run_plan(
         &root,
@@ -1143,6 +1143,101 @@ fn apply_file_operations_should_force_copy_file_over_existing_symlink() {
             .expect("target metadata should be readable")
             .file_type()
             .is_symlink()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn apply_file_operations_should_reject_symlink_target_parent_before_copy() {
+    let (root, worktree) = temp_workspace("copy-symlink-parent");
+    let outside = worktree
+        .parent()
+        .expect("worktree should have parent")
+        .join("outside");
+    fs::write(root.join(".env"), "TOKEN=1\n").expect("source should be written");
+    fs::create_dir_all(&outside).expect("outside dir should be created");
+    std::os::unix::fs::symlink(&outside, worktree.join("linked"))
+        .expect("target parent symlink should be created");
+    let plan = run_plan(
+        &root,
+        &worktree,
+        vec![operation(
+            FileOperationKind::Copy,
+            &root,
+            &worktree,
+            ".env",
+            "linked/.env",
+        )],
+    );
+    let mut reporter = VecReporter::default();
+
+    let error = apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+        .expect_err("copy through symlink parent should fail");
+
+    assert!(error.to_string().contains("target parent is a symlink"));
+    assert!(!outside.join(".env").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn apply_file_operations_should_reject_source_that_resolves_outside_root_at_apply() {
+    let (root, worktree) = temp_workspace("copy-symlink-source-parent");
+    let outside = root
+        .parent()
+        .expect("root should have parent")
+        .join("outside-source");
+    fs::create_dir_all(&outside).expect("outside source dir should be created");
+    fs::write(outside.join(".env"), "TOKEN=1\n").expect("outside source should be written");
+    std::os::unix::fs::symlink(&outside, root.join("linked"))
+        .expect("source parent symlink should be created");
+    let plan = run_plan(
+        &root,
+        &worktree,
+        vec![operation(
+            FileOperationKind::Copy,
+            &root,
+            &worktree,
+            "linked/.env",
+            ".env",
+        )],
+    );
+    let mut reporter = VecReporter::default();
+
+    let error = apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+        .expect_err("copy from outside-root source should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("source resolves outside root during apply")
+    );
+    assert!(!worktree.join(".env").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn remove_any_should_reject_symlink_target_parent_before_delete() {
+    let (_root, worktree) = temp_workspace("delete-symlink-parent");
+    let outside = worktree
+        .parent()
+        .expect("worktree should have parent")
+        .join("outside-delete");
+    fs::create_dir_all(&outside).expect("outside dir should be created");
+    fs::write(outside.join("extra"), "keep\n").expect("outside file should be written");
+    std::os::unix::fs::symlink(&outside, worktree.join("linked"))
+        .expect("target parent symlink should be created");
+
+    let error = remove_any(
+        FileOperationKind::Sync,
+        &worktree.join("linked/extra"),
+        &worktree,
+    )
+    .expect_err("delete through symlink parent should fail");
+
+    assert!(error.to_string().contains("target parent is a symlink"));
+    assert_eq!(
+        fs::read_to_string(outside.join("extra")).expect("outside file should remain readable"),
+        "keep\n"
     );
 }
 
