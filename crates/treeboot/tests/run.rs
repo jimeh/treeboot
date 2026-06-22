@@ -239,6 +239,37 @@ copy = [
 }
 
 #[test]
+fn run_overlapping_sync_delete_targets_should_fail_before_side_effects() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&repo.root_path().join("child"), "copied\n");
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("sync source should be created");
+    write_file(
+        &config,
+        r#"
+copy = [
+  { source = "child", target = "shared/child" },
+]
+sync = [
+  { source = "shared", target = "shared", delete = true },
+]
+"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("invalid config"))
+        .stderr(predicate::str::contains("overlapping configured targets"));
+
+    assert!(!repo.worktree_path().join("shared").exists());
+    assert!(!repo.worktree_path().join("shared/child").exists());
+}
+
+#[test]
 fn run_target_outside_worktree_should_exit_with_config_error() {
     let repo = git_worktree();
     let config = repo.worktree_path().join(".treeboot.toml");

@@ -1742,12 +1742,12 @@ args = ["install"]</code></pre>
           </section>
 
           <section class="panel">
-            <h3>Duplicate targets</h3>
+            <h3>Conflicting targets</h3>
             <p>
               If multiple file operations target the same normalized absolute
-              path, treeboot should report every conflicting entry with its
-              operation, source, target, and declaration location when
-              available.
+              path, or one target is inside another target, treeboot should
+              report every conflicting entry with its operation, source,
+              target, and declaration location when available.
             </p>
           </section>
 
@@ -1832,13 +1832,17 @@ args = ["install"]</code></pre>
         </table>
 
         <div class="callout warning">
-          <h3>Duplicate targets are invalid config</h3>
+          <h3>Conflicting targets are invalid config</h3>
           <p>
             A config that copies a file and later symlinks to the same target is
             ambiguous at best and destructive under force mode. treeboot should
-            reject duplicate configured targets in every mode. Manual commands
-            should reject duplicate targets derived from their source arguments
-            and <code>--target</code> before any file changes are made.
+            reject duplicate configured targets in every mode. It should also
+            reject ancestor/descendant target pairs because a sync operation
+            with <code>delete = true</code> can remove target-only children
+            produced by another operation in the same plan. Manual commands
+            should reject duplicate and overlapping targets derived from their
+            source arguments and <code>--target</code> before any file changes
+            are made.
           </p>
         </div>
 

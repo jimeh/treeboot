@@ -346,6 +346,24 @@ fn duplicate_manual_targets_should_fail_before_side_effects() {
     assert!(!repo.worktree_path().join("a").exists());
 }
 
+#[test]
+fn overlapping_manual_sync_delete_targets_should_fail_before_side_effects() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared/nested"))
+        .expect("nested source should be created");
+    write_file(&repo.root_path().join("shared/nested/config"), "value\n");
+
+    treeboot()
+        .args(["sync", "--delete", "shared", "shared/nested"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("invalid sync file operation"))
+        .stderr(predicate::str::contains("overlapping targets"));
+
+    assert!(!repo.worktree_path().join("shared").exists());
+}
+
 #[cfg(unix)]
 #[test]
 fn unsafe_source_symlink_should_fail_before_side_effects() {
