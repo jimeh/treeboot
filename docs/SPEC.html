@@ -634,7 +634,7 @@
     <main>
       <header class="hero" id="overview">
         <div>
-          <p class="eyebrow">Specification v1.7.1</p>
+          <p class="eyebrow">Specification v1.8.0</p>
           <h1>treeboot</h1>
           <p class="lede">
             A portable worktree bootstrapper that lets every coding agent,
@@ -738,7 +738,7 @@
         <div class="section-head">
           <div>
             <p class="eyebrow">CLI surface</p>
-            <h2>Seven subcommands, one default path</h2>
+            <h2>Eight subcommands, one default path</h2>
           </div>
           <p class="section-note">
             The common integration point is intentionally short:
@@ -763,6 +763,21 @@ treeboot run --root /path/to/root-checkout
 treeboot run --config .treeboot.toml
 treeboot run --no-init-script
 treeboot run --skip-commands</code></pre>
+          </section>
+
+          <section class="panel">
+            <h3><code>treeboot status</code></h3>
+            <p>
+              Prints the detected worktree, root checkout, default branch,
+              config file, and init script discovery status without parsing
+              config, executing init scripts, or running configured commands.
+              <code>treeboot info</code> is an alias.
+            </p>
+            <pre><code class="shell">treeboot status
+treeboot status --root /path/to/root-checkout
+treeboot status --config .treeboot.toml
+treeboot status --no-init-script
+treeboot info</code></pre>
           </section>
 
           <section class="panel">
@@ -904,12 +919,15 @@ treeboot completions elvish</code></pre>
           <tbody>
             <tr>
               <td><code>-r</code>, <code>--root &lt;path&gt;</code></td>
-              <td>run/config/copy/symlink/sync</td>
-              <td>Overrides the checkout used as the file-operation source.</td>
+              <td>run/status/config/copy/symlink/sync</td>
+              <td>
+                Overrides the root checkout used for discovery and
+                file-operation context.
+              </td>
             </tr>
             <tr>
               <td><code>-c</code>, <code>--config &lt;path&gt;</code></td>
-              <td>run/config</td>
+              <td>run/status/config</td>
               <td>
                 Uses one specific config file, skips config discovery, and
                 bypasses init script discovery.
@@ -917,7 +935,7 @@ treeboot completions elvish</code></pre>
             </tr>
             <tr>
               <td><code>--no-init-script</code></td>
-              <td>run</td>
+              <td>run/status</td>
               <td>
                 Skips init script discovery while preserving normal config
                 discovery.
@@ -2678,6 +2696,7 @@ treeboot-sbom.spdx.json</code></pre>
             <h3>CLI tests</h3>
             <ul>
               <li><code>treeboot</code> equals <code>treeboot run</code>.</li>
+              <li><code>status</code> reports discovery paths without execution.</li>
               <li><code>init</code> creates config by default.</li>
               <li><code>init --config</code> creates config.</li>
               <li><code>init --script</code> creates executable script.</li>
