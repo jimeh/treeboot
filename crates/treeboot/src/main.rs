@@ -127,6 +127,10 @@ struct RunArgs {
     #[arg(short, long)]
     config: Option<PathBuf>,
 
+    /// Skip init script discovery and use declarative config discovery.
+    #[arg(long)]
+    no_init_script: bool,
+
     /// Fail on missing config and stricter file-operation conflicts.
     #[arg(short = 'S', long)]
     strict: bool,
@@ -407,6 +411,7 @@ impl From<RunArgs> for RunOptions {
             cwd: None,
             root: args.root,
             config: args.config,
+            no_init_script: args.no_init_script,
             strict: args.strict,
             force: args.force,
             dry_run: args.dry_run,

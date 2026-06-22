@@ -18,6 +18,10 @@ requirements, update the spec instead of leaving those details only in
 implementation plans or roadmap notes. Keep implementation tactics in
 `docs/agents/` planning docs.
 
+When changing the observable contract in [docs/SPEC.html](docs/SPEC.html),
+bump the visible spec version in that file and keep the README's referenced
+spec version in sync.
+
 ## Repo Shape
 
 - `crates/treeboot` is the CLI package and should stay thin.

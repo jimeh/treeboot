@@ -17,6 +17,8 @@ pub struct RunOptions {
     pub root: Option<PathBuf>,
     /// Uses one specific config file and skips init script discovery.
     pub config: Option<PathBuf>,
+    /// Skips init script discovery and uses declarative config discovery.
+    pub no_init_script: bool,
     /// Fails on missing config and stricter file-operation conflicts.
     pub strict: bool,
     /// Replaces existing file-operation targets where supported.
@@ -67,9 +69,9 @@ pub struct RunReport {
 
 /// Runs worktree bootstrap according to the provided options.
 ///
-/// Resolves the worktree context, discovers executable init scripts and
-/// declarative config files, reports the selected action, and executes an init
-/// script when one should run.
+/// Resolves the worktree context, discovers executable init scripts unless
+/// disabled, discovers declarative config files, reports the selected action,
+/// and executes an init script when one should run.
 ///
 /// # Errors
 ///
@@ -97,7 +99,7 @@ pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport
         });
     }
 
-    if options.config.is_none() {
+    if options.config.is_none() && !options.no_init_script {
         let scripts = InitScriptDiscovery::discover(&context);
 
         for path in scripts.ignored {
