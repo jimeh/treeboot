@@ -1,6 +1,19 @@
+<div align="center">
+
+<img width="196px" src="./img/treeboot.svg" alt="Logo">
+
 # treeboot
 
-Bootstrap new Git worktrees from one repo-local setup file.
+**Bootstrap new Git worktrees from one repo-local setup file.**
+
+[![GitHub Release](https://img.shields.io/github/v/release/jimeh/treeboot?logo=github&label=Release)](https://github.com/jimeh/treeboot/releases/latest)
+[![crates.io](https://img.shields.io/crates/v/treeboot?logo=rust&label=crates.io)](https://crates.io/crates/treeboot)
+[![docs.rs](https://img.shields.io/docsrs/treeboot-core?logo=docs.rs&label=docs.rs)](https://docs.rs/treeboot-core)
+[![GitHub Issues](https://img.shields.io/github/issues/jimeh/treeboot?logo=github&label=Issues)](https://github.com/jimeh/treeboot/issues)
+[![GitHub Pull Requests](https://img.shields.io/github/issues-pr/jimeh/treeboot?logo=github&label=PRs)](https://github.com/jimeh/treeboot/pulls)
+[![License](https://img.shields.io/github/license/jimeh/treeboot?label=License)](https://github.com/jimeh/treeboot/blob/main/LICENSE)
+
+</div>
 
 `treeboot` is meant for teams and agents that create lots of Git worktrees. A
 new worktree often needs the same local setup every time: copy an `.env`, link
