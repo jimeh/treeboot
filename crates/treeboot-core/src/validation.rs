@@ -219,7 +219,7 @@ pub(super) fn plan_file_operations(
     })?;
 
     let target_paths = normalize_target_paths(origin, files)?;
-    validate_duplicate_targets(origin, files, &target_paths)?;
+    validate_target_conflicts(origin, files, &target_paths)?;
     validate_strict_sync(origin, files, options.strict)?;
 
     build_file_operations(
@@ -251,6 +251,15 @@ fn normalize_target_paths(
             })
         })
         .collect()
+}
+
+fn validate_target_conflicts(
+    origin: FilePlanOrigin<'_>,
+    files: &[FileOperation],
+    target_paths: &[PathBuf],
+) -> Result<()> {
+    validate_duplicate_targets(origin, files, target_paths)?;
+    validate_overlapping_targets(origin, files, target_paths)
 }
 
 fn validate_duplicate_targets(
@@ -296,6 +305,66 @@ fn validate_duplicate_targets(
     };
 
     Err(file_plan_error(origin, None, message))
+}
+
+fn validate_overlapping_targets(
+    origin: FilePlanOrigin<'_>,
+    files: &[FileOperation],
+    target_paths: &[PathBuf],
+) -> Result<()> {
+    let mut overlaps = Vec::new();
+
+    for (index, (operation, target_path)) in files.iter().zip(target_paths).enumerate() {
+        for (other_operation, other_target_path) in files.iter().zip(target_paths).skip(index + 1) {
+            if target_path == other_target_path {
+                continue;
+            }
+
+            let Some((ancestor_path, ancestor, descendant_path, descendant)) =
+                overlapping_targets(target_path, operation, other_target_path, other_operation)
+            else {
+                continue;
+            };
+
+            overlaps.push(format!(
+                "{} contains {}: {}; {}",
+                ancestor_path.display(),
+                descendant_path.display(),
+                operation_summary(origin, ancestor),
+                operation_summary(origin, descendant)
+            ));
+        }
+    }
+
+    if overlaps.is_empty() {
+        return Ok(());
+    }
+
+    let message = match origin {
+        FilePlanOrigin::Config(_) => {
+            format!("overlapping configured targets: {}", overlaps.join("; "))
+        }
+        FilePlanOrigin::Manual { .. } => format!("overlapping targets: {}", overlaps.join("; ")),
+    };
+
+    Err(file_plan_error(origin, None, message))
+}
+
+fn overlapping_targets<'a>(
+    target_path: &'a Path,
+    operation: &'a FileOperation,
+    other_target_path: &'a Path,
+    other_operation: &'a FileOperation,
+) -> Option<(&'a Path, &'a FileOperation, &'a Path, &'a FileOperation)> {
+    if other_target_path.starts_with(target_path) {
+        return Some((target_path, operation, other_target_path, other_operation));
+    }
+
+    if target_path.starts_with(other_target_path) {
+        return Some((other_target_path, other_operation, target_path, operation));
+    }
+
+    None
 }
 
 fn validate_strict_sync(
@@ -890,6 +959,75 @@ mod tests {
         let plan = plan(&config, &root, &worktree).expect("file should plan");
 
         assert_eq!(plan.files[0].status, PlannedFileStatus::Ready);
+    }
+
+    #[test]
+    fn action_plan_from_manifest_should_reject_overlapping_file_targets() {
+        let (root, worktree) = temp_workspace("overlapping-targets");
+        let mut sync = file_operation(
+            FileOperationKind::Sync,
+            &root,
+            &worktree,
+            "shared",
+            "shared",
+        );
+        sync.delete = Some(true);
+        let config = Config {
+            options: Default::default(),
+            files: vec![
+                file_operation(
+                    FileOperationKind::Copy,
+                    &root,
+                    &worktree,
+                    "child",
+                    "shared/child",
+                ),
+                sync,
+            ],
+            commands: Vec::new(),
+        };
+
+        let error = plan(&config, &root, &worktree).expect_err("overlapping targets should fail");
+
+        assert!(error.to_string().contains("overlapping configured targets"));
+        assert!(error.to_string().contains("shared"));
+        assert!(error.to_string().contains("shared/child"));
+    }
+
+    #[test]
+    fn action_plan_from_manual_operations_should_reject_overlapping_targets() {
+        let (root, worktree) = temp_workspace("manual-overlapping-targets");
+        let mut sync = file_operation(
+            FileOperationKind::Sync,
+            &root,
+            &worktree,
+            "shared",
+            "shared",
+        );
+        sync.delete = Some(true);
+        let operations = vec![
+            sync,
+            file_operation(
+                FileOperationKind::Sync,
+                &root,
+                &worktree,
+                "shared/nested",
+                "shared/nested",
+            ),
+        ];
+
+        let error = ActionPlan::from_file_operations(
+            &context(&root, &worktree),
+            PlanOrigin::Manual {
+                operation: FileOperationKind::Sync,
+            },
+            &operations,
+            ActionPlanOptions::default(),
+        )
+        .expect_err("overlapping targets should fail");
+
+        assert!(error.to_string().contains("invalid sync file operation"));
+        assert!(error.to_string().contains("overlapping targets"));
     }
 
     #[test]
