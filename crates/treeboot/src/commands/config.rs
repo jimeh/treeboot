@@ -9,7 +9,7 @@ use treeboot_core::{
 
 #[derive(Debug, Args, Clone, Default)]
 pub(crate) struct ConfigArgs {
-    /// Override the checkout used as the file-operation source.
+    /// Override the checkout used for config discovery.
     #[arg(short, long)]
     root: Option<PathBuf>,
 

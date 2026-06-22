@@ -6,7 +6,7 @@ use treeboot_core::{Error, InitScriptStatus, StatusOptions, StatusReport};
 
 #[derive(Debug, Args, Clone, Default)]
 pub(crate) struct StatusArgs {
-    /// Override the checkout used as the file-operation source.
+    /// Override the checkout used for status discovery.
     #[arg(short, long)]
     root: Option<PathBuf>,
 
