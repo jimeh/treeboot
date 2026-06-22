@@ -1,7 +1,17 @@
+<div align="center">
+
+<img width="160px" src="https://github.com/jimeh/treeboot/raw/HEAD/img/treeboot.svg?sanitize=true" alt="treeboot logo">
+
 # treeboot-core
 
 Reusable Rust library for bootstrapping Git worktrees from a repo-local
 `treeboot` setup contract.
+
+[![crates.io](https://img.shields.io/crates/v/treeboot-core?logo=rust&label=crates.io)](https://crates.io/crates/treeboot-core)
+[![docs.rs](https://img.shields.io/docsrs/treeboot-core?logo=docs.rs&label=docs.rs)](https://docs.rs/treeboot-core)
+[![License](https://img.shields.io/github/license/jimeh/treeboot?label=License)](https://github.com/jimeh/treeboot/blob/main/LICENSE)
+
+</div>
 
 This crate contains the public API used by the `treeboot` CLI. It handles Git
 worktree discovery, init script discovery, declarative config parsing,
