@@ -177,3 +177,9 @@ and CI mapping.
   versions together while creating the single `vX.Y.Z` product tag. Keep
   `workspace.default-members` aligned with the real build/test packages so the
   inert root package does not replace the normal default Cargo task surface.
+- For crates.io publishing, keep `treeboot`'s dependency on `treeboot-core` as
+  both `path = "../treeboot-core"` and the matching registry `version`; Cargo
+  rejects publishable packages with path-only normal dependencies. Member crates
+  need crate-local READMEs or explicit readme metadata, otherwise Cargo packages
+  them with `readme = false`. Keep the crate-local `LICENSE` copies in sync
+  with the root `LICENSE` so published crate tarballs include the license text.

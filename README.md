@@ -28,7 +28,7 @@ treeboot
 
 ## Status
 
-This project is bootstrapped for implementation against spec v1.7.0. The
+This project is bootstrapped for implementation against spec v1.7.1. The
 planned implementation target is Rust, distributed as small prebuilt binaries
 from GitHub Releases.
 
@@ -267,6 +267,12 @@ mise run generate
 The intended install path is downloading the release asset for your platform
 from GitHub Releases, either directly or through tools such as `ubi` and
 `mise`.
+
+After crates.io publication, Cargo users can install with:
+
+```sh
+cargo install treeboot
+```
 
 After installing the binary, generate shell completion scripts with
 `treeboot completions <shell>` and install them according to your shell or

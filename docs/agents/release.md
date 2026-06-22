@@ -34,6 +34,12 @@ The manual release workflow path should generate the same build assets but
 default to workflow artifacts only. It should not publish a GitHub Release
 unless explicitly requested.
 
+Crates.io publishing uses two packages: publish `treeboot-core` first, then
+publish `treeboot` after the registry index can resolve the matching
+`treeboot-core` version. The CLI package must keep its `treeboot-core`
+dependency as both a local `path` and the matching registry `version` so local
+workspace development and published dependency resolution both work.
+
 Release workflow scripts in `scripts/` are thin wrappers around the Rust
 `treeboot-release-helper` workspace package. Keep release version derivation,
 asset packaging, and changelog release-note extraction in that helper so the
@@ -47,6 +53,8 @@ Before the first real release, add or document commands for:
 
 - generating shell completion scripts for bash, zsh, fish, powershell, and
   elvish from the built binary
+- publishing `treeboot-core` and `treeboot` to crates.io, or explicitly
+  deferring crates.io publication for the release
 - signing checksums
 - signing/notarizing macOS binaries
 
@@ -64,11 +72,18 @@ command that does not publish anything:
 ```sh
 mise run release:check
 mise run release:package:local
+cargo publish --dry-run -p treeboot-core --locked
 ```
 
 Use `release:check` as the default release-maintenance gate. It packages the
 current host artifact and smoke-checks completion generation for every supported
 shell.
+
+Before the first crates.io publish, `cargo publish --dry-run -p treeboot
+--locked` cannot fully verify because `treeboot-core` is not in the registry
+index yet. Run it after the matching `treeboot-core` version has been
+published. Use `cargo package -p treeboot --list` before then to inspect the
+CLI package contents.
 
 Before publishing, review install notes for shell completion paths and run
 completion generation for every supported shell.

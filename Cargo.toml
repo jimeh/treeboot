@@ -22,6 +22,8 @@ resolver = "3"
 edition = "2024"
 rust-version = "1.96"
 license = "MIT"
+repository = "https://github.com/jimeh/treeboot"
+homepage = "https://github.com/jimeh/treeboot"
 
 [workspace.lints.rust]
 future-incompatible = { level = "warn", priority = -2 }

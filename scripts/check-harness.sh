@@ -78,6 +78,12 @@ if [[ -n "${readme_spec}" && -n "${html_spec}" && "${readme_spec}" != "${html_sp
   fail "README.md spec v${readme_spec} does not match docs/SPEC.html v${html_spec}"
 fi
 
+for crate_license in crates/treeboot/LICENSE crates/treeboot-core/LICENSE; do
+  if ! cmp -s LICENSE "${crate_license}"; then
+    fail "${crate_license} must match root LICENSE"
+  fi
+done
+
 spec_base_ref="$(resolve_spec_base_ref || true)"
 if [[ -n "${spec_base_ref}" ]]; then
   if ! git rev-parse --verify --quiet "${spec_base_ref}" >/dev/null; then
