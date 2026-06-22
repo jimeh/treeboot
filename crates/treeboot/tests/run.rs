@@ -265,6 +265,7 @@ sync = [
         .stderr(predicate::str::contains("invalid config"))
         .stderr(predicate::str::contains("overlapping configured targets"));
 
+    assert!(!repo.worktree_path().join("shared").exists());
     assert!(!repo.worktree_path().join("shared/child").exists());
 }
 
