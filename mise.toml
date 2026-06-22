@@ -70,6 +70,15 @@ scripts/package-release-asset.sh "$target" "$version" dist
 scripts/package-config-schema.sh dist
 '''
 
+[tasks."release:check"]
+description = "Run local release packaging and completion smoke checks"
+run = '''
+mise run release:package:local
+for shell in bash zsh fish powershell elvish; do
+  cargo run -p treeboot --locked -- completions "$shell" >/dev/null
+done
+'''
+
 [tasks.generate]
 description = "Generate checked-in artifacts"
 run = ["mise run generate:schema"]
@@ -122,7 +131,7 @@ tools."cargo:cargo-llvm-cov" = "0.8.7"
 run = "cargo llvm-cov --workspace --all-targets --all-features --locked --summary-only --show-missing-lines"
 
 [tasks.check]
-depends = ["format:check", "generate:check", "lint", "test"]
+depends = ["format:check", "generate:check", "harness:check", "lint", "test"]
 description = "Run normal pre-handoff checks"
 
 [tasks.verify]
@@ -134,6 +143,7 @@ depends = [
     "actions:lint",
     "format:check",
     "generate:check",
+    "harness:check",
     "lint",
     "msrv",
     "test",
@@ -147,6 +157,10 @@ run = "cargo clean"
 [tasks."hooks:install"]
 description = "Install lefthook Git hooks"
 run = "lefthook install"
+
+[tasks."harness:check"]
+description = "Check repo harness invariants"
+run = "scripts/check-harness.sh"
 
 [tasks.doctor]
 description = "Check required local tools"

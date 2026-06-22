@@ -62,8 +62,13 @@ Release-specific automation should also have at least one local dry-run or smoke
 command that does not publish anything:
 
 ```sh
+mise run release:check
 mise run release:package:local
 ```
+
+Use `release:check` as the default release-maintenance gate. It packages the
+current host artifact and smoke-checks completion generation for every supported
+shell.
 
 Before publishing, review install notes for shell completion paths and run
 completion generation for every supported shell.

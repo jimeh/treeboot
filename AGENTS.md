@@ -90,11 +90,13 @@ mise run format:check
 mise run generate
 mise run generate:check
 mise run generate:schema:check
+mise run harness:check
 mise run lint
 mise run test
 mise run test:core
 mise run test:cli
 mise run test:release-helper
+mise run release:check
 mise run msrv
 mise run actions:lint
 mise run clean
@@ -141,6 +143,9 @@ and CI mapping.
 
 - GitHub Actions are pinned and checked with `pinact`.
 - Workflow syntax/security checks are wrapped by `mise run actions:lint`.
+- Repo harness invariants are wrapped by `mise run harness:check`; keep
+  dependency-boundary and spec-version drift checks there when they can be
+  expressed without heavyweight tooling.
 - Mise-managed tools use a 3-day release-age cooldown; use a narrow override
   only for urgent security or CI-maintenance updates.
 - `mise run treeboot` is the repo-local bootstrap entrypoint. It keeps the
