@@ -135,6 +135,70 @@ fn status_no_init_script_should_report_skipped_init_script() {
         .stdout(predicate::str::contains("init_script: (skipped)"));
 }
 
+#[test]
+fn status_should_report_default_branch_from_environment() {
+    let repo = git_worktree();
+
+    treeboot()
+        .arg("status")
+        .env("CONDUCTOR_DEFAULT_BRANCH", "trunk")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .stdout(predicate::str::contains("default_branch: trunk"));
+}
+
+#[cfg(unix)]
+#[test]
+fn status_should_report_ignored_non_executable_init_script() {
+    let repo = git_worktree();
+    let script = repo.worktree_path().join(".treeboot.sh");
+    write_file(&script, "#!/bin/sh\n");
+    let expected_script = std::fs::canonicalize(&script).expect("script should canonicalize");
+
+    treeboot()
+        .arg("status")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .stdout(predicate::str::contains("init_script: (none)"))
+        .stdout(predicate::str::contains(format!(
+            "ignored_init_script: {}",
+            expected_script.display()
+        )));
+}
+
+#[cfg(unix)]
+#[test]
+fn status_config_option_should_skip_init_script_and_report_requested_config() {
+    let repo = git_worktree();
+    let script = repo.worktree_path().join(".treeboot.sh");
+    let marker = repo.worktree_path().join("script.out");
+    let config = repo.worktree_path().join("custom.treeboot.toml");
+    write_executable_script(
+        &script,
+        &format!("#!/bin/sh\nprintf 'ran\\n' > {}\n", marker.display()),
+    );
+    write_file(&config, "invalid toml = [\n");
+    let expected_config = std::fs::canonicalize(&config).expect("config should canonicalize");
+
+    treeboot()
+        .args(["status", "--config", "custom.treeboot.toml"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .stdout(predicate::str::contains("init_script: (skipped)"))
+        .stdout(predicate::str::contains(format!(
+            "config: {}",
+            expected_config.display()
+        )));
+
+    assert!(!marker.exists());
+}
+
 #[cfg(unix)]
 #[test]
 fn status_should_report_executable_init_script_without_running_it() {

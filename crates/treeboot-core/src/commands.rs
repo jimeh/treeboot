@@ -452,6 +452,50 @@ mod tests {
         assert!(error.to_string().contains("failed to run command missing:"));
     }
 
+    #[test]
+    fn execute_commands_should_fail_when_dry_run_reporting_fails() {
+        let (_temp, context) = context("dry-run-report-error");
+        let command = planned_command(
+            None,
+            CommandKind::Direct {
+                program: "echo".to_owned(),
+                args: vec!["planned".to_owned()],
+            },
+        );
+        let plan = plan(context, vec![command]);
+
+        let error = execute_commands(
+            &plan,
+            CommandExecutionOptions { dry_run: true },
+            &mut FailingReporter,
+        )
+        .expect_err("report failure should propagate");
+
+        assert!(matches!(error, Error::Output { .. }));
+    }
+
+    #[test]
+    fn execute_commands_should_fail_when_start_reporting_fails() {
+        let (_temp, context) = context("start-report-error");
+        let command = planned_command(
+            None,
+            CommandKind::Direct {
+                program: "echo".to_owned(),
+                args: vec!["running".to_owned()],
+            },
+        );
+        let plan = plan(context, vec![command]);
+
+        let error = execute_commands(
+            &plan,
+            CommandExecutionOptions::default(),
+            &mut FailingReporter,
+        )
+        .expect_err("report failure should propagate");
+
+        assert!(matches!(error, Error::Output { .. }));
+    }
+
     struct TestCommand {
         inner: PlannedCommand,
     }
@@ -568,6 +612,14 @@ mod tests {
         fn report(&mut self, event: OutputEvent) -> std::io::Result<()> {
             self.events.push(event);
             Ok(())
+        }
+    }
+
+    struct FailingReporter;
+
+    impl Reporter for FailingReporter {
+        fn report(&mut self, _event: OutputEvent) -> std::io::Result<()> {
+            Err(std::io::Error::other("report failed"))
         }
     }
 }
