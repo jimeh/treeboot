@@ -800,11 +800,11 @@ treeboot config --json</code></pre>
             <pre><code class="shell">treeboot init
 treeboot init --config
 treeboot init --script
-treeboot init --path .treeboot.toml
-treeboot init --force</code></pre>
+treeboot init --path .treeboot.toml</code></pre>
             <p>
               Default paths are <code>.treeboot.toml</code> for config and
-              <code>.treeboot.sh</code> for scripts.
+              <code>.treeboot.sh</code> for scripts. Existing init targets,
+              including symlinks, are never replaced.
             </p>
           </section>
         </div>
@@ -951,8 +951,8 @@ treeboot completions elvish</code></pre>
             </tr>
             <tr>
               <td><code>-f</code>, <code>--force</code></td>
-              <td>run/init/copy/symlink/sync</td>
-              <td>Replaces existing file-operation targets or init output.</td>
+              <td>run/copy/symlink/sync</td>
+              <td>Replaces existing file-operation targets where supported.</td>
             </tr>
             <tr>
               <td><code>-n</code>, <code>--dry-run</code></td>
@@ -1445,7 +1445,8 @@ script: .treeboot.sh</code></pre>
               <code>treeboot init --config</code> is an explicit spelling of
               the same config output. <code>treeboot init --script</code>
               creates <code>.treeboot.sh</code>. The command never prompts
-              interactively.
+              interactively and fails if the output path already exists,
+              including when that path is a symlink.
             </p>
           </section>
         </div>
