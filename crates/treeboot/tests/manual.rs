@@ -5,7 +5,7 @@ use predicates::prelude::*;
 
 mod common;
 
-use common::{git_repo, git_worktree, treeboot, write_file};
+use common::{display_path, git_repo, git_worktree, treeboot, write_file};
 
 #[cfg(unix)]
 use common::write_executable_script;
@@ -89,8 +89,14 @@ fn copy_should_place_multiple_sources_under_target_prefix() {
         .current_dir(repo.worktree_path())
         .assert()
         .success()
-        .stdout(predicate::str::contains("treeboot: copy a -> local/a"))
-        .stdout(predicate::str::contains("treeboot: copy c -> local/c"));
+        .stdout(predicate::str::contains(format!(
+            "treeboot: copy a -> {}",
+            display_path("local/a")
+        )))
+        .stdout(predicate::str::contains(format!(
+            "treeboot: copy c -> {}",
+            display_path("local/c")
+        )));
 
     assert_eq!(
         std::fs::read_to_string(repo.worktree_path().join("local/a"))
@@ -149,9 +155,11 @@ fn sync_should_update_changed_files() {
         .current_dir(repo.worktree_path())
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "treeboot: sync shared/config -> shared/config",
-        ));
+        .stdout(predicate::str::contains(format!(
+            "treeboot: sync {} -> {}",
+            display_path("shared/config"),
+            display_path("shared/config")
+        )));
 
     assert_eq!(
         std::fs::read_to_string(repo.worktree_path().join("shared/config"))
@@ -175,7 +183,10 @@ fn sync_delete_should_remove_target_only_files() {
         .current_dir(repo.worktree_path())
         .assert()
         .success()
-        .stdout(predicate::str::contains("treeboot: delete shared/extra"));
+        .stdout(predicate::str::contains(format!(
+            "treeboot: delete {}",
+            display_path("shared/extra")
+        )));
 
     assert!(!repo.worktree_path().join("shared/extra").exists());
 }
