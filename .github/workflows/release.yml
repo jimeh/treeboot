@@ -216,6 +216,9 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Package config schema
+        run: scripts/package-config-schema.sh dist
+
       - uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
           path: .
@@ -227,7 +230,7 @@ jobs:
         run: |
           (
             cd dist
-            shasum -a 256 treeboot-* > treeboot-checksums.txt
+            shasum -a 256 config.schema.json treeboot-* > treeboot-checksums.txt
           )
 
       - if: needs.prepare.outputs.publish_release == 'true'
@@ -235,6 +238,7 @@ jobs:
         uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
         with:
           subject-path: |
+            dist/config.schema.json
             dist/treeboot-*
 
       - if: needs.prepare.outputs.publish_release != 'true'

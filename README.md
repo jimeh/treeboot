@@ -246,8 +246,9 @@ After installing the binary, generate shell completion scripts with
 `treeboot completions <shell>` and install them according to your shell or
 package manager conventions.
 
-Releases are expected to include archives, raw executable assets, checksums,
-SBOMs, and provenance attestations. GPG checksum signing and macOS
+Releases are expected to include archives, raw executable assets,
+`config.schema.json`, checksums, SBOMs, and provenance attestations. GPG
+checksum signing and macOS
 signing/notarization are planned distribution hardening work.
 
 ## Name
