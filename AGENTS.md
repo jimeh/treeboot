@@ -48,8 +48,8 @@ runtime options, milestone 5 file operations, milestone 6 command runtime,
 milestone 7 shell completions, milestone 8 manual file operations, and the
 first pass of milestone 9 release packaging:
 
-- CLI parsing for `run`, `config`, `init`, `copy`, `symlink`, `sync`, and
-  `completions`
+- CLI parsing for `run`, `status`, `config`, `init`, `copy`, `symlink`,
+  `sync`, and `completions`
 - Git worktree/root/default-branch discovery
 - treeboot environment aliases
 - init script discovery and execution
@@ -59,6 +59,7 @@ first pass of milestone 9 release packaging:
 - manual root-to-worktree file operation planning and execution
 - public Worktree/Manifest/ActionPlan/Executor API surface, with command-shaped
   workflow facades for full treeboot behavior
+- view-only discovery status inspection
 - view-only normalized config inspection
 - generated JSON Schema for the config file format
 - starter config/script generation

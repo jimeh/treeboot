@@ -3,7 +3,7 @@ use tempfile::TempDir;
 
 mod common;
 
-use common::{treeboot, write_file};
+use common::{git_worktree, treeboot, write_file};
 
 #[cfg(unix)]
 use common::write_executable_script;
@@ -68,12 +68,97 @@ fn completions_should_include_current_subcommands_and_flags() {
         .stdout(predicate::str::contains("symlink"))
         .stdout(predicate::str::contains("sync"))
         .stdout(predicate::str::contains("run"))
+        .stdout(predicate::str::contains("status"))
         .stdout(predicate::str::contains("config"))
         .stdout(predicate::str::contains("init"))
         .stdout(predicate::str::contains("--root"))
         .stdout(predicate::str::contains("--config"))
         .stdout(predicate::str::contains("--no-init-script"))
         .stdout(predicate::str::contains("--dry-run"));
+}
+
+#[test]
+fn status_should_report_worktree_root_and_config_without_parsing() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&config, "invalid toml = [\n");
+    let expected_worktree =
+        std::fs::canonicalize(repo.worktree_path()).expect("worktree should canonicalize");
+    let expected_root = std::fs::canonicalize(repo.root_path()).expect("root should canonicalize");
+    let expected_config = std::fs::canonicalize(&config).expect("config should canonicalize");
+
+    treeboot()
+        .arg("status")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .stdout(predicate::str::contains("treeboot: status"))
+        .stdout(predicate::str::contains(format!(
+            "worktree: {}",
+            expected_worktree.display()
+        )))
+        .stdout(predicate::str::contains(format!(
+            "root: {}",
+            expected_root.display()
+        )))
+        .stdout(predicate::str::contains("init_script: (none)"))
+        .stdout(predicate::str::contains(format!(
+            "config: {}",
+            expected_config.display()
+        )));
+}
+
+#[test]
+fn info_alias_should_report_status() {
+    let repo = git_worktree();
+
+    treeboot()
+        .arg("info")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .stdout(predicate::str::contains("treeboot: status"));
+}
+
+#[test]
+fn status_no_init_script_should_report_skipped_init_script() {
+    let repo = git_worktree();
+
+    treeboot()
+        .args(["status", "--no-init-script"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .stdout(predicate::str::contains("init_script: (skipped)"));
+}
+
+#[cfg(unix)]
+#[test]
+fn status_should_report_executable_init_script_without_running_it() {
+    let repo = git_worktree();
+    let script = repo.worktree_path().join(".treeboot.sh");
+    let marker = repo.worktree_path().join("script.out");
+    write_executable_script(
+        &script,
+        &format!("#!/bin/sh\nprintf 'ran\\n' > {}\n", marker.display()),
+    );
+    let expected_script = std::fs::canonicalize(&script).expect("script should canonicalize");
+
+    treeboot()
+        .arg("status")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .stdout(predicate::str::contains(format!(
+            "init_script: {}",
+            expected_script.display()
+        )));
+
+    assert!(!marker.exists());
 }
 
 #[test]

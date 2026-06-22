@@ -28,7 +28,7 @@ treeboot
 
 ## Status
 
-This project is bootstrapped for implementation against spec v1.7.1. The
+This project is bootstrapped for implementation against spec v1.8.0. The
 planned implementation target is Rust, distributed as small prebuilt binaries
 from GitHub Releases.
 
@@ -36,9 +36,10 @@ The initial implementation contract lives in
 [docs/SPEC.html](./docs/SPEC.html). This README is the short human-facing
 version.
 
-The current implementation is in progress. It supports the `run`, `config`,
-`init`, `copy`, `symlink`, `sync`, and `completions` command surfaces, path
-discovery, init-script discovery/execution, config parsing/inspection,
+The current implementation is in progress. It supports the `run`, `status`,
+`config`, `init`, `copy`, `symlink`, `sync`, and `completions` command
+surfaces, path discovery, init-script discovery/execution, config
+parsing/inspection,
 declarative validation, declarative file operations, declarative command
 execution, shell completion generation, root-relative manual source
 completion, and missing-config behavior.
@@ -167,6 +168,7 @@ normal config discovery instead.
 ```sh
 treeboot
 treeboot run
+treeboot status
 treeboot config
 treeboot config --format json
 treeboot config --json
@@ -175,6 +177,10 @@ treeboot symlink .tool-versions
 treeboot sync shared/config --compare checksum
 treeboot completions bash
 ```
+
+`treeboot status` prints the detected worktree, root checkout, default branch,
+config file, and init script discovery status without parsing config or running
+scripts.
 
 Useful options:
 

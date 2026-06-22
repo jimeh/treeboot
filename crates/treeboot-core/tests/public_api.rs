@@ -5,9 +5,9 @@ use tempfile::TempDir;
 use treeboot_core::{
     ActionPlan, ActionPlanOptions, Config, ConfigOptions, Environment, Error, ExecuteOptions,
     Executor, FileOperation, FileOperationAction, FileOperationKind, FileOperationOptions,
-    InitScriptDiscovery, LoadedConfig, ManualFileOperationOptions, OutputEvent, PlanOrigin,
-    Reporter, RunAction, RunOptions, SourceSpan, SymlinkMode, Worktree, WorktreeOptions,
-    inspect_config, run, run_file_operation,
+    InitScriptDiscovery, InitScriptStatus, LoadedConfig, ManualFileOperationOptions, OutputEvent,
+    PlanOrigin, Reporter, RunAction, RunOptions, SourceSpan, StatusOptions, SymlinkMode, Worktree,
+    WorktreeOptions, inspect_config, inspect_status, run, run_file_operation,
 };
 
 #[derive(Default)]
@@ -314,6 +314,52 @@ fn public_api_should_parse_manifest_and_dry_run_commands() {
             OutputEvent::CommandWouldRun { label } if label == "echo planned"
         )
     }));
+}
+
+#[test]
+fn public_api_inspect_status_should_report_context_and_config_without_parsing() {
+    let repo = git_worktree();
+    let config_path = repo.worktree_path().join(".treeboot.toml");
+    write_file(&config_path, "invalid toml = [\n");
+    let expected_worktree =
+        std::fs::canonicalize(repo.worktree_path()).expect("worktree should canonicalize");
+    let expected_root = std::fs::canonicalize(repo.root_path()).expect("root should canonicalize");
+    let expected_config = std::fs::canonicalize(&config_path).expect("config should canonicalize");
+
+    let report = inspect_status(StatusOptions {
+        cwd: Some(repo.worktree_path().to_path_buf()),
+        ..StatusOptions::default()
+    })
+    .expect("status should inspect without parsing config");
+
+    assert_eq!(report.context.worktree_path, expected_worktree);
+    assert_eq!(report.context.root_path, expected_root);
+    assert_eq!(report.config.as_deref(), Some(expected_config.as_path()));
+    assert!(matches!(
+        report.init_script,
+        InitScriptStatus::Missing { ref ignored } if ignored.is_empty()
+    ));
+}
+
+#[cfg(unix)]
+#[test]
+fn public_api_inspect_status_should_report_executable_init_script() {
+    let repo = git_worktree();
+    let script = repo.worktree_path().join(".treeboot.sh");
+    write_file(&script, "#!/bin/sh\n");
+    make_executable(&script);
+    let expected_script = std::fs::canonicalize(&script).expect("script should canonicalize");
+
+    let report = inspect_status(StatusOptions {
+        cwd: Some(repo.worktree_path().to_path_buf()),
+        ..StatusOptions::default()
+    })
+    .expect("status should inspect init script");
+
+    assert!(matches!(
+        report.init_script,
+        InitScriptStatus::Found { ref path } if path == &expected_script
+    ));
 }
 
 #[test]

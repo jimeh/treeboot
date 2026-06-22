@@ -17,6 +17,7 @@ mod init;
 mod manual;
 mod output;
 mod run;
+mod status;
 mod validation;
 
 pub use context::{Environment, Worktree, WorktreeOptions};
@@ -30,6 +31,7 @@ pub use manual::{
 };
 pub use output::{OutputEvent, Reporter};
 pub use run::{RunAction, RunOptions, RunReport, run};
+pub use status::{InitScriptStatus, StatusOptions, StatusReport, inspect_status};
 pub use validation::{
     ActionPlan, ActionPlanOptions, PlanOrigin, PlannedCommand, PlannedFileOperation,
     PlannedFileStatus,
