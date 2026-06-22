@@ -1779,7 +1779,12 @@ args = ["install"]</code></pre>
             <p>
               Every file operation target must resolve inside
               <code>TREEBOOT_WORKTREE_PATH</code>. Targets outside the current
-              worktree are validation errors by default.
+              worktree are validation errors by default. Immediately before a
+              file operation mutates a target, treeboot must re-check the live
+              target ancestor chain. Existing target ancestors must be
+              directories, not symlinks. Force and sync may still replace the
+              final target path itself when the conflict matrix allows replacing
+              an existing file or symlink.
             </p>
           </section>
 
@@ -1818,6 +1823,10 @@ args = ["install"]</code></pre>
             <tr>
               <td>Target resolves outside the worktree</td>
               <td>Fail before any file operation or command runs.</td>
+            </tr>
+            <tr>
+              <td>Target ancestor is a symlink at apply time</td>
+              <td>Fail that operation before mutating the target.</td>
             </tr>
             <tr>
               <td>Source resolves outside the root path</td>
