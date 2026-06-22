@@ -1,6 +1,15 @@
+<div align="center">
+
+<img width="160px" src="https://github.com/jimeh/treeboot/raw/HEAD/img/treeboot.svg?sanitize=true" alt="treeboot logo">
+
 # treeboot
 
 Bootstrap new Git worktrees from one repo-local setup file.
+
+[![crates.io](https://img.shields.io/crates/v/treeboot?logo=rust&label=crates.io)](https://crates.io/crates/treeboot)
+[![License](https://img.shields.io/github/license/jimeh/treeboot?label=License)](https://github.com/jimeh/treeboot/blob/main/LICENSE)
+
+</div>
 
 `treeboot` is a CLI for teams and agents that create lots of Git worktrees. A
 new worktree often needs the same local setup every time: copy an `.env`, link
