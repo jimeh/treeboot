@@ -634,7 +634,7 @@
     <main>
       <header class="hero" id="overview">
         <div>
-          <p class="eyebrow">Specification v1.7.0</p>
+          <p class="eyebrow">Specification v1.7.1</p>
           <h1>treeboot</h1>
           <p class="lede">
             A portable worktree bootstrapper that lets every coding agent,
@@ -2598,6 +2598,15 @@ treeboot-sbom.spdx.json</code></pre>
               macOS Apple Silicon, macOS Intel, Linux x86_64 musl,
               Linux ARM64 musl, Windows x86_64/ARM64 MSVC, and Android
               x86_64/ARM64.
+            </span>
+          </div>
+          <div class="timeline-item">
+            <strong>Crates.io packages</strong>
+            <span>
+              Publish <code>treeboot-core</code> before <code>treeboot</code>.
+              The <code>treeboot</code> package depends on the matching
+              registry version of <code>treeboot-core</code> when published,
+              while local development continues to use the workspace path.
             </span>
           </div>
           <div class="timeline-item">
