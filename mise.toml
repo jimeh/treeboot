@@ -1,21 +1,29 @@
 [tools]
 actionlint = "1.7.12"
 lefthook = "2.1.9"
+pinact = "4.1.0"
 rust = { version = "1.96.0", components = "clippy,rust-analyzer,rust-src,rustfmt" }
 sccache = "0.16.0"
 shellcheck = "0.11.0"
-pinact = "4.1.0"
 zizmor = "1.25.2"
 
 [env]
 RUSTC_WRAPPER = "sccache"
 
 [settings]
-minimum_release_age = "7d"
+minimum_release_age = "3d"
+
+[settings.task]
+run_auto_install = true
 
 [tasks.setup]
 description = "Set up local development environment"
-run = ["mise install", "mise run deps", "mise run hooks:install"]
+depends = ["deps", "hooks:install"]
+
+[tasks.treeboot]
+description = "Bootstrap the current worktree with treeboot"
+tools."github:jimeh/treeboot" = "0.2.0"
+run = "treeboot"
 
 [tasks.deps]
 description = "Fetch Rust dependencies"
@@ -122,7 +130,14 @@ description = "Run broad local verification"
 run = ["mise run ci", "mise run coverage"]
 
 [tasks.ci]
-depends = ["actions:lint", "format:check", "generate:check", "lint", "msrv", "test"]
+depends = [
+    "actions:lint",
+    "format:check",
+    "generate:check",
+    "lint",
+    "msrv",
+    "test",
+]
 description = "Run all CI checks"
 
 [tasks.clean]

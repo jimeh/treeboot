@@ -141,8 +141,11 @@ and CI mapping.
 
 - GitHub Actions are pinned and checked with `pinact`.
 - Workflow syntax/security checks are wrapped by `mise run actions:lint`.
-- Mise-managed tools use a 7-day release-age cooldown; use a narrow override
+- Mise-managed tools use a 3-day release-age cooldown; use a narrow override
   only for urgent security or CI-maintenance updates.
+- `mise run treeboot` is the repo-local bootstrap entrypoint. It keeps the
+  released `treeboot` binary task-scoped so CI does not install it as a
+  top-level tool, then runs the declarative `.treeboot.toml` setup contract.
 - Coverage uses `cargo-llvm-cov` through `mise run coverage`; the first run may
   install `llvm-tools-preview` for the active Rust toolchain.
 - Keep optional heavyweight tools task-scoped in `mise.toml`; GitHub Actions
