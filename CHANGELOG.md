@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/jimeh/treeboot/compare/v0.3.0...v0.4.0) (2026-06-23)
+
+
+### Features
+
+* add status command for worktree discovery details ([#42](https://github.com/jimeh/treeboot/issues/42)) ([f358686](https://github.com/jimeh/treeboot/commit/f3586867990f0095f50f22538847645464c99a57))
+
 ## [0.3.0](https://github.com/jimeh/treeboot/compare/v0.2.0...v0.3.0) (2026-06-22)
 
 
