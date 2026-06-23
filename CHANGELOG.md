@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/jimeh/treeboot/compare/v0.4.0...v0.4.1) (2026-06-23)
+
+
+### Bug Fixes
+
+* keep Linux installers from selecting Android assets ([#47](https://github.com/jimeh/treeboot/issues/47)) ([9c8447a](https://github.com/jimeh/treeboot/commit/9c8447a97f967e97d24879d5ea7faed3f3422447))
+
 ## [0.4.0](https://github.com/jimeh/treeboot/compare/v0.3.0...v0.4.0) (2026-06-23)
 
 
