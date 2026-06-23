@@ -16,8 +16,9 @@
 </div>
 
 `treeboot` is meant for teams and agents that create lots of Git worktrees. A
-new worktree often needs the same local setup every time: copy an `.env`, link
-shared tooling, install dependencies, or run a project setup command.
+new worktree often needs the same local setup every time: copy local env
+overrides, link shared tooling, install dependencies, or run a project setup
+command.
 
 Instead of repeating those steps across Codex, Claude Code, Conductor,
 Superset, shell scripts, and team docs, put them in one place and run:
@@ -28,7 +29,7 @@ treeboot
 
 ## Status
 
-This project is bootstrapped for implementation against spec v1.8.0. The
+This project is bootstrapped for implementation against spec v1.8.1. The
 planned implementation target is Rust, distributed as small prebuilt binaries
 from GitHub Releases.
 
@@ -49,7 +50,8 @@ completion, and missing-config behavior.
 Git worktrees are cheap to create, but project-local state usually is not.
 Most real projects have files and commands that are intentionally not committed:
 
-- `.env` and `.env.local`
+- `.env.local`, `.env.development.local`, and `.env.test.local`
+- `mise.local.toml`
 - local agent or editor config
 - shared scripts
 - language runtime installs
@@ -62,9 +64,13 @@ Most real projects have files and commands that are intentionally not committed:
 Create `.treeboot.toml` in the root checkout:
 
 ```toml
+#:schema https://github.com/jimeh/treeboot/releases/latest/download/config.schema.json
+
 copy = [
-  ".env",
   ".env.local",
+  ".env.development.local",
+  ".env.test.local",
+  "mise.local.toml",
 ]
 
 symlink = [
@@ -88,6 +94,10 @@ By default, copy and symlink operations are idempotent. If a target already
 exists, `treeboot` reports it and leaves it alone. Commands still run, so write
 commands to be safe to rerun.
 
+Missing copy, symlink, and sync sources are skipped by default. That makes it
+safe to list several local-only files and let each worktree apply only the ones
+that exist in the root checkout.
+
 ## Config
 
 The default config file is:
@@ -99,13 +109,17 @@ The default config file is:
 The common top-level config keys are:
 
 ```toml
-strict = true
+#:schema https://github.com/jimeh/treeboot/releases/latest/download/config.schema.json
+
+strict = false
 dangerously_allow_sources_outside_root = false
 dangerously_allow_targets_outside_worktree = false
 
 copy = [
-  ".env",
-  { source = "templates/local.env", target = ".env.local" },
+  ".env.local",
+  ".env.development.local",
+  ".env.test.local",
+  "mise.local.toml",
 ]
 
 symlink = [
@@ -154,7 +168,8 @@ set -eu
 
 root_path="$1"
 
-ln -s "$root_path/.env" .env
+printf 'treeboot root directory: %s\n' "$root_path"
+printf 'treeboot worktree directory: %s\n' "$(pwd)"
 mise install
 ```
 
@@ -172,7 +187,7 @@ treeboot status
 treeboot config
 treeboot config --format json
 treeboot config --json
-treeboot copy .env
+treeboot copy .env.local
 treeboot symlink .tool-versions
 treeboot sync shared/config --compare checksum
 treeboot completions bash
@@ -190,7 +205,7 @@ treeboot run --strict
 treeboot run --force
 treeboot run --root /path/to/root-checkout
 treeboot run --no-init-script
-treeboot copy .env .npmrc --target local
+treeboot copy .env.local mise.local.toml --target local
 treeboot sync shared/config --delete --dry-run
 treeboot init
 ```

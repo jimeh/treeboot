@@ -12,9 +12,9 @@ Bootstrap new Git worktrees from one repo-local setup file.
 </div>
 
 `treeboot` is a CLI for teams and agents that create lots of Git worktrees. A
-new worktree often needs the same local setup every time: copy an `.env`, link
-shared tooling, install dependencies, or run a project setup command. Put those
-steps in `.treeboot.toml` and run:
+new worktree often needs the same local setup every time: copy local env
+overrides, link shared tooling, install dependencies, or run a project setup
+command. Put those steps in `.treeboot.toml` and run:
 
 ```sh
 treeboot
@@ -32,9 +32,13 @@ cargo install treeboot
 ## Example
 
 ```toml
+#:schema https://github.com/jimeh/treeboot/releases/latest/download/config.schema.json
+
 copy = [
-  ".env",
   ".env.local",
+  ".env.development.local",
+  ".env.test.local",
+  "mise.local.toml",
 ]
 
 symlink = [
@@ -53,6 +57,9 @@ Run from a linked worktree:
 ```sh
 treeboot
 ```
+
+Missing copy, symlink, and sync sources are skipped by default, so one config
+can safely list several local-only files.
 
 `treeboot` and `treeboot run` are equivalent. The CLI also includes
 `config`, `init`, `copy`, `symlink`, `sync`, and `completions` subcommands.

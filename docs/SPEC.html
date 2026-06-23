@@ -634,7 +634,7 @@
     <main>
       <header class="hero" id="overview">
         <div>
-          <p class="eyebrow">Specification v1.8.0</p>
+          <p class="eyebrow">Specification v1.8.1</p>
           <h1>treeboot</h1>
           <p class="lede">
             A portable worktree bootstrapper that lets every coding agent,
@@ -831,8 +831,8 @@ treeboot init --path .treeboot.toml</code></pre>
               Runs one or more copy operations without running declarative
               config file operations or configured commands.
             </p>
-            <pre><code class="shell">treeboot copy .env
-treeboot copy .env .npmrc --target local
+            <pre><code class="shell">treeboot copy .env.local
+treeboot copy .env.local mise.local.toml --target local
 treeboot copy templates/editorconfig --target .editorconfig
 treeboot copy shared/config --symlinks preserve</code></pre>
           </section>
@@ -895,9 +895,10 @@ treeboot completions elvish</code></pre>
             With one source, <code>--target</code> is the exact target path. With
             multiple sources, <code>--target</code> is a directory or path prefix
             joined with each source value. For example,
-            <code>treeboot copy .env .npmrc --target local</code> copies
-            <code>.env</code> to <code>local/.env</code> and
-            <code>.npmrc</code> to <code>local/.npmrc</code>.
+            <code>treeboot copy .env.local mise.local.toml --target local</code>
+            copies <code>.env.local</code> to
+            <code>local/.env.local</code> and <code>mise.local.toml</code> to
+            <code>local/mise.local.toml</code>.
           </p>
           <p>
             Operation-specific flags are valid only on the commands listed in
@@ -1381,7 +1382,8 @@ set -eu
 
 root_path="$1"
 
-ln -s "$root_path/.env" .env
+printf 'treeboot root directory: %s\n' "$root_path"
+printf 'treeboot worktree directory: %s\n' "$(pwd)"
 mise install</code></pre>
 
         <table>
@@ -1508,14 +1510,17 @@ script: .treeboot.sh</code></pre>
           </p>
         </div>
 
-        <pre><code>strict = true
+        <pre><code>#:schema https://github.com/jimeh/treeboot/releases/latest/download/config.schema.json
+
+strict = true
 dangerously_allow_sources_outside_root = false
 dangerously_allow_targets_outside_worktree = false
 
 copy = [
-  ".env",
-  { source = ".env.local", target = ".env.local" },
-  { source = ".env.development.local", target = ".env.development.local" },
+  ".env.local",
+  ".env.development.local",
+  ".env.test.local",
+  "mise.local.toml",
 ]
 
 symlink = [
@@ -1601,10 +1606,11 @@ files = [
             <code>source</code>.
           </p>
           <pre><code>copy = [
-  ".env",
-  { source = ".env.local" },
+  ".env.local",
   { source = ".env.development.local" },
-  { source = ".env.required", required = true },
+  ".env.test.local",
+  "mise.local.toml",
+  { source = ".env.required.local", required = true },
 ]
 
 symlink = [
@@ -1944,9 +1950,9 @@ args = ["install"]</code></pre>
           </thead>
           <tbody>
             <tr>
-              <td><code>copy = [".env"]</code></td>
-              <td><code>TREEBOOT_ROOT_PATH/.env</code></td>
-              <td><code>TREEBOOT_WORKTREE_PATH/.env</code></td>
+              <td><code>copy = [".env.local"]</code></td>
+              <td><code>TREEBOOT_ROOT_PATH/.env.local</code></td>
+              <td><code>TREEBOOT_WORKTREE_PATH/.env.local</code></td>
             </tr>
             <tr>
               <td><code>symlink = [".tool-versions"]</code></td>
@@ -2454,7 +2460,7 @@ Direct:  program + args</code></pre>
           </p>
         </div>
 
-        <pre><code>treeboot: copy .env -&gt; .env
+        <pre><code>treeboot: copy .env.local -&gt; .env.local
 treeboot: skip copy .env.local; target exists
 treeboot: symlink .tool-versions -&gt; ../repo/.tool-versions
 treeboot: sync shared/config -&gt; .config
