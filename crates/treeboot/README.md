@@ -61,6 +61,8 @@ cargo install treeboot
 
 ## Example
 
+Add a `.treeboot.toml` to the repository root. For example:
+
 ```toml
 #:schema https://github.com/jimeh/treeboot/releases/latest/download/config.schema.json
 
@@ -68,7 +70,6 @@ copy = [
   ".env.local",
   ".env.development.local",
   ".env.test.local",
-  ".mise.local.toml",
   "mise.local.toml",
 ]
 
@@ -82,11 +83,15 @@ commands = [
 ]
 ```
 
-Run from a linked worktree:
+After creating a new worktree, run:
 
 ```sh
 treeboot
 ```
+
+`treeboot` looks for a treeboot config file in the current worktree, discovers
+the root checkout, and performs the configured copy, symlink, and command
+operations.
 
 Missing copy, symlink, and sync sources are skipped by default, so one config
 can safely list several local-only files.

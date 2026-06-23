@@ -48,7 +48,7 @@ dependencies or perform other setup.
 
 ## Quick Start
 
-Create `.treeboot.toml` in the root checkout:
+Add a `.treeboot.toml` to the repository root. For example:
 
 ```toml
 #:schema https://github.com/jimeh/treeboot/releases/latest/download/config.schema.json
@@ -57,7 +57,6 @@ copy = [
   ".env.local",
   ".env.development.local",
   ".env.test.local",
-  ".mise.local.toml",
   "mise.local.toml",
 ]
 
@@ -71,11 +70,15 @@ commands = [
 ]
 ```
 
-Then run from a new worktree:
+After creating a new worktree, run:
 
 ```sh
 treeboot
 ```
+
+`treeboot` looks for a treeboot config file in the current worktree, discovers
+the root checkout, and performs the configured copy, symlink, and command
+operations.
 
 By default, copy and symlink operations are idempotent. If a target already
 exists, `treeboot` reports it and leaves it alone.
