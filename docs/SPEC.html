@@ -634,7 +634,7 @@
     <main>
       <header class="hero" id="overview">
         <div>
-          <p class="eyebrow">Specification v1.8.1</p>
+          <p class="eyebrow">Specification v1.8.2</p>
           <h1>treeboot</h1>
           <p class="lede">
             A portable worktree bootstrapper that lets every coding agent,
@@ -2537,8 +2537,8 @@ treeboot-x86_64-unknown-linux-musl.tar.gz
 treeboot-aarch64-unknown-linux-musl.tar.gz
 treeboot-x86_64-pc-windows-msvc.zip
 treeboot-aarch64-pc-windows-msvc.zip
-treeboot-x86_64-linux-android.tar.gz
-treeboot-aarch64-linux-android.tar.gz</code></pre>
+treeboot-x86_64-android.tar.gz
+treeboot-aarch64-android.tar.gz</code></pre>
 
         <p>Raw executable assets:</p>
         <pre><code>treeboot-aarch64-apple-darwin
@@ -2547,8 +2547,8 @@ treeboot-x86_64-unknown-linux-musl
 treeboot-aarch64-unknown-linux-musl
 treeboot-x86_64-pc-windows-msvc.exe
 treeboot-aarch64-pc-windows-msvc.exe
-treeboot-x86_64-linux-android
-treeboot-aarch64-linux-android</code></pre>
+treeboot-x86_64-android
+treeboot-aarch64-android</code></pre>
 
         <p>Release metadata assets:</p>
         <pre><code>treeboot-checksums.txt
@@ -2558,7 +2558,12 @@ treeboot-sbom.spdx.json</code></pre>
         <div class="timeline">
           <div class="timeline-item">
             <strong>Archive contents</strong>
-            <span><code>treeboot</code>, <code>README.md</code>, and <code>LICENSE</code>.</span>
+            <span>
+              <code>treeboot</code>, <code>README.md</code>, and
+              <code>LICENSE</code>. Android asset labels omit the Rust target
+              triple's <code>linux</code> segment so desktop Linux installers do
+              not classify Android archives as generic Linux assets.
+            </span>
           </div>
           <div class="timeline-item">
             <strong>Raw executable assets</strong>

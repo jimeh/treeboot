@@ -236,6 +236,7 @@ fn package_release_asset_in_project(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let windows = target.contains("windows");
     let exe_suffix = if windows { ".exe" } else { "" };
+    let asset_target = release_asset_target(target);
     let binary = project_dir.join(format!("target/{target}/release/treeboot{exe_suffix}"));
     if !binary.is_file() {
         return Err(format!("missing release binary: {}", binary.display()).into());
@@ -243,7 +244,7 @@ fn package_release_asset_in_project(
 
     let dist_dir = resolve_project_path(project_dir, dist_dir);
     fs::create_dir_all(&dist_dir)?;
-    let raw_asset = dist_dir.join(format!("treeboot-{target}{exe_suffix}"));
+    let raw_asset = dist_dir.join(format!("treeboot-{asset_target}{exe_suffix}"));
     fs::copy(&binary, &raw_asset)?;
     make_executable(&raw_asset)?;
 
@@ -258,7 +259,7 @@ fn package_release_asset_in_project(
     }
     fs::create_dir_all(&temp_dir)?;
 
-    let payload_dir = temp_dir.join(format!("treeboot-{version}-{target}"));
+    let payload_dir = temp_dir.join(format!("treeboot-{version}-{asset_target}"));
     fs::create_dir_all(&payload_dir)?;
     let payload_binary = payload_dir.join(format!("treeboot{exe_suffix}"));
     fs::copy(&binary, &payload_binary)?;
@@ -268,15 +269,15 @@ fn package_release_asset_in_project(
 
     let result = if windows {
         create_zip_archive(
-            &dist_dir.join(format!("treeboot-{target}.zip")),
+            &dist_dir.join(format!("treeboot-{asset_target}.zip")),
             &payload_dir,
-            &format!("treeboot-{version}-{target}"),
+            &format!("treeboot-{version}-{asset_target}"),
         )
     } else {
         create_tar_archive(
-            &dist_dir.join(format!("treeboot-{target}.tar.gz")),
+            &dist_dir.join(format!("treeboot-{asset_target}.tar.gz")),
             &payload_dir,
-            &format!("treeboot-{version}-{target}"),
+            &format!("treeboot-{version}-{asset_target}"),
         )
     };
 
@@ -284,6 +285,14 @@ fn package_release_asset_in_project(
     result?;
 
     Ok(())
+}
+
+fn release_asset_target(target: &str) -> &str {
+    match target {
+        "x86_64-linux-android" => "x86_64-android",
+        "aarch64-linux-android" => "aarch64-android",
+        _ => target,
+    }
 }
 
 /// Copy the config JSON Schema into the release asset directory.
@@ -628,6 +637,41 @@ mod tests {
         assert!(entries.contains("treeboot-1.2.3-x86_64-unknown-linux-musl/treeboot"));
         assert!(entries.contains("treeboot-1.2.3-x86_64-unknown-linux-musl/README.md"));
         assert!(entries.contains("treeboot-1.2.3-x86_64-unknown-linux-musl/LICENSE"));
+    }
+
+    /// Android release asset names omit linux so desktop Linux installers avoid them.
+    #[test]
+    fn packages_android_assets_without_linux_aliases() {
+        let project = fixture_project("x86_64-linux-android", "");
+        let dist_dir = project.path().join("dist");
+
+        package_release_asset_in_project(
+            project.path(),
+            "x86_64-linux-android",
+            "1.2.3",
+            &dist_dir,
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read(dist_dir.join("treeboot-x86_64-android")).unwrap(),
+            b"binary"
+        );
+        assert!(!dist_dir.join("treeboot-x86_64-linux-android").exists());
+        assert!(
+            !dist_dir
+                .join("treeboot-x86_64-linux-android.tar.gz")
+                .exists()
+        );
+
+        let output = Command::new("tar")
+            .arg("-tzf")
+            .arg(dist_dir.join("treeboot-x86_64-android.tar.gz"))
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let entries = String::from_utf8(output.stdout).unwrap();
+        assert!(entries.contains("treeboot-1.2.3-x86_64-android/treeboot"));
     }
 
     /// Packaging creates raw and zip assets for Windows targets.

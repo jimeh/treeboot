@@ -320,7 +320,7 @@ schemas/treeboot.schema.json
 ## Project Status
 
 `treeboot` is feature-complete for the core worktree bootstrap workflow in
-[spec v1.8.1](./docs/SPEC.html). It supports:
+[spec v1.8.2](./docs/SPEC.html). It supports:
 
 - `run`, `status`, `config`, `init`, `copy`, `symlink`, `sync`, and
   `completions`

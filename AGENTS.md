@@ -172,6 +172,9 @@ and CI mapping.
 - Android release targets use the hosted runner's Android NDK clang linkers
   instead of `cross`; the cross Android images fail with Rust 1.96 due to
   missing `libunwind` during binary linking.
+- Android release asset names intentionally omit the Rust target triple's
+  `linux` segment (`x86_64-android`, not `x86_64-linux-android`) so desktop
+  Linux GitHub release installers such as mise do not pick Android archives.
 - Release-please intentionally uses one root Rust release unit without the
   `cargo-workspace` plugin. The root `treeboot-workspace` package exists only
   so release-please can update the root manifest and all workspace member
