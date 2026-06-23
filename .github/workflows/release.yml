@@ -225,7 +225,7 @@ jobs:
     if: needs.prepare.outputs.is_tag == 'true'
     needs: [prepare, assemble]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     environment: release
     permissions:
       actions: read
