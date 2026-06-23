@@ -184,3 +184,6 @@ and CI mapping.
   need crate-local READMEs or explicit readme metadata, otherwise Cargo packages
   them with `readme = false`. Keep the crate-local `LICENSE` copies in sync
   with the root `LICENSE` so published crate tarballs include the license text.
+- crates.io Trusted Publishing is bound to `.github/workflows/release.yml` and
+  the GitHub Actions `release` environment for both published crates. Keep the
+  crates.io Trusted Publisher settings in sync if either name changes.
