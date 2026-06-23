@@ -18,6 +18,9 @@ worktree discovery, init script discovery, declarative config parsing,
 validation, action planning, file operation execution, command execution, and
 structured output events.
 
+This crate exposes the same workflow as typed Rust APIs for callers that want
+to embed treeboot behavior directly.
+
 ## API Shape
 
 Use command-shaped facade functions when you want the same behavior as the CLI:
@@ -55,3 +58,7 @@ CLI-specific dependencies.
 the command-line interface and user-facing reporting on top of this API.
 
 See the [repository](https://github.com/jimeh/treeboot) for project details.
+
+## License
+
+MIT

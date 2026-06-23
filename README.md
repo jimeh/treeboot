@@ -16,77 +16,118 @@
 </div>
 
 `treeboot` is meant for teams and agents that create lots of Git worktrees. A
-new worktree often needs the same local setup every time: copy an `.env`, link
-shared tooling, install dependencies, or run a project setup command.
+new worktree often needs the same local setup every time: copy local env
+overrides, link shared tooling, install dependencies, or run a project setup
+command.
 
-Instead of repeating those steps across Codex, Claude Code, Conductor,
-Superset, shell scripts, and team docs, put them in one place and run:
+Instead of repeating those steps across configuration files for Codex, Claude
+Code, Conductor, Superset, shell scripts, and team docs, put them in one place
+and run:
 
 ```sh
 treeboot
 ```
-
-## Status
-
-This project is bootstrapped for implementation against spec v1.8.0. The
-planned implementation target is Rust, distributed as small prebuilt binaries
-from GitHub Releases.
-
-The initial implementation contract lives in
-[docs/SPEC.html](./docs/SPEC.html). This README is the short human-facing
-version.
-
-The current implementation is in progress. It supports the `run`, `status`,
-`config`, `init`, `copy`, `symlink`, `sync`, and `completions` command
-surfaces, path discovery, init-script discovery/execution, config
-parsing/inspection,
-declarative validation, declarative file operations, declarative command
-execution, shell completion generation, root-relative manual source
-completion, and missing-config behavior.
 
 ## Why
 
 Git worktrees are cheap to create, but project-local state usually is not.
 Most real projects have files and commands that are intentionally not committed:
 
-- `.env` and `.env.local`
+- `.env.local`, `.env.development.local`, and `.env.test.local`
+- `mise.local.toml`
 - local agent or editor config
 - shared scripts
 - language runtime installs
 - dependency installation commands
 
+When creating a new worktree, those files typically need to be copied or
+symlinked from the root checkout, and commands need to be run to install
+dependencies or perform other setup.
+
 `treeboot` gives those setup steps a single home.
 
 ## Quick Start
 
-Create `.treeboot.toml` in the root checkout:
+Add a `.treeboot.toml` to the repository root. For example:
 
 ```toml
+#:schema https://github.com/jimeh/treeboot/releases/latest/download/config.schema.json
+
 copy = [
-  ".env",
   ".env.local",
+  ".env.development.local",
+  ".env.test.local",
+  "mise.local.toml",
 ]
 
 symlink = [
-  ".tool-versions",
-  { source = "shared/.agents", target = ".agents" },
+  "config/master.key",
 ]
 
 commands = [
-  "mise install",
-  { name = "Install dependencies", run = "mise run setup" },
+  "bundle install",
+  "pnpm install",
 ]
 ```
 
-Then run from a new worktree:
+After creating a new worktree, run:
 
 ```sh
 treeboot
 ```
 
+`treeboot` looks for a treeboot config file in the current worktree, discovers
+the root checkout, and performs the configured copy, symlink, and command
+operations.
+
 By default, copy and symlink operations are idempotent. If a target already
-exists, `treeboot` reports it and leaves it alone. Commands still run, so write
-commands to be safe to rerun.
+exists, `treeboot` reports it and leaves it alone.
+
+Missing copy, symlink, and sync sources are skipped by default. That makes it
+safe to list several local-only files and let each worktree apply only the ones
+that exist in the root checkout.
+
+Commands always run, so they should be idempotent or otherwise safe and fast to
+run repeatedly.
+
+## Install
+
+The recommended usage pattern is to make `treeboot` a project-local [mise][]
+tool, usually scoped to a bootstrap task. For example in `mise.toml`:
+
+[mise]: https://mise.jdx.dev/
+
+```toml
+[tasks.treeboot]
+description = "Bootstrap the current worktree with treeboot"
+tools."github:jimeh/treeboot" = "latest"
+run = "treeboot"
+```
+
+Then contributors and agents can run:
+
+```sh
+mise run treeboot
+```
+
+For a global `mise` install:
+
+```sh
+mise use -g github:jimeh/treeboot
+treeboot --version
+```
+
+Prebuilt binaries are available from
+[GitHub Releases](https://github.com/jimeh/treeboot/releases), and Cargo
+users can install from crates.io:
+
+```sh
+cargo install treeboot
+```
+
+After installing the binary, generate shell completion scripts with
+`treeboot completions <shell>` and install them according to your shell or
+package manager conventions.
 
 ## Config
 
@@ -99,13 +140,17 @@ The default config file is:
 The common top-level config keys are:
 
 ```toml
-strict = true
+#:schema https://github.com/jimeh/treeboot/releases/latest/download/config.schema.json
+
+strict = false
 dangerously_allow_sources_outside_root = false
 dangerously_allow_targets_outside_worktree = false
 
 copy = [
-  ".env",
-  { source = "templates/local.env", target = ".env.local" },
+  ".env.local",
+  ".env.development.local",
+  ".env.test.local",
+  "mise.local.toml",
 ]
 
 symlink = [
@@ -126,7 +171,8 @@ commands = [
 String file entries use the same source and target path. Object entries also
 default `target` to `source` when only `source` is set, and can set a different
 target when needed. Missing sources are skipped by default; set
-`required = true` on a file object when a missing source should fail.
+`required = true` on a file object when a missing source should cause treeboot
+to fail.
 
 Use `sync` when the target should be actively reconciled with the source.
 Directory sync preserves target-only files by default. Set `delete = true` when
@@ -154,7 +200,8 @@ set -eu
 
 root_path="$1"
 
-ln -s "$root_path/.env" .env
+printf 'treeboot root directory: %s\n' "$root_path"
+printf 'treeboot worktree directory: %s\n' "$(pwd)"
 mise install
 ```
 
@@ -172,7 +219,7 @@ treeboot status
 treeboot config
 treeboot config --format json
 treeboot config --json
-treeboot copy .env
+treeboot copy .env.local
 treeboot symlink .tool-versions
 treeboot sync shared/config --compare checksum
 treeboot completions bash
@@ -190,7 +237,7 @@ treeboot run --strict
 treeboot run --force
 treeboot run --root /path/to/root-checkout
 treeboot run --no-init-script
-treeboot copy .env .npmrc --target local
+treeboot copy .env.local mise.local.toml --target local
 treeboot sync shared/config --delete --dry-run
 treeboot init
 ```
@@ -241,53 +288,53 @@ message and exits successfully. With `--strict`, that same case exits non-zero.
 
 ## Environment
 
-Init scripts and configured commands receive the same environment. The canonical
-variables are:
+Init scripts and configured commands receive these variables:
 
-```sh
-TREEBOOT_ROOT_PATH
-TREEBOOT_WORKTREE_PATH
-TREEBOOT_DEFAULT_BRANCH
-```
+- `TREEBOOT_ROOT_PATH`: root checkout used as the source for file operations.
+- `TREEBOOT_WORKTREE_PATH`: current worktree where setup is applied.
+- `TREEBOOT_DEFAULT_BRANCH`: best-effort default branch name.
 
-`treeboot` also sets compatibility aliases for common agent setup scripts,
-including Codex, Conductor, Superset, and generic Git-style names. See
-[docs/SPEC.html](./docs/SPEC.html) for the full mapping.
+These environment variables can override config defaults:
+
+- `TREEBOOT_STRICT`: enables strict validation and conflict handling.
+- `TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT`: allows file operation
+  sources outside `TREEBOOT_ROOT_PATH`.
+- `TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE`: allows file operation
+  targets outside `TREEBOOT_WORKTREE_PATH`.
 
 ## Schema
 
-The checked-in JSON Schema for `.treeboot.toml` is generated at:
+The JSON Schema for `.treeboot.toml` is published with each GitHub Release as
+`config.schema.json`:
+
+```text
+https://github.com/jimeh/treeboot/releases/latest/download/config.schema.json
+```
+
+The same schema is checked into the repository at:
 
 ```text
 schemas/treeboot.schema.json
 ```
 
-Regenerate it with:
+## Project Status
 
-```sh
-mise run generate
-```
+`treeboot` is feature-complete for the core worktree bootstrap workflow in
+[spec v1.8.1](./docs/SPEC.html). It supports:
 
-## Install
+- `run`, `status`, `config`, `init`, `copy`, `symlink`, `sync`, and
+  `completions`
+- Git worktree, root checkout, and default-branch discovery
+- declarative TOML config parsing, inspection, validation, and execution
+- copy, symlink, and sync file operations
+- command execution with treeboot environment variables
+- executable init-script discovery and execution
+- shell completion generation, including root-relative manual source completion
+- release asset packaging and checked-in config schema generation
 
-The intended install path is downloading the release asset for your platform
-from GitHub Releases, either directly or through tools such as `ubi` and
-`mise`.
-
-After crates.io publication, Cargo users can install with:
-
-```sh
-cargo install treeboot
-```
-
-After installing the binary, generate shell completion scripts with
-`treeboot completions <shell>` and install them according to your shell or
-package manager conventions.
-
-Releases are expected to include archives, raw executable assets,
-`config.schema.json`, checksums, SBOMs, and provenance attestations. GPG
-checksum signing and macOS
-signing/notarization are planned distribution hardening work.
+Remaining work is mostly release hardening, distribution polish, and follow-up
+documentation. The spec is the compatibility contract; this README is the short
+human-facing summary.
 
 ## Name
 
@@ -329,3 +376,7 @@ mise run test
 mise run test:core
 mise run test:cli
 ```
+
+## License
+
+[MIT](LICENSE)

@@ -17,6 +17,23 @@ fn init_config_should_create_starter_config() {
         .stdout(predicate::str::contains("treeboot: created"));
 
     assert!(dir.path().join(".treeboot.toml").is_file());
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join(".treeboot.toml"))
+            .expect("config should be readable"),
+        concat!(
+            "#:schema https://github.com/jimeh/treeboot/releases/latest/download/",
+            "config.schema.json\n\n",
+            "copy = [\n",
+            "  \".env.local\",\n",
+            "]\n",
+            "\n",
+            "symlink = [\n",
+            "]\n",
+            "\n",
+            "commands = [\n",
+            "]\n",
+        )
+    );
 }
 
 #[test]
@@ -133,4 +150,15 @@ fn init_script_should_create_executable_script() {
         .metadata()
         .expect("script should exist");
     assert!(metadata.permissions().mode() & 0o111 != 0);
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join(".treeboot.sh"))
+            .expect("script should be readable"),
+        concat!(
+            "#!/usr/bin/env sh\n",
+            "set -eu\n\n",
+            "root_path=\"$1\"\n\n",
+            "printf 'treeboot root directory: %s\\n' \"$root_path\"\n",
+            "printf 'treeboot worktree directory: %s\\n' \"$(pwd)\"\n",
+        )
+    );
 }

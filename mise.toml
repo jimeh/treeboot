@@ -22,7 +22,7 @@ depends = ["deps", "hooks:install"]
 
 [tasks.treeboot]
 description = "Bootstrap the current worktree with treeboot"
-tools."github:jimeh/treeboot" = "0.2.0"
+tools."github:jimeh/treeboot" = "latest"
 run = "treeboot"
 
 [tasks.deps]

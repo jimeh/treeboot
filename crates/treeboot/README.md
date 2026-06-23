@@ -12,9 +12,13 @@ Bootstrap new Git worktrees from one repo-local setup file.
 </div>
 
 `treeboot` is a CLI for teams and agents that create lots of Git worktrees. A
-new worktree often needs the same local setup every time: copy an `.env`, link
-shared tooling, install dependencies, or run a project setup command. Put those
-steps in `.treeboot.toml` and run:
+new worktree often needs the same local setup every time: copy local env
+overrides, link shared tooling, install dependencies, or run a project setup
+command.
+
+Instead of repeating those steps across configuration files for Codex, Claude
+Code, Conductor, Superset, shell scripts, and team docs, put them in
+`.treeboot.toml` and run:
 
 ```sh
 treeboot
@@ -22,8 +26,34 @@ treeboot
 
 ## Install
 
-The primary binary distribution is GitHub Releases. The crate is also prepared
-for crates.io publishing:
+The recommended usage pattern is to make `treeboot` a project-local [mise][]
+tool, usually scoped to a bootstrap task:
+
+[mise]: https://mise.jdx.dev/
+
+```toml
+[tasks.treeboot]
+description = "Bootstrap the current worktree with treeboot"
+tools."github:jimeh/treeboot" = "latest"
+run = "treeboot"
+```
+
+Then contributors and agents can run:
+
+```sh
+mise run treeboot
+```
+
+For a global `mise` install:
+
+```sh
+mise use -g github:jimeh/treeboot
+treeboot --version
+```
+
+Prebuilt binaries are available from
+[GitHub Releases](https://github.com/jimeh/treeboot/releases), and Cargo users
+can install from crates.io:
 
 ```sh
 cargo install treeboot
@@ -31,30 +61,49 @@ cargo install treeboot
 
 ## Example
 
+Add a `.treeboot.toml` to the repository root. For example:
+
 ```toml
+#:schema https://github.com/jimeh/treeboot/releases/latest/download/config.schema.json
+
 copy = [
-  ".env",
   ".env.local",
+  ".env.development.local",
+  ".env.test.local",
+  "mise.local.toml",
 ]
 
 symlink = [
-  ".tool-versions",
-  { source = "shared/.agents", target = ".agents" },
+  "config/master.key",
 ]
 
 commands = [
-  "mise install",
-  { name = "Install dependencies", run = "mise run setup" },
+  "bundle install",
+  "pnpm install",
 ]
 ```
 
-Run from a linked worktree:
+After creating a new worktree, run:
 
 ```sh
 treeboot
 ```
 
+`treeboot` looks for a treeboot config file in the current worktree, discovers
+the root checkout, and performs the configured copy, symlink, and command
+operations.
+
+Missing copy, symlink, and sync sources are skipped by default, so one config
+can safely list several local-only files.
+
+Commands always run, so they should be idempotent or otherwise safe and fast to
+run repeatedly.
+
 `treeboot` and `treeboot run` are equivalent. The CLI also includes
 `config`, `init`, `copy`, `symlink`, `sync`, and `completions` subcommands.
 
 See the [repository](https://github.com/jimeh/treeboot) for project details.
+
+## License
+
+MIT

@@ -7,12 +7,10 @@ use crate::{Error, OutputEvent, Reporter, Result};
 const DEFAULT_CONFIG_PATH: &str = ".treeboot.toml";
 const DEFAULT_SCRIPT_PATH: &str = ".treeboot.sh";
 
-const STARTER_CONFIG: &str = r#"strict = false
-dangerously_allow_sources_outside_root = false
-dangerously_allow_targets_outside_worktree = false
+const STARTER_CONFIG: &str = r#"#:schema https://github.com/jimeh/treeboot/releases/latest/download/config.schema.json
 
 copy = [
-  ".env",
+  ".env.local",
 ]
 
 symlink = [
@@ -27,7 +25,8 @@ set -eu
 
 root_path="$1"
 
-printf 'treeboot root: %s\n' "$root_path"
+printf 'treeboot root directory: %s\n' "$root_path"
+printf 'treeboot worktree directory: %s\n' "$(pwd)"
 "#;
 
 /// Init file type to create.
