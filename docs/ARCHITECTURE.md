@@ -238,7 +238,7 @@ File execution is two-stage: validated file operations become concrete `FileActi
 - Actual filesystem mutations happen after all actions plan.
 - Reporter failures become typed output errors.
 
-```
+```text
 ActionPlan.files
   -> plan_operation
   -> FileAction::{CreateDirectory, CopyFile, CreateSymlink, Delete, Skip, Warning}

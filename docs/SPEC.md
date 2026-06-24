@@ -234,7 +234,7 @@ treeboot builds one environment variable set per run. The same set is applied wh
 
 treeboot also reads environment variables for config-level boolean options. Values `1`, `true`, `yes`, and `on` enable an option; `0`, `false`, `no`, and `off` disable it. Invalid values are errors before file operations or commands run.
 
-```
+```text
 TREEBOOT_STRICT
 TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT
 TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE
@@ -242,7 +242,7 @@ TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE
 
 ### Canonical
 
-```
+```text
 TREEBOOT_ROOT_PATH
 TREEBOOT_WORKTREE_PATH
 TREEBOOT_DEFAULT_BRANCH
@@ -250,7 +250,7 @@ TREEBOOT_DEFAULT_BRANCH
 
 ### Aliases
 
-```
+```text
 GIT_SOURCE_TREE_PATH
 GIT_WORKTREE_PATH
 
@@ -303,7 +303,7 @@ Scripts are for projects that need full control. If an executable init script is
 
 ### Discovery
 
-```
+```text
 .treeboot.sh
 .treebootrc
 .config/treeboot/init
@@ -317,9 +317,9 @@ Discovery is relative to `TREEBOOT_WORKTREE_PATH`. Only executable files are tre
 ./.treeboot.sh "$TREEBOOT_ROOT_PATH"
 ```
 
-treeboot executes the script from the worktree root, passes the root path as the only positional argument, and provides the full treeboot environment variable set described in [Environment variables](#environment).
+treeboot executes the script from the worktree root, passes the root path as the only positional argument, and provides the full treeboot environment variable set described in [Environment variables](#environment-variables).
 
-```
+```sh
 #!/usr/bin/env sh
 set -eu
 
@@ -350,7 +350,7 @@ TOML is the intended config format. Simple lists cover the common case; top-leve
 
 ### Discovery
 
-```
+```text
 .treeboot.toml
 treeboot.toml
 .config/treeboot/config.toml
@@ -360,7 +360,7 @@ The first existing config file wins. If `--config` is provided, only that file i
 
 ### Init Defaults
 
-```
+```text
 config: .treeboot.toml
 script: .treeboot.sh
 ```
@@ -379,7 +379,7 @@ If no executable init script and no config file are detected, treeboot prints an
 
 The checked-in JSON Schema for the config file format lives at `schemas/treeboot.schema.json`. It is generated from the Rust schema model with `mise run generate` and checked in CI with `mise run generate:schema:check` through the aggregate `mise run generate:check` task.
 
-```
+```toml
 #:schema https://github.com/jimeh/treeboot/releases/latest/download/config.schema.json
 
 strict = false
@@ -429,7 +429,7 @@ Top-level boolean options are project defaults for declarative config execution.
 
 `copy`, `symlink`, and `sync` accept strings and objects. Strings mean source and target are the same path. For `sync`, string entries also use `compare = "metadata"` and `delete = false`. The `files` list accepts objects with an `operation` field for mixed copy, symlink, and sync entries. Missing sources are skipped by default; object entries can set `required = true` to make a missing source fail. When an object has `source` but no `target`, its target defaults to the same path as `source`.
 
-```
+```toml
 copy = [
   ".env.local",
   { source = ".env.development.local" },
@@ -477,7 +477,7 @@ The verbose table-array name is singular `[[file]]` so it can coexist with the p
 
 `commands` accepts string entries and compact object entries. Strings are shorthand for objects with a `run` field. For longer command definitions, use verbose `[[command]]` entries.
 
-```
+```toml
 commands = [
   "mise install",
   { run = "mise run setup", env = { NODE_ENV = "development" } },
@@ -679,14 +679,14 @@ Commands are arbitrary project setup commands. treeboot runs them predictably, b
 - Commands run sequentially in declaration order.
 - A command with `allow_failure = true` warns when it cannot be spawned or exits non-zero, then later commands continue.
 - Run from `TREEBOOT_WORKTREE_PATH` unless a command sets `cwd`.
-- Receive the full treeboot environment variable set described in [Environment variables](#environment).
+- Receive the full treeboot environment variable set described in [Environment variables](#environment-variables).
 - Per-command `env` values are merged into that environment for that command only.
 - Skip only when `--skip-commands` is provided.
 - In `--dry-run`, report planned file operations and commands without spawning any configured command process.
 
 ### Shells
 
-```
+```text
 Unix:    sh -c <command>
 Windows: cmd /C <command>
 
@@ -725,7 +725,7 @@ Windows support is part of the design contract. Implementation and tests must ac
 
 Output should be concise enough for setup logs while still making skipped targets and destructive choices obvious.
 
-```
+```text
 treeboot: copy .env.local -> .env.local
 treeboot: skip copy .env.local; target exists
 treeboot: symlink .tool-versions -> ../repo/.tool-versions
@@ -754,7 +754,7 @@ Release assets should be predictable enough for direct GitHub release installers
 
 Archive assets:
 
-```
+```text
 treeboot-aarch64-apple-darwin.tar.gz
 treeboot-x86_64-apple-darwin.tar.gz
 treeboot-x86_64-unknown-linux-musl.tar.gz
@@ -767,7 +767,7 @@ treeboot-aarch64-android.tar.gz
 
 Raw executable assets:
 
-```
+```text
 treeboot-aarch64-apple-darwin
 treeboot-x86_64-apple-darwin
 treeboot-x86_64-unknown-linux-musl
@@ -780,7 +780,7 @@ treeboot-aarch64-android
 
 Release metadata assets:
 
-```
+```text
 treeboot-checksums.txt
 config.schema.json
 treeboot-sbom.spdx.json
