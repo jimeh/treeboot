@@ -957,11 +957,9 @@ fn apply_file_operations_should_repair_directory_metadata_after_child_updates() 
         .permissions();
     target_permissions.set_mode(0o755);
     fs::set_permissions(&target, target_permissions).expect("target mode should be set");
-    let plan = run_plan(
-        &root,
-        &worktree,
-        vec![sync_operation(&root, &worktree, "shared", "shared")],
-    );
+    let mut sync = sync_operation(&root, &worktree, "shared", "shared");
+    sync.compare = Some(SyncCompare::Checksum);
+    let plan = run_plan(&root, &worktree, vec![sync]);
     let mut reporter = VecReporter::default();
 
     apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
