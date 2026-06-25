@@ -1,1 +1,1 @@
-commands = ["mise install", "mise run setup"]
+commands = ["mise run setup"]

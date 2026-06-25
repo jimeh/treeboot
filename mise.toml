@@ -1,33 +1,59 @@
+# ------------------------------------------------------------------------------
+# Settings
+# ------------------------------------------------------------------------------
+
+[settings]
+lockfile = true
+minimum_release_age = "3d"
+minimum_release_age_excludes = ["github:jimeh/treeboot"]
+
+[settings.task]
+run_auto_install = true
+
+# ------------------------------------------------------------------------------
+# Tools
+# ------------------------------------------------------------------------------
+
 [tools]
-actionlint = "1.7.12"
-lefthook = "2.1.9"
-pinact = "4.1.0"
-rust = { version = "1.96.0", components = "clippy,rust-analyzer,rust-src,rustfmt" }
-sccache = "0.16.0"
-shellcheck = "0.11.0"
-zizmor = "1.25.2"
+actionlint = "1"
+lefthook = "2"
+pinact = "4"
+rust = { version = "1.96", components = "clippy,rust-analyzer,rust-src,rustfmt" }
+sccache = "0"
+"github:jimeh/treeboot" = "latest"
+shellcheck = "0"
+zizmor = "1"
+
+# ------------------------------------------------------------------------------
+# Environment
+# ------------------------------------------------------------------------------
 
 [env]
 RUSTC_WRAPPER = "sccache"
 
-[settings]
-minimum_release_age = "3d"
+# ------------------------------------------------------------------------------
+# Tasks
+# ------------------------------------------------------------------------------
 
-[settings.task]
-run_auto_install = true
+# Bootstrap
 
 [tasks.setup]
 description = "Set up local development environment"
 depends = ["deps", "hooks:install"]
 
-[tasks.treeboot]
-description = "Bootstrap the current worktree with treeboot"
-tools."github:jimeh/treeboot" = "latest"
-run = "treeboot"
-
 [tasks.deps]
 description = "Fetch Rust dependencies"
 run = "cargo fetch --locked"
+
+[tasks."hooks:install"]
+description = "Install lefthook Git hooks"
+run = "lefthook install"
+
+[tasks.treeboot]
+description = "Bootstrap the current worktree with treeboot"
+run = "treeboot"
+
+# Development
 
 [tasks.format]
 description = "Format Rust code"
@@ -40,6 +66,12 @@ run = "cargo fmt --all -- --check"
 [tasks.lint]
 description = "Run Rust lints"
 run = "cargo clippy --all-targets --all-features --locked -- -D warnings"
+
+[tasks."lint:fix"]
+description = "Apply machine-applicable Clippy suggestions"
+run = "cargo clippy --fix --workspace --all-features --locked"
+
+# Builds
 
 [tasks.build]
 description = "Build all Rust targets"
@@ -56,28 +88,7 @@ target="${1:?target triple required}"
 cargo build -p treeboot --locked --release --target "$target"
 '''
 
-[tasks."release:version"]
-description = "Print the release version derived from git describe"
-run = "scripts/release-version.sh"
-
-[tasks."release:package:local"]
-description = "Build and package the current host release binary into dist/"
-run = '''
-target="$(rustc -vV | sed -n 's/^host: //p')"
-version="$(scripts/release-version.sh)"
-cargo build -p treeboot --locked --release --target "$target"
-scripts/package-release-asset.sh "$target" "$version" dist
-scripts/package-config-schema.sh dist
-'''
-
-[tasks."release:check"]
-description = "Run local release packaging and completion smoke checks"
-run = '''
-mise run release:package:local
-for shell in bash zsh fish powershell elvish; do
-  cargo run -p treeboot --locked -- completions "$shell" >/dev/null
-done
-'''
+# Generated artifacts
 
 [tasks.generate]
 description = "Generate checked-in artifacts"
@@ -113,9 +124,7 @@ diff -u schemas/treeboot.schema.json crates/treeboot-core/assets/config.schema.j
 description = "Fail when generated metadata is out of date"
 run = "bash scripts/generate-metadata.sh check"
 
-[tasks.msrv]
-description = "Check Rust MSRV compatibility"
-run = "mise exec rust@1.96.0 -- cargo check --locked"
+# Tests
 
 [tasks.test]
 depends = ["test:core", "test:cli", "test:release-helper"]
@@ -133,6 +142,8 @@ run = "cargo test -p treeboot --all-targets --all-features --locked"
 description = "Run release helper tests"
 run = "cargo test -p treeboot-release-helper --all-targets --all-features --locked"
 
+# Coverage
+
 [tasks.coverage]
 description = "Run tests and print Rust coverage summary"
 tools."cargo:cargo-llvm-cov" = "0.8.7"
@@ -142,6 +153,8 @@ run = "cargo llvm-cov --workspace --all-targets --all-features --locked"
 description = "Show uncovered Rust lines"
 tools."cargo:cargo-llvm-cov" = "0.8.7"
 run = "cargo llvm-cov --workspace --all-targets --all-features --locked --summary-only --show-missing-lines"
+
+# Validation
 
 [tasks.check]
 depends = ["format:check", "generate:check", "harness:check", "lint", "test"]
@@ -163,13 +176,9 @@ depends = [
 ]
 description = "Run all CI checks"
 
-[tasks.clean]
-description = "Remove Rust build output"
-run = "cargo clean"
-
-[tasks."hooks:install"]
-description = "Install lefthook Git hooks"
-run = "lefthook install"
+[tasks.msrv]
+description = "Check Rust MSRV compatibility"
+run = "mise exec rust@1.96.0 -- cargo check --locked"
 
 [tasks."harness:check"]
 description = "Check repo harness invariants"
@@ -185,6 +194,8 @@ run = [
     "mise --version",
     "lefthook version",
 ]
+
+# GitHub Actions
 
 [tasks."actions:lint:actionlint"]
 description = "Lint GitHub Actions workflow syntax"
@@ -205,3 +216,34 @@ depends = [
     "actions:lint:zizmor",
 ]
 description = "Run GitHub Actions linters"
+
+# Release packaging
+
+[tasks."release:version"]
+description = "Print the release version derived from git describe"
+run = "scripts/release-version.sh"
+
+[tasks."release:package:local"]
+description = "Build and package the current host release binary into dist/"
+run = '''
+target="$(rustc -vV | sed -n 's/^host: //p')"
+version="$(scripts/release-version.sh)"
+cargo build -p treeboot --locked --release --target "$target"
+scripts/package-release-asset.sh "$target" "$version" dist
+scripts/package-config-schema.sh dist
+'''
+
+[tasks."release:check"]
+description = "Run local release packaging and completion smoke checks"
+run = '''
+mise run release:package:local
+for shell in bash zsh fish powershell elvish; do
+  cargo run -p treeboot --locked -- completions "$shell" >/dev/null
+done
+'''
+
+# Cleanup
+
+[tasks.clean]
+description = "Remove Rust build output"
+run = "cargo clean"
