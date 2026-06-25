@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::ffi::OsString;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::*;
 use crate::{PlanOrigin, SourceSpan, Worktree};
@@ -622,6 +622,130 @@ fn apply_file_operations_should_leave_unchanged_sync_silent_in_dry_run() {
 }
 
 #[test]
+fn apply_file_operations_should_preserve_copied_file_modified_time() {
+    let (root, worktree) = temp_workspace("copy-mtime");
+    let source = root.join(".env");
+    let target = worktree.join(".env");
+    fs::write(&source, "TOKEN=1\n").expect("source should be written");
+    let source_mtime = UNIX_EPOCH + Duration::from_secs(123);
+    File::options()
+        .write(true)
+        .open(&source)
+        .and_then(|file| file.set_times(FileTimes::new().set_modified(source_mtime)))
+        .expect("source mtime should be set");
+    let plan = run_plan(
+        &root,
+        &worktree,
+        vec![operation(
+            FileOperationKind::Copy,
+            &root,
+            &worktree,
+            ".env",
+            ".env",
+        )],
+    );
+    let mut reporter = VecReporter::default();
+
+    apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+        .expect("copy should preserve file metadata");
+
+    let target_mtime = fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .modified()
+        .expect("target mtime should be readable");
+    assert_eq!(target_mtime, source_mtime);
+}
+
+#[test]
+fn apply_file_operations_should_repair_sync_file_modified_time() {
+    let (root, worktree) = temp_workspace("sync-mtime-repair");
+    let source = root.join(".env");
+    let target = worktree.join(".env");
+    fs::write(&source, "TOKEN=1\n").expect("source should be written");
+    fs::write(&target, "TOKEN=1\n").expect("target should be written");
+    let source_mtime = UNIX_EPOCH + Duration::from_secs(200);
+    let target_mtime = UNIX_EPOCH + Duration::from_secs(100);
+    File::options()
+        .write(true)
+        .open(&source)
+        .and_then(|file| file.set_times(FileTimes::new().set_modified(source_mtime)))
+        .expect("source mtime should be set");
+    File::options()
+        .write(true)
+        .open(&target)
+        .and_then(|file| file.set_times(FileTimes::new().set_modified(target_mtime)))
+        .expect("target mtime should be set");
+    let mut sync = sync_operation(&root, &worktree, ".env", ".env");
+    sync.compare = Some(SyncCompare::Checksum);
+    let plan = run_plan(&root, &worktree, vec![sync]);
+    let mut reporter = VecReporter::default();
+
+    apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+        .expect("sync should repair mtime-only drift");
+
+    let repaired = fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .modified()
+        .expect("target mtime should be readable");
+    assert_eq!(repaired, source_mtime);
+    assert_eq!(
+        reporter.events,
+        vec![OutputEvent::FileMetadataApplied {
+            source: PathBuf::from(".env"),
+            target: PathBuf::from(".env"),
+        }]
+    );
+}
+
+#[test]
+fn apply_file_operations_should_report_metadata_repair_in_dry_run_without_mutation() {
+    let (root, worktree) = temp_workspace("sync-mtime-dry-run");
+    let source = root.join(".env");
+    let target = worktree.join(".env");
+    fs::write(&source, "TOKEN=1\n").expect("source should be written");
+    fs::write(&target, "TOKEN=1\n").expect("target should be written");
+    let source_mtime = UNIX_EPOCH + Duration::from_secs(200);
+    let target_mtime = UNIX_EPOCH + Duration::from_secs(100);
+    File::options()
+        .write(true)
+        .open(&source)
+        .and_then(|file| file.set_times(FileTimes::new().set_modified(source_mtime)))
+        .expect("source mtime should be set");
+    File::options()
+        .write(true)
+        .open(&target)
+        .and_then(|file| file.set_times(FileTimes::new().set_modified(target_mtime)))
+        .expect("target mtime should be set");
+    let mut sync = sync_operation(&root, &worktree, ".env", ".env");
+    sync.compare = Some(SyncCompare::Checksum);
+    let plan = run_plan(&root, &worktree, vec![sync]);
+    let mut reporter = VecReporter::default();
+
+    apply_file_operations(
+        &plan,
+        FileApplyOptions {
+            dry_run: true,
+            ..FileApplyOptions::default()
+        },
+        &mut reporter,
+    )
+    .expect("dry-run sync should report metadata repair");
+
+    let unchanged = fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .modified()
+        .expect("target mtime should be readable");
+    assert_eq!(unchanged, target_mtime);
+    assert_eq!(
+        reporter.events,
+        vec![OutputEvent::FileMetadataWouldApply {
+            source: PathBuf::from(".env"),
+            target: PathBuf::from(".env"),
+        }]
+    );
+}
+
+#[test]
 fn apply_file_operations_should_update_changed_metadata_sync_file() {
     let (root, worktree) = temp_workspace("sync-metadata-update");
     fs::write(root.join(".env"), "new\n").expect("source should be written");
@@ -644,6 +768,88 @@ fn apply_file_operations_should_update_changed_metadata_sync_file() {
 
     let synced = fs::read_to_string(worktree.join(".env")).expect("target should be readable");
     assert_eq!(synced, "new\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn apply_file_operations_should_repair_sync_directory_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (root, worktree) = temp_workspace("sync-directory-permission-repair");
+    let source = root.join("shared");
+    let target = worktree.join("shared");
+    fs::create_dir_all(&source).expect("source dir should be created");
+    fs::create_dir_all(&target).expect("target dir should be created");
+    let mut source_permissions = fs::metadata(&source)
+        .expect("source metadata should be readable")
+        .permissions();
+    source_permissions.set_mode(0o700);
+    fs::set_permissions(&source, source_permissions).expect("source mode should be set");
+    let mut target_permissions = fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .permissions();
+    target_permissions.set_mode(0o755);
+    fs::set_permissions(&target, target_permissions).expect("target mode should be set");
+    let plan = run_plan(
+        &root,
+        &worktree,
+        vec![sync_operation(&root, &worktree, "shared", "shared")],
+    );
+    let mut reporter = VecReporter::default();
+
+    apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+        .expect("sync should repair directory permissions");
+
+    let mode = fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o700);
+    assert_eq!(
+        reporter.events,
+        vec![OutputEvent::FileMetadataApplied {
+            source: PathBuf::from("shared"),
+            target: PathBuf::from("shared"),
+        }]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn apply_file_operations_should_ignore_sync_directory_permissions_when_configured() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (root, worktree) = temp_workspace("sync-directory-permission-ignore");
+    let source = root.join("shared");
+    let target = worktree.join("shared");
+    fs::create_dir_all(&source).expect("source dir should be created");
+    fs::create_dir_all(&target).expect("target dir should be created");
+    let mut source_permissions = fs::metadata(&source)
+        .expect("source metadata should be readable")
+        .permissions();
+    source_permissions.set_mode(0o700);
+    fs::set_permissions(&source, source_permissions).expect("source mode should be set");
+    let mut target_permissions = fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .permissions();
+    target_permissions.set_mode(0o755);
+    fs::set_permissions(&target, target_permissions).expect("target mode should be set");
+    let mut sync = sync_operation(&root, &worktree, "shared", "shared");
+    sync.ignore_metadata = vec![MetadataField::Permissions];
+    let plan = run_plan(&root, &worktree, vec![sync]);
+    let mut reporter = VecReporter::default();
+
+    apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+        .expect("ignored directory metadata drift should not repair");
+
+    let mode = fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o755);
+    assert!(reporter.events.is_empty());
 }
 
 #[cfg(unix)]

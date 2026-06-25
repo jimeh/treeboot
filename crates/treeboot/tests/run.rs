@@ -753,6 +753,49 @@ fn run_dry_run_sync_delete_should_not_remove_target_only_file() {
     assert_eq!(extra, "keep\n");
 }
 
+#[cfg(unix)]
+#[test]
+fn run_dry_run_sync_metadata_should_not_mutate_directory_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    let source = repo.root_path().join("shared");
+    let target = repo.worktree_path().join("shared");
+    std::fs::create_dir_all(&source).expect("sync source should be created");
+    std::fs::create_dir_all(&target).expect("sync target should be created");
+    let mut source_permissions = std::fs::metadata(&source)
+        .expect("source metadata should be readable")
+        .permissions();
+    source_permissions.set_mode(0o700);
+    std::fs::set_permissions(&source, source_permissions).expect("source mode should be set");
+    let mut target_permissions = std::fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .permissions();
+    target_permissions.set_mode(0o755);
+    std::fs::set_permissions(&target, target_permissions).expect("target mode should be set");
+    write_file(
+        &config,
+        r#"sync = [{ source = "shared", target = "shared" }]"#,
+    );
+
+    treeboot()
+        .args(["run", "--dry-run"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "treeboot: would sync metadata shared -> shared",
+        ));
+
+    let mode = std::fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o755);
+}
+
 #[test]
 fn run_checksum_sync_should_update_when_metadata_matches() {
     let repo = git_worktree();

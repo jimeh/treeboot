@@ -358,6 +358,12 @@ fn invalid_operation_specific_flags_should_be_usage_errors() {
         .assert()
         .code(2)
         .stderr(predicate::str::contains("unexpected argument"));
+
+    treeboot()
+        .args(["symlink", ".env", "--ignore-metadata", "permissions"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("unexpected argument"));
 }
 
 #[test]
