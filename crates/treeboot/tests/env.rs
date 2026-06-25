@@ -2,7 +2,21 @@ use predicates::prelude::*;
 
 mod common;
 
-use common::{git_worktree, treeboot};
+use common::{assert_json_object_keys, git_worktree, parse_json, treeboot};
+
+const ENV_KEYS: &[&str] = &[
+    "CODEX_SOURCE_TREE_PATH",
+    "CODEX_WORKTREE_PATH",
+    "CONDUCTOR_DEFAULT_BRANCH",
+    "CONDUCTOR_ROOT_PATH",
+    "CONDUCTOR_WORKSPACE_PATH",
+    "GIT_SOURCE_TREE_PATH",
+    "GIT_WORKTREE_PATH",
+    "SUPERSET_ROOT_PATH",
+    "TREEBOOT_DEFAULT_BRANCH",
+    "TREEBOOT_ROOT_PATH",
+    "TREEBOOT_WORKTREE_PATH",
+];
 
 #[test]
 fn env_should_print_child_environment_as_text_json_and_yaml() {
@@ -21,6 +35,8 @@ fn env_should_print_child_environment_as_text_json_and_yaml() {
 
     let json = treeboot()
         .args(["env", "--json"])
+        .env("TREEBOOT_STRICT", "true")
+        .env("UNRELATED_TREEBOOT_TEST_VALUE", "hidden")
         .current_dir(repo.worktree_path())
         .assert()
         .success()
@@ -28,11 +44,17 @@ fn env_should_print_child_environment_as_text_json_and_yaml() {
         .get_output()
         .stdout
         .clone();
-    let json: serde_json::Value = serde_json::from_slice(&json).expect("env JSON should parse");
+    let json = parse_json(json, "env");
+    assert_json_object_keys(&json, ENV_KEYS);
+    for key in ENV_KEYS {
+        assert!(json[key].is_string(), "{key} should be a string");
+    }
     assert_eq!(
         json["TREEBOOT_WORKTREE_PATH"],
         expected_worktree.display().to_string()
     );
+    assert!(json.get("TREEBOOT_STRICT").is_none());
+    assert!(json.get("UNRELATED_TREEBOOT_TEST_VALUE").is_none());
 
     treeboot()
         .args(["env", "--format", "yaml"])
@@ -80,7 +102,7 @@ fn env_root_option_should_override_source_checkout() {
         .get_output()
         .stdout
         .clone();
-    let json: serde_json::Value = serde_json::from_slice(&json).expect("env JSON should parse");
+    let json = parse_json(json, "env");
     assert_eq!(
         json["TREEBOOT_ROOT_PATH"],
         expected_root.display().to_string()
@@ -102,7 +124,7 @@ fn env_root_environment_alias_should_override_source_checkout() {
         .get_output()
         .stdout
         .clone();
-    let json: serde_json::Value = serde_json::from_slice(&json).expect("env JSON should parse");
+    let json = parse_json(json, "env");
     assert_eq!(
         json["TREEBOOT_ROOT_PATH"],
         expected_root.display().to_string()
@@ -128,7 +150,7 @@ fn env_root_environment_alias_should_resolve_relative_to_cwd() {
         .get_output()
         .stdout
         .clone();
-    let json: serde_json::Value = serde_json::from_slice(&json).expect("env JSON should parse");
+    let json = parse_json(json, "env");
     assert_eq!(
         json["TREEBOOT_ROOT_PATH"],
         expected_root.display().to_string()

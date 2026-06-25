@@ -102,8 +102,11 @@ pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport
     if options.config.is_none() && !options.no_init_script {
         let scripts = InitScriptDiscovery::discover(&context);
 
-        for path in scripts.ignored {
-            report(reporter, OutputEvent::IgnoredInitScript { path })?;
+        for ignored in scripts.ignored {
+            report(
+                reporter,
+                OutputEvent::IgnoredInitScript { path: ignored.path },
+            )?;
         }
 
         if let Some(path) = scripts.executable {

@@ -2,7 +2,10 @@ use predicates::prelude::*;
 
 mod common;
 
-use common::{git_repo, git_worktree, treeboot, write_file};
+use common::{
+    assert_context_shape, assert_json_object_keys, git_repo, git_worktree, parse_json, treeboot,
+    write_file,
+};
 
 #[cfg(unix)]
 use common::write_executable_script;
@@ -52,8 +55,12 @@ fn check_should_support_json_yaml_and_text_formats() {
         .get_output()
         .stdout
         .clone();
-    let json: serde_json::Value = serde_json::from_slice(&json).expect("check JSON should parse");
+    let json = parse_json(json, "check");
+    assert_json_object_keys(&json, &["action", "context"]);
+    assert_context_shape(&json["context"]);
+    assert_json_object_keys(&json["action"], &["kind", "path"]);
     assert_eq!(json["action"]["kind"], "config");
+    assert!(json["action"]["path"].is_string());
 
     treeboot()
         .args(["check", "--yaml"])
@@ -104,7 +111,10 @@ fn check_should_succeed_for_missing_config_unless_strict() {
         .get_output()
         .stdout
         .clone();
-    let json: serde_json::Value = serde_json::from_slice(&json).expect("check JSON should parse");
+    let json = parse_json(json, "check");
+    assert_json_object_keys(&json, &["action", "context"]);
+    assert_context_shape(&json["context"]);
+    assert_json_object_keys(&json["action"], &["kind"]);
     assert_eq!(json["action"]["kind"], "missing_config");
 
     treeboot()
@@ -128,7 +138,10 @@ fn check_should_skip_root_checkout_unless_strict() {
         .get_output()
         .stdout
         .clone();
-    let json: serde_json::Value = serde_json::from_slice(&json).expect("check JSON should parse");
+    let json = parse_json(json, "check");
+    assert_json_object_keys(&json, &["action", "context"]);
+    assert_context_shape(&json["context"]);
+    assert_json_object_keys(&json["action"], &["kind"]);
     assert_eq!(json["action"]["kind"], "root_worktree_skipped");
 
     treeboot()
@@ -310,8 +323,10 @@ fn check_should_report_init_script_precedence_without_running_it() {
         .get_output()
         .stdout
         .clone();
-    let json: serde_json::Value = serde_json::from_slice(&json).expect("check JSON should parse");
+    let json = parse_json(json, "check");
+    assert_json_object_keys(&json["action"], &["kind", "path"]);
     assert_eq!(json["action"]["kind"], "init_script");
+    assert!(json["action"]["path"].is_string());
 
     assert!(!marker.exists());
 }
@@ -338,8 +353,10 @@ fn check_config_option_should_skip_init_script_and_validate_requested_config() {
         .get_output()
         .stdout
         .clone();
-    let json: serde_json::Value = serde_json::from_slice(&json).expect("check JSON should parse");
+    let json = parse_json(json, "check");
+    assert_json_object_keys(&json["action"], &["kind", "path"]);
     assert_eq!(json["action"]["kind"], "config");
+    assert!(json["action"]["path"].is_string());
 
     assert!(!marker.exists());
 }

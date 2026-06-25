@@ -5,6 +5,8 @@ mod common;
 
 use common::treeboot;
 
+const ROOT_SCHEMA_JSON: &str = include_str!("../../../schemas/treeboot.schema.json");
+
 #[test]
 fn schema_should_print_or_write_embedded_schema() {
     treeboot()
@@ -12,7 +14,7 @@ fn schema_should_print_or_write_embedded_schema() {
         .assert()
         .success()
         .stderr(predicate::str::is_empty())
-        .stdout(treeboot_core::config_schema_json());
+        .stdout(ROOT_SCHEMA_JSON);
 
     let temp = TempDir::new().expect("tempdir should be created");
     let output = temp.path().join("config.schema.json");
@@ -25,7 +27,7 @@ fn schema_should_print_or_write_embedded_schema() {
         .stdout(predicate::str::is_empty());
 
     let content = std::fs::read_to_string(output).expect("schema should be written");
-    assert_eq!(content, treeboot_core::config_schema_json());
+    assert_eq!(content, ROOT_SCHEMA_JSON);
 }
 
 #[test]
@@ -42,7 +44,7 @@ fn schema_output_short_flag_should_write_file() {
         .stdout(predicate::str::is_empty());
 
     let content = std::fs::read_to_string(output).expect("schema should be written");
-    assert_eq!(content, treeboot_core::config_schema_json());
+    assert_eq!(content, ROOT_SCHEMA_JSON);
 }
 
 #[test]

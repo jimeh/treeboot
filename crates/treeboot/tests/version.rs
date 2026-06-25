@@ -2,7 +2,7 @@ use predicates::prelude::*;
 
 mod common;
 
-use common::treeboot;
+use common::{assert_json_object_keys, parse_json, treeboot};
 
 #[test]
 fn version_command_should_print_package_and_spec_version() {
@@ -28,7 +28,8 @@ fn version_command_should_support_json_yaml_and_text_formats() {
         .get_output()
         .stdout
         .clone();
-    let json: serde_json::Value = serde_json::from_slice(&json).expect("version JSON should parse");
+    let json = parse_json(json, "version");
+    assert_json_object_keys(&json, &["package", "spec_version", "version"]);
     assert_eq!(json["package"], "treeboot");
     assert_eq!(json["version"], env!("CARGO_PKG_VERSION"));
     assert_eq!(json["spec_version"], treeboot_core::SPEC_VERSION);

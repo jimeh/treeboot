@@ -2,7 +2,9 @@ use predicates::prelude::*;
 
 mod common;
 
-use common::{git_worktree, treeboot, write_file};
+use common::{
+    assert_context_shape, assert_json_object_keys, git_worktree, parse_json, treeboot, write_file,
+};
 
 #[cfg(unix)]
 use common::write_executable_script;
@@ -54,10 +56,18 @@ fn status_should_support_json_yaml_and_text_formats() {
         .get_output()
         .stdout
         .clone();
-    let json: serde_json::Value = serde_json::from_slice(&json).expect("status JSON should parse");
+    let json = parse_json(json, "status");
+    assert_json_object_keys(&json, &["config", "context", "init_script"]);
+    assert_context_shape(&json["context"]);
+    assert_json_object_keys(&json["init_script"], &["ignored", "status"]);
     assert_eq!(
         json["context"]["worktree_path"],
         expected_worktree.display().to_string()
+    );
+    assert_eq!(json["init_script"]["status"], "not_found");
+    assert_eq!(
+        json["init_script"]["ignored"],
+        serde_json::Value::Array(vec![])
     );
 
     treeboot()
@@ -117,7 +127,8 @@ fn status_no_init_script_json_should_report_skipped_init_script() {
         .get_output()
         .stdout
         .clone();
-    let json: serde_json::Value = serde_json::from_slice(&json).expect("status JSON should parse");
+    let json = parse_json(json, "status");
+    assert_json_object_keys(&json["init_script"], &["status"]);
     assert_eq!(json["init_script"]["status"], "skipped");
 }
 
@@ -185,6 +196,28 @@ fn status_should_report_ignored_non_executable_init_script() {
             "ignored_init_script: {}",
             expected_script.display()
         )));
+
+    let json = treeboot()
+        .args(["status", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    let json = parse_json(json, "status");
+    assert_json_object_keys(&json["init_script"], &["ignored", "status"]);
+    assert_eq!(json["init_script"]["status"], "not_found");
+    assert_json_object_keys(&json["init_script"]["ignored"][0], &["path", "reason"]);
+    assert_eq!(
+        json["init_script"]["ignored"][0]["path"],
+        expected_script.display().to_string()
+    );
+    assert_eq!(
+        json["init_script"]["ignored"][0]["reason"],
+        "not_executable"
+    );
 }
 
 #[cfg(unix)]
@@ -263,7 +296,8 @@ fn status_json_should_report_executable_init_script_without_running_it() {
         .get_output()
         .stdout
         .clone();
-    let json: serde_json::Value = serde_json::from_slice(&json).expect("status JSON should parse");
+    let json = parse_json(json, "status");
+    assert_json_object_keys(&json["init_script"], &["path", "status"]);
     assert_eq!(json["init_script"]["status"], "found");
     assert_eq!(
         json["init_script"]["path"],

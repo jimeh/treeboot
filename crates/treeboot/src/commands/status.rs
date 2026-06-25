@@ -58,10 +58,10 @@ fn print_status_text(report: &StatusReport) -> std::io::Result<()> {
         InitScriptStatus::Found { path } => {
             writeln!(handle, "init_script: {}", path.display())?;
         }
-        InitScriptStatus::Missing { ignored } => {
+        InitScriptStatus::NotFound { ignored } => {
             writeln!(handle, "init_script: (none)")?;
-            for path in ignored {
-                writeln!(handle, "ignored_init_script: {}", path.display())?;
+            for ignored in ignored {
+                writeln!(handle, "ignored_init_script: {}", ignored.path.display())?;
             }
         }
     }
@@ -95,15 +95,19 @@ struct StatusOutput<'a> {
 #[serde(tag = "status", rename_all = "snake_case")]
 enum InitScriptOutput<'a> {
     Skipped,
-    Missing { ignored: &'a [PathBuf] },
-    Found { path: &'a PathBuf },
+    NotFound {
+        ignored: &'a [treeboot_core::IgnoredInitScript],
+    },
+    Found {
+        path: &'a PathBuf,
+    },
 }
 
 impl<'a> From<&'a StatusReport> for StatusOutput<'a> {
     fn from(report: &'a StatusReport) -> Self {
         let init_script = match &report.init_script {
             InitScriptStatus::Skipped => InitScriptOutput::Skipped,
-            InitScriptStatus::Missing { ignored } => InitScriptOutput::Missing { ignored },
+            InitScriptStatus::NotFound { ignored } => InitScriptOutput::NotFound { ignored },
             InitScriptStatus::Found { path } => InitScriptOutput::Found { path },
         };
 

@@ -5,10 +5,10 @@ use tempfile::TempDir;
 use treeboot_core::{
     ActionPlan, ActionPlanOptions, Config, ConfigOptions, Environment, Error, ExecuteOptions,
     Executor, FileOperation, FileOperationAction, FileOperationKind, FileOperationOptions,
-    InitScriptDiscovery, InitScriptStatus, LoadedConfig, ManualFileOperationOptions, OutputEvent,
-    PlanOrigin, Reporter, RunAction, RunOptions, SourceSpan, StatusOptions, SymlinkMode, Worktree,
-    WorktreeOptions, check, config_schema_json, diagnose, inspect_config, inspect_env,
-    inspect_status, run, run_file_operation, version_info,
+    IgnoredInitScript, InitScriptDiscovery, InitScriptStatus, LoadedConfig,
+    ManualFileOperationOptions, OutputEvent, PlanOrigin, Reporter, RunAction, RunOptions,
+    SourceSpan, StatusOptions, SymlinkMode, Worktree, WorktreeOptions, check, config_schema_json,
+    diagnose, inspect_config, inspect_env, inspect_status, run, run_file_operation, version_info,
 };
 
 #[derive(Default)]
@@ -297,7 +297,13 @@ fn public_api_should_discover_executable_init_script_after_ignored_script() {
     let discovery = InitScriptDiscovery::discover(&worktree);
 
     assert_eq!(discovery.executable.as_deref(), Some(executable.as_path()));
-    assert_eq!(discovery.ignored, vec![ignored]);
+    assert_eq!(
+        discovery.ignored,
+        vec![IgnoredInitScript {
+            path: ignored,
+            reason: "not_executable",
+        }]
+    );
 }
 
 #[test]
@@ -380,8 +386,34 @@ fn public_api_inspect_status_should_report_context_and_config_without_parsing() 
     assert_eq!(report.config.as_deref(), Some(expected_config.as_path()));
     assert!(matches!(
         report.init_script,
-        InitScriptStatus::Missing { ref ignored } if ignored.is_empty()
+        InitScriptStatus::NotFound { ref ignored } if ignored.is_empty()
     ));
+}
+
+#[cfg(unix)]
+#[test]
+fn public_api_inspect_status_should_report_ignored_init_script_details() {
+    let repo = git_worktree();
+    let script = repo.worktree_path().join(".treeboot.sh");
+    write_file(&script, "#!/bin/sh\n");
+    let expected_script = std::fs::canonicalize(&script).expect("script should canonicalize");
+
+    let report = inspect_status(StatusOptions {
+        cwd: Some(repo.worktree_path().to_path_buf()),
+        ..StatusOptions::default()
+    })
+    .expect("status should inspect init script candidates");
+
+    let InitScriptStatus::NotFound { ignored } = report.init_script else {
+        panic!("expected not_found init script status");
+    };
+    assert_eq!(
+        ignored,
+        vec![IgnoredInitScript {
+            path: expected_script,
+            reason: "not_executable",
+        }]
+    );
 }
 
 #[cfg(unix)]

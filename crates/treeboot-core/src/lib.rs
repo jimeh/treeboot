@@ -26,7 +26,7 @@ mod validation;
 
 pub use check::{CheckAction, CheckOptions, CheckReport, WorktreeSnapshot, check};
 pub use context::{Environment, Worktree, WorktreeOptions};
-pub use discovery::InitScriptDiscovery;
+pub use discovery::{IgnoredInitScript, InitScriptDiscovery};
 pub use doctor::{Diagnostic, DiagnosticStatus, DoctorOptions, DoctorReport, diagnose};
 pub use env::{EnvOptions, EnvReport, inspect_env};
 pub use error::Error;

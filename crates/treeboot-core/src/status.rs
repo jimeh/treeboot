@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::context;
-use crate::{Config, InitScriptDiscovery, Result, Worktree, WorktreeOptions};
+use crate::{Config, IgnoredInitScript, InitScriptDiscovery, Result, Worktree, WorktreeOptions};
 
 /// Options for inspecting treeboot discovery status.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -22,9 +22,9 @@ pub enum InitScriptStatus {
     /// Init script discovery was skipped by options.
     Skipped,
     /// No executable init script was found.
-    Missing {
-        /// Existing init script paths ignored because they are not executable.
-        ignored: Vec<PathBuf>,
+    NotFound {
+        /// Existing init script paths that were ignored.
+        ignored: Vec<IgnoredInitScript>,
     },
     /// An executable init script was found.
     Found {
@@ -78,7 +78,7 @@ fn inspect_init_script(context: &Worktree) -> InitScriptStatus {
     if let Some(path) = scripts.executable {
         InitScriptStatus::Found { path }
     } else {
-        InitScriptStatus::Missing {
+        InitScriptStatus::NotFound {
             ignored: scripts.ignored,
         }
     }

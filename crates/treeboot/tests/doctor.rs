@@ -2,10 +2,39 @@ use predicates::prelude::*;
 
 mod common;
 
-use common::{git_worktree, treeboot, write_file};
+use common::{
+    assert_context_shape, assert_json_object_keys, git_worktree, parse_json, treeboot, write_file,
+};
 
 #[cfg(unix)]
 use common::write_executable_script;
+
+fn assert_doctor_report_shape(json: &serde_json::Value) {
+    assert_json_object_keys(json, &["context", "diagnostics", "fatal"]);
+    assert!(json["fatal"].is_boolean());
+
+    if !json["context"].is_null() {
+        assert_context_shape(&json["context"]);
+    }
+
+    let diagnostics = json["diagnostics"]
+        .as_array()
+        .expect("diagnostics should be an array");
+    assert!(!diagnostics.is_empty());
+
+    for diagnostic in diagnostics {
+        assert_json_object_keys(diagnostic, &["message", "name", "status"]);
+        assert!(diagnostic["name"].is_string());
+        assert!(diagnostic["message"].is_string());
+        assert!(
+            matches!(
+                diagnostic["status"].as_str(),
+                Some("ok" | "warning" | "error")
+            ),
+            "diagnostic status should be ok, warning, or error"
+        );
+    }
+}
 
 #[test]
 fn doctor_should_report_diagnostics_as_text_json_and_yaml() {
@@ -32,7 +61,8 @@ fn doctor_should_report_diagnostics_as_text_json_and_yaml() {
         .get_output()
         .stdout
         .clone();
-    let json: serde_json::Value = serde_json::from_slice(&json).expect("doctor JSON should parse");
+    let json = parse_json(json, "doctor");
+    assert_doctor_report_shape(&json);
     assert_eq!(json["fatal"], false);
 
     treeboot()
@@ -83,7 +113,8 @@ fn doctor_should_exit_nonzero_for_invalid_config_after_printing_report() {
         .get_output()
         .stdout
         .clone();
-    let json: serde_json::Value = serde_json::from_slice(&json).expect("doctor JSON should parse");
+    let json = parse_json(json, "doctor");
+    assert_doctor_report_shape(&json);
     assert_eq!(json["fatal"], true);
     assert!(
         json["diagnostics"]
@@ -126,7 +157,8 @@ fn doctor_should_report_invalid_env_override_as_fatal() {
         .get_output()
         .stdout
         .clone();
-    let json: serde_json::Value = serde_json::from_slice(&json).expect("doctor JSON should parse");
+    let json = parse_json(json, "doctor");
+    assert_doctor_report_shape(&json);
     assert_eq!(json["fatal"], true);
     assert_eq!(json["context"], serde_json::Value::Null);
     assert_eq!(json["diagnostics"][0]["name"], "environment_options");
@@ -164,7 +196,8 @@ fn doctor_should_fail_outside_git_worktree() {
         .get_output()
         .stdout
         .clone();
-    let json: serde_json::Value = serde_json::from_slice(&json).expect("doctor JSON should parse");
+    let json = parse_json(json, "doctor");
+    assert_doctor_report_shape(&json);
     assert_eq!(json["fatal"], true);
     assert_eq!(json["context"], serde_json::Value::Null);
 }

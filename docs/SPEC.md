@@ -77,7 +77,8 @@ treeboot status --yaml
 treeboot info
 ```
 
-JSON and YAML output emit the same discovery status as structured data.
+JSON and YAML output are defined in
+[Structured output formats](#structured-output-formats).
 
 ### `treeboot version`
 
@@ -101,15 +102,8 @@ Human-readable output is a compact, flag-like summary:
 treeboot 0.4.1 (spec 1.9.0)
 ```
 
-JSON and YAML output emit the same stable fields:
-
-```json
-{
-  "package": "treeboot",
-  "version": "0.4.1",
-  "spec_version": "1.9.0"
-}
-```
+JSON and YAML output are defined in
+[Structured output formats](#structured-output-formats).
 
 ### `treeboot config`
 
@@ -164,9 +158,9 @@ On success, human-readable output prints:
 treeboot: check ok
 ```
 
-JSON and YAML output emit a successful report with the selected action and
-discovered context. Fatal errors still use treeboot's normal error reporting
-and non-zero exit behavior.
+JSON and YAML output are defined in
+[Structured output formats](#structured-output-formats). Fatal errors still use
+treeboot's normal error reporting and non-zero exit behavior.
 
 ### `treeboot init`
 
@@ -267,9 +261,8 @@ discovery, config discovery, and config validation when config is selected. It
 is intended for human troubleshooting. Warnings do not fail the command, but
 fatal discovery or config errors exit non-zero.
 
-JSON and YAML output emit the same diagnostic report as structured data,
-including each diagnostic's name, status, and message plus an overall fatal
-status.
+JSON and YAML output are defined in
+[Structured output formats](#structured-output-formats).
 
 ### `treeboot env`
 
@@ -289,8 +282,8 @@ The text format is one `KEY=value` pair per line, sorted by variable name.
 Values are resolved for the current worktree context. `env` does not discover
 init scripts, parse config, apply file operations, or run commands.
 
-JSON and YAML output emit the same environment as an object whose keys are
-variable names and whose values are strings.
+JSON and YAML output are defined in
+[Structured output formats](#structured-output-formats).
 
 `env` prints only the treeboot-owned child environment variables described in
 [Environment variables](#environment-variables). It does not print the full
@@ -328,6 +321,293 @@ Operation-specific flags are valid only on the commands listed in the option tab
 | `--config` | init | Creates a starter TOML config. This intentionally has no short alias so `-c` can consistently mean config path for run/config. |
 | `-s`, `--script` | init | Creates an executable init script. |
 | `-p`, `--path <path>` | init | Writes the generated init output to a custom path. |
+
+## Structured output formats
+
+Commands that accept `--format json`, `--json`, `--format yaml`, or `--yaml`
+must emit the structures in this section. JSON output is pretty-printed and
+YAML output uses the same field names, values, and nesting as JSON. Path values
+are strings. Optional values are `null` when absent. Tagged enum values are
+lowercase `snake_case` strings. JSON object member order is not part of the
+contract.
+
+The shared worktree context object has this shape:
+
+```json
+{
+  "root_path": "/repo",
+  "worktree_path": "/repo-worktree",
+  "default_branch": "main"
+}
+```
+
+### `treeboot status` JSON
+
+`treeboot status`, and its `treeboot info` alias, emit a discovery report:
+
+```json
+{
+  "context": {
+    "root_path": "/repo",
+    "worktree_path": "/repo-worktree",
+    "default_branch": "main"
+  },
+  "init_script": {
+    "status": "found",
+    "path": "/repo-worktree/.treeboot.sh"
+  },
+  "config": "/repo-worktree/.treeboot.toml"
+}
+```
+
+`config` is a path string or `null`. `init_script` is one of:
+
+```json
+{ "status": "skipped" }
+```
+
+```json
+{
+  "status": "not_found",
+  "ignored": [
+    {
+      "path": "/repo-worktree/.treeboot.sh",
+      "reason": "not_executable"
+    }
+  ]
+}
+```
+
+```json
+{
+  "status": "found",
+  "path": "/repo-worktree/.treeboot.sh"
+}
+```
+
+Ignored init script entries contain a `path` string and a stable `reason`
+string. The initial reason is `not_executable`.
+
+### `treeboot version` JSON
+
+`treeboot version` emits package and implemented-spec metadata:
+
+```json
+{
+  "package": "treeboot",
+  "version": "0.4.1",
+  "spec_version": "1.9.0"
+}
+```
+
+`package` is the CLI package name. `version` is the package version.
+`spec_version` is the TreeBoot spec version implemented by the build.
+
+### `treeboot config` JSON
+
+`treeboot config` emits the selected config path and normalized config:
+
+```json
+{
+  "path": "/repo-worktree/.treeboot.toml",
+  "config": {
+    "strict": false,
+    "dangerously_allow_sources_outside_root": false,
+    "dangerously_allow_targets_outside_worktree": false,
+    "files": [
+      {
+        "operation": "copy",
+        "source": ".env",
+        "target": ".env",
+        "source_path": "/repo/.env",
+        "target_path": "/repo-worktree/.env",
+        "required": false,
+        "compare": null,
+        "delete": null,
+        "symlinks": "preserve",
+        "declaration": {
+          "start": 0,
+          "end": 15,
+          "line": 1,
+          "column": 1
+        }
+      }
+    ],
+    "commands": [
+      {
+        "name": "Install packages",
+        "command": {
+          "kind": "shell",
+          "run": "mise install"
+        },
+        "cwd": null,
+        "cwd_path": null,
+        "env": {},
+        "allow_failure": false,
+        "declaration": {
+          "start": 17,
+          "end": 50,
+          "line": 3,
+          "column": 1
+        }
+      }
+    ]
+  }
+}
+```
+
+`files` and `commands` are ordered arrays. File `operation` is `copy`,
+`symlink`, or `sync`. `compare` is `metadata`, `checksum`, or `null`. `delete`
+is a boolean or `null`. `symlinks` is `preserve` or `null`.
+
+Command `name`, `cwd`, and `cwd_path` are strings or `null`. `env` is an object
+whose keys and values are strings. `command` is one of:
+
+```json
+{
+  "kind": "shell",
+  "run": "mise install"
+}
+```
+
+```json
+{
+  "kind": "direct",
+  "program": "npm",
+  "args": [
+    "install"
+  ]
+}
+```
+
+Each `declaration` object describes the byte and one-based line/column location
+of the source TOML declaration:
+
+```json
+{
+  "start": 0,
+  "end": 15,
+  "line": 1,
+  "column": 1
+}
+```
+
+### `treeboot check` JSON
+
+`treeboot check` emits the resolved context and the selected bootstrap action:
+
+```json
+{
+  "context": {
+    "root_path": "/repo",
+    "worktree_path": "/repo-worktree",
+    "default_branch": "main"
+  },
+  "action": {
+    "kind": "config",
+    "path": "/repo-worktree/.treeboot.toml"
+  }
+}
+```
+
+`action` is one of:
+
+```json
+{ "kind": "missing_config" }
+```
+
+```json
+{ "kind": "root_worktree_skipped" }
+```
+
+```json
+{
+  "kind": "init_script",
+  "path": "/repo-worktree/.treeboot.sh"
+}
+```
+
+```json
+{
+  "kind": "config",
+  "path": "/repo-worktree/.treeboot.toml"
+}
+```
+
+### `treeboot doctor` JSON
+
+`treeboot doctor` emits an ordered diagnostics report:
+
+```json
+{
+  "fatal": false,
+  "context": {
+    "root_path": "/repo",
+    "worktree_path": "/repo-worktree",
+    "default_branch": "main"
+  },
+  "diagnostics": [
+    {
+      "name": "worktree",
+      "status": "ok",
+      "message": "worktree context resolved"
+    },
+    {
+      "name": "init_script",
+      "status": "warning",
+      "message": "no executable init script found"
+    }
+  ]
+}
+```
+
+`fatal` is `true` when any diagnostic is fatal. `context` is the shared context
+object or `null` when context discovery fails. Each diagnostic has a stable
+`name`, a `status` of `ok`, `warning`, or `error`, and a human-readable
+`message`.
+
+The diagnostic names defined by this spec are `environment_options`,
+`worktree`, `root`, `default_branch`, `environment`, `init_script`, `config`,
+and `config_validation`.
+
+### `treeboot env` JSON
+
+`treeboot env` emits an object containing only treeboot-owned child environment
+variables:
+
+```json
+{
+  "CODEX_SOURCE_TREE_PATH": "/repo",
+  "CODEX_WORKTREE_PATH": "/repo-worktree",
+  "CONDUCTOR_DEFAULT_BRANCH": "main",
+  "CONDUCTOR_ROOT_PATH": "/repo",
+  "CONDUCTOR_WORKSPACE_PATH": "/repo-worktree",
+  "GIT_SOURCE_TREE_PATH": "/repo",
+  "GIT_WORKTREE_PATH": "/repo-worktree",
+  "SUPERSET_ROOT_PATH": "/repo",
+  "TREEBOOT_DEFAULT_BRANCH": "main",
+  "TREEBOOT_ROOT_PATH": "/repo",
+  "TREEBOOT_WORKTREE_PATH": "/repo-worktree"
+}
+```
+
+Keys are variable names and values are strings. The object excludes the parent
+process environment, per-command config overlays, and config option override
+variables that treeboot reads from the parent environment.
+
+### `treeboot schema` JSON
+
+`treeboot schema` emits the bundled config JSON Schema document directly. It is
+not wrapped in a treeboot report object and it does not support the structured
+output flags. The schema payload is defined by
+`schemas/treeboot.schema.json`.
+
+### Commands without structured output
+
+`treeboot run`, `treeboot init`, `treeboot copy`, `treeboot symlink`,
+`treeboot sync`, and `treeboot completions` do not support `--format`,
+`--json`, or `--yaml`. Their output is text-only and follows the command
+sections plus [Operator experience](#operator-experience-output-and-exit-codes).
 
 ## Path model: Root path feeds the worktree path
 

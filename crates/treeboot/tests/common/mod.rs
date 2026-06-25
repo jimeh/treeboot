@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
 
 use assert_cmd::Command;
+use serde_json::Value;
 use tempfile::TempDir;
 
 pub fn display_path(path: &str) -> String {
@@ -87,6 +88,30 @@ pub fn git_worktree() -> GitWorktree {
 
 pub fn write_file(path: &Path, content: &str) {
     std::fs::write(path, content).expect("file should be written");
+}
+
+pub fn parse_json(stdout: Vec<u8>, context: &str) -> Value {
+    serde_json::from_slice(&stdout).unwrap_or_else(|error| {
+        panic!("{context} JSON should parse: {error}");
+    })
+}
+
+pub fn assert_json_object_keys(value: &Value, expected: &[&str]) {
+    let object = value.as_object().expect("value should be a JSON object");
+    let mut actual = object.keys().map(String::as_str).collect::<Vec<_>>();
+    actual.sort_unstable();
+
+    let mut expected = expected.to_vec();
+    expected.sort_unstable();
+
+    assert_eq!(actual, expected);
+}
+
+pub fn assert_context_shape(value: &Value) {
+    assert_json_object_keys(value, &["default_branch", "root_path", "worktree_path"]);
+    assert!(value["root_path"].is_string());
+    assert!(value["worktree_path"].is_string());
+    assert!(value["default_branch"].is_string());
 }
 
 #[cfg(unix)]
