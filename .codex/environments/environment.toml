@@ -4,6 +4,5 @@ name = "treeboot"
 
 [setup]
 script = '''
-cd "$CODEX_WORKTREE_PATH"
 mise run treeboot
 '''

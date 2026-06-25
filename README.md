@@ -389,6 +389,7 @@ mise run generate:schema:check
 mise run harness:check
 mise run hooks:install
 mise run lint
+mise run lint:fix
 mise run msrv
 mise run release:check
 mise run test

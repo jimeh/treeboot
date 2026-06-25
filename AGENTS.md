@@ -100,6 +100,7 @@ mise run generate:check
 mise run generate:schema:check
 mise run harness:check
 mise run lint
+mise run lint:fix
 mise run test
 mise run test:core
 mise run test:cli
@@ -154,8 +155,9 @@ and CI mapping.
 - Repo harness invariants are wrapped by `mise run harness:check`; keep
   dependency-boundary and spec-version drift checks there when they can be
   expressed without heavyweight tooling.
-- Mise-managed tools use a 3-day release-age cooldown; use a narrow override
-  only for urgent security or CI-maintenance updates.
+- Mise-managed tools use a 3-day release-age cooldown and checked-in
+  `mise.lock`; use a narrow override only for urgent security or
+  CI-maintenance updates.
 - `mise run treeboot` is the repo-local bootstrap entrypoint. It keeps the
   released `treeboot` binary task-scoped so CI does not install it as a
   top-level tool, then runs the declarative `.treeboot.toml` setup contract.
