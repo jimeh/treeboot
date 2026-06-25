@@ -47,11 +47,16 @@ where
     let mut handle = stdout.lock();
 
     match format {
-        ReportFormat::Text => unreachable!("text output is handled by each command"),
+        ReportFormat::Text => {
+            return Err(Error::Output {
+                source: std::io::Error::other("text output is handled by each command"),
+            });
+        }
         ReportFormat::Json => {
             serde_json::to_writer_pretty(&mut handle, value).map_err(|source| Error::Output {
                 source: std::io::Error::other(source),
             })?;
+            writeln!(handle).map_err(|source| Error::Output { source })?;
         }
         ReportFormat::Yaml => {
             yaml_serde::to_writer(&mut handle, value).map_err(|source| Error::Output {
@@ -60,5 +65,5 @@ where
         }
     }
 
-    writeln!(handle).map_err(|source| Error::Output { source })
+    Ok(())
 }

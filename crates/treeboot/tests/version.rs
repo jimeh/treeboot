@@ -34,16 +34,19 @@ fn version_command_should_support_json_yaml_and_text_formats() {
     assert_eq!(json["version"], treeboot_core::TREEBOOT_VERSION);
     assert_eq!(json["spec_version"], treeboot_core::SPEC_VERSION);
 
-    treeboot()
+    let yaml = treeboot()
         .args(["version", "--format", "yaml"])
         .assert()
         .success()
         .stderr(predicate::str::is_empty())
-        .stdout(predicate::str::contains("package: treeboot"))
-        .stdout(predicate::str::contains(format!(
-            "spec_version: {}",
-            treeboot_core::SPEC_VERSION
-        )));
+        .get_output()
+        .stdout
+        .clone();
+    assert!(yaml.ends_with(b"\n"));
+    assert!(!yaml.ends_with(b"\n\n"));
+    let yaml = String::from_utf8(yaml).expect("yaml should be valid UTF-8");
+    assert!(yaml.contains("package: treeboot"));
+    assert!(yaml.contains(&format!("spec_version: {}", treeboot_core::SPEC_VERSION)));
 
     treeboot()
         .args(["version", "--format", "text"])

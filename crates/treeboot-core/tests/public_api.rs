@@ -218,6 +218,9 @@ fn public_api_should_expose_metadata_env_check_and_doctor() {
     })
     .expect("environment should inspect");
     assert!(env.environment.contains_key("TREEBOOT_ROOT_PATH"));
+    let env_json = serde_json::to_value(&env).expect("env should serialize");
+    assert!(env_json.get("environment").is_none());
+    assert!(env_json.get("TREEBOOT_ROOT_PATH").is_some());
 
     let checked = check(treeboot_core::CheckOptions {
         cwd: Some(repo.worktree_path().to_path_buf()),

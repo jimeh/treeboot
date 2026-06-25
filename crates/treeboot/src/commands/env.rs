@@ -26,7 +26,7 @@ pub(crate) fn run_env_command(args: EnvArgs) -> treeboot_core::Result<()> {
             }
             Ok(())
         }
-        format => write_structured(&report.environment, format),
+        format => write_structured(&report, format),
     }
 }
 

@@ -17,6 +17,7 @@ pub struct EnvOptions {
 
 /// Result summary for a `treeboot env` invocation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
 pub struct EnvReport {
     /// Environment variables passed to init scripts and configured commands.
     pub environment: BTreeMap<String, String>,
