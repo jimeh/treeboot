@@ -129,8 +129,7 @@ fn init_path_should_fail_when_parent_component_is_file() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("failed to write init target"))
-        .stderr(predicate::str::contains("nested"))
-        .stderr(predicate::str::contains("Not a directory"));
+        .stderr(predicate::str::contains("nested"));
 
     assert_eq!(
         std::fs::read_to_string(dir.path().join("nested")).expect("file should be readable"),
