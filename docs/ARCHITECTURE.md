@@ -1,18 +1,14 @@
-*Implementation architecture*
-
-# treeboot Architecture
+# treeboot Implementation Architecture
 
 `treeboot` is a Rust CLI and public core library for bootstrapping Git worktrees from a repo-local setup contract. The binary crate owns argument parsing and presentation; the core crate owns discovery, normalization, validation, planning, and execution.
 
 **Tags:** CLI adapter, Public core library, Validated action plans, Structured output, Git worktree anchored
 
-*Workspace boundary*
-
-## Crates And Responsibilities
+## Workspace boundary: Crates And Responsibilities
 
 The workspace has one thin binary crate and one reusable library crate. Keep behavior in core unless it is purely CLI presentation.
 
-*Diagram: High-level treeboot system map. CLI arguments flow into treeboot-core APIs. Core modules call Git, filesystem, and shell process boundaries and emit output events.*
+The high-level system map shows CLI arguments flowing into treeboot-core APIs. Core modules call Git, filesystem, and shell process boundaries, then emit output events.
 
 ```mermaid
 flowchart LR
@@ -50,9 +46,7 @@ _Core owns behavior and side effects. The CLI converts arguments into core optio
 - Executes plans through `Executor`.
 - Provides typed errors and structured output events.
 
-*Entry points*
-
-## Command Surface
+## Entry points: Command Surface
 
 Every command maps to a small public core API. The default `treeboot` invocation is an alias for `treeboot run`. The core API has two layers: command-shaped facade functions for full treeboot behavior, and composable primitives for callers that want to discover a `Worktree`, load a `LoadedConfig`, build an `ActionPlan`, and execute it themselves.
 
@@ -64,13 +58,11 @@ Every command maps to a small public core API. The default `treeboot` invocation
 | `treeboot init` | `init(InitOptions, Reporter)` | `init`, `context`, `output` | Writes a starter config or executable init script. |
 | `treeboot completions` | CLI-owned completion registration | `main.rs`, `manual` | Prints shell registration. Dynamic source candidates delegate to `file_operation_source_candidates`. |
 
-*Anchors*
-
-## Runtime Context
+## Anchors: Runtime Context
 
 Almost every core flow starts by resolving the Git worktree, root source checkout, default branch, and treeboot-owned environment.
 
-*Diagram: Worktree resolution graph. Context resolution uses cwd, optional root override, environment aliases, and Git worktree queries to build Worktree.*
+The worktree resolution graph shows how `cwd`, an optional root override, environment aliases, and Git worktree queries build a `Worktree`.
 
 ```mermaid
 flowchart LR
@@ -100,13 +92,11 @@ File operation targets and command working directories are anchored to `worktree
 
 Scripts and configured commands receive treeboot variables plus compatibility aliases for Codex, Conductor, and Superset flows.
 
-*Primary orchestration*
-
-## `treeboot run` Flow
+## Primary orchestration: `treeboot run` Flow
 
 Run mode first checks for root-checkout no-op behavior, then prefers executable init scripts unless a config file is explicit.
 
-*Diagram: treeboot run orchestration flow. treeboot run resolves context, handles root checkout, discovers scripts or config, plans config, applies files, and runs commands.*
+The run flow resolves context, handles root checkout, runs an executable init script when present, or discovers config before planning file and command work.
 
 ```mermaid
 flowchart TD
@@ -115,23 +105,20 @@ flowchart TD
   ROOT -->|no| INIT["Discover init<br/>unless --config supplied<br/>report ignored scripts"]
   ROOT -->|yes| DONE["Report RootWorktreeDetected<br/>exit 0, or error under pre-config strict"]
   INIT --> EXEC{"Executable?<br/>run or dry-run script"}
-  EXEC -->|yes| SCRIPT["Run init script<br/>or report dry-run"]
+  EXEC -->|yes| SCRIPT["Run init script<br/>or report dry-run<br/>skip config"]
   EXEC -->|no| CONFIG["Discover config<br/>requested or default path<br/>load TOML"]
-  SCRIPT --> PLAN["Plan config<br/>ActionPlan"]
-  CONFIG --> PLAN
+  CONFIG --> PLAN["Plan config<br/>ActionPlan"]
   PLAN --> FILES["Apply files<br/>copy / symlink / sync"]
   FILES --> CMDS["Run commands<br/>unless --skip-commands"]
 ```
 
 _The root-checkout branch reports `RootWorktreeDetected` and only becomes an error when pre-config strict mode is active._
 
-*Normalized data*
-
-## Config And Manual Pipelines
+## Normalized data: Config And Manual Pipelines
 
 Declarative config and manual file commands converge before file effects. Config also carries planned commands.
 
-*Diagram: Data model pipeline. Raw TOML and CLI options normalize into FileOperation values, validation builds an ActionPlan, then Executor emits OutputEvent.*
+The data model pipeline normalizes raw TOML and CLI options into `FileOperation` values. Validation builds an `ActionPlan`, then `Executor` emits `OutputEvent`.
 
 ```mermaid
 flowchart LR
@@ -168,13 +155,11 @@ _The normalized model is intentionally separate from the validated plan. Parsing
 5. `ActionPlan::from_file_operations` validates files.
 6. `Executor::execute_files` applies or dry-runs effects.
 
-*Core internals*
-
-## Module Dependency Graph
+## Core internals: Module Dependency Graph
 
 The public API is re-exported from `lib.rs`; most implementation modules remain private or crate-private.
 
-*Diagram: treeboot-core module graph. Public modules call context and discovery, config feeds validation, validation feeds files and commands.*
+The `treeboot-core` module graph shows public modules calling context and discovery. Config feeds validation, and validation feeds files and commands.
 
 ```mermaid
 flowchart LR
@@ -216,9 +201,7 @@ _`run.rs` is the broad orchestrator. Manual file commands load top-level config 
 | `commands.rs` | Sequential configured command spawning and dry-run output. | Parsing command config or deciding command order. |
 | `output.rs` | Structured output events and message formatting. | Choosing when events happen. |
 
-*Filesystem effects*
-
-## File Operation Engine
+## Filesystem effects: File Operation Engine
 
 File execution is two-stage: validated file operations become concrete `FileAction`s, then actions are reported or applied depending on dry-run mode.
 
@@ -246,9 +229,7 @@ ActionPlan.files
   -> OutputEvent::{FileWouldApply, FileApplied, FileWarning, ...}
 ```
 
-*Process effects*
-
-## Command Runtime
+## Process effects: Command Runtime
 
 Configured commands run sequentially in declaration order. Parallel work is intentionally delegated to project-local task runners.
 
@@ -264,9 +245,7 @@ Configured commands run sequentially in declaration order. Parallel work is inte
 
 `allow_failure` turns spawn or non-zero exit failures into warning output. Otherwise failures become typed command errors and stop the run.
 
-*Presentation*
-
-## Output And Errors
+## Presentation: Output And Errors
 
 Core reports structured events and typed errors. The CLI decides how those become stdout, stderr, and process status.
 
@@ -277,9 +256,7 @@ Core reports structured events and typed errors. The CLI decides how those becom
 | `Error` | Public enum | Represents typed failure categories for Git, config, planning, file operations, commands, init, output, and environment. |
 | `StdoutReporter` | CLI adapter | Prints `OutputEvent::message()`. Errors are printed separately by `main`. |
 
-*Verification boundaries*
-
-## Testing Architecture
+## Verification boundaries: Testing Architecture
 
 Tests are split by behavior layer. Use core unit tests for pure helpers and CLI integration tests for user-visible command behavior.
 
@@ -306,15 +283,13 @@ Tests are split by behavior layer. Use core unit tests for pure helpers and CLI 
 - `mise run check` is normal handoff validation.
 - `mise run verify` adds broader CI/coverage checks.
 
-*Change guide*
-
-## Extension Points And Invariants
+## Change guide: Extension Points And Invariants
 
 These are the boundaries to preserve when adding new behavior or refactoring existing modules.
 
 | If changing | Touch | Keep invariant |
 | --- | --- | --- |
-| Config file format | `docs/SPEC.html`, `config.rs`, schema generator, schema file, parser tests. | The spec is the contract; generated schema must be fresh. |
+| Config file format | `docs/SPEC.md`, `config.rs`, schema generator, schema file, parser tests. | The spec is the contract; generated schema must be fresh. |
 | File operation behavior | `config.rs`, `manual.rs`, `validation.rs`, `files.rs`, CLI tests. | Declarative config and manual commands must share planning and file execution semantics. |
 | Command runtime | `config.rs`, `validation.rs`, `commands.rs`, run tests, spec. | Commands run after file operations and inherit treeboot-owned environment variables. |
 | CLI-only surface | `crates/treeboot/src/main.rs` and CLI tests. | CLI stays an adapter. Core owns reusable behavior and typed semantics. |
@@ -324,4 +299,4 @@ These are the boundaries to preserve when adding new behavior or refactoring exi
 
 The most visible architecture debt is duplicate file-operation display and defaulting logic across config, manual operations, validation, files, output, and CLI text summaries. Consolidating those rules should improve the model without changing the pipeline described in this document.
 
-This document describes the current implementation architecture. It is not a replacement for [docs/SPEC.html](SPEC.html), which remains the user-visible compatibility contract.
+This document describes the current implementation architecture. It is not a replacement for [docs/SPEC.md](SPEC.md), which remains the user-visible compatibility contract.

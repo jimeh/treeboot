@@ -1,6 +1,4 @@
-*Specification v1.8.2*
-
-# treeboot
+# treeboot Specification v1.8.2
 
 A portable worktree bootstrapper that lets every coding agent, editor, and orchestration tool run the same repo-local setup command.
 
@@ -14,9 +12,7 @@ A portable worktree bootstrapper that lets every coding agent, editor, and orche
 | Conflict policy | Skip existing by default, strict validates, force replaces |
 | Primary file | `.treeboot.toml` |
 
-*Intent*
-
-## One setup contract for many tools
+## Intent: One setup contract for many tools
 
 Agentic coding tools already create isolated Git worktrees. The repeated pain is everything Git intentionally leaves behind: ignored files, local credentials, dependency caches, and per-worktree setup commands.
 
@@ -45,9 +41,7 @@ treeboot should be boring to run repeatedly. File operations are idempotent by d
 
 The first implementation should target the full documented behavior in this spec.
 
-*CLI surface*
-
-## Eight subcommands, one default path
+## CLI surface: Eight subcommands, one default path
 
 The common integration point is intentionally short: `treeboot`. Tool-specific setup hooks should not need to know whether treeboot is using a script or config internally.
 
@@ -181,9 +175,7 @@ Operation-specific flags are valid only on the commands listed in the option tab
 | `-s`, `--script` | init | Creates an executable init script. |
 | `-p`, `--path <path>` | init | Writes the generated init output to a custom path. |
 
-*Path model*
-
-## Root path feeds the worktree path
+## Path model: Root path feeds the worktree path
 
 User-facing docs use "root path" instead of "main worktree" to avoid confusion with main branches. The spec still explains that Git's main worktree is the default source when no override exists.
 
@@ -220,9 +212,7 @@ The same root-checkout behavior applies to manual `copy`, `symlink`, and `sync` 
 
 `TREEBOOT_DEFAULT_BRANCH` is best effort. treeboot uses an existing `CONDUCTOR_DEFAULT_BRANCH` value if present, otherwise resolves `origin/HEAD`, otherwise sets an empty string. When resolved from Git, the value is the short branch name, such as `main`, not `origin/main` or a full ref path.
 
-*Compatibility*
-
-## Environment variables
+## Compatibility: Environment variables
 
 Scripts copied from Codex, Conductor, or Superset should usually work with minimal changes. treeboot sets canonical variables plus aliases for common setup-script ecosystems.
 
@@ -279,9 +269,7 @@ SUPERSET_ROOT_PATH
 
 treeboot does not set `CONDUCTOR_IS_LOCAL`, `CONDUCTOR_PORT`, or `SUPERSET_PORT_BASE`. Those variables are owned by the tools that define them and should not be fabricated.
 
-*Execution*
-
-## Run flow
+## Execution: Run flow
 
 Init scripts are the escape hatch and take precedence. Declarative config is the default happy path.
 
@@ -295,9 +283,7 @@ Init scripts are the escape hatch and take precedence. Declarative config is the
 8. **Validate config**: Normalize entries and detect duplicate operation targets.
 9. **Apply files, then commands**: Run file operations first; commands run afterward.
 
-*Escape hatch*
-
-## Init scripts
+## Escape hatch: Init scripts
 
 Scripts are for projects that need full control. If an executable init script is found, treeboot runs it instead of declarative config.
 
@@ -342,9 +328,7 @@ mise install
 
 `treeboot init --script` writes `.treeboot.sh` by default and marks it executable.
 
-*Declarative mode*
-
-## Config files
+## Declarative mode: Config files
 
 TOML is the intended config format. Simple lists cover the common case; top-level options and object entries cover stricter runtime, file, and command behavior.
 
@@ -505,9 +489,7 @@ args = ["install"]
 | `env` | Extra environment variables merged into the treeboot env set. Treeboot-owned variables and aliases cannot be overridden. |
 | `allow_failure` | Defaults to `false`. When true, non-zero exit is not fatal. |
 
-*Before execution*
-
-## Operation validation
+## Before execution: Operation validation
 
 treeboot should catch surprising or self-conflicting file operations before it starts changing the worktree.
 
@@ -557,9 +539,7 @@ The top-level option `dangerously_allow_targets_outside_worktree = true` disable
 
 Sync expects existing targets and can be configured to delete target-only files, so strict mode rejects sync operations before execution. Strict mode can be enabled with `--strict`, top-level `strict = true`, or `TREEBOOT_STRICT=true`.
 
-*Files first*
-
-## File operations
+## Files first: File operations
 
 Sources resolve against the root path. Targets resolve against the worktree path. Parent target directories are created as needed.
 
@@ -627,9 +607,7 @@ When the source is a directory, sync recurses through source and target. It copi
 
 treeboot executes `copy` list entries first, `symlink` list entries second, `sync` list entries third, `files` entries fourth, then `[[file]]` entries in document order.
 
-*Safety*
-
-## Conflict modes
+## Safety: Conflict modes
 
 The default mode is optimized for repeated worktree setup. Strict mode is for CI-like validation. Force mode is intentionally destructive and should be explicit.
 
@@ -666,9 +644,7 @@ Force mode may replace existing regular files and symlinks. It must not delete a
 
 Sync is the operation that may delete target-only files when deletion is explicitly enabled. Existing targets are expected for sync and are not treated as conflicts in default or force mode. Strict mode rejects configs with sync operations before runtime. Use `--dry-run` to preview sync creates, updates, and explicit deletes.
 
-*After files*
-
-## Command runtime
+## After files: Command runtime
 
 Commands are arbitrary project setup commands. treeboot runs them predictably, but does not attempt to infer whether they are safe.
 
@@ -719,9 +695,7 @@ Fatal command failures exit non-zero immediately and later commands do not run. 
 
 Windows support is part of the design contract. Implementation and tests must account for platform differences in shell execution, path handling, and symlink creation.
 
-*Operator experience*
-
-## Output and exit codes
+## Operator experience: Output and exit codes
 
 Output should be concise enough for setup logs while still making skipped targets and destructive choices obvious.
 
@@ -746,9 +720,7 @@ Manual file operation validation errors should identify the CLI operation, sourc
 | `1` | Runtime failure, config error, operation failure, or command failure. |
 | `2` | CLI usage error. |
 
-*Distribution*
-
-## Install and releases
+## Distribution: Install and releases
 
 Release assets should be predictable enough for direct GitHub release installers such as `ubi` and `mise`.
 
@@ -799,9 +771,7 @@ treeboot-sbom.spdx.json
 - **Target source**: The expanded target list uses triples available from `rustc --print target-list`. Release automation should only publish targets that build and pass the configured release smoke test on the selected runner.
 - **Release flow**: Release PR automation updates version files and `CHANGELOG.md`, creates a `vX.Y.Z` tag, and leaves a draft GitHub Release. Tag-triggered release automation builds assets, reuses that draft when present, falls back to the matching changelog section for release notes when needed, uploads assets, and publishes the release only after uploads complete.
 
-*Verification*
-
-## Testing strategy
+## Verification: Testing strategy
 
 The test suite should prove the behavior that users will rely on: discovery, idempotency, compatibility env vars, and real Git worktree behavior.
 
