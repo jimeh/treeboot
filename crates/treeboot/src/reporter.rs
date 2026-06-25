@@ -1,3 +1,4 @@
+use std::io::{self, IsTerminal};
 use std::time::Duration;
 
 use console::{Term, truncate_str};
@@ -6,9 +7,9 @@ use treeboot_core::{FileOperationKind, OutputEvent, Reporter};
 
 const DEFAULT_TERMINAL_WIDTH: usize = 80;
 
-#[derive(Default)]
 pub(crate) struct StdoutReporter {
     active_progress: Option<ActiveProgress>,
+    progress_enabled: bool,
 }
 
 struct ActiveProgress {
@@ -36,12 +37,23 @@ impl ActiveProgress {
 }
 
 impl StdoutReporter {
+    #[cfg(test)]
+    fn with_progress_enabled(progress_enabled: bool) -> Self {
+        Self {
+            active_progress: None,
+            progress_enabled,
+        }
+    }
+
     fn start_spinner(
         &mut self,
         operation: FileOperationKind,
         source: &std::path::Path,
         target: &std::path::Path,
     ) {
+        if !self.progress_enabled {
+            return;
+        }
         if !matches!(operation, FileOperationKind::Copy | FileOperationKind::Sync) {
             return;
         }
@@ -69,6 +81,9 @@ impl StdoutReporter {
         action_count: usize,
     ) {
         self.finish_progress();
+        if !self.progress_enabled {
+            return;
+        }
         if !matches!(operation, FileOperationKind::Copy | FileOperationKind::Sync) {
             return;
         }
@@ -124,6 +139,18 @@ impl StdoutReporter {
     }
 }
 
+impl Default for StdoutReporter {
+    fn default() -> Self {
+        Self {
+            active_progress: None,
+            progress_enabled: progress_enabled(
+                io::stdout().is_terminal(),
+                io::stderr().is_terminal(),
+            ),
+        }
+    }
+}
+
 impl Drop for StdoutReporter {
     fn drop(&mut self) {
         self.finish_progress();
@@ -175,6 +202,10 @@ fn progress_prefix(operation: FileOperationKind) -> &'static str {
         FileOperationKind::Sync => "Syncing",
         FileOperationKind::Symlink => "Linking",
     }
+}
+
+const fn progress_enabled(stdout_is_terminal: bool, stderr_is_terminal: bool) -> bool {
+    stdout_is_terminal && stderr_is_terminal
 }
 
 #[cfg(test)]
@@ -233,8 +264,16 @@ mod tests {
     }
 
     #[test]
+    fn progress_enabled_should_require_stdout_and_stderr_terminals() {
+        assert!(progress_enabled(true, true));
+        assert!(!progress_enabled(false, true));
+        assert!(!progress_enabled(true, false));
+        assert!(!progress_enabled(false, false));
+    }
+
+    #[test]
     fn spinner_should_start_only_for_copy_and_sync_planning() {
-        let mut reporter = StdoutReporter::default();
+        let mut reporter = StdoutReporter::with_progress_enabled(true);
 
         reporter.start_spinner(FileOperationKind::Symlink, &source(), &target());
         assert!(reporter.active_progress.is_none());
@@ -258,7 +297,7 @@ mod tests {
 
     #[test]
     fn progress_should_not_start_for_single_actions_or_symlinks() {
-        let mut reporter = StdoutReporter::default();
+        let mut reporter = StdoutReporter::with_progress_enabled(true);
 
         reporter.start_progress(FileOperationKind::Copy, &source(), &target(), 1);
         assert!(reporter.active_progress.is_none());
@@ -272,7 +311,7 @@ mod tests {
 
     #[test]
     fn progress_should_store_label_prefix_and_length_for_copy() {
-        let mut reporter = StdoutReporter::default();
+        let mut reporter = StdoutReporter::with_progress_enabled(true);
 
         reporter.start_progress(FileOperationKind::Copy, &source(), &target(), 42);
 
@@ -293,7 +332,7 @@ mod tests {
 
     #[test]
     fn progress_should_use_sync_prefix() {
-        let mut reporter = StdoutReporter::default();
+        let mut reporter = StdoutReporter::with_progress_enabled(true);
 
         reporter.start_progress(FileOperationKind::Sync, &source(), &target(), 12);
 
@@ -308,7 +347,7 @@ mod tests {
 
     #[test]
     fn progress_should_advance_position_and_keep_prefix() {
-        let mut reporter = StdoutReporter::default();
+        let mut reporter = StdoutReporter::with_progress_enabled(true);
 
         reporter.start_progress(FileOperationKind::Sync, &source(), &target(), 12);
         reporter.advance_progress();
@@ -325,7 +364,7 @@ mod tests {
 
     #[test]
     fn finish_progress_should_clear_active_progress() {
-        let mut reporter = StdoutReporter::default();
+        let mut reporter = StdoutReporter::with_progress_enabled(true);
 
         reporter.start_progress(FileOperationKind::Copy, &source(), &target(), 2);
         assert!(reporter.active_progress.is_some());
@@ -336,7 +375,7 @@ mod tests {
 
     #[test]
     fn report_should_drive_progress_lifecycle() {
-        let mut reporter = StdoutReporter::default();
+        let mut reporter = StdoutReporter::with_progress_enabled(true);
         let source = source();
         let target = target();
 
@@ -367,6 +406,39 @@ mod tests {
                 action_count: 3,
             })
             .expect("planning finished should report");
+        assert!(reporter.active_progress.is_none());
+    }
+
+    #[test]
+    fn report_should_suppress_progress_when_not_enabled() {
+        let mut reporter = StdoutReporter::with_progress_enabled(false);
+
+        reporter
+            .report(OutputEvent::FileOperationPlanningStarted {
+                operation: FileOperationKind::Copy,
+                source: source(),
+                target: target(),
+            })
+            .expect("planning start should report");
+        assert!(reporter.active_progress.is_none());
+
+        reporter
+            .report(OutputEvent::FileOperationExecutionStarted {
+                operation: FileOperationKind::Sync,
+                source: source(),
+                target: target(),
+                action_count: 3,
+            })
+            .expect("execution start should report");
+        assert!(reporter.active_progress.is_none());
+
+        reporter
+            .report(OutputEvent::FileOperationActionAdvanced {
+                operation: FileOperationKind::Sync,
+                source: source(),
+                target: target(),
+            })
+            .expect("action advanced should report");
         assert!(reporter.active_progress.is_none());
     }
 }
