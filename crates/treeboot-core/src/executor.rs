@@ -11,6 +11,8 @@ pub struct ExecuteOptions {
     pub force: bool,
     /// Prints planned work without changing files or running commands.
     pub dry_run: bool,
+    /// Prints detailed file-operation actions instead of compact summaries.
+    pub verbose: bool,
     /// Applies file operations only.
     pub skip_commands: bool,
 }
@@ -52,6 +54,7 @@ impl Executor {
                 strict: self.options.strict,
                 force: self.options.force,
                 dry_run: self.options.dry_run,
+                verbose: self.options.verbose,
             },
             reporter,
         )?;

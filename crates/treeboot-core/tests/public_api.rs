@@ -187,10 +187,11 @@ fn public_api_should_discover_load_plan_and_execute_manifest() {
     assert!(reporter.events.iter().any(|event| {
         matches!(
             event,
-            OutputEvent::FileApplied {
+            OutputEvent::FileOperationFinished {
                 operation: FileOperationKind::Copy,
                 source,
                 target,
+                ..
             } if source == Path::new(".env") && target == Path::new(".env")
         )
     }));

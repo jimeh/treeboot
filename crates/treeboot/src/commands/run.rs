@@ -29,6 +29,10 @@ pub(crate) struct RunArgs {
     #[arg(short = 'n', long)]
     dry_run: bool,
 
+    /// Print detailed file-operation actions.
+    #[arg(short, long)]
+    verbose: bool,
+
     /// Run file operations only.
     #[arg(long)]
     skip_commands: bool,
@@ -44,6 +48,7 @@ impl From<RunArgs> for RunOptions {
             strict: args.strict,
             force: args.force,
             dry_run: args.dry_run,
+            verbose: args.verbose,
             skip_commands: args.skip_commands,
         }
     }

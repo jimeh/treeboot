@@ -43,7 +43,8 @@ fn completions_should_include_current_subcommands_and_flags() {
         .stdout(predicate::str::contains("--root"))
         .stdout(predicate::str::contains("--config"))
         .stdout(predicate::str::contains("--no-init-script"))
-        .stdout(predicate::str::contains("--dry-run"));
+        .stdout(predicate::str::contains("--dry-run"))
+        .stdout(predicate::str::contains("--verbose"));
 }
 
 #[test]
@@ -58,7 +59,8 @@ fn dynamic_completions_should_include_manual_command_flags() {
         .stdout(predicate::str::contains("--compare"))
         .stdout(predicate::str::contains("--delete"))
         .stdout(predicate::str::contains("--no-delete"))
-        .stdout(predicate::str::contains("--symlinks"));
+        .stdout(predicate::str::contains("--symlinks"))
+        .stdout(predicate::str::contains("--verbose"));
 }
 
 #[test]

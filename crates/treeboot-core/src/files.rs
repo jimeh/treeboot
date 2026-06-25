@@ -4,8 +4,8 @@ use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
 
 use crate::{
-    ActionPlan, Error, FileOperationKind, MetadataField, OutputEvent, PlannedFileOperation,
-    PlannedFileStatus, Reporter, Result, SyncCompare,
+    ActionPlan, Error, FileOperationKind, FileOperationSummary, MetadataField, OutputEvent,
+    PlannedFileOperation, PlannedFileStatus, Reporter, Result, SyncCompare,
 };
 
 #[cfg(unix)]
@@ -16,6 +16,7 @@ pub(crate) struct FileApplyOptions {
     pub(crate) strict: bool,
     pub(crate) force: bool,
     pub(crate) dry_run: bool,
+    pub(crate) verbose: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -77,7 +78,10 @@ enum FileAction {
 
 impl FileAction {
     fn counts(&self) -> bool {
-        !matches!(self, Self::RepairMetadata { report: false, .. })
+        !matches!(
+            self,
+            Self::RepairMetadata { report: false, .. } | Self::Warning { .. }
+        )
     }
 }
 
@@ -139,27 +143,132 @@ enum MetadataTarget {
     Directory,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PlannedFileOperationActions {
+    operation: FileOperationKind,
+    source: PathBuf,
+    target: PathBuf,
+    expanded: bool,
+    actions: Vec<FileAction>,
+}
+
 pub(crate) fn apply_file_operations(
     plan: &ActionPlan,
     options: FileApplyOptions,
     reporter: &mut dyn Reporter,
 ) -> Result<FileApplyReport> {
-    let mut actions = Vec::new();
+    let mut groups = Vec::new();
     for operation in &plan.files {
-        plan_operation(plan, operation, options, &mut actions)?;
-    }
-    add_symlink_warnings(&mut actions);
-    let action_count = actions.iter().filter(|action| action.counts()).count();
+        if !options.verbose {
+            report(
+                reporter,
+                OutputEvent::FileOperationPlanningStarted {
+                    operation: operation.operation,
+                    source: operation.source.clone(),
+                    target: operation.target.clone(),
+                },
+            )?;
+        }
 
-    for action in &actions {
-        if options.dry_run {
-            report_dry_run(action, reporter)?;
-        } else {
-            apply_action(plan, action, reporter)?;
+        let mut actions = Vec::new();
+        plan_operation(plan, operation, options, &mut actions)?;
+        let group = PlannedFileOperationActions {
+            operation: operation.operation,
+            source: operation.source.clone(),
+            target: operation.target.clone(),
+            expanded: operation_source_is_directory(plan, operation),
+            actions,
+        };
+
+        if !options.verbose {
+            report(
+                reporter,
+                OutputEvent::FileOperationPlanningFinished {
+                    operation: group.operation,
+                    source: group.source.clone(),
+                    target: group.target.clone(),
+                    action_count: count_progress_actions(&group.actions),
+                },
+            )?;
+        }
+
+        groups.push(group);
+    }
+    add_symlink_warnings(&mut groups);
+
+    let mut action_count = 0;
+    for group in &groups {
+        if group.actions.is_empty() {
+            continue;
+        }
+
+        let progress_action_count = count_progress_actions(&group.actions);
+        action_count += progress_action_count;
+        if !options.verbose {
+            report(
+                reporter,
+                OutputEvent::FileOperationExecutionStarted {
+                    operation: group.operation,
+                    source: group.source.clone(),
+                    target: group.target.clone(),
+                    action_count: progress_action_count,
+                },
+            )?;
+        }
+
+        for action in &group.actions {
+            let progress_action = action.counts();
+            if options.dry_run {
+                report_dry_run(action, reporter, options.verbose)?;
+            } else {
+                apply_action(plan, action, reporter, options.verbose)?;
+            }
+
+            if !options.verbose && progress_action {
+                report(
+                    reporter,
+                    OutputEvent::FileOperationActionAdvanced {
+                        operation: group.operation,
+                        source: group.source.clone(),
+                        target: group.target.clone(),
+                    },
+                )?;
+            }
+        }
+
+        if !options.verbose {
+            let summary = summarize_actions(&group.actions, group.expanded);
+            if summary.decision_count() > 0 {
+                report(
+                    reporter,
+                    OutputEvent::FileOperationFinished {
+                        operation: group.operation,
+                        source: group.source.clone(),
+                        target: group.target.clone(),
+                        summary,
+                        dry_run: options.dry_run,
+                    },
+                )?;
+            }
         }
     }
 
     Ok(FileApplyReport { action_count })
+}
+
+fn operation_source_is_directory(plan: &ActionPlan, operation: &PlannedFileOperation) -> bool {
+    if operation.status == PlannedFileStatus::SkippedMissingSource {
+        return false;
+    }
+
+    raw_source_path(plan, operation)
+        .symlink_metadata()
+        .map(|metadata| metadata.is_dir())
+        .unwrap_or(false)
+}
+
+fn count_progress_actions(actions: &[FileAction]) -> usize {
+    actions.iter().filter(|action| action.counts()).count()
 }
 
 fn plan_operation(
@@ -812,9 +921,10 @@ fn ownership_drifted(_source: &Metadata, _target: &Metadata, _policy: MetadataPo
     false
 }
 
-fn add_symlink_warnings(actions: &mut Vec<FileAction>) {
-    let created_paths = actions
+fn add_symlink_warnings(groups: &mut [PlannedFileOperationActions]) {
+    let created_paths = groups
         .iter()
+        .flat_map(|group| group.actions.iter())
         .filter_map(|action| match action {
             FileAction::CreateDirectory { target_path, .. }
             | FileAction::CopyFile { target_path, .. }
@@ -825,27 +935,61 @@ fn add_symlink_warnings(actions: &mut Vec<FileAction>) {
             | FileAction::Warning { .. } => None,
         })
         .collect::<BTreeSet<_>>();
-    let warnings = actions
-        .iter()
-        .filter_map(|action| match action {
-            FileAction::CreateSymlink {
-                target,
-                final_target,
-                ..
-            } if !final_target.exists() && !created_paths.contains(final_target) => {
-                Some(FileAction::Warning {
-                    path: target.clone(),
-                    reason: "symlink target does not exist".to_owned(),
-                })
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
+    for group in groups {
+        let warnings = group
+            .actions
+            .iter()
+            .filter_map(|action| match action {
+                FileAction::CreateSymlink {
+                    target,
+                    final_target,
+                    ..
+                } if !final_target.exists() && !created_paths.contains(final_target) => {
+                    Some(FileAction::Warning {
+                        path: target.clone(),
+                        reason: "symlink target does not exist".to_owned(),
+                    })
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
 
-    actions.extend(warnings);
+        group.actions.extend(warnings);
+    }
 }
 
-fn report_dry_run(action: &FileAction, reporter: &mut dyn Reporter) -> Result<()> {
+fn summarize_actions(actions: &[FileAction], expanded: bool) -> FileOperationSummary {
+    let mut summary = FileOperationSummary {
+        expanded,
+        ..FileOperationSummary::default()
+    };
+
+    for action in actions {
+        match action {
+            FileAction::CreateDirectory { .. }
+            | FileAction::CopyFile { .. }
+            | FileAction::CreateSymlink { .. }
+            | FileAction::RepairMetadata { report: true, .. } => summary.changed += 1,
+            FileAction::RepairMetadata { report: false, .. } => {}
+            FileAction::Delete { .. } => summary.deleted += 1,
+            FileAction::Skip { reason, .. } => {
+                summary.skipped += 1;
+                if summary.skip_reason.is_none() {
+                    summary.skip_reason = Some(reason.clone());
+                }
+            }
+            FileAction::Warning { .. } => summary.warnings += 1,
+        }
+    }
+
+    summary
+}
+
+fn report_dry_run(action: &FileAction, reporter: &mut dyn Reporter, detailed: bool) -> Result<()> {
+    if !detailed && !matches!(action, FileAction::Warning { .. }) {
+        return Ok(());
+    }
+
     match action {
         FileAction::CreateDirectory {
             operation,
@@ -913,7 +1057,12 @@ fn report_dry_run(action: &FileAction, reporter: &mut dyn Reporter) -> Result<()
     }
 }
 
-fn apply_action(plan: &ActionPlan, action: &FileAction, reporter: &mut dyn Reporter) -> Result<()> {
+fn apply_action(
+    plan: &ActionPlan,
+    action: &FileAction,
+    reporter: &mut dyn Reporter,
+    detailed: bool,
+) -> Result<()> {
     match action {
         FileAction::CreateDirectory {
             operation,
@@ -924,7 +1073,10 @@ fn apply_action(plan: &ActionPlan, action: &FileAction, reporter: &mut dyn Repor
             with_writable_parent(*operation, target_path, &plan.context.worktree_path, || {
                 create_target_dir(*operation, target_path, &plan.context.worktree_path)
             })?;
-            report_applied(reporter, *operation, source, target)
+            if detailed {
+                report_applied(reporter, *operation, source, target)?;
+            }
+            Ok(())
         }
         FileAction::CopyFile {
             operation,
@@ -950,7 +1102,10 @@ fn apply_action(plan: &ActionPlan, action: &FileAction, reporter: &mut dyn Repor
                     Some(reporter),
                 )
             })?;
-            report_applied(reporter, *operation, source, target)
+            if detailed {
+                report_applied(reporter, *operation, source, target)?;
+            }
+            Ok(())
         }
         FileAction::RepairMetadata {
             operation,
@@ -970,17 +1125,16 @@ fn apply_action(plan: &ActionPlan, action: &FileAction, reporter: &mut dyn Repor
                 *target_kind,
                 Some(reporter),
             )?;
-            if *should_report {
+            if detailed && *should_report {
                 report(
                     reporter,
                     OutputEvent::FileMetadataApplied {
                         source: source.clone(),
                         target: target.clone(),
                     },
-                )
-            } else {
-                Ok(())
+                )?;
             }
+            Ok(())
         }
         FileAction::CreateSymlink {
             operation,
@@ -1005,7 +1159,10 @@ fn apply_action(plan: &ActionPlan, action: &FileAction, reporter: &mut dyn Repor
                     &plan.context.worktree_path,
                 )
             })?;
-            report_applied(reporter, *operation, source, target)
+            if detailed {
+                report_applied(reporter, *operation, source, target)?;
+            }
+            Ok(())
         }
         FileAction::Delete {
             target,
@@ -1023,25 +1180,33 @@ fn apply_action(plan: &ActionPlan, action: &FileAction, reporter: &mut dyn Repor
                     )
                 },
             )?;
-            report(
-                reporter,
-                OutputEvent::FileDeleted {
-                    path: target.clone(),
-                },
-            )
+            if detailed {
+                report(
+                    reporter,
+                    OutputEvent::FileDeleted {
+                        path: target.clone(),
+                    },
+                )?;
+            }
+            Ok(())
         }
         FileAction::Skip {
             operation,
             target,
             reason,
-        } => report(
-            reporter,
-            OutputEvent::FileSkipped {
-                operation: *operation,
-                target: target.clone(),
-                reason: reason.clone(),
-            },
-        ),
+        } => {
+            if detailed {
+                report(
+                    reporter,
+                    OutputEvent::FileSkipped {
+                        operation: *operation,
+                        target: target.clone(),
+                        reason: reason.clone(),
+                    },
+                )?;
+            }
+            Ok(())
+        }
         FileAction::Warning { path, reason } => report(
             reporter,
             OutputEvent::FileWarning {

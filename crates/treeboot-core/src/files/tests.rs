@@ -17,6 +17,16 @@ impl Reporter for VecReporter {
     }
 }
 
+impl VecReporter {
+    fn messages(&self) -> Vec<String> {
+        self.events
+            .iter()
+            .map(OutputEvent::message)
+            .filter(|message| !message.is_empty())
+            .collect()
+    }
+}
+
 fn span() -> SourceSpan {
     SourceSpan {
         start: 0,
@@ -257,6 +267,53 @@ fn apply_file_operations_should_force_copy_child_inside_existing_read_only_direc
 }
 
 #[test]
+fn apply_file_operations_verbose_should_report_concrete_directory_actions() {
+    let (root, worktree) = temp_workspace("verbose-directory-copy");
+    let source_dir = root.join("shared/nested");
+    fs::create_dir_all(&source_dir).expect("source dir should be created");
+    fs::write(source_dir.join("config"), "value\n").expect("source should be written");
+    let plan = run_plan(
+        &root,
+        &worktree,
+        vec![operation(
+            FileOperationKind::Copy,
+            &root,
+            &worktree,
+            "shared",
+            "shared",
+        )],
+    );
+    let mut reporter = VecReporter::default();
+
+    apply_file_operations(
+        &plan,
+        FileApplyOptions {
+            verbose: true,
+            ..FileApplyOptions::default()
+        },
+        &mut reporter,
+    )
+    .expect("directory tree should copy");
+
+    assert!(reporter.events.iter().any(|event| {
+        matches!(
+            event,
+            OutputEvent::FileApplied {
+                operation: FileOperationKind::Copy,
+                target,
+                ..
+            } if target == Path::new("shared/nested/config")
+        )
+    }));
+    assert!(
+        !reporter
+            .events
+            .iter()
+            .any(|event| { matches!(event, OutputEvent::FileOperationFinished { .. }) })
+    );
+}
+
+#[test]
 fn apply_file_operations_should_copy_missing_directory_files_only() {
     let (root, worktree) = temp_workspace("directory-copy");
     let source_dir = root.join("shared");
@@ -450,7 +507,7 @@ fn apply_file_operations_should_reject_file_to_directory_target_in_dry_run() {
     .expect_err("dry-run should report file-to-directory conflict");
 
     assert!(error.to_string().contains("target is a directory"));
-    assert!(reporter.events.is_empty());
+    assert!(reporter.messages().is_empty());
 }
 
 #[test]
@@ -608,10 +665,10 @@ fn apply_file_operations_should_skip_optional_missing_sources() {
     apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
         .expect("missing optional source should skip");
 
-    assert!(matches!(
-        reporter.events.as_slice(),
-        [OutputEvent::FileSkipped { reason, .. }] if reason == "missing source"
-    ));
+    assert_eq!(
+        reporter.messages(),
+        ["treeboot: skip copy .env; missing source"]
+    );
 }
 
 #[test]
@@ -635,10 +692,10 @@ fn apply_file_operations_should_skip_optional_missing_sources_with_strict_or_for
         apply_file_operations(&plan, options, &mut reporter)
             .expect("missing optional source should skip");
 
-        assert!(matches!(
-            reporter.events.as_slice(),
-            [OutputEvent::FileSkipped { reason, .. }] if reason == "missing source"
-        ));
+        assert_eq!(
+            reporter.messages(),
+            ["treeboot: skip copy .env; missing source"]
+        );
     }
 }
 
@@ -660,10 +717,10 @@ fn apply_file_operations_should_report_optional_missing_source_in_dry_run() {
     )
     .expect("dry-run missing optional source should skip");
 
-    assert!(matches!(
-        reporter.events.as_slice(),
-        [OutputEvent::FileWouldSkip { reason, .. }] if reason == "missing source"
-    ));
+    assert_eq!(
+        reporter.messages(),
+        ["treeboot: would skip copy .env; missing source"]
+    );
 }
 
 #[test]
@@ -682,13 +739,7 @@ fn apply_file_operations_should_sync_missing_file() {
 
     let synced = fs::read_to_string(worktree.join(".env")).expect("target should be readable");
     assert_eq!(synced, "TOKEN=1\n");
-    assert!(matches!(
-        reporter.events.as_slice(),
-        [OutputEvent::FileApplied {
-            operation: FileOperationKind::Sync,
-            ..
-        }]
-    ));
+    assert_eq!(reporter.messages(), ["treeboot: sync .env -> .env"]);
 }
 
 #[test]
@@ -709,7 +760,7 @@ fn apply_file_operations_should_leave_unchanged_metadata_sync_silent() {
     apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
         .expect("unchanged sync should succeed");
 
-    assert!(reporter.events.is_empty());
+    assert!(reporter.messages().is_empty());
 }
 
 #[test]
@@ -737,7 +788,7 @@ fn apply_file_operations_should_leave_unchanged_sync_silent_in_dry_run() {
     )
     .expect("unchanged dry-run sync should succeed");
 
-    assert!(reporter.events.is_empty());
+    assert!(reporter.messages().is_empty());
 }
 
 #[test]
@@ -1180,7 +1231,7 @@ fn apply_file_operations_should_leave_unchanged_checksum_sync_silent() {
     apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
         .expect("unchanged checksum sync should succeed");
 
-    assert!(reporter.events.is_empty());
+    assert!(reporter.messages().is_empty());
 }
 
 #[cfg(unix)]
@@ -1516,11 +1567,9 @@ fn apply_file_operations_should_delete_target_only_entries_when_sync_delete_is_t
 
     assert!(!worktree.join("shared/extra").exists());
     assert!(!worktree.join("shared/extra-dir").exists());
-    assert!(
-        reporter
-            .events
-            .iter()
-            .any(|event| matches!(event, OutputEvent::FileDeleted { .. }))
+    assert_eq!(
+        reporter.messages(),
+        ["treeboot: sync shared -> shared (1 changed, 2 deleted)"]
     );
 }
 
@@ -1622,10 +1671,10 @@ fn apply_file_operations_should_report_sync_delete_in_dry_run_without_mutation()
     .expect("dry-run sync delete should plan");
 
     assert!(worktree.join("shared/extra").exists());
-    assert!(matches!(
-        reporter.events.as_slice(),
-        [OutputEvent::FileWouldDelete { .. }]
-    ));
+    assert_eq!(
+        reporter.messages(),
+        ["treeboot: would sync shared -> shared (1 delete)"]
+    );
 }
 
 #[test]
@@ -1650,13 +1699,7 @@ fn apply_file_operations_should_report_sync_create_in_dry_run_without_mutation()
     .expect("dry-run sync create should plan");
 
     assert!(!worktree.join(".env").exists());
-    assert!(matches!(
-        reporter.events.as_slice(),
-        [OutputEvent::FileWouldApply {
-            operation: FileOperationKind::Sync,
-            ..
-        }]
-    ));
+    assert_eq!(reporter.messages(), ["treeboot: would sync .env -> .env"]);
 }
 
 #[test]
@@ -1684,24 +1727,8 @@ fn apply_file_operations_should_report_sync_directory_create_in_dry_run() {
     assert!(!worktree.join("shared").exists());
     assert_eq!(report.action_count, 3);
     assert_eq!(
-        reporter.events,
-        vec![
-            OutputEvent::FileWouldApply {
-                operation: FileOperationKind::Sync,
-                source: PathBuf::from("shared"),
-                target: PathBuf::from("shared"),
-            },
-            OutputEvent::FileWouldApply {
-                operation: FileOperationKind::Sync,
-                source: PathBuf::from("shared/nested"),
-                target: PathBuf::from("shared/nested"),
-            },
-            OutputEvent::FileWouldApply {
-                operation: FileOperationKind::Sync,
-                source: PathBuf::from("shared/nested/config"),
-                target: PathBuf::from("shared/nested/config"),
-            },
-        ]
+        reporter.messages(),
+        ["treeboot: would sync shared -> shared (3 changes)"]
     );
 }
 
@@ -1730,13 +1757,7 @@ fn apply_file_operations_should_report_sync_update_in_dry_run_without_mutation()
     let existing =
         fs::read_to_string(worktree.join(".env")).expect("target should remain readable");
     assert_eq!(existing, "old\n");
-    assert!(matches!(
-        reporter.events.as_slice(),
-        [OutputEvent::FileWouldApply {
-            operation: FileOperationKind::Sync,
-            ..
-        }]
-    ));
+    assert_eq!(reporter.messages(), ["treeboot: would sync .env -> .env"]);
 }
 
 #[test]
@@ -1770,14 +1791,10 @@ fn apply_file_operations_should_report_copy_skip_in_dry_run_without_mutation() {
     let existing =
         fs::read_to_string(worktree.join(".env")).expect("target should remain readable");
     assert_eq!(existing, "old\n");
-    assert!(matches!(
-        reporter.events.as_slice(),
-        [OutputEvent::FileWouldSkip {
-            operation: FileOperationKind::Copy,
-            reason,
-            ..
-        }] if reason == "target exists"
-    ));
+    assert_eq!(
+        reporter.messages(),
+        ["treeboot: would skip copy .env; target exists"]
+    );
 }
 
 #[test]
@@ -1808,13 +1825,10 @@ fn apply_file_operations_should_report_directory_create_in_dry_run_without_mutat
     .expect("dry-run directory copy should plan");
 
     assert!(!worktree.join("shared").exists());
-    assert!(matches!(
-        reporter.events.as_slice(),
-        [OutputEvent::FileWouldApply {
-            operation: FileOperationKind::Copy,
-            ..
-        }]
-    ));
+    assert_eq!(
+        reporter.messages(),
+        ["treeboot: would copy shared -> shared (1 change)"]
+    );
 }
 
 #[test]
@@ -1865,10 +1879,7 @@ fn apply_file_operations_should_leave_dry_run_unmutated() {
     .expect("dry-run should plan");
 
     assert!(!worktree.join(".env").exists());
-    assert!(matches!(
-        reporter.events.as_slice(),
-        [OutputEvent::FileWouldApply { .. }]
-    ));
+    assert_eq!(reporter.messages(), ["treeboot: would copy .env -> .env"]);
 }
 
 #[cfg(unix)]
@@ -2183,13 +2194,10 @@ fn apply_file_operations_should_report_symlink_create_in_dry_run() {
     .expect("dry-run symlink should plan");
 
     assert!(!worktree.join(".tool").exists());
-    assert!(matches!(
-        reporter.events.as_slice(),
-        [OutputEvent::FileWouldApply {
-            operation: FileOperationKind::Symlink,
-            ..
-        }]
-    ));
+    assert_eq!(
+        reporter.messages(),
+        ["treeboot: would symlink tool -> .tool"]
+    );
 }
 
 #[test]
@@ -2213,10 +2221,10 @@ fn apply_file_operations_should_skip_existing_symlink_target_by_default() {
     apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
         .expect("existing target should skip");
 
-    assert!(matches!(
-        reporter.events.as_slice(),
-        [OutputEvent::FileSkipped { reason, .. }] if reason == "target exists"
-    ));
+    assert_eq!(
+        reporter.messages(),
+        ["treeboot: skip symlink .tool; target exists"]
+    );
 }
 
 #[test]
@@ -2395,13 +2403,13 @@ fn apply_file_operations_should_report_symlink_warning_in_dry_run() {
     )
     .expect("dry-run copied symlink should plan");
 
-    assert!(matches!(
-        reporter.events.as_slice(),
+    assert_eq!(
+        reporter.messages(),
         [
-            OutputEvent::FileWouldApply { .. },
-            OutputEvent::FileWarning { reason, .. }
-        ] if reason == "symlink target does not exist"
-    ));
+            "treeboot: warning: shared/link symlink target does not exist",
+            "treeboot: would copy shared/link -> shared/link"
+        ]
+    );
 }
 
 #[cfg(unix)]

@@ -34,6 +34,10 @@ struct ManualArgs {
     #[arg(short = 'n', long)]
     dry_run: bool,
 
+    /// Print detailed file-operation actions.
+    #[arg(short, long)]
+    verbose: bool,
+
     /// Source paths from the root checkout.
     #[arg(
         required = true,
@@ -184,6 +188,7 @@ impl ManualArgs {
         options.strict = self.strict;
         options.force = self.force;
         options.dry_run = self.dry_run;
+        options.verbose = self.verbose;
         options
     }
 }
@@ -266,6 +271,7 @@ mod tests {
                 strict: true,
                 force: true,
                 dry_run: true,
+                verbose: true,
                 ..manual_args()
             },
             symlinks: Some(CliSymlinkMode::Preserve),
@@ -280,6 +286,7 @@ mod tests {
         assert!(options.strict);
         assert!(options.force);
         assert!(options.dry_run);
+        assert!(options.verbose);
         assert_eq!(options.symlinks, Some(SymlinkMode::Preserve));
         assert_eq!(
             options.ignore_metadata,

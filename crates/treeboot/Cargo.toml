@@ -23,6 +23,11 @@ serde_json = "1.0.150"
 yaml_serde = "0.10"
 treeboot-core = { path = "../treeboot-core", version = "0.4.1" }
 
+[dependencies.indicatif]
+version = "0.18"
+default-features = false
+features = ["unicode-width"]
+
 [dev-dependencies]
 assert_cmd = "2"
 predicates = "3"
