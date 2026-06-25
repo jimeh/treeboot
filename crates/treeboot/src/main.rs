@@ -10,9 +10,12 @@ fn main() -> ExitCode {
     clap_complete::CompleteEnv::with_factory(commands::command).complete();
 
     let cli = parse();
-    let mut reporter = StdoutReporter::default();
+    let result = {
+        let mut reporter = StdoutReporter::default();
+        run_cli(cli, &mut reporter)
+    };
 
-    match run_cli(cli, &mut reporter) {
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("treeboot: {error}");

@@ -1,4 +1,4 @@
-use std::io::{self, IsTerminal};
+use std::io::{self, IsTerminal, Write};
 use std::time::Duration;
 
 use console::{Term, truncate_str};
@@ -126,15 +126,15 @@ impl StdoutReporter {
         }
     }
 
-    fn print_line(&self, message: String) {
+    fn print_line(&self, message: String) -> std::io::Result<()> {
         if message.is_empty() {
-            return;
+            return Ok(());
         }
 
         if let Some(progress) = &self.active_progress {
-            progress.bar.suspend(|| println!("{message}"));
+            progress.bar.suspend(|| write_line(&message))
         } else {
-            println!("{message}");
+            write_line(&message)
         }
     }
 }
@@ -175,9 +175,9 @@ impl Reporter for StdoutReporter {
             OutputEvent::FileOperationActionAdvanced { .. } => self.advance_progress(),
             OutputEvent::FileOperationFinished { .. } => {
                 self.finish_progress();
-                self.print_line(event.message());
+                self.print_line(event.message())?;
             }
-            _ => self.print_line(event.message()),
+            _ => self.print_line(event.message())?,
         }
 
         Ok(())
@@ -206,6 +206,12 @@ fn progress_prefix(operation: FileOperationKind) -> &'static str {
 
 const fn progress_enabled(stdout_is_terminal: bool, stderr_is_terminal: bool) -> bool {
     stdout_is_terminal && stderr_is_terminal
+}
+
+fn write_line(message: &str) -> std::io::Result<()> {
+    let stdout = io::stdout();
+    let mut handle = stdout.lock();
+    writeln!(handle, "{message}")
 }
 
 #[cfg(test)]

@@ -2393,7 +2393,7 @@ fn apply_file_operations_should_report_symlink_warning_in_dry_run() {
     );
     let mut reporter = VecReporter::default();
 
-    apply_file_operations(
+    let report = apply_file_operations(
         &plan,
         FileApplyOptions {
             dry_run: true,
@@ -2403,12 +2403,35 @@ fn apply_file_operations_should_report_symlink_warning_in_dry_run() {
     )
     .expect("dry-run copied symlink should plan");
 
+    assert_eq!(report.action_count, 1);
     assert_eq!(
         reporter.messages(),
         [
             "treeboot: warning: shared/link symlink target does not exist",
             "treeboot: would copy shared/link -> shared/link"
         ]
+    );
+    assert!(reporter.events.iter().any(|event| matches!(
+        event,
+        OutputEvent::FileOperationPlanningFinished {
+            action_count: 1,
+            ..
+        }
+    )));
+    assert!(reporter.events.iter().any(|event| matches!(
+        event,
+        OutputEvent::FileOperationExecutionStarted {
+            action_count: 1,
+            ..
+        }
+    )));
+    assert_eq!(
+        reporter
+            .events
+            .iter()
+            .filter(|event| matches!(event, OutputEvent::FileOperationActionAdvanced { .. }))
+            .count(),
+        1
     );
 }
 
