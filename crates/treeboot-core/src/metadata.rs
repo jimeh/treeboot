@@ -1,12 +1,13 @@
-//! Generated treeboot metadata.
-//!
-//! Regenerate with `mise run generate:metadata`.
+//! treeboot metadata.
 
 use serde::Serialize;
 use std::sync::OnceLock;
 
 /// treeboot spec version implemented by this crate.
-pub const SPEC_VERSION: &str = "1.9.0";
+pub const SPEC_VERSION: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/assets/spec-version.txt"
+));
 
 /// treeboot package name used for product-level version reporting.
 pub const TREEBOOT_PACKAGE: &str = "treeboot";

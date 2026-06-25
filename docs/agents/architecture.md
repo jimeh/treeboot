@@ -20,7 +20,7 @@ The core crate owns reusable behavior:
 - script and config discovery
 - declarative config parsing and normalization
 - init file generation
-- generated JSON Schema for config authoring
+- generated metadata/schema assets for config authoring and version reporting
 - structured output events
 - typed errors
 
@@ -31,6 +31,7 @@ The core crate owns reusable behavior:
 - `discovery.rs`: finds init scripts and config files
 - `config.rs`: parses and normalizes declarative TOML config
 - `examples/generate_config_schema.rs`: generates `schemas/treeboot.schema.json`
+- `metadata.rs`: exposes embedded schema and version metadata
 - `run.rs`: orchestrates `treeboot run`
 - `init.rs`: implements `treeboot init`
 - `output.rs`: defines output events and reporter abstraction

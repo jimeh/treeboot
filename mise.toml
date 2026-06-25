@@ -92,7 +92,7 @@ cp schemas/treeboot.schema.json crates/treeboot-core/assets/config.schema.json
 '''
 
 [tasks."generate:metadata"]
-description = "Generate treeboot-core metadata constants"
+description = "Generate treeboot-core metadata assets"
 run = "bash scripts/generate-metadata.sh"
 
 [tasks."generate:check"]

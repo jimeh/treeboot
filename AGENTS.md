@@ -64,7 +64,7 @@ metadata commands:
 - view-only normalized config inspection
 - side-effect-free check, doctor, env, schema, and version inspection commands
 - generated JSON Schema for the config file format
-- generated core metadata and embedded config schema accessors
+- generated spec-version asset and embedded config schema accessors
 - starter config/script generation
 - shell completion generation with root-relative source completion for manual
   file operations
