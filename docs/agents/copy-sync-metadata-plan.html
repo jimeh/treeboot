@@ -1,0 +1,740 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Copy and Sync Metadata Preservation Plan</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f7f4;
+      --text: #1f2328;
+      --muted: #61656d;
+      --line: #d7d7d0;
+      --panel: #ffffff;
+      --panel-2: #ecece5;
+      --accent: #0f766e;
+      --accent-2: #365314;
+      --warn: #92400e;
+      --code: #f0f3f6;
+      --shadow: 0 10px 28px rgb(0 0 0 / 0.08);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #171917;
+        --text: #e7e8e3;
+        --muted: #a6aaa1;
+        --line: #343832;
+        --panel: #20231f;
+        --panel-2: #2a2e28;
+        --accent: #5eead4;
+        --accent-2: #bef264;
+        --warn: #fbbf24;
+        --code: #111411;
+        --shadow: 0 10px 28px rgb(0 0 0 / 0.24);
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.55 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+    }
+
+    a {
+      color: var(--accent);
+    }
+
+    code,
+    pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+
+    code {
+      background: var(--code);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 0.1rem 0.25rem;
+    }
+
+    pre {
+      margin: 0;
+      overflow: auto;
+      padding: 1rem;
+      background: var(--code);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    h1,
+    h2,
+    h3 {
+      line-height: 1.2;
+      margin: 0;
+    }
+
+    h1 {
+      max-width: 820px;
+      font-size: clamp(2rem, 5vw, 4.75rem);
+      letter-spacing: 0;
+    }
+
+    h2 {
+      font-size: 1.65rem;
+      margin-bottom: 0.8rem;
+    }
+
+    h3 {
+      font-size: 1.05rem;
+      margin-bottom: 0.45rem;
+    }
+
+    p {
+      margin: 0 0 1rem;
+    }
+
+    ul,
+    ol {
+      margin: 0;
+      padding-left: 1.2rem;
+    }
+
+    li + li {
+      margin-top: 0.35rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.94rem;
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid var(--line);
+      padding: 0.75rem;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--panel-2);
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .hero {
+      min-height: 72vh;
+      display: grid;
+      align-content: end;
+      padding: 9vh min(6vw, 5rem) 6vh;
+      border-bottom: 1px solid var(--line);
+      background:
+        linear-gradient(145deg, rgb(15 118 110 / 0.18), transparent 34%),
+        linear-gradient(20deg, rgb(54 83 20 / 0.16), transparent 42%),
+        var(--bg);
+    }
+
+    .hero p {
+      max-width: 760px;
+      margin-top: 1.4rem;
+      color: var(--muted);
+      font-size: 1.12rem;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      margin-bottom: 1.6rem;
+    }
+
+    .pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 0.3rem 0.65rem;
+      background: rgb(255 255 255 / 0.45);
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr);
+      gap: 2.4rem;
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 3rem min(5vw, 4rem) 5rem;
+    }
+
+    nav {
+      position: sticky;
+      top: 1rem;
+      align-self: start;
+      padding: 1rem;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    nav strong {
+      display: block;
+      margin-bottom: 0.65rem;
+    }
+
+    nav a {
+      display: block;
+      padding: 0.28rem 0;
+      text-decoration: none;
+    }
+
+    main {
+      min-width: 0;
+    }
+
+    section {
+      padding: 1.6rem 0 2.2rem;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .panel {
+      margin: 1rem 0;
+      padding: 1rem;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+    }
+
+    .callout {
+      border-left: 4px solid var(--accent);
+      padding: 0.9rem 1rem;
+      background: var(--panel);
+    }
+
+    .warning {
+      border-left-color: var(--warn);
+    }
+
+    .status {
+      color: var(--accent-2);
+      font-weight: 700;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    @media (max-width: 840px) {
+      .layout {
+        display: block;
+        padding-top: 1.5rem;
+      }
+
+      nav {
+        position: static;
+        margin-bottom: 1.4rem;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media print {
+      .hero {
+        min-height: 0;
+        padding: 1rem 0 1.5rem;
+      }
+
+      .layout {
+        display: block;
+        padding: 0;
+      }
+
+      nav {
+        display: none;
+      }
+
+      section {
+        break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="meta">
+      <span class="pill">treeboot metadata plan</span>
+      <span class="pill">copy and sync only</span>
+      <span class="pill">hard links out of scope</span>
+      <span class="pill">spec-first implementation</span>
+    </div>
+    <h1>Copy and Sync Metadata Preservation</h1>
+    <p>
+      Plan for making Treeboot preserve file and directory permissions,
+      owner, and group by default during copy and sync, while adding small
+      opt-outs for projects that want less metadata repair.
+    </p>
+  </header>
+
+  <div class="layout">
+    <nav aria-label="Plan sections">
+      <strong>Contents</strong>
+      <a href="#decision">Decision</a>
+      <a href="#contract">Contract</a>
+      <a href="#config">Config and CLI</a>
+      <a href="#sync">Sync Semantics</a>
+      <a href="#implementation">Implementation</a>
+      <a href="#tests">Testing</a>
+      <a href="#rollout">Rollout</a>
+      <a href="#questions">Resolved Choices</a>
+    </nav>
+
+    <main>
+      <section id="decision">
+        <h2>Decision</h2>
+        <div class="callout">
+          <p>
+            <strong>Recommended path:</strong> improve the default behavior and
+            add opt-outs. Do not add hard-link support. Do not add archive-style
+            ACL, xattr, resource-fork, file-flag, or sparse-file preservation.
+          </p>
+        </div>
+        <p>
+          Current Treeboot already preserves regular-file contents,
+          permissions, and modified time when it copies or replaces a file.
+          The new work should make the contract broader and more explicit:
+          default copy and sync should also preserve owner and group where the
+          platform supports them, and sync should detect and repair metadata
+          drift without needing content drift.
+        </p>
+        <p>
+          The feature should remain narrow because Treeboot is a worktree
+          bootstrapper, not a backup/archive tool. Projects that need exact
+          archive behavior should use project-local commands such as
+          <code>rsync</code>, <code>cp -a</code>, or platform-specific tools in
+          configured commands.
+        </p>
+      </section>
+
+      <section id="contract">
+        <h2>Contract</h2>
+        <div class="grid">
+          <div class="panel">
+            <h3>Default Metadata</h3>
+            <ul>
+              <li>Regular files preserve contents, permissions, owner, group,
+                and modified time.</li>
+              <li>Directories preserve permissions, owner, and group when they
+                are created or repaired by sync.</li>
+              <li>Directory modified time is not preserved or compared.</li>
+              <li>Source symlink behavior stays Treeboot-specific and safe,
+                using the existing symlink preservation and rewrite rules.</li>
+            </ul>
+          </div>
+          <div class="panel">
+            <h3>Non-Goals</h3>
+            <ul>
+              <li>No hard-link support in this milestone.</li>
+              <li>No ACL, extended attribute, resource fork, file flag, or
+                sparse-file layout preservation.</li>
+              <li>No owner/group support on platforms where Rust cannot expose
+                or set ownership safely.</li>
+              <li>No implicit fallback to external commands.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Metadata</th>
+                <th>Default</th>
+                <th>Opt-out</th>
+                <th>Sync drift detection</th>
+                <th>Failure behavior</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Permissions</td>
+                <td>Preserve for regular files and directories.</td>
+                <td><code>ignore_metadata = ["permissions"]</code></td>
+                <td>Detect and repair unless ignored.</td>
+                <td>Hard error for unexpected apply failures.</td>
+              </tr>
+              <tr>
+                <td>Owner</td>
+                <td>Attempt preservation on Unix-like platforms.</td>
+                <td><code>ignore_metadata = ["owner"]</code> or
+                  <code>["ownership"]</code></td>
+                <td>Detect and attempt repair unless ignored.</td>
+                <td>Permission-denied repair failure warns and continues;
+                  unexpected errors fail.</td>
+              </tr>
+              <tr>
+                <td>Group</td>
+                <td>Attempt preservation on Unix-like platforms.</td>
+                <td><code>ignore_metadata = ["group"]</code> or
+                  <code>["ownership"]</code></td>
+                <td>Detect and attempt repair unless ignored.</td>
+                <td>Permission-denied repair failure warns and continues;
+                  unexpected errors fail.</td>
+              </tr>
+              <tr>
+                <td>Modified time</td>
+                <td>Preserve for regular files.</td>
+                <td>None in this milestone.</td>
+                <td>Continue to drive default file content comparison.</td>
+                <td>Hard error for unexpected apply failures.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout warning">
+          <p>
+            <strong>Ownership caveat:</strong> normal users often cannot set
+            arbitrary owner or group values. The default should still attempt
+            ownership preservation, but permission-denied ownership repair must
+            not make a normal bootstrap unusable.
+          </p>
+        </div>
+      </section>
+
+      <section id="config">
+        <h2>Config and CLI</h2>
+        <p>
+          Add one opt-out field to <code>copy</code> and <code>sync</code>
+          entries. It should be invalid for <code>symlink</code> entries.
+        </p>
+
+        <pre><code class="language-toml">copy = [
+  { source = ".env.local", ignore_metadata = ["ownership"] },
+]
+
+sync = [
+  { source = "shared/config", ignore_metadata = ["permissions"] },
+  { source = "shared/state", ignore_metadata = ["owner", "group"] },
+]
+
+files = [
+  { operation = "copy", source = ".npmrc", ignore_metadata = ["ownership"] },
+  { operation = "sync", source = "shared/editor", ignore_metadata = ["permissions"] },
+]</code></pre>
+
+        <div class="panel">
+          <h3>Allowed Values</h3>
+          <ul>
+            <li><code>permissions</code>: do not compare or apply permission
+              metadata.</li>
+            <li><code>owner</code>: do not compare or apply owner metadata.</li>
+            <li><code>group</code>: do not compare or apply group metadata.</li>
+            <li><code>ownership</code>: shorthand for owner plus group.</li>
+          </ul>
+        </div>
+
+        <p>
+          Manual commands should expose the same policy with a repeated flag:
+        </p>
+
+        <pre><code class="language-sh">treeboot copy .env.local --ignore-metadata ownership
+treeboot sync shared/config --ignore-metadata permissions
+treeboot sync shared/state --ignore-metadata owner --ignore-metadata group</code></pre>
+
+        <p>
+          The CLI can also accept comma-separated values if that fits the
+          existing clap style cleanly, but repeated flags are the required
+          behavior. Completion should list the allowed values.
+        </p>
+      </section>
+
+      <section id="sync">
+        <h2>Sync Semantics</h2>
+        <p>
+          Sync should compare content and the configured metadata set. If only
+          metadata differs, Treeboot should repair metadata in place instead of
+          replacing the file contents.
+        </p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Source and target state</th>
+                <th>Default behavior</th>
+                <th>With ignore option</th>
+                <th>Output</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>File bytes differ.</td>
+                <td>Replace target file, then apply metadata.</td>
+                <td>Apply all non-ignored metadata after replacement.</td>
+                <td><code>treeboot: sync source -&gt; target</code></td>
+              </tr>
+              <tr>
+                <td>Only file permissions differ.</td>
+                <td>Repair permissions in place.</td>
+                <td>No action when permissions are ignored.</td>
+                <td><code>treeboot: sync metadata source -&gt; target</code></td>
+              </tr>
+              <tr>
+                <td>Only owner or group differs.</td>
+                <td>Attempt ownership repair in place.</td>
+                <td>No action when owner/group is ignored.</td>
+                <td><code>treeboot: sync metadata source -&gt; target</code>,
+                  plus warning on permission denied.</td>
+              </tr>
+              <tr>
+                <td>Directory permissions or ownership differ.</td>
+                <td>Repair directory metadata during sync traversal.</td>
+                <td>No action for ignored fields.</td>
+                <td><code>treeboot: sync metadata source -&gt; target</code></td>
+              </tr>
+              <tr>
+                <td>Directory mtime differs.</td>
+                <td>No action.</td>
+                <td>No action.</td>
+                <td>No output.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="panel">
+          <h3>Compare Modes</h3>
+          <p>
+            <code>compare = "metadata"</code> should continue to use size and
+            modified time for regular-file content drift, then also compare the
+            configured metadata fields. <code>compare = "checksum"</code>
+            should use content comparison for bytes, then still compare the
+            configured metadata fields. The <code>ignore_metadata</code> field
+            controls only metadata comparison and repair, not content
+            comparison.
+          </p>
+        </div>
+      </section>
+
+      <section id="implementation">
+        <h2>Implementation</h2>
+        <ol>
+          <li>
+            <span class="status">Spec first.</span> Update
+            <code>docs/SPEC.md</code> with the new metadata contract, manual
+            flag, config field, output examples, and platform caveats. Bump the
+            visible spec version from <code>v1.9.0</code> to
+            <code>v1.10.0</code> and keep the README spec reference in sync if
+            present.
+          </li>
+          <li>
+            Add public policy types in <code>treeboot-core</code>. Suggested
+            shape:
+            <pre><code class="language-rust">pub enum MetadataField {
+    Permissions,
+    Owner,
+    Group,
+    Ownership,
+}
+
+pub struct MetadataPolicy {
+    pub permissions: bool,
+    pub owner: bool,
+    pub group: bool,
+}</code></pre>
+            Store the normalized policy on <code>FileOperation</code> and
+            <code>PlannedFileOperation</code>. Keep public APIs documented.
+          </li>
+          <li>
+            Parse <code>ignore_metadata</code> in <code>config.rs</code>.
+            Reject it for symlink entries through the existing invalid-field
+            path. Expand <code>ownership</code> to owner plus group during
+            normalization.
+          </li>
+          <li>
+            Add <code>--ignore-metadata</code> to manual <code>copy</code> and
+            <code>sync</code> commands in the CLI crate. Reject or omit it for
+            <code>symlink</code>. Pass the normalized policy through
+            <code>ManualFileOperationOptions</code> and
+            <code>FileOperationOptions</code>.
+          </li>
+          <li>
+            Update schema generation in
+            <code>crates/treeboot-core/examples/generate_config_schema.rs</code>
+            and regenerate both checked-in schema assets with
+            <code>mise run generate</code>.
+          </li>
+          <li>
+            Split metadata operations in <code>files.rs</code>:
+            <ul>
+              <li>Add a metadata comparison helper for files and directories.</li>
+              <li>Add a metadata apply helper that can apply permissions,
+                owner, and group according to policy.</li>
+              <li>Add a <code>FileAction::RepairMetadata</code> action so sync
+                can repair metadata-only drift without rewriting bytes.</li>
+              <li>Keep file replacement applying mtime before permissions so
+                read-only copied files remain supported.</li>
+            </ul>
+          </li>
+          <li>
+            Use the standard library ownership APIs on Unix. Rust 1.96 exposes
+            <code>std::os::unix::fs::chown</code>,
+            <code>fchown</code>, and <code>lchown</code>, so this should not
+            require unsafe code or a new runtime dependency. Keep Windows owner
+            and group behavior unsupported and documented.
+          </li>
+          <li>
+            Add ownership warning output. Prefer a structured
+            <code>OutputEvent</code> variant over string-only reporting so JSON
+            or future structured output remains coherent.
+          </li>
+          <li>
+            Refresh text output and dry-run output:
+            <pre><code class="language-text">treeboot: sync metadata shared/config -&gt; shared/config
+treeboot: would sync metadata shared/config -&gt; shared/config
+treeboot: warning: could not preserve ownership shared/config: operation not permitted</code></pre>
+          </li>
+        </ol>
+      </section>
+
+      <section id="tests">
+        <h2>Testing</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Layer</th>
+                <th>Coverage</th>
+                <th>Commands</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Config unit tests</td>
+                <td>
+                  Parse <code>ignore_metadata</code> for copy/sync, expand
+                  <code>ownership</code>, reject the field for symlink, reject
+                  unknown values, and verify normalized config output.
+                </td>
+                <td><code>mise run test:core</code></td>
+              </tr>
+              <tr>
+                <td>Manual option tests</td>
+                <td>
+                  Normalize repeated <code>--ignore-metadata</code> flags for
+                  copy/sync and keep symlink free of metadata policy.
+                </td>
+                <td><code>mise run test:cli</code></td>
+              </tr>
+              <tr>
+                <td>File engine tests</td>
+                <td>
+                  Permission-only file drift plans metadata repair, ignored
+                  permissions produce no action, directory permission drift is
+                  repaired during sync, and content replacement still applies
+                  metadata afterward.
+                </td>
+                <td><code>mise run test:core</code></td>
+              </tr>
+              <tr>
+                <td>Unix ownership tests</td>
+                <td>
+                  Verify owner/group no-op preservation for normal same-user
+                  files, compare helper behavior when metadata values differ,
+                  and warning behavior for permission-denied ownership repair
+                  if a reliable harness case is available.
+                </td>
+                <td><code>cargo test -p treeboot-core --all-targets --all-features --locked</code></td>
+              </tr>
+              <tr>
+                <td>CLI integration tests</td>
+                <td>
+                  Dry-run reports metadata repair, sync reports metadata repair
+                  without rewriting content, and ignored metadata is quiet.
+                </td>
+                <td><code>mise run test:cli</code></td>
+              </tr>
+              <tr>
+                <td>Generated artifacts</td>
+                <td>
+                  Schema assets and metadata assets remain fresh after the
+                  config format and spec version changes.
+                </td>
+                <td><code>mise run generate:check</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="panel">
+          <h3>Pre-Handoff Gate</h3>
+          <p>
+            For the implementation PR, run <code>mise run check</code>. If the
+            change touches release metadata, workflows, or broader architecture
+            docs beyond this plan, run <code>mise run verify</code>.
+          </p>
+        </div>
+      </section>
+
+      <section id="rollout">
+        <h2>Rollout</h2>
+        <ol>
+          <li>Land spec and docs in the same implementation branch as code so
+            the contract and behavior cannot drift.</li>
+          <li>Keep README short. Mention the default ownership preservation and
+            link to the spec instead of duplicating edge-case matrices.</li>
+          <li>Regenerate schema assets before review.</li>
+          <li>Call out the behavior change in the PR: sync may now report and
+            repair permission or ownership drift even when file bytes match.</li>
+          <li>Call out that ownership preservation is best-effort when the OS
+            denies owner/group changes.</li>
+        </ol>
+      </section>
+
+      <section id="questions">
+        <h2>Resolved Choices</h2>
+        <ol>
+          <li>
+            Permission repair failures stay operation failures. Only
+            owner/group permission-denied failures are best-effort warnings.
+          </li>
+          <li>
+            <code>ignore_metadata = ["ownership"]</code> is accepted as input
+            shorthand and normalized to <code>["owner", "group"]</code> in
+            <code>treeboot config</code> output.
+          </li>
+          <li>
+            Metadata-only sync uses
+            <code>treeboot: sync metadata source -&gt; target</code> and dry-run
+            uses <code>treeboot: would sync metadata source -&gt; target</code>.
+          </li>
+        </ol>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

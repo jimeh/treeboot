@@ -2,14 +2,14 @@ use std::ffi::OsStr;
 use std::path::{Component, Path, PathBuf};
 
 use crate::config::{
-    Config, FileOperationSettings, FileOperationSettingsInput, RuntimeOptionOverrides,
-    normalize_file_operation_settings,
+    Config, FileOperationSettings, FileOperationSettingsInput, RawMetadataField,
+    RuntimeOptionOverrides, normalize_file_operation_settings,
 };
 use crate::context;
 use crate::{
     ActionPlan, ActionPlanOptions, Error, ExecuteOptions, Executor, FileOperation,
-    FileOperationKind, OutputEvent, PlanOrigin, Reporter, Result, SourceSpan, SymlinkMode,
-    SyncCompare, Worktree, WorktreeOptions,
+    FileOperationKind, MetadataField, OutputEvent, PlanOrigin, Reporter, Result, SourceSpan,
+    SymlinkMode, SyncCompare, Worktree, WorktreeOptions,
 };
 
 /// Options for building manual file operation specs.
@@ -29,6 +29,8 @@ pub struct ManualFileOperationOptions {
     pub compare: Option<SyncCompare>,
     /// Whether sync should delete target-only files.
     pub delete: Option<bool>,
+    /// Metadata fields ignored by copy and sync.
+    pub ignore_metadata: Vec<MetadataField>,
 }
 
 impl Default for ManualFileOperationOptions {
@@ -41,6 +43,7 @@ impl Default for ManualFileOperationOptions {
             symlinks: None,
             compare: None,
             delete: None,
+            ignore_metadata: Vec::new(),
         }
     }
 }
@@ -94,6 +97,7 @@ impl FileOperation {
             options.symlinks,
             options.compare,
             options.delete,
+            &options.ignore_metadata,
         )?;
         manual_operations(options, context, settings)
     }
@@ -120,6 +124,8 @@ pub struct FileOperationOptions {
     pub compare: Option<SyncCompare>,
     /// Whether sync should delete target-only files.
     pub delete: Option<bool>,
+    /// Metadata fields ignored by copy and sync.
+    pub ignore_metadata: Vec<MetadataField>,
     /// Fails on stricter file-operation conflicts.
     pub strict: bool,
     /// Replaces existing file-operation targets where supported.
@@ -140,6 +146,7 @@ impl Default for FileOperationOptions {
             symlinks: None,
             compare: None,
             delete: None,
+            ignore_metadata: Vec::new(),
             strict: false,
             force: false,
             dry_run: false,
@@ -229,6 +236,7 @@ pub fn run_file_operation(
         symlinks,
         compare,
         delete,
+        ignore_metadata,
         strict,
         force,
         dry_run,
@@ -241,6 +249,7 @@ pub fn run_file_operation(
         symlinks,
         compare,
         delete,
+        ignore_metadata,
     };
 
     let env_options = RuntimeOptionOverrides::from_env()?;
@@ -312,17 +321,24 @@ fn validate_manual_options(
     symlinks: Option<SymlinkMode>,
     compare: Option<SyncCompare>,
     delete: Option<bool>,
+    ignore_metadata: &[MetadataField],
 ) -> Result<FileOperationSettings> {
     if sources.is_empty() {
         return invalid_manual(operation, "at least one source is required");
     }
 
+    let ignore_metadata = ignore_metadata
+        .iter()
+        .copied()
+        .map(RawMetadataField::from)
+        .collect();
     normalize_file_operation_settings(
         operation,
         FileOperationSettingsInput {
             compare,
             delete,
             symlinks,
+            ignore_metadata,
         },
     )
     .map_err(|field| Error::FileOperationInvalid {
@@ -362,6 +378,7 @@ fn manual_operations(
                 compare: settings.compare,
                 delete: settings.delete,
                 symlinks: settings.symlinks,
+                ignore_metadata: settings.ignore_metadata.clone(),
                 declaration: manual_span(),
             })
         })
@@ -453,6 +470,16 @@ fn has_trailing_separator(path: &Path) -> bool {
     path.as_os_str().to_string_lossy().ends_with(['/', '\\'])
 }
 
+impl From<MetadataField> for RawMetadataField {
+    fn from(value: MetadataField) -> Self {
+        match value {
+            MetadataField::Permissions => Self::Permissions,
+            MetadataField::Owner => Self::Owner,
+            MetadataField::Group => Self::Group,
+        }
+    }
+}
+
 fn resolve_path(base: &Path, path: &Path) -> PathBuf {
     if path.is_absolute() {
         path.to_path_buf()
@@ -527,6 +554,7 @@ mod tests {
             symlinks: None,
             compare: None,
             delete: None,
+            ignore_metadata: Vec::new(),
         }
     }
 
@@ -599,6 +627,7 @@ mod tests {
             symlinks: None,
             compare: None,
             delete: None,
+            ignore_metadata: Vec::new(),
         };
         options.sources.push(root.join("b"));
         options.target = Some(PathBuf::from("local"));
@@ -643,6 +672,7 @@ mod tests {
             options.symlinks,
             options.compare,
             options.delete,
+            &options.ignore_metadata,
         )
         .expect_err("symlinks should fail");
 
@@ -661,6 +691,7 @@ mod tests {
             options.symlinks,
             options.compare,
             options.delete,
+            &options.ignore_metadata,
         )
         .expect_err("compare should fail");
 
@@ -682,6 +713,7 @@ mod tests {
             options.symlinks,
             options.compare,
             options.delete,
+            &options.ignore_metadata,
         )
         .expect_err("delete should fail");
 
@@ -703,6 +735,7 @@ mod tests {
             options.symlinks,
             options.compare,
             options.delete,
+            &options.ignore_metadata,
         )
         .expect_err("compare should fail");
 
@@ -724,6 +757,7 @@ mod tests {
             options.symlinks,
             options.compare,
             options.delete,
+            &options.ignore_metadata,
         )
         .expect_err("delete should fail");
 
@@ -743,6 +777,7 @@ mod tests {
             options.symlinks,
             options.compare,
             options.delete,
+            &options.ignore_metadata,
         )
         .expect_err("empty sources should fail");
 
@@ -761,6 +796,7 @@ mod tests {
         options.compare = Some(SyncCompare::Checksum);
         options.delete = Some(true);
         options.symlinks = Some(SymlinkMode::Preserve);
+        options.ignore_metadata = vec![MetadataField::Owner, MetadataField::Group];
 
         let operations = FileOperation::from_manual_options(&context, options)
             .expect("operation should normalize");
@@ -768,6 +804,32 @@ mod tests {
         assert_eq!(operations[0].compare, Some(SyncCompare::Checksum));
         assert_eq!(operations[0].delete, Some(true));
         assert_eq!(operations[0].symlinks, Some(SymlinkMode::Preserve));
+        assert_eq!(
+            operations[0].ignore_metadata,
+            vec![MetadataField::Owner, MetadataField::Group]
+        );
+    }
+
+    #[test]
+    fn validate_manual_options_should_reject_ignored_metadata_for_symlink() {
+        let mut options = options(FileOperationKind::Symlink, &["file"]);
+        options.ignore_metadata = vec![MetadataField::Permissions];
+
+        let error = validate_manual_options(
+            options.operation,
+            &options.sources,
+            options.symlinks,
+            options.compare,
+            options.delete,
+            &options.ignore_metadata,
+        )
+        .expect_err("ignore_metadata should fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("`ignore_metadata` is only valid for copy and sync")
+        );
     }
 
     #[test]
@@ -844,6 +906,7 @@ mod tests {
                 compare: None,
                 delete: None,
                 symlinks: Some(SymlinkMode::Preserve),
+                ignore_metadata: Vec::new(),
                 declaration: manual_span(),
             }],
             ActionPlanOptions::default(),
@@ -875,6 +938,7 @@ mod tests {
                 compare: Some(SyncCompare::Metadata),
                 delete: Some(false),
                 symlinks: Some(SymlinkMode::Preserve),
+                ignore_metadata: Vec::new(),
                 declaration: manual_span(),
             }],
             ActionPlanOptions {

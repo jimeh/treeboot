@@ -92,6 +92,7 @@ commands = [
                 "compare",
                 "declaration",
                 "delete",
+                "ignore_metadata",
                 "operation",
                 "required",
                 "source",
@@ -110,6 +111,7 @@ commands = [
     assert_eq!(files[0]["compare"], serde_json::Value::Null);
     assert_eq!(files[0]["delete"], serde_json::Value::Null);
     assert_eq!(files[0]["symlinks"], "preserve");
+    assert_eq!(files[0]["ignore_metadata"], serde_json::json!([]));
     assert!(files[0]["source_path"].is_string());
     assert!(files[0]["target_path"].is_string());
 
@@ -120,6 +122,7 @@ commands = [
     assert_eq!(files[1]["compare"], "checksum");
     assert_eq!(files[1]["delete"], true);
     assert_eq!(files[1]["symlinks"], "preserve");
+    assert_eq!(files[1]["ignore_metadata"], serde_json::json!([]));
 
     let commands = config["commands"]
         .as_array()
@@ -306,7 +309,7 @@ fn config_command_should_print_file_and_command_options() {
     write_file(
         &config,
         r#"
-copy = [{ source = ".env.required", required = true }]
+copy = [{ source = ".env.required", required = true, ignore_metadata = ["ownership"] }]
 symlink = ["shared/tool"]
 commands = [{
   program = "npm",
@@ -323,9 +326,10 @@ commands = [{
         .current_dir(repo.worktree_path())
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "copy .env.required -> .env.required required=true",
-        ))
+        .stdout(predicate::str::contains(concat!(
+            "copy .env.required -> .env.required required=true ",
+            "symlinks=preserve ignore_metadata=[owner,group]"
+        )))
         .stdout(predicate::str::contains(
             "symlink shared/tool -> shared/tool",
         ))

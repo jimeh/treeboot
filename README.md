@@ -337,7 +337,7 @@ or `treeboot schema --output <path>` to write it to a file.
 ## Project Status
 
 `treeboot` is feature-complete for the core worktree bootstrap workflow in
-[spec v1.9.0](./docs/SPEC.md). It supports:
+[spec v1.10.0](./docs/SPEC.md). It supports:
 
 - `run`, `status`, `config`, `check`, `doctor`, `env`, `schema`, `version`,
   `init`, `copy`, `symlink`, `sync`, and `completions`

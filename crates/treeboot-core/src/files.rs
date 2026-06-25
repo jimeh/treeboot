@@ -4,9 +4,12 @@ use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
 
 use crate::{
-    ActionPlan, Error, FileOperationKind, OutputEvent, PlannedFileOperation, PlannedFileStatus,
-    Reporter, Result, SyncCompare,
+    ActionPlan, Error, FileOperationKind, MetadataField, OutputEvent, PlannedFileOperation,
+    PlannedFileStatus, Reporter, Result, SyncCompare,
 };
+
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct FileApplyOptions {
@@ -25,8 +28,10 @@ enum FileAction {
     CreateDirectory {
         operation: FileOperationKind,
         source: PathBuf,
+        source_path: PathBuf,
         target: PathBuf,
         target_path: PathBuf,
+        metadata_policy: MetadataPolicy,
     },
     CopyFile {
         operation: FileOperationKind,
@@ -34,7 +39,16 @@ enum FileAction {
         target: PathBuf,
         source_path: PathBuf,
         target_path: PathBuf,
+        metadata_policy: MetadataPolicy,
         replace: bool,
+    },
+    RepairMetadata {
+        source: PathBuf,
+        target: PathBuf,
+        source_path: PathBuf,
+        target_path: PathBuf,
+        metadata_policy: MetadataPolicy,
+        target_kind: MetadataTarget,
     },
     CreateSymlink {
         operation: FileOperationKind,
@@ -84,6 +98,39 @@ struct SymlinkActionPlan {
 enum TreePlanMode {
     Copy { options: FileApplyOptions },
     Sync,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MetadataPolicy {
+    permissions: bool,
+    owner: bool,
+    group: bool,
+}
+
+impl MetadataPolicy {
+    fn from_ignored(fields: &[MetadataField]) -> Self {
+        Self {
+            permissions: !fields.contains(&MetadataField::Permissions),
+            owner: !fields.contains(&MetadataField::Owner),
+            group: !fields.contains(&MetadataField::Group),
+        }
+    }
+}
+
+impl Default for MetadataPolicy {
+    fn default() -> Self {
+        Self {
+            permissions: true,
+            owner: true,
+            group: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MetadataTarget {
+    File,
+    Directory,
 }
 
 pub(crate) fn apply_file_operations(
@@ -215,6 +262,25 @@ fn plan_tree_directory(
                     });
                 }
             }
+            if matches!(mode, TreePlanMode::Sync)
+                && metadata_drifted(
+                    operation.operation,
+                    entry.source_path,
+                    entry.target_path,
+                    &metadata,
+                    MetadataTarget::Directory,
+                    MetadataPolicy::from_ignored(&operation.ignore_metadata),
+                )?
+            {
+                actions.push(FileAction::RepairMetadata {
+                    source: entry.source.to_path_buf(),
+                    target: entry.target.to_path_buf(),
+                    source_path: entry.source_path.to_path_buf(),
+                    target_path: entry.target_path.to_path_buf(),
+                    metadata_policy: MetadataPolicy::from_ignored(&operation.ignore_metadata),
+                    target_kind: MetadataTarget::Directory,
+                });
+            }
         }
         Some(_) => {
             return conflict(
@@ -226,8 +292,10 @@ fn plan_tree_directory(
         None => actions.push(FileAction::CreateDirectory {
             operation: operation.operation,
             source: entry.source.to_path_buf(),
+            source_path: entry.source_path.to_path_buf(),
             target: entry.target.to_path_buf(),
             target_path: entry.target_path.to_path_buf(),
+            metadata_policy: MetadataPolicy::from_ignored(&operation.ignore_metadata),
         }),
     }
 
@@ -294,6 +362,7 @@ fn plan_tree_file(
                     target: entry.target.to_path_buf(),
                     source_path: entry.source_path.to_path_buf(),
                     target_path: entry.target_path.to_path_buf(),
+                    metadata_policy: MetadataPolicy::from_ignored(&operation.ignore_metadata),
                     replace: true,
                 });
                 Ok(())
@@ -327,7 +396,28 @@ fn plan_tree_file(
                     target: entry.target.to_path_buf(),
                     source_path: entry.source_path.to_path_buf(),
                     target_path: entry.target_path.to_path_buf(),
+                    metadata_policy: MetadataPolicy::from_ignored(&operation.ignore_metadata),
                     replace: true,
+                });
+                Ok(())
+            }
+            TreePlanMode::Sync
+                if metadata_drifted(
+                    operation.operation,
+                    entry.source_path,
+                    entry.target_path,
+                    &metadata,
+                    MetadataTarget::File,
+                    MetadataPolicy::from_ignored(&operation.ignore_metadata),
+                )? =>
+            {
+                actions.push(FileAction::RepairMetadata {
+                    source: entry.source.to_path_buf(),
+                    target: entry.target.to_path_buf(),
+                    source_path: entry.source_path.to_path_buf(),
+                    target_path: entry.target_path.to_path_buf(),
+                    metadata_policy: MetadataPolicy::from_ignored(&operation.ignore_metadata),
+                    target_kind: MetadataTarget::File,
                 });
                 Ok(())
             }
@@ -340,6 +430,7 @@ fn plan_tree_file(
                 target: entry.target.to_path_buf(),
                 source_path: entry.source_path.to_path_buf(),
                 target_path: entry.target_path.to_path_buf(),
+                metadata_policy: MetadataPolicy::from_ignored(&operation.ignore_metadata),
                 replace: false,
             });
             Ok(())
@@ -641,6 +732,62 @@ fn contents_changed(
     }
 }
 
+fn metadata_drifted(
+    operation: FileOperationKind,
+    source_path: &Path,
+    target_path: &Path,
+    target_metadata: &Metadata,
+    target_kind: MetadataTarget,
+    policy: MetadataPolicy,
+) -> Result<bool> {
+    let source_metadata = metadata(source_path, operation)?;
+    if policy.permissions && !permissions_match(&source_metadata, target_metadata) {
+        return Ok(true);
+    }
+    if target_kind == MetadataTarget::File {
+        let source_modified =
+            source_metadata
+                .modified()
+                .map_err(|source| Error::FileOperationIo {
+                    operation: operation.as_str(),
+                    path: source_path.to_path_buf(),
+                    source,
+                })?;
+        let target_modified =
+            target_metadata
+                .modified()
+                .map_err(|source| Error::FileOperationIo {
+                    operation: operation.as_str(),
+                    path: target_path.to_path_buf(),
+                    source,
+                })?;
+        if source_modified != target_modified {
+            return Ok(true);
+        }
+    }
+    Ok(ownership_drifted(&source_metadata, target_metadata, policy))
+}
+
+#[cfg(unix)]
+fn permissions_match(source: &Metadata, target: &Metadata) -> bool {
+    source.mode() == target.mode()
+}
+
+#[cfg(not(unix))]
+fn permissions_match(source: &Metadata, target: &Metadata) -> bool {
+    source.permissions().readonly() == target.permissions().readonly()
+}
+
+#[cfg(unix)]
+fn ownership_drifted(source: &Metadata, target: &Metadata, policy: MetadataPolicy) -> bool {
+    (policy.owner && source.uid() != target.uid()) || (policy.group && source.gid() != target.gid())
+}
+
+#[cfg(not(unix))]
+fn ownership_drifted(_source: &Metadata, _target: &Metadata, _policy: MetadataPolicy) -> bool {
+    false
+}
+
 fn add_symlink_warnings(actions: &mut Vec<FileAction>) {
     let created_paths = actions
         .iter()
@@ -648,9 +795,10 @@ fn add_symlink_warnings(actions: &mut Vec<FileAction>) {
             FileAction::CreateDirectory { target_path, .. }
             | FileAction::CopyFile { target_path, .. }
             | FileAction::CreateSymlink { target_path, .. } => Some(target_path.clone()),
-            FileAction::Delete { .. } | FileAction::Skip { .. } | FileAction::Warning { .. } => {
-                None
-            }
+            FileAction::RepairMetadata { .. }
+            | FileAction::Delete { .. }
+            | FileAction::Skip { .. }
+            | FileAction::Warning { .. } => None,
         })
         .collect::<BTreeSet<_>>();
     let warnings = actions
@@ -700,6 +848,13 @@ fn report_dry_run(action: &FileAction, reporter: &mut dyn Reporter) -> Result<()
                 target: target.clone(),
             },
         ),
+        FileAction::RepairMetadata { source, target, .. } => report(
+            reporter,
+            OutputEvent::FileMetadataWouldApply {
+                source: source.clone(),
+                target: target.clone(),
+            },
+        ),
         FileAction::Delete { target, .. } => report(
             reporter,
             OutputEvent::FileWouldDelete {
@@ -733,10 +888,20 @@ fn apply_action(plan: &ActionPlan, action: &FileAction, reporter: &mut dyn Repor
         FileAction::CreateDirectory {
             operation,
             source,
+            source_path,
             target,
             target_path,
+            metadata_policy,
         } => {
             create_target_dir(*operation, target_path, &plan.context.worktree_path)?;
+            apply_metadata(
+                *operation,
+                source_path,
+                target_path,
+                *metadata_policy,
+                MetadataTarget::Directory,
+                Some(reporter),
+            )?;
             report_applied(reporter, *operation, source, target)
         }
         FileAction::CopyFile {
@@ -745,20 +910,47 @@ fn apply_action(plan: &ActionPlan, action: &FileAction, reporter: &mut dyn Repor
             target,
             source_path,
             target_path,
+            metadata_policy,
             replace,
         } => {
             create_parent_dir(*operation, target_path, &plan.context.worktree_path)?;
             if *replace {
                 remove_file_checked(*operation, target_path, &plan.context.worktree_path)?;
             }
-            copy_file_with_metadata(
+            copy_file_with_metadata_with_policy(
                 *operation,
                 source_path,
                 target_path,
                 &plan.context.root_path,
                 &plan.context.worktree_path,
+                *metadata_policy,
+                Some(reporter),
             )?;
             report_applied(reporter, *operation, source, target)
+        }
+        FileAction::RepairMetadata {
+            source,
+            target,
+            source_path,
+            target_path,
+            metadata_policy,
+            target_kind,
+        } => {
+            apply_metadata(
+                FileOperationKind::Sync,
+                source_path,
+                target_path,
+                *metadata_policy,
+                *target_kind,
+                Some(reporter),
+            )?;
+            report(
+                reporter,
+                OutputEvent::FileMetadataApplied {
+                    source: source.clone(),
+                    target: target.clone(),
+                },
+            )
         }
         FileAction::CreateSymlink {
             operation,
@@ -940,6 +1132,7 @@ fn ensure_target_ancestors(
     Ok(())
 }
 
+#[cfg(test)]
 fn copy_file_with_metadata(
     operation: FileOperationKind,
     source_path: &Path,
@@ -947,13 +1140,32 @@ fn copy_file_with_metadata(
     root_path: &Path,
     worktree_path: &Path,
 ) -> Result<()> {
+    copy_file_with_metadata_with_policy(
+        operation,
+        source_path,
+        target_path,
+        root_path,
+        worktree_path,
+        MetadataPolicy::default(),
+        None,
+    )
+}
+
+fn copy_file_with_metadata_with_policy(
+    operation: FileOperationKind,
+    source_path: &Path,
+    target_path: &Path,
+    root_path: &Path,
+    worktree_path: &Path,
+    metadata_policy: MetadataPolicy,
+    reporter: Option<&mut dyn Reporter>,
+) -> Result<()> {
     ensure_source_file_safe(operation, source_path, root_path)?;
     let mut source_file = File::open(source_path).map_err(|source| Error::FileOperationIo {
         operation: operation.as_str(),
         path: source_path.to_path_buf(),
         source,
     })?;
-    let metadata = ensure_source_file_safe(operation, source_path, root_path)?;
     ensure_target_parent_exists(operation, target_path, worktree_path)?;
     let mut target_file = File::options()
         .write(true)
@@ -970,7 +1182,48 @@ fn copy_file_with_metadata(
         path: target_path.to_path_buf(),
         source,
     })?;
+    drop(target_file);
 
+    apply_metadata(
+        operation,
+        source_path,
+        target_path,
+        metadata_policy,
+        MetadataTarget::File,
+        reporter,
+    )
+}
+
+fn apply_metadata(
+    operation: FileOperationKind,
+    source_path: &Path,
+    target_path: &Path,
+    policy: MetadataPolicy,
+    target_kind: MetadataTarget,
+    reporter: Option<&mut dyn Reporter>,
+) -> Result<()> {
+    let metadata = metadata(source_path, operation)?;
+    apply_ownership(operation, target_path, &metadata, policy, reporter)?;
+    if target_kind == MetadataTarget::File {
+        apply_file_times(operation, target_path, &metadata)?;
+    }
+    if policy.permissions {
+        fs::set_permissions(target_path, metadata.permissions()).map_err(|source| {
+            Error::FileOperationIo {
+                operation: operation.as_str(),
+                path: target_path.to_path_buf(),
+                source,
+            }
+        })?;
+    }
+    Ok(())
+}
+
+fn apply_file_times(
+    operation: FileOperationKind,
+    target_path: &Path,
+    metadata: &Metadata,
+) -> Result<()> {
     let mut times = FileTimes::new();
     if let Ok(accessed) = metadata.accessed() {
         times = times.set_accessed(accessed);
@@ -978,21 +1231,72 @@ fn copy_file_with_metadata(
     if let Ok(modified) = metadata.modified() {
         times = times.set_modified(modified);
     }
-    target_file
-        .set_times(times)
+    File::options()
+        .write(true)
+        .open(target_path)
+        .and_then(|file| file.set_times(times))
         .map_err(|source| Error::FileOperationIo {
             operation: operation.as_str(),
             path: target_path.to_path_buf(),
             source,
         })?;
-    target_file
-        .set_permissions(metadata.permissions())
-        .map_err(|source| Error::FileOperationIo {
+    Ok(())
+}
+
+#[cfg(unix)]
+fn apply_ownership(
+    operation: FileOperationKind,
+    target_path: &Path,
+    metadata: &Metadata,
+    policy: MetadataPolicy,
+    reporter: Option<&mut dyn Reporter>,
+) -> Result<()> {
+    if !policy.owner && !policy.group {
+        return Ok(());
+    }
+
+    let target_metadata =
+        fs::symlink_metadata(target_path).map_err(|source| Error::FileOperationIo {
             operation: operation.as_str(),
             path: target_path.to_path_buf(),
             source,
         })?;
-    drop(target_file);
+    let uid = (policy.owner && metadata.uid() != target_metadata.uid()).then_some(metadata.uid());
+    let gid = (policy.group && metadata.gid() != target_metadata.gid()).then_some(metadata.gid());
+    if uid.is_none() && gid.is_none() {
+        return Ok(());
+    }
+
+    match std::os::unix::fs::chown(target_path, uid, gid) {
+        Ok(()) => Ok(()),
+        Err(source) if source.kind() == std::io::ErrorKind::PermissionDenied => {
+            if let Some(reporter) = reporter {
+                report(
+                    reporter,
+                    OutputEvent::OwnershipWarning {
+                        path: target_path.to_path_buf(),
+                        reason: source.to_string(),
+                    },
+                )?;
+            }
+            Ok(())
+        }
+        Err(source) => Err(Error::FileOperationIo {
+            operation: operation.as_str(),
+            path: target_path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
+#[cfg(not(unix))]
+fn apply_ownership(
+    _operation: FileOperationKind,
+    _target_path: &Path,
+    _metadata: &Metadata,
+    _policy: MetadataPolicy,
+    _reporter: Option<&mut dyn Reporter>,
+) -> Result<()> {
     Ok(())
 }
 

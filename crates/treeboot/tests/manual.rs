@@ -168,6 +168,51 @@ fn sync_should_update_changed_files() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn sync_should_honor_ignore_metadata_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let repo = git_worktree();
+    let source = repo.root_path().join("config");
+    let target = repo.worktree_path().join("config");
+    write_file(&source, "value\n");
+    write_file(&target, "value\n");
+    let modified = std::fs::metadata(&source)
+        .expect("source metadata should be readable")
+        .modified()
+        .expect("source mtime should be readable");
+    std::fs::File::options()
+        .write(true)
+        .open(&target)
+        .and_then(|file| file.set_times(std::fs::FileTimes::new().set_modified(modified)))
+        .expect("target mtime should match source");
+    let mut source_permissions = std::fs::metadata(&source)
+        .expect("source metadata should be readable")
+        .permissions();
+    source_permissions.set_mode(0o600);
+    std::fs::set_permissions(&source, source_permissions).expect("source mode should be set");
+    let mut target_permissions = std::fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .permissions();
+    target_permissions.set_mode(0o644);
+    std::fs::set_permissions(&target, target_permissions).expect("target mode should be set");
+
+    treeboot()
+        .args(["sync", "config", "--ignore-metadata", "permissions"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
+
+    let mode = std::fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o644);
+}
+
 #[test]
 fn sync_delete_should_remove_target_only_files() {
     let repo = git_worktree();

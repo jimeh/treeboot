@@ -55,8 +55,8 @@ pub use validation::{
 pub type Result<T> = std::result::Result<T, Error>;
 pub use config::{
     CommandKind, CommandOperation, Config, ConfigOptions, ConfigReport, ConfigRuntimeOptions,
-    FileOperation, FileOperationKind, LoadedConfig, RuntimeOptionOverrides, SourceSpan,
-    SymlinkMode, SyncCompare, inspect_config,
+    FileOperation, FileOperationKind, LoadedConfig, MetadataField, RuntimeOptionOverrides,
+    SourceSpan, SymlinkMode, SyncCompare, inspect_config,
 };
 
 /// Parsed treeboot manifest.

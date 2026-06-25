@@ -83,6 +83,7 @@ fn operation(
         compare: None,
         delete: None,
         symlinks: None,
+        ignore_metadata: Vec::new(),
         status: PlannedFileStatus::Ready,
         declaration: span(),
     }
@@ -735,8 +736,20 @@ fn apply_file_operations_should_update_checksum_sync_when_metadata_matches() {
 #[test]
 fn apply_file_operations_should_leave_unchanged_checksum_sync_silent() {
     let (root, worktree) = temp_workspace("sync-checksum-unchanged");
-    fs::write(root.join(".env"), "ABC\n").expect("source should be written");
-    fs::write(worktree.join(".env"), "ABC\n").expect("target should be written");
+    let source = root.join(".env");
+    let target = worktree.join(".env");
+    fs::write(&source, "ABC\n").expect("source should be written");
+    fs::write(&target, "ABC\n").expect("target should be written");
+    let modified = fs::metadata(&source)
+        .expect("source metadata should be readable")
+        .modified()
+        .expect("source mtime should be readable");
+    let times = FileTimes::new().set_modified(modified);
+    File::options()
+        .write(true)
+        .open(&target)
+        .and_then(|file| file.set_times(times))
+        .expect("target mtime should be aligned");
     let mut sync = sync_operation(&root, &worktree, ".env", ".env");
     sync.compare = Some(SyncCompare::Checksum);
     let plan = run_plan(&root, &worktree, vec![sync]);
@@ -745,6 +758,106 @@ fn apply_file_operations_should_leave_unchanged_checksum_sync_silent() {
     apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
         .expect("unchanged checksum sync should succeed");
 
+    assert!(reporter.events.is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn apply_file_operations_should_repair_sync_file_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (root, worktree) = temp_workspace("sync-permission-repair");
+    let source = root.join(".env");
+    let target = worktree.join(".env");
+    fs::write(&source, "ABC\n").expect("source should be written");
+    fs::write(&target, "ABC\n").expect("target should be written");
+    let modified = fs::metadata(&source)
+        .expect("source metadata should be readable")
+        .modified()
+        .expect("source mtime should be readable");
+    File::options()
+        .write(true)
+        .open(&target)
+        .and_then(|file| file.set_times(FileTimes::new().set_modified(modified)))
+        .expect("target mtime should match source");
+    let mut source_permissions = fs::metadata(&source)
+        .expect("source metadata should be readable")
+        .permissions();
+    source_permissions.set_mode(0o600);
+    fs::set_permissions(&source, source_permissions).expect("source mode should be set");
+    let mut target_permissions = fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .permissions();
+    target_permissions.set_mode(0o644);
+    fs::set_permissions(&target, target_permissions).expect("target mode should be set");
+    let plan = run_plan(
+        &root,
+        &worktree,
+        vec![sync_operation(&root, &worktree, ".env", ".env")],
+    );
+    let mut reporter = VecReporter::default();
+
+    apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+        .expect("metadata drift should repair");
+
+    let mode = fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o600);
+    assert_eq!(
+        reporter.events,
+        vec![OutputEvent::FileMetadataApplied {
+            source: PathBuf::from(".env"),
+            target: PathBuf::from(".env"),
+        }]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn apply_file_operations_should_ignore_sync_file_permissions_when_configured() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (root, worktree) = temp_workspace("sync-permission-ignore");
+    let source = root.join(".env");
+    let target = worktree.join(".env");
+    fs::write(&source, "ABC\n").expect("source should be written");
+    fs::write(&target, "ABC\n").expect("target should be written");
+    let modified = fs::metadata(&source)
+        .expect("source metadata should be readable")
+        .modified()
+        .expect("source mtime should be readable");
+    File::options()
+        .write(true)
+        .open(&target)
+        .and_then(|file| file.set_times(FileTimes::new().set_modified(modified)))
+        .expect("target mtime should match source");
+    let mut source_permissions = fs::metadata(&source)
+        .expect("source metadata should be readable")
+        .permissions();
+    source_permissions.set_mode(0o600);
+    fs::set_permissions(&source, source_permissions).expect("source mode should be set");
+    let mut target_permissions = fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .permissions();
+    target_permissions.set_mode(0o644);
+    fs::set_permissions(&target, target_permissions).expect("target mode should be set");
+    let mut sync = sync_operation(&root, &worktree, ".env", ".env");
+    sync.ignore_metadata = vec![MetadataField::Permissions];
+    let plan = run_plan(&root, &worktree, vec![sync]);
+    let mut reporter = VecReporter::default();
+
+    apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+        .expect("ignored metadata drift should not repair");
+
+    let mode = fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o644);
     assert!(reporter.events.is_empty());
 }
 
