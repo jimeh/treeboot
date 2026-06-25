@@ -13,9 +13,13 @@ extract_readme_spec() {
     head -n 1
 }
 
-extract_html_spec() {
+extract_spec_version() {
   sed -nE 's/.*Specification v([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' "$@" |
     head -n 1
+}
+
+git_path_exists() {
+  git cat-file -e "$1:$2" 2>/dev/null
 }
 
 version_greater_than() {
@@ -62,20 +66,20 @@ resolve_spec_base_ref() {
 readme_spec="$(
   extract_readme_spec README.md
 )"
-html_spec="$(
-  extract_html_spec docs/SPEC.html
+spec_version="$(
+  extract_spec_version docs/SPEC.md
 )"
 
 if [[ -z "${readme_spec}" ]]; then
   fail "README.md must mention the current spec version as 'spec vX.Y.Z'"
 fi
 
-if [[ -z "${html_spec}" ]]; then
-  fail "docs/SPEC.html must mention the current spec version as 'Specification vX.Y.Z'"
+if [[ -z "${spec_version}" ]]; then
+  fail "docs/SPEC.md must mention the current spec version as 'Specification vX.Y.Z'"
 fi
 
-if [[ -n "${readme_spec}" && -n "${html_spec}" && "${readme_spec}" != "${html_spec}" ]]; then
-  fail "README.md spec v${readme_spec} does not match docs/SPEC.html v${html_spec}"
+if [[ -n "${readme_spec}" && -n "${spec_version}" && "${readme_spec}" != "${spec_version}" ]]; then
+  fail "README.md spec v${readme_spec} does not match docs/SPEC.md v${spec_version}"
 fi
 
 for crate_license in crates/treeboot/LICENSE crates/treeboot-core/LICENSE; do
@@ -89,17 +93,24 @@ if [[ -n "${spec_base_ref}" ]]; then
   if ! git rev-parse --verify --quiet "${spec_base_ref}" >/dev/null; then
     fail "spec version base ref '${spec_base_ref}' is not available"
   elif [[ -n "$(git diff --name-only \
-    "${spec_base_ref}...HEAD" -- docs/SPEC.html)" ]]; then
-    base_html_spec="$(
-      git show "${spec_base_ref}:docs/SPEC.html" | extract_html_spec
-    )"
-    if [[ -z "${base_html_spec}" ]]; then
-      fail "base docs/SPEC.html must mention 'Specification vX.Y.Z'"
-    elif [[ -z "${html_spec}" ]]; then
+    "${spec_base_ref}...HEAD" -- docs/SPEC.md)" ]]; then
+    base_spec=""
+    if git_path_exists "${spec_base_ref}" docs/SPEC.md; then
+      base_spec="$(git show "${spec_base_ref}:docs/SPEC.md" |
+        extract_spec_version)"
+    elif git_path_exists "${spec_base_ref}" docs/SPEC.html; then
+      base_spec="$(git show "${spec_base_ref}:docs/SPEC.html" |
+        extract_spec_version)"
+    fi
+
+    if [[ -z "${base_spec}" ]]; then
+      fail "base spec must mention 'Specification vX.Y.Z'"
+    elif [[ -z "${spec_version}" ]]; then
       :
-    elif ! version_greater_than "${html_spec}" "${base_html_spec}"; then
-      fail "docs/SPEC.html changed without increasing spec version"
-      fail "base v${base_html_spec}, current v${html_spec}"
+    elif [[ "${spec_version}" != "${base_spec}" ]] &&
+      ! version_greater_than "${spec_version}" "${base_spec}"; then
+      fail "docs/SPEC.md changed without increasing spec version"
+      fail "base v${base_spec}, current v${spec_version}"
     fi
   fi
 fi
