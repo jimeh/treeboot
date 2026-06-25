@@ -31,7 +31,7 @@ fn version_command_should_support_json_yaml_and_text_formats() {
     let json = parse_json(json, "version");
     assert_json_object_keys(&json, &["package", "spec_version", "version"]);
     assert_eq!(json["package"], "treeboot");
-    assert_eq!(json["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(json["version"], treeboot_core::TREEBOOT_VERSION);
     assert_eq!(json["spec_version"], treeboot_core::SPEC_VERSION);
 
     treeboot()

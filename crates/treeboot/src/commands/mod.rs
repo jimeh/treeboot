@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{ArgAction, Parser, Subcommand};
 use treeboot_core::Reporter;
 
 mod check;
@@ -29,11 +29,14 @@ use version::VersionArgs;
 #[derive(Debug, Parser)]
 #[command(
     name = "treeboot",
-    version,
     about = "Bootstrap new Git worktrees from one repo-local setup file.",
-    propagate_version = true
+    disable_version_flag = true
 )]
 pub(crate) struct Cli {
+    /// Print version metadata.
+    #[arg(short = 'V', long = "version", global = true, action = ArgAction::SetTrue)]
+    version: bool,
+
     #[command(flatten)]
     run: RunArgs,
 
@@ -73,6 +76,12 @@ enum Command {
 }
 
 pub(crate) fn run_cli(cli: Cli, reporter: &mut dyn Reporter) -> treeboot_core::Result<()> {
+    if cli.version {
+        let info = treeboot_core::treeboot_version_info();
+        version::print_version_text(&info);
+        return Ok(());
+    }
+
     match cli.command {
         Some(Command::Run(args)) => treeboot_core::run(args.into(), reporter).map(|_| ()),
         Some(Command::Status(args)) => status::run_status_command(args),

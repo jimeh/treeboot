@@ -153,20 +153,20 @@ impl SyncArgs {
 
 impl ManualArgs {
     fn into_options(self, operation: FileOperationKind) -> FileOperationOptions {
-        FileOperationOptions {
-            cwd: None,
-            root: self.root,
-            operation,
-            sources: self.sources,
-            target: self.target,
-            required: self.required,
-            symlinks: None,
-            compare: None,
-            delete: None,
-            strict: self.strict,
-            force: self.force,
-            dry_run: self.dry_run,
-        }
+        let mut options = match operation {
+            FileOperationKind::Copy => FileOperationOptions::copy(self.sources),
+            FileOperationKind::Symlink => FileOperationOptions::symlink(self.sources),
+            FileOperationKind::Sync => FileOperationOptions::sync(self.sources),
+        };
+
+        options.cwd = None;
+        options.root = self.root;
+        options.target = self.target;
+        options.required = self.required;
+        options.strict = self.strict;
+        options.force = self.force;
+        options.dry_run = self.dry_run;
+        options
     }
 }
 

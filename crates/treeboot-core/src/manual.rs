@@ -45,6 +45,34 @@ impl Default for ManualFileOperationOptions {
     }
 }
 
+impl ManualFileOperationOptions {
+    /// Creates manual copy operation options for the given sources.
+    #[must_use]
+    pub fn copy(sources: Vec<PathBuf>) -> Self {
+        Self::new(FileOperationKind::Copy, sources)
+    }
+
+    /// Creates manual symlink operation options for the given sources.
+    #[must_use]
+    pub fn symlink(sources: Vec<PathBuf>) -> Self {
+        Self::new(FileOperationKind::Symlink, sources)
+    }
+
+    /// Creates manual sync operation options for the given sources.
+    #[must_use]
+    pub fn sync(sources: Vec<PathBuf>) -> Self {
+        Self::new(FileOperationKind::Sync, sources)
+    }
+
+    fn new(operation: FileOperationKind, sources: Vec<PathBuf>) -> Self {
+        Self {
+            operation,
+            sources,
+            ..Self::default()
+        }
+    }
+}
+
 impl FileOperation {
     /// Builds normalized manual file operation specs for an action plan.
     ///
@@ -115,6 +143,34 @@ impl Default for FileOperationOptions {
             strict: false,
             force: false,
             dry_run: false,
+        }
+    }
+}
+
+impl FileOperationOptions {
+    /// Creates copy command options for the given sources.
+    #[must_use]
+    pub fn copy(sources: Vec<PathBuf>) -> Self {
+        Self::new(FileOperationKind::Copy, sources)
+    }
+
+    /// Creates symlink command options for the given sources.
+    #[must_use]
+    pub fn symlink(sources: Vec<PathBuf>) -> Self {
+        Self::new(FileOperationKind::Symlink, sources)
+    }
+
+    /// Creates sync command options for the given sources.
+    #[must_use]
+    pub fn sync(sources: Vec<PathBuf>) -> Self {
+        Self::new(FileOperationKind::Sync, sources)
+    }
+
+    fn new(operation: FileOperationKind, sources: Vec<PathBuf>) -> Self {
+        Self {
+            operation,
+            sources,
+            ..Self::default()
         }
     }
 }

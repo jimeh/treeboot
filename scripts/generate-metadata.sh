@@ -27,6 +27,15 @@ use serde::Serialize;
 /// treeboot spec version implemented by this crate.
 pub const SPEC_VERSION: &str = "${spec_version}";
 
+/// treeboot package name used for product-level version reporting.
+pub const TREEBOOT_PACKAGE: &str = "treeboot";
+
+/// treeboot package version.
+///
+/// \`treeboot\` and \`treeboot-core\` package versions are intentionally released
+/// in lockstep.
+pub const TREEBOOT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// Bundled treeboot config JSON Schema.
 pub const CONFIG_SCHEMA_JSON: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -58,6 +67,12 @@ pub const fn version_info(package: &'static str, version: &'static str) -> Versi
         version,
         spec_version: SPEC_VERSION,
     }
+}
+
+/// Returns product-level treeboot version metadata.
+#[must_use]
+pub const fn treeboot_version_info() -> VersionInfo {
+    version_info(TREEBOOT_PACKAGE, TREEBOOT_VERSION)
 }
 EOF
 

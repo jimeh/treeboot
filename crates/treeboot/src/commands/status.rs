@@ -2,8 +2,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use clap::Args;
-use serde::Serialize;
-use treeboot_core::{Error, InitScriptStatus, StatusOptions, StatusReport, WorktreeSnapshot};
+use treeboot_core::{Error, InitScriptStatus, StatusOptions, StatusReport, StatusSnapshotReport};
 
 use super::output::{OutputArgs, ReportFormat, write_structured};
 
@@ -31,7 +30,7 @@ pub(crate) fn run_status_command(args: StatusArgs) -> treeboot_core::Result<()> 
 
     match format {
         ReportFormat::Text => print_status_text(&report).map_err(|source| Error::Output { source }),
-        format => write_structured(&StatusOutput::from(&report), format),
+        format => write_structured(&StatusSnapshotReport::from(&report), format),
     }
 }
 
@@ -80,41 +79,6 @@ impl From<StatusArgs> for StatusOptions {
             root: args.root,
             config: args.config,
             no_init_script: args.no_init_script,
-        }
-    }
-}
-
-#[derive(Serialize)]
-struct StatusOutput<'a> {
-    context: WorktreeSnapshot,
-    init_script: InitScriptOutput<'a>,
-    config: Option<&'a PathBuf>,
-}
-
-#[derive(Serialize)]
-#[serde(tag = "status", rename_all = "snake_case")]
-enum InitScriptOutput<'a> {
-    Skipped,
-    NotFound {
-        ignored: &'a [treeboot_core::IgnoredInitScript],
-    },
-    Found {
-        path: &'a PathBuf,
-    },
-}
-
-impl<'a> From<&'a StatusReport> for StatusOutput<'a> {
-    fn from(report: &'a StatusReport) -> Self {
-        let init_script = match &report.init_script {
-            InitScriptStatus::Skipped => InitScriptOutput::Skipped,
-            InitScriptStatus::NotFound { ignored } => InitScriptOutput::NotFound { ignored },
-            InitScriptStatus::Found { path } => InitScriptOutput::Found { path },
-        };
-
-        Self {
-            context: WorktreeSnapshot::from(&report.context),
-            init_script,
-            config: report.config.as_ref(),
         }
     }
 }

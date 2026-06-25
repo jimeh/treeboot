@@ -9,16 +9,20 @@ pub(crate) struct VersionArgs {
 }
 
 pub(crate) fn run_version_command(args: VersionArgs) -> treeboot_core::Result<()> {
-    let info = treeboot_core::version_info(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+    let info = treeboot_core::treeboot_version_info();
 
     match args.output.format() {
         ReportFormat::Text => {
-            println!(
-                "{} {} (spec {})",
-                info.package, info.version, info.spec_version
-            );
+            print_version_text(&info);
             Ok(())
         }
         format => write_structured(&info, format),
     }
+}
+
+pub(crate) fn print_version_text(info: &treeboot_core::VersionInfo) {
+    println!(
+        "{} {} (spec {})",
+        info.package, info.version, info.spec_version
+    );
 }

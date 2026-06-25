@@ -83,8 +83,8 @@ JSON and YAML output are defined in
 ### `treeboot version`
 
 Prints version metadata and exits without discovering Git context, init scripts,
-or config. `treeboot --version` and `treeboot -V` remain short package-version
-shortcuts; `treeboot version` is the richer command form.
+or config. `treeboot --version` and `treeboot -V` print the same
+human-readable package and spec version summary as `treeboot version`.
 
 ```sh
 treeboot version

@@ -14,12 +14,32 @@ fn help_should_print_usage() {
 }
 
 #[test]
-fn version_flag_should_print_package_version() {
+fn version_flags_should_print_package_and_spec_version() {
     treeboot()
         .arg("--version")
         .assert()
         .success()
-        .stdout(format!("treeboot {}\n", env!("CARGO_PKG_VERSION")));
+        .stdout(format!(
+            "treeboot {} (spec {})\n",
+            treeboot_core::TREEBOOT_VERSION,
+            treeboot_core::SPEC_VERSION
+        ));
+
+    treeboot().arg("-V").assert().success().stdout(format!(
+        "treeboot {} (spec {})\n",
+        treeboot_core::TREEBOOT_VERSION,
+        treeboot_core::SPEC_VERSION
+    ));
+
+    treeboot()
+        .args(["run", "--version"])
+        .assert()
+        .success()
+        .stdout(format!(
+            "treeboot {} (spec {})\n",
+            treeboot_core::TREEBOOT_VERSION,
+            treeboot_core::SPEC_VERSION
+        ));
 }
 
 #[test]

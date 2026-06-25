@@ -36,10 +36,16 @@ pub use manual::{
     FileOperationAction, FileOperationCompletionOptions, FileOperationOptions, FileOperationReport,
     ManualFileOperationOptions, file_operation_source_candidates, run_file_operation,
 };
-pub use metadata::{SPEC_VERSION, VersionInfo, config_schema_json, version_info};
+pub use metadata::{
+    SPEC_VERSION, TREEBOOT_PACKAGE, TREEBOOT_VERSION, VersionInfo, config_schema_json,
+    treeboot_version_info, version_info,
+};
 pub use output::{OutputEvent, Reporter};
 pub use run::{RunAction, RunOptions, RunReport, run};
-pub use status::{InitScriptStatus, StatusOptions, StatusReport, inspect_status};
+pub use status::{
+    InitScriptStatus, StatusOptions, StatusReport, StatusSnapshotReport, inspect_status,
+    inspect_status_snapshot,
+};
 pub use validation::{
     ActionPlan, ActionPlanOptions, PlanOrigin, PlannedCommand, PlannedFileOperation,
     PlannedFileStatus,
