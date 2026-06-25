@@ -100,7 +100,8 @@ Commands always run, so they should be idempotent or otherwise safe and fast to
 run repeatedly.
 
 `treeboot` and `treeboot run` are equivalent. The CLI also includes
-`config`, `init`, `copy`, `symlink`, `sync`, and `completions` subcommands.
+`status`, `config`, `check`, `doctor`, `env`, `schema`, `version`, `init`,
+`copy`, `symlink`, `sync`, and `completions` subcommands.
 
 See the [repository](https://github.com/jimeh/treeboot) for project details.
 

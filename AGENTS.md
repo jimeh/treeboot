@@ -46,10 +46,11 @@ The current code implements the milestone 1 foundation, milestone 2 config
 parsing, milestone 3 declarative validation/planning, milestone 4 config
 runtime options, milestone 5 file operations, milestone 6 command runtime,
 milestone 7 shell completions, milestone 8 manual file operations, and the
-first pass of milestone 9 release packaging:
+first pass of milestone 9 release packaging, plus milestone 10 inspection and
+metadata commands:
 
-- CLI parsing for `run`, `status`, `config`, `init`, `copy`, `symlink`,
-  `sync`, and `completions`
+- CLI parsing for `run`, `status`, `config`, `check`, `doctor`, `env`,
+  `schema`, `version`, `init`, `copy`, `symlink`, `sync`, and `completions`
 - Git worktree/root/default-branch discovery
 - treeboot environment aliases
 - init script discovery and execution
@@ -61,7 +62,9 @@ first pass of milestone 9 release packaging:
   workflow facades for full treeboot behavior
 - view-only discovery status inspection
 - view-only normalized config inspection
+- side-effect-free check, doctor, env, schema, and version inspection commands
 - generated JSON Schema for the config file format
+- generated core metadata and embedded config schema accessors
 - starter config/script generation
 - shell completion generation with root-relative source completion for manual
   file operations

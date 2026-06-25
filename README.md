@@ -219,6 +219,13 @@ treeboot status
 treeboot config
 treeboot config --format json
 treeboot config --json
+treeboot config --yaml
+treeboot check
+treeboot doctor
+treeboot env
+treeboot schema
+treeboot schema --output config.schema.json
+treeboot version
 treeboot copy .env.local
 treeboot symlink .tool-versions
 treeboot sync shared/config --compare checksum
@@ -228,6 +235,10 @@ treeboot completions bash
 `treeboot status` prints the detected worktree, root checkout, default branch,
 config file, and init script discovery status without parsing config or running
 scripts.
+
+`status`, `config`, `check`, `doctor`, `env`, and `version` support
+`--format text|json|yaml`, with `--json` and `--yaml` shortcuts for structured
+output.
 
 Useful options:
 
@@ -294,6 +305,9 @@ Init scripts and configured commands receive these variables:
 - `TREEBOOT_WORKTREE_PATH`: current worktree where setup is applied.
 - `TREEBOOT_DEFAULT_BRANCH`: best-effort default branch name.
 
+Use `treeboot env` to print the effective environment treeboot exposes to init
+scripts and configured commands.
+
 These environment variables can override config defaults:
 
 - `TREEBOOT_STRICT`: enables strict validation and conflict handling.
@@ -317,18 +331,23 @@ The same schema is checked into the repository at:
 schemas/treeboot.schema.json
 ```
 
+Use `treeboot schema` to print the embedded schema from the installed binary,
+or `treeboot schema --output <path>` to write it to a file.
+
 ## Project Status
 
 `treeboot` is feature-complete for the core worktree bootstrap workflow in
-[spec v1.8.2](./docs/SPEC.md). It supports:
+[spec v1.9.0](./docs/SPEC.md). It supports:
 
-- `run`, `status`, `config`, `init`, `copy`, `symlink`, `sync`, and
-  `completions`
+- `run`, `status`, `config`, `check`, `doctor`, `env`, `schema`, `version`,
+  `init`, `copy`, `symlink`, `sync`, and `completions`
 - Git worktree, root checkout, and default-branch discovery
 - declarative TOML config parsing, inspection, validation, and execution
 - copy, symlink, and sync file operations
 - command execution with treeboot environment variables
 - executable init-script discovery and execution
+- check/doctor/env introspection and embedded version/schema metadata
+- JSON and YAML report output for inspection commands
 - shell completion generation, including root-relative manual source completion
 - release asset packaging and checked-in config schema generation
 

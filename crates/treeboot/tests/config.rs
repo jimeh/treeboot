@@ -65,11 +65,80 @@ fn config_command_json_shortcut_should_print_normalized_config() {
 }
 
 #[test]
+fn config_command_yaml_should_print_normalized_config() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&config, "commands = [\"mise install\"]\n");
+
+    treeboot()
+        .args(["config", "--format", "yaml"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("commands:"))
+        .stdout(predicate::str::contains("run: mise install"));
+}
+
+#[test]
+fn config_command_yaml_shortcut_should_print_normalized_config() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&config, "commands = [\"mise install\"]\n");
+
+    treeboot()
+        .args(["config", "--yaml"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("commands:"))
+        .stdout(predicate::str::contains("run: mise install"));
+}
+
+#[test]
+fn config_command_text_format_should_print_normalized_config() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&config, "commands = [\"mise install\"]\n");
+
+    treeboot()
+        .args(["config", "--format", "text"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("treeboot: config"))
+        .stdout(predicate::str::contains("run \"mise install\""));
+}
+
+#[test]
+fn config_command_output_shortcuts_should_conflict_with_each_other() {
+    let repo = git_worktree();
+
+    treeboot()
+        .args(["config", "--json", "--yaml"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
 fn config_command_json_should_conflict_with_format() {
     let repo = git_worktree();
 
     treeboot()
         .args(["config", "--json", "--format", "json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
+fn config_command_yaml_should_conflict_with_format() {
+    let repo = git_worktree();
+
+    treeboot()
+        .args(["config", "--yaml", "--format", "yaml"])
         .current_dir(repo.worktree_path())
         .assert()
         .code(2)
@@ -169,6 +238,39 @@ commands = [{ run = "npm install", async = true }]
         .assert()
         .failure()
         .stderr(predicate::str::contains("unknown field"));
+}
+
+#[test]
+fn config_command_should_reject_args_with_shell_run() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(
+        &config,
+        r#"commands = [{ run = "npm install", args = ["--silent"] }]"#,
+    );
+
+    treeboot()
+        .arg("config")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid config"))
+        .stderr(predicate::str::contains("`args` requires `program`"));
+}
+
+#[test]
+fn config_command_should_reject_missing_operation_in_mixed_file_entry() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&config, r#"files = [{ source = ".env" }]"#);
+
+    treeboot()
+        .arg("config")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid config"))
+        .stderr(predicate::str::contains("missing required `operation`"));
 }
 
 #[test]

@@ -1,0 +1,775 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>treeboot v1.9.0 Command Expansion Plan</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #080c12;
+      --bg-radial: rgba(28, 118, 109, 0.18);
+      --panel: #111923;
+      --panel-soft: #182334;
+      --panel-raised: #151f2b;
+      --ink: #edf4fb;
+      --muted: #9cacc0;
+      --rule: #263648;
+      --accent: #52d6c4;
+      --accent-strong: #78f0dd;
+      --accent-soft: #11332f;
+      --warn: #e7b860;
+      --warn-soft: #2d2415;
+      --code: #e9f6ff;
+      --code-bg: #1c2938;
+      --shadow: 0 18px 52px rgba(0, 0, 0, 0.42);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 18% 0%, var(--bg-radial), transparent 34rem),
+        linear-gradient(180deg, #0b1018 0%, var(--bg) 34rem);
+      color: var(--ink);
+      font-family:
+        Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    a {
+      color: var(--accent-strong);
+    }
+
+    code {
+      border-radius: 5px;
+      background: var(--code-bg);
+      color: var(--code);
+      font-family:
+        ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        "Liberation Mono", monospace;
+      font-size: 0.92em;
+      padding: 0.08rem 0.28rem;
+    }
+
+    pre {
+      margin: 1rem 0 0;
+      overflow: auto;
+      border-radius: 8px;
+      border: 1px solid #243345;
+      background: #071019;
+      color: #dcecff;
+      padding: 1rem;
+      line-height: 1.45;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+
+    pre code {
+      background: transparent;
+      color: inherit;
+      padding: 0;
+    }
+
+    .page {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 48px 24px 72px;
+    }
+
+    header {
+      margin-bottom: 32px;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      line-height: 1.16;
+    }
+
+    h1 {
+      max-width: 900px;
+      font-size: clamp(2.1rem, 5vw, 4.5rem);
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin-bottom: 0.85rem;
+      font-size: 1.65rem;
+    }
+
+    h3 {
+      margin-bottom: 0.55rem;
+      font-size: 1.08rem;
+    }
+
+    p {
+      margin: 0;
+    }
+
+    .lede {
+      max-width: 860px;
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 1.08rem;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 22px;
+    }
+
+    .pill {
+      border: 1px solid var(--rule);
+      border-radius: 7px;
+      background: rgba(17, 25, 35, 0.78);
+      color: #c0ccda;
+      padding: 0.42rem 0.72rem;
+      font-size: 0.9rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    section,
+    .card {
+      border: 1px solid var(--rule);
+      border-radius: 8px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 12rem),
+        var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    section {
+      margin-top: 18px;
+      padding: 24px;
+    }
+
+    .span-4 {
+      grid-column: span 4;
+    }
+
+    .span-6 {
+      grid-column: span 6;
+    }
+
+    .span-8 {
+      grid-column: span 8;
+    }
+
+    .span-12 {
+      grid-column: span 12;
+    }
+
+    .card {
+      background: var(--panel-raised);
+      padding: 18px;
+      box-shadow: none;
+    }
+
+    .card p,
+    li {
+      color: var(--muted);
+    }
+
+    ul,
+    ol {
+      margin: 0.65rem 0 0;
+      padding-left: 1.2rem;
+    }
+
+    li + li {
+      margin-top: 0.38rem;
+    }
+
+    table {
+      width: 100%;
+      margin-top: 1rem;
+      border-collapse: collapse;
+      overflow: hidden;
+      border: 1px solid var(--rule);
+      border-radius: 8px;
+      font-size: 0.94rem;
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid var(--rule);
+      padding: 0.72rem 0.8rem;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--panel-soft);
+      color: #cfdae7;
+      font-weight: 700;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .callout {
+      border-color: #286d66;
+      background: var(--accent-soft);
+      box-shadow: none;
+    }
+
+    .warning {
+      border-color: #8a6931;
+      background: var(--warn-soft);
+      box-shadow: none;
+    }
+
+    .warning h3 {
+      color: var(--warn);
+    }
+
+    .step {
+      counter-increment: step;
+      position: relative;
+      padding-left: 54px;
+    }
+
+    .step::before {
+      content: counter(step);
+      position: absolute;
+      left: 18px;
+      top: 18px;
+      display: grid;
+      width: 26px;
+      height: 26px;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--accent);
+      color: white;
+      font-weight: 700;
+      font-size: 0.9rem;
+    }
+
+    .steps {
+      counter-reset: step;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 18px;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    @media (max-width: 840px) {
+      .page {
+        padding: 30px 16px 48px;
+      }
+
+      .span-4,
+      .span-6,
+      .span-8 {
+        grid-column: span 12;
+      }
+
+      .split {
+        grid-template-columns: 1fr;
+      }
+
+      section {
+        padding: 18px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <p class="eyebrow">Implementation plan</p>
+      <h1>treeboot v1.9.0 command expansion</h1>
+      <p class="lede">
+        This plan turns the v1.9.0 spec additions into a focused implementation
+        sequence for the CLI, public core crate, generated metadata, and tests.
+        It is intentionally an implementation contract, not a replacement for
+        <a href="../SPEC.md">docs/SPEC.md</a>.
+      </p>
+      <div class="meta">
+        <span class="pill">Spec: v1.9.0</span>
+        <span class="pill">Scope: five new commands</span>
+        <span class="pill">Structured output: JSON and YAML</span>
+        <span class="pill">Core API: command-shaped facades</span>
+        <span class="pill">Generated assets: metadata and schema copy</span>
+      </div>
+    </header>
+
+    <section>
+      <h2>Target Shape</h2>
+      <div class="grid">
+        <div class="card span-6">
+          <h3><code>treeboot status</code></h3>
+          <p>
+            Keep the existing discovery status behavior and add JSON and YAML
+            output for editor, agent, and tooling integrations. Support
+            <code>--format json|yaml</code>, <code>--json</code>, and
+            <code>--yaml</code>.
+          </p>
+        </div>
+        <div class="card span-6">
+          <h3>Reporting output flags</h3>
+          <p>
+            Use <code>--format text|json|yaml</code> as the primary contract
+            with <code>--json</code> and <code>--yaml</code> shortcuts on
+            read-only reporting commands. <code>schema</code> keeps
+            <code>--output</code> because its payload is already JSON.
+          </p>
+        </div>
+        <div class="card span-4">
+          <h3><code>treeboot version</code></h3>
+          <p>
+            Print human-readable version metadata by default and stable
+            structured output with <code>--format json|yaml</code>,
+            <code>--json</code>, or <code>--yaml</code>. It must not discover
+            Git context, init scripts, or config.
+          </p>
+        </div>
+        <div class="card span-4">
+          <h3><code>treeboot check</code></h3>
+          <p>
+            Validate the selected bootstrap contract without executing scripts,
+            applying file operations, or running configured commands. Print a
+            success line by default and support JSON and YAML output from the
+            beginning.
+          </p>
+        </div>
+        <div class="card span-4">
+          <h3><code>treeboot schema</code></h3>
+          <p>
+            Print the embedded config JSON Schema to stdout. The schema must be
+            the same content published as the release
+            <code>config.schema.json</code>, and <code>--output</code> /
+            <code>-o</code> should write it directly to a file.
+          </p>
+        </div>
+        <div class="card span-6">
+          <h3><code>treeboot doctor</code></h3>
+          <p>
+            Print human troubleshooting diagnostics for Git availability,
+            worktree discovery, root discovery, init script discovery, config
+            discovery, and config validation. Support text, JSON, and YAML
+            output in the initial implementation.
+          </p>
+        </div>
+        <div class="card span-6">
+          <h3><code>treeboot env</code></h3>
+          <p>
+            Print exactly the treeboot-owned child environment variables passed
+            to init scripts and configured commands, sorted as
+            <code>KEY=value</code> in text mode and as an object in structured
+            output modes.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Public Core API</h2>
+      <p>
+        Keep command behavior in <code>treeboot-core</code> and presentation in
+        the CLI crate. The CLI should mostly parse arguments, call these
+        entrypoints, and render text, JSON, or YAML. Reports used by structured
+        output commands should derive <code>Serialize</code> so the CLI does
+        not invent separate programmatic shapes.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Command</th>
+            <th>Core API</th>
+            <th>Reason to expose</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>status</code></td>
+            <td><code>inspect_status(StatusOptions) -&gt; Result&lt;StatusReport&gt;</code></td>
+            <td>Already exposed; derive <code>Serialize</code> for structured output.</td>
+          </tr>
+          <tr>
+            <td><code>version</code></td>
+            <td><code>version_info(package, version) -&gt; VersionInfo</code></td>
+            <td>Callers should not duplicate the implemented spec version.</td>
+          </tr>
+          <tr>
+            <td><code>schema</code></td>
+            <td><code>config_schema_json() -&gt; &amp;'static str</code></td>
+            <td>The schema is generated from core-owned config semantics.</td>
+          </tr>
+          <tr>
+            <td><code>env</code></td>
+            <td><code>inspect_env(EnvOptions) -&gt; Result&lt;EnvReport&gt;</code></td>
+            <td>Provides the exact child environment contract directly.</td>
+          </tr>
+          <tr>
+            <td><code>check</code></td>
+            <td><code>check(CheckOptions) -&gt; Result&lt;CheckReport&gt;</code></td>
+            <td>Avoids reimplementing run selection and validation logic.</td>
+          </tr>
+          <tr>
+            <td><code>doctor</code></td>
+            <td><code>diagnose(DoctorOptions) -&gt; DoctorReport</code></td>
+            <td>Programmatic consumers need all diagnostics, not only first error.</td>
+          </tr>
+        </tbody>
+      </table>
+      <pre><code class="language-rust">pub struct VersionInfo {
+    pub package: &amp;'static str,
+    pub version: &amp;'static str,
+    pub spec_version: &amp;'static str,
+}
+
+pub fn version_info(
+    package: &amp;'static str,
+    version: &amp;'static str,
+) -&gt; VersionInfo;
+
+pub fn config_schema_json() -&gt; &amp;'static str;
+pub fn inspect_env(options: EnvOptions) -&gt; Result&lt;EnvReport&gt;;
+pub fn check(options: CheckOptions) -&gt; Result&lt;CheckReport&gt;;
+pub fn diagnose(options: DoctorOptions) -&gt; DoctorReport;</code></pre>
+      <section class="callout">
+        <h3>YAML dependency boundary</h3>
+        <p>
+          YAML serialization belongs in the <code>treeboot</code> CLI crate.
+          <code>treeboot-core</code> should keep returning serializable report
+          structs and avoid depending on CLI output-format libraries.
+        </p>
+      </section>
+    </section>
+
+    <section>
+      <h2>Generated Metadata</h2>
+      <p>
+        Embed metadata and the schema inside the core crate package boundary.
+        Do not use <code>build.rs</code> to parse docs or generate schema at
+        compile time.
+      </p>
+      <div class="split">
+        <div class="card">
+          <h3>Generated files</h3>
+          <ul>
+            <li><code>schemas/treeboot.schema.json</code></li>
+            <li><code>crates/treeboot-core/assets/config.schema.json</code></li>
+            <li><code>crates/treeboot-core/src/metadata.rs</code></li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Generated constants</h3>
+          <pre><code class="language-rust">pub const SPEC_VERSION: &amp;str = "1.9.0";
+
+pub const CONFIG_SCHEMA_JSON: &amp;str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/assets/config.schema.json"
+));</code></pre>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Task</th>
+            <th>Responsibility</th>
+            <th>Check</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>generate:schema</code></td>
+            <td>Refresh root schema and copy it into core assets.</td>
+            <td>Root schema and core asset must be byte-identical.</td>
+          </tr>
+          <tr>
+            <td><code>generate:metadata</code></td>
+            <td>Extract <code>Specification vX.Y.Z</code> from spec markdown.</td>
+            <td><code>SPEC_VERSION</code> must match <code>docs/SPEC.md</code>.</td>
+          </tr>
+          <tr>
+            <td><code>generate:check</code></td>
+            <td>Verify all generated artifacts are current.</td>
+            <td>Fail on stale schema, stale asset copy, or stale metadata.</td>
+          </tr>
+        </tbody>
+      </table>
+      <section class="warning">
+        <h3>Crate packaging constraint</h3>
+        <p>
+          Avoid <code>include_str!</code> paths that point outside
+          <code>crates/treeboot-core</code>. They can work in a workspace build
+          but fail once the core crate is packaged independently for crates.io.
+        </p>
+      </section>
+    </section>
+
+    <section>
+      <h2>Shared Run Selection</h2>
+      <p>
+        Extract the common selection and validation path before implementing
+        <code>check</code> and <code>doctor</code>. This prevents the new
+        commands from drifting away from <code>run</code>.
+      </p>
+      <pre><code class="language-text">resolve worktree context
+apply root-checkout strict behavior
+discover init scripts unless disabled
+select init script or declarative config
+load selected config
+resolve runtime policy
+build validated action plan</code></pre>
+      <table>
+        <thead>
+          <tr>
+            <th>Flow</th>
+            <th>Uses selection?</th>
+            <th>Executes effects?</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>run</code></td>
+            <td>Yes</td>
+            <td>Yes, unless dry-run or root checkout no-op.</td>
+          </tr>
+          <tr>
+            <td><code>check</code></td>
+            <td>Yes</td>
+            <td>No. Validation failures are fatal.</td>
+          </tr>
+          <tr>
+            <td><code>doctor</code></td>
+            <td>Partially</td>
+            <td>No. Capture diagnostics for each stage.</td>
+          </tr>
+          <tr>
+            <td><code>config</code></td>
+            <td>No full selection</td>
+            <td>No. Keep warning-only run validation behavior.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Implementation Sequence</h2>
+      <div class="grid steps">
+        <div class="card step span-6">
+          <h3>Generated metadata foundation</h3>
+          <ul>
+            <li>Add core asset copy for <code>config.schema.json</code>.</li>
+            <li>Add generated <code>metadata.rs</code>.</li>
+            <li>Update <code>mise run generate</code> and check tasks.</li>
+          </ul>
+        </div>
+        <div class="card step span-6">
+          <h3>Core read-only helpers</h3>
+          <ul>
+            <li>Expose <code>VersionInfo</code> and schema accessors.</li>
+            <li>Add <code>EnvOptions</code> and <code>EnvReport</code>.</li>
+            <li>Re-export new types from <code>lib.rs</code>.</li>
+          </ul>
+        </div>
+        <div class="card step span-6">
+          <h3>CLI simple commands</h3>
+          <ul>
+            <li>Add <code>version</code>, <code>schema</code>, and <code>env</code>.</li>
+            <li>Add <code>schema --output &lt;path&gt;</code> and <code>-o</code>.</li>
+            <li>Add shared reporting output args for text, JSON, and YAML.</li>
+            <li>Add a CLI-only YAML serialization dependency after dependency review.</li>
+            <li>Keep formatting in the CLI crate.</li>
+            <li>Ensure shell completions include the new commands.</li>
+          </ul>
+        </div>
+        <div class="card step span-6">
+          <h3>Status and env structured output</h3>
+          <ul>
+            <li>Derive <code>Serialize</code> for status and env reports.</li>
+            <li>
+              Support <code>status --format json|yaml</code>,
+              <code>--json</code>, and <code>--yaml</code>.
+            </li>
+            <li>
+              Support <code>env --format json|yaml</code>,
+              <code>--json</code>, and <code>--yaml</code>.
+            </li>
+          </ul>
+        </div>
+        <div class="card step span-6">
+          <h3>Selection refactor</h3>
+          <ul>
+            <li>Extract shared run selection from <code>run.rs</code>.</li>
+            <li>Keep existing <code>run</code> output and side effects unchanged.</li>
+            <li>Preserve root-checkout and strict behavior.</li>
+          </ul>
+        </div>
+        <div class="card step span-6">
+          <h3>Check command</h3>
+          <ul>
+            <li>Validate init-script precedence and config selection.</li>
+            <li>Fail on declarative run-validation errors.</li>
+            <li>Print <code>treeboot: check ok</code> on text success.</li>
+            <li>Support JSON and YAML output for successful reports.</li>
+            <li>Do not execute scripts, files, or commands.</li>
+          </ul>
+        </div>
+        <div class="card step span-6">
+          <h3>Doctor command</h3>
+          <ul>
+            <li>Return a report with ordered diagnostics.</li>
+            <li>Support <code>doctor --json</code> and <code>--yaml</code> from the beginning.</li>
+            <li>Continue after recoverable warnings where possible.</li>
+            <li>Exit non-zero only when fatal diagnostics are present.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Testing Strategy</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Area</th>
+            <th>Coverage</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Generated artifacts</td>
+            <td>
+              <code>mise run generate:check</code> verifies schema freshness,
+              core asset freshness, and metadata freshness.
+            </td>
+          </tr>
+          <tr>
+            <td>Status</td>
+            <td>
+              Tests for text, JSON, and YAML output; <code>--json</code> and
+              <code>--yaml</code> shortcuts; and <code>--format</code> conflict
+              handling.
+            </td>
+          </tr>
+          <tr>
+            <td>Version</td>
+            <td>
+              CLI tests for text output, JSON and YAML output through
+              <code>--format</code> and shortcuts, and unchanged
+              <code>--version</code> behavior.
+            </td>
+          </tr>
+          <tr>
+            <td>Schema</td>
+            <td>
+              CLI test that <code>treeboot schema</code> equals the embedded
+              core schema and parses as JSON. Cover <code>--output</code> and
+              <code>-o</code>, including replacement of an existing regular
+              file and failure when the parent directory is missing.
+            </td>
+          </tr>
+          <tr>
+            <td>Env</td>
+            <td>
+              Integration tests in a real linked worktree verifying sorted
+              <code>KEY=value</code> output, JSON and YAML object output, and
+              no config/script discovery.
+            </td>
+          </tr>
+          <tr>
+            <td>Check</td>
+            <td>
+              Tests for valid config, invalid config, run-validation failure,
+              init-script precedence, <code>--no-init-script</code>, and strict
+              root-checkout behavior. Cover text success output plus JSON and
+              YAML success output through both output flag styles.
+            </td>
+          </tr>
+          <tr>
+            <td>Doctor</td>
+            <td>
+              Tests for healthy output, missing config warning, ignored
+              non-executable init script, invalid config failure, and explicit
+              config failure. Cover JSON and YAML output for healthy and fatal
+              reports through both output flag styles.
+            </td>
+          </tr>
+          <tr>
+            <td>Completions</td>
+            <td>
+              Existing completion tests should be extended to include all five
+              new subcommands.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Validation Commands</h2>
+      <p>
+        For the implementation PR, use focused checks during development and
+        the normal pre-handoff gate before final handoff.
+      </p>
+      <pre><code class="language-sh">mise run generate:check
+mise run test:core
+mise run test:cli
+mise run harness:check
+mise run check</code></pre>
+      <p class="small">
+        Use <code>mise run verify</code> only if the implementation touches
+        release packaging, CI workflow behavior, or broader architecture docs.
+      </p>
+    </section>
+
+    <section>
+      <h2>Resolved Decisions</h2>
+      <ul>
+        <li>
+          <code>doctor</code> supports JSON and YAML in v1.9.0 instead of
+          waiting for a later diagnostic-model pass.
+        </li>
+        <li>
+          <code>check</code> prints a success line in text mode and supports
+          JSON and YAML output for successful reports.
+        </li>
+        <li>
+          <code>schema</code> supports <code>--output &lt;path&gt;</code> and
+          <code>-o &lt;path&gt;</code> from the initial implementation.
+        </li>
+        <li>
+          Structured-output reporting commands support
+          <code>--format text|json|yaml</code>, <code>--json</code>, and
+          <code>--yaml</code>. This applies to <code>status</code>,
+          <code>version</code>, <code>config</code>, <code>check</code>,
+          <code>doctor</code>, and <code>env</code>.
+        </li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

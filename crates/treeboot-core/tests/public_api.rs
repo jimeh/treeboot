@@ -7,7 +7,8 @@ use treeboot_core::{
     Executor, FileOperation, FileOperationAction, FileOperationKind, FileOperationOptions,
     InitScriptDiscovery, InitScriptStatus, LoadedConfig, ManualFileOperationOptions, OutputEvent,
     PlanOrigin, Reporter, RunAction, RunOptions, SourceSpan, StatusOptions, SymlinkMode, Worktree,
-    WorktreeOptions, inspect_config, inspect_status, run, run_file_operation,
+    WorktreeOptions, check, config_schema_json, diagnose, inspect_config, inspect_env,
+    inspect_status, run, run_file_operation, version_info,
 };
 
 #[derive(Default)]
@@ -191,6 +192,48 @@ fn public_api_should_discover_load_plan_and_execute_manifest() {
             } if source == Path::new(".env") && target == Path::new(".env")
         )
     }));
+}
+
+#[test]
+fn public_api_should_expose_metadata_env_check_and_doctor() {
+    let repo = git_worktree();
+    write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [".env"]"#,
+    );
+
+    let version = version_info("treeboot", "0.4.1");
+    assert_eq!(version.spec_version, treeboot_core::SPEC_VERSION);
+    assert!(config_schema_json().contains("\"$defs\""));
+
+    let env = inspect_env(treeboot_core::EnvOptions {
+        cwd: Some(repo.worktree_path().to_path_buf()),
+        root: None,
+    })
+    .expect("environment should inspect");
+    assert!(env.environment.contains_key("TREEBOOT_ROOT_PATH"));
+
+    let checked = check(treeboot_core::CheckOptions {
+        cwd: Some(repo.worktree_path().to_path_buf()),
+        root: None,
+        config: None,
+        no_init_script: false,
+        strict: false,
+    })
+    .expect("config should validate");
+    assert!(matches!(
+        checked.action,
+        treeboot_core::CheckAction::Config { .. }
+    ));
+
+    let doctor = diagnose(treeboot_core::DoctorOptions {
+        cwd: Some(repo.worktree_path().to_path_buf()),
+        root: None,
+        config: None,
+        no_init_script: false,
+    });
+    assert!(!doctor.has_fatal());
 }
 
 #[test]

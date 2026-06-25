@@ -1,4 +1,4 @@
-# treeboot Specification v1.8.2
+# treeboot Specification v1.9.0
 
 A portable worktree bootstrapper that lets every coding agent, editor, and orchestration tool run the same repo-local setup command.
 
@@ -41,7 +41,7 @@ treeboot should be boring to run repeatedly. File operations are idempotent by d
 
 The first implementation should target the full documented behavior in this spec.
 
-## CLI surface: Eight subcommands, one default path
+## CLI surface: Thirteen subcommands, one default path
 
 The common integration point is intentionally short: `treeboot`. Tool-specific setup hooks should not need to know whether treeboot is using a script or config internally.
 
@@ -70,7 +70,45 @@ treeboot status
 treeboot status --root /path/to/root-checkout
 treeboot status --config .treeboot.toml
 treeboot status --no-init-script
+treeboot status --format json
+treeboot status --format yaml
+treeboot status --json
+treeboot status --yaml
 treeboot info
+```
+
+JSON and YAML output emit the same discovery status as structured data.
+
+### `treeboot version`
+
+Prints version metadata and exits without discovering Git context, init scripts,
+or config. `treeboot --version` and `treeboot -V` remain short package-version
+shortcuts; `treeboot version` is the richer command form.
+
+```sh
+treeboot version
+treeboot version --format json
+treeboot version --format yaml
+treeboot version --json
+treeboot version --yaml
+treeboot --version
+treeboot -V
+```
+
+Human-readable output is a compact, flag-like summary:
+
+```text
+treeboot 0.4.1 (spec 1.9.0)
+```
+
+JSON and YAML output emit the same stable fields:
+
+```json
+{
+  "package": "treeboot",
+  "version": "0.4.1",
+  "spec_version": "1.9.0"
+}
 ```
 
 ### `treeboot config`
@@ -81,12 +119,54 @@ Parses the selected TOML config and prints the normalized file and command opera
 treeboot config
 treeboot config --config .treeboot.toml
 treeboot config --format json
+treeboot config --format yaml
 treeboot config --json
+treeboot config --yaml
 ```
 
 This command is view-only. It is intended for validating and inspecting config parsing behavior; editing config values is out of scope.
 
-Human-readable text output lists normalized source and target values plus behavior-affecting normalized fields such as `required`, `compare`, `delete`, `symlinks`, `allow_failure`, `cwd`, and command `env` values when present. JSON output emits the full normalized config structure.
+Human-readable text output lists normalized source and target values plus behavior-affecting normalized fields such as `required`, `compare`, `delete`, `symlinks`, `allow_failure`, `cwd`, and command `env` values when present. JSON and YAML output emit the full normalized config structure.
+
+### `treeboot check`
+
+Validates the selected bootstrap contract without executing init scripts,
+applying file operations, or running configured commands.
+
+```sh
+treeboot check
+treeboot check --root /path/to/root-checkout
+treeboot check --config .treeboot.toml
+treeboot check --no-init-script
+treeboot check --strict
+treeboot check --format json
+treeboot check --format yaml
+treeboot check --json
+treeboot check --yaml
+```
+
+`check` resolves the same worktree context as `run`, applies the same init
+script and config selection rules, parses and normalizes declarative config,
+resolves runtime policy, and builds the same action plan used by `run`.
+
+If an executable init script would take precedence, `check` reports the script
+path and exits successfully because treeboot cannot statically validate an
+arbitrary script. Use `--no-init-script` or `--config` to validate declarative
+config when an init script is present.
+
+When declarative config is selected, config parse, normalization, and run
+validation errors are fatal. Unlike `config`, `check` must exit non-zero when
+the selected config would fail `run` validation.
+
+On success, human-readable output prints:
+
+```text
+treeboot: check ok
+```
+
+JSON and YAML output emit a successful report with the selected action and
+discovered context. Fatal errors still use treeboot's normal error reporting
+and non-zero exit behavior.
 
 ### `treeboot init`
 
@@ -100,6 +180,26 @@ treeboot init --path .treeboot.toml
 ```
 
 Default paths are `.treeboot.toml` for config and `.treeboot.sh` for scripts. Existing init targets, including symlinks, are never replaced.
+
+### `treeboot schema`
+
+Prints the bundled JSON Schema for treeboot config to stdout and exits without
+discovering Git context, init scripts, or config.
+
+```sh
+treeboot schema
+treeboot schema --output config.schema.json
+treeboot schema -o config.schema.json
+treeboot schema > config.schema.json
+```
+
+The emitted schema is the same config schema published as the release asset
+`config.schema.json`. When `--output` is provided, treeboot writes the schema to
+that path instead of stdout. Parent directories must already exist. Existing
+regular files are replaced.
+
+`schema` does not support `--format`, `--json`, or `--yaml`; the schema payload
+is already JSON.
 
 ### `treeboot copy`
 
@@ -145,6 +245,58 @@ treeboot completions powershell
 treeboot completions elvish
 ```
 
+### `treeboot doctor`
+
+Prints diagnostics for the current treeboot environment without executing init
+scripts, applying file operations, or running configured commands.
+
+```sh
+treeboot doctor
+treeboot doctor --root /path/to/root-checkout
+treeboot doctor --config .treeboot.toml
+treeboot doctor --no-init-script
+treeboot doctor --format json
+treeboot doctor --format yaml
+treeboot doctor --json
+treeboot doctor --yaml
+```
+
+`doctor` checks Git availability, worktree discovery, root path discovery,
+default branch discovery, child environment construction, init script
+discovery, config discovery, and config validation when config is selected. It
+is intended for human troubleshooting. Warnings do not fail the command, but
+fatal discovery or config errors exit non-zero.
+
+JSON and YAML output emit the same diagnostic report as structured data,
+including each diagnostic's name, status, and message plus an overall fatal
+status.
+
+### `treeboot env`
+
+Prints the environment variables treeboot passes to init scripts and configured
+commands.
+
+```sh
+treeboot env
+treeboot env --root /path/to/root-checkout
+treeboot env --format json
+treeboot env --format yaml
+treeboot env --json
+treeboot env --yaml
+```
+
+The text format is one `KEY=value` pair per line, sorted by variable name.
+Values are resolved for the current worktree context. `env` does not discover
+init scripts, parse config, apply file operations, or run commands.
+
+JSON and YAML output emit the same environment as an object whose keys are
+variable names and whose values are strings.
+
+`env` prints only the treeboot-owned child environment variables described in
+[Environment variables](#environment-variables). It does not print the full
+process environment, per-command `env` overlays, or the config option override
+variables that treeboot reads from its parent environment.
+
 ### Manual file operation commands
 
 `copy`, `symlink`, and `sync` expose the same file operation engine used by declarative config. Each command requires at least one source argument. Multiple source arguments create multiple independent file operations. These commands still discover the root path and worktree path, but they do not run init scripts or run configured commands.
@@ -157,12 +309,14 @@ Operation-specific flags are valid only on the commands listed in the option tab
 
 | Option | Scope | Behavior |
 | --- | --- | --- |
-| `-r`, `--root <path>` | run/status/config/copy/symlink/sync | Overrides the root checkout used for discovery and file-operation context. |
-| `-c`, `--config <path>` | run/status/config | Uses one specific config file, skips config discovery, and bypasses init script discovery. |
-| `--no-init-script` | run/status | Skips init script discovery while preserving normal config discovery. |
-| `-o`, `--format <text\|json>` | config | Selects human-readable or JSON output for normalized config inspection. Defaults to `text`. |
-| `-J`, `--json` | config | Shortcut for `--format json`. Conflicts with `--format`. |
-| `-S`, `--strict` | run/copy/symlink/sync | Fails if a copy/symlink target exists; rejects sync operations; exits non-zero when run from the root checkout. Declarative config can also enable strict mode with top-level `strict = true`. |
+| `-r`, `--root <path>` | run/status/config/check/copy/symlink/sync/doctor/env | Overrides the root checkout used for discovery and file-operation context. |
+| `-c`, `--config <path>` | run/status/config/check/doctor | Uses one specific config file, skips config discovery, and bypasses init script discovery. |
+| `--no-init-script` | run/status/check/doctor | Skips init script discovery while preserving normal config discovery. |
+| `-o`, `--format <text\|json\|yaml>` | status/version/config/check/doctor/env | Selects human-readable, JSON, or YAML output. Defaults to `text`. |
+| `-J`, `--json` | status/version/config/check/doctor/env | Shortcut for `--format json`. Conflicts with `--format` and `--yaml`. |
+| `-Y`, `--yaml` | status/version/config/check/doctor/env | Shortcut for `--format yaml`. Conflicts with `--format` and `--json`. |
+| `-o`, `--output <path>` | schema | Writes the bundled config schema to a file instead of stdout. |
+| `-S`, `--strict` | run/check/copy/symlink/sync | Fails if a copy/symlink target exists; rejects sync operations; exits non-zero when run from the root checkout. Declarative config can also enable strict mode with top-level `strict = true`. |
 | `-f`, `--force` | run/copy/symlink/sync | Replaces existing file-operation targets where supported. |
 | `-n`, `--dry-run` | run/copy/symlink/sync | Prints planned work without writing files or running commands. |
 | `--skip-commands` | run | Runs file operations only. |

@@ -172,3 +172,31 @@ Scope:
 - release smoke tests
 
 See [release.md](release.md) before implementing packaging automation.
+
+## Milestone 10: Inspection And Metadata Commands
+
+Status: implemented.
+
+Scope:
+
+- add `treeboot version` alongside the existing `-V`/`--version` flags
+- embed the implemented spec version and generated config schema in
+  `treeboot-core`
+- add `treeboot schema` with stdout and `--output/-o` support
+- add `treeboot check` for side-effect-free run validation
+- add `treeboot doctor` for structured diagnostics
+- add `treeboot env` for the environment exposed to init scripts and configured
+  commands
+- support `--format text|json|yaml`, `--json`, and `--yaml` for `status`,
+  `config`, `version`, `check`, `doctor`, and `env`
+- expose core crate report functions for embedders that need command-shaped
+  behavior without reimplementing CLI wiring
+
+Validation focus:
+
+- text output stays human-oriented and useful by default
+- JSON and YAML outputs are parseable and stable enough for automation
+- check and doctor perform no file, init script, or configured command side
+  effects
+- generated schema and metadata freshness is enforced by `mise run
+  generate:check`

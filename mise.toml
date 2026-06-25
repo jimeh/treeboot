@@ -81,14 +81,22 @@ done
 
 [tasks.generate]
 description = "Generate checked-in artifacts"
-run = ["mise run generate:schema"]
+run = ["mise run generate:schema", "mise run generate:metadata"]
 
 [tasks."generate:schema"]
 description = "Generate JSON Schema for treeboot config"
-run = "cargo run -p treeboot-core --example generate_config_schema --locked -- schemas/treeboot.schema.json"
+run = '''
+cargo run -p treeboot-core --example generate_config_schema --locked -- schemas/treeboot.schema.json
+mkdir -p crates/treeboot-core/assets
+cp schemas/treeboot.schema.json crates/treeboot-core/assets/config.schema.json
+'''
+
+[tasks."generate:metadata"]
+description = "Generate treeboot-core metadata constants"
+run = "bash scripts/generate-metadata.sh"
 
 [tasks."generate:check"]
-depends = ["generate:schema:check"]
+depends = ["generate:schema:check", "generate:metadata:check"]
 description = "Fail when generated artifacts are out of date"
 
 [tasks."generate:schema:check"]
@@ -98,7 +106,12 @@ tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
 cargo run -p treeboot-core --example generate_config_schema --locked -- "$tmp"
 diff -u schemas/treeboot.schema.json "$tmp"
+diff -u schemas/treeboot.schema.json crates/treeboot-core/assets/config.schema.json
 '''
+
+[tasks."generate:metadata:check"]
+description = "Fail when generated metadata is out of date"
+run = "bash scripts/generate-metadata.sh check"
 
 [tasks.msrv]
 description = "Check Rust MSRV compatibility"
