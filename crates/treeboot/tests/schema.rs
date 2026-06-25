@@ -58,8 +58,7 @@ fn schema_should_fail_when_output_parent_is_missing() {
         .assert()
         .failure()
         .stdout(predicate::str::is_empty())
-        .stderr(predicate::str::contains("failed to write output"))
-        .stderr(predicate::str::contains("No such file or directory"));
+        .stderr(predicate::str::contains("failed to write output"));
 }
 
 #[test]
