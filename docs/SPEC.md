@@ -572,6 +572,12 @@ The diagnostic names defined by this spec are `environment_options`,
 `worktree`, `root`, `default_branch`, `environment`, `init_script`, `config`,
 and `config_validation`.
 
+The `default_branch` diagnostic is `ok` when a non-empty default branch was
+resolved and `warning` when default branch discovery falls back to the
+best-effort empty string. An unknown default branch is not fatal; treeboot still
+sets `TREEBOOT_DEFAULT_BRANCH` and `CONDUCTOR_DEFAULT_BRANCH` to an empty
+string.
+
 ### `treeboot env` JSON
 
 `treeboot env` emits an object containing only treeboot-owned child environment

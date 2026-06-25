@@ -20,7 +20,7 @@ clap = { version = "4", features = ["derive", "wrap_help"] }
 clap_complete = { version = "4", features = ["unstable-dynamic"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
-serde_yaml = "0.9"
+yaml_serde = "0.10"
 treeboot-core = { path = "../treeboot-core", version = "0.4.1" }
 
 [dev-dependencies]

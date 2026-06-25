@@ -11,7 +11,9 @@ dependencies for small wrappers around the standard library.
   and normalized model serialization.
 - `serde_json` belongs in the `treeboot` CLI crate for `treeboot config
   --format json` and other JSON report rendering.
-- `serde_yaml` belongs in the `treeboot` CLI crate for YAML report rendering.
+- `yaml_serde` belongs in the `treeboot` CLI crate for YAML report rendering.
+  It is the maintained YAML organization fork of the deprecated `serde_yaml`
+  crate.
 - `schemars` and `serde_json` are dev-dependencies in `treeboot-core` for the
   JSON Schema generator example.
 - `assert_cmd`, `predicates`, and `tempfile` support CLI integration tests.

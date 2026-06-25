@@ -3,7 +3,8 @@ use predicates::prelude::*;
 mod common;
 
 use common::{
-    assert_context_shape, assert_json_object_keys, git_worktree, parse_json, treeboot, write_file,
+    assert_context_shape, assert_json_object_keys, git_repo, git_worktree, parse_json, treeboot,
+    write_file,
 };
 
 #[cfg(unix)]
@@ -94,6 +95,47 @@ fn doctor_should_support_text_format_and_yaml_shortcut() {
         .success()
         .stderr(predicate::str::is_empty())
         .stdout(predicate::str::contains("diagnostics:"));
+}
+
+#[test]
+fn doctor_should_warn_when_default_branch_is_unknown() {
+    let repo = git_repo();
+
+    let json = treeboot()
+        .args(["doctor", "--json"])
+        .current_dir(repo.path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+
+    let json = parse_json(json, "doctor");
+    assert_doctor_report_shape(&json);
+    assert_eq!(json["fatal"], false);
+    assert_eq!(json["context"]["default_branch"], "");
+    assert!(
+        json["diagnostics"]
+            .as_array()
+            .expect("diagnostics should be an array")
+            .iter()
+            .any(|diagnostic| {
+                diagnostic["name"] == "default_branch"
+                    && diagnostic["status"] == "warning"
+                    && diagnostic["message"] == "default branch unknown"
+            })
+    );
+
+    treeboot()
+        .arg("doctor")
+        .current_dir(repo.path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .stdout(predicate::str::contains(
+            "warning: default_branch: default branch unknown",
+        ));
 }
 
 #[test]

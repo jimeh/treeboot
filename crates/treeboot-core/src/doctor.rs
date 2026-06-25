@@ -90,7 +90,11 @@ pub fn diagnose(options: DoctorOptions) -> DoctorReport {
         Ok(context) => {
             diagnostics.push(ok("worktree", "worktree context resolved"));
             diagnostics.push(ok("root", "root checkout resolved"));
-            diagnostics.push(ok("default_branch", "default branch resolved"));
+            if context.default_branch.is_empty() {
+                diagnostics.push(warning("default_branch", "default branch unknown"));
+            } else {
+                diagnostics.push(ok("default_branch", "default branch resolved"));
+            }
             diagnostics.push(ok("environment", "child environment built"));
             context
         }

@@ -54,7 +54,7 @@ where
             })?;
         }
         ReportFormat::Yaml => {
-            serde_yaml::to_writer(&mut handle, value).map_err(|source| Error::Output {
+            yaml_serde::to_writer(&mut handle, value).map_err(|source| Error::Output {
                 source: std::io::Error::other(source),
             })?;
         }
