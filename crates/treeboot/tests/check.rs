@@ -3,8 +3,8 @@ use predicates::prelude::*;
 mod common;
 
 use common::{
-    assert_context_shape, assert_json_object_keys, git_repo, git_worktree, parse_json, treeboot,
-    write_file,
+    assert_context_shape, assert_json_object_keys, git_repo, git_worktree, parse_json,
+    toml_string_path, treeboot, write_file,
 };
 
 #[cfg(unix)]
@@ -249,7 +249,7 @@ fn check_should_honor_source_boundary_environment_override() {
         &repo.worktree_path().join(".treeboot.toml"),
         &format!(
             "copy = [{{ source = \"{}\", target = \"secret\" }}]\n",
-            outside.path().join("secret").display()
+            toml_string_path(&outside.path().join("secret"))
         ),
     );
 
@@ -283,7 +283,7 @@ fn check_env_target_override_should_beat_config_target_override() {
         &format!(
             "dangerously_allow_targets_outside_worktree = true\n\
              copy = [{{ source = \".env\", target = \"{}\" }}]\n",
-            outside_target.display()
+            toml_string_path(&outside_target)
         ),
     );
 

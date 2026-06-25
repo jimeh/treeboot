@@ -11,6 +11,14 @@ pub fn display_path(path: &str) -> String {
     path.split('/').collect::<PathBuf>().display().to_string()
 }
 
+pub fn toml_string_path(path: &Path) -> String {
+    toml_string(&path.display().to_string())
+}
+
+pub fn toml_string(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
 pub fn treeboot() -> Command {
     let mut command = Command::cargo_bin("treeboot").expect("treeboot binary should build");
     command
