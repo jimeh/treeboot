@@ -1,7 +1,10 @@
 use std::path::PathBuf;
 
+use serde::Serialize;
+
+use crate::check::WorktreeSnapshot;
 use crate::context;
-use crate::{Config, InitScriptDiscovery, Result, Worktree, WorktreeOptions};
+use crate::{Config, IgnoredInitScript, InitScriptDiscovery, Result, Worktree, WorktreeOptions};
 
 /// Options for inspecting treeboot discovery status.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -17,14 +20,15 @@ pub struct StatusOptions {
 }
 
 /// Init script discovery status for a worktree.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum InitScriptStatus {
     /// Init script discovery was skipped by options.
     Skipped,
     /// No executable init script was found.
-    Missing {
-        /// Existing init script paths ignored because they are not executable.
-        ignored: Vec<PathBuf>,
+    NotFound {
+        /// Existing init script paths that were ignored.
+        ignored: Vec<IgnoredInitScript>,
     },
     /// An executable init script was found.
     Found {
@@ -42,6 +46,27 @@ pub struct StatusReport {
     pub init_script: InitScriptStatus,
     /// Selected config path, when one was requested or discovered.
     pub config: Option<PathBuf>,
+}
+
+/// Serializable result summary for a `treeboot status` invocation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StatusSnapshotReport {
+    /// Runtime context snapshot discovered for the current worktree.
+    pub context: WorktreeSnapshot,
+    /// Init script discovery result.
+    pub init_script: InitScriptStatus,
+    /// Selected config path, when one was requested or discovered.
+    pub config: Option<PathBuf>,
+}
+
+impl From<&StatusReport> for StatusSnapshotReport {
+    fn from(report: &StatusReport) -> Self {
+        Self {
+            context: WorktreeSnapshot::from(&report.context),
+            init_script: report.init_script.clone(),
+            config: report.config.clone(),
+        }
+    }
 }
 
 /// Inspects worktree, root, init script, and config discovery status.
@@ -72,13 +97,27 @@ pub fn inspect_status(options: StatusOptions) -> Result<StatusReport> {
     })
 }
 
+/// Inspects worktree, root, init script, and config discovery status as a
+/// serializable snapshot.
+///
+/// This function does not execute init scripts, parse config, or run configured
+/// commands.
+///
+/// # Errors
+///
+/// Returns an error if context discovery fails or a requested config file does
+/// not exist.
+pub fn inspect_status_snapshot(options: StatusOptions) -> Result<StatusSnapshotReport> {
+    inspect_status(options).map(|report| StatusSnapshotReport::from(&report))
+}
+
 fn inspect_init_script(context: &Worktree) -> InitScriptStatus {
     let scripts = InitScriptDiscovery::discover(context);
 
     if let Some(path) = scripts.executable {
         InitScriptStatus::Found { path }
     } else {
-        InitScriptStatus::Missing {
+        InitScriptStatus::NotFound {
             ignored: scripts.ignored,
         }
     }

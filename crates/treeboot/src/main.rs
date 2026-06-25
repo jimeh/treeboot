@@ -1,17 +1,15 @@
 use std::process::ExitCode;
 
-use clap::{CommandFactory, Parser};
-
 mod commands;
 mod reporter;
 
-use commands::{Cli, run_cli};
+use commands::{parse, run_cli};
 use reporter::StdoutReporter;
 
 fn main() -> ExitCode {
-    clap_complete::CompleteEnv::with_factory(Cli::command).complete();
+    clap_complete::CompleteEnv::with_factory(commands::command).complete();
 
-    let cli = Cli::parse();
+    let cli = parse();
     let mut reporter = StdoutReporter;
 
     match run_cli(cli, &mut reporter) {

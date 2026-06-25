@@ -119,6 +119,25 @@ fn init_path_should_create_parent_directories() {
 }
 
 #[test]
+fn init_path_should_fail_when_parent_component_is_file() {
+    let dir = TempDir::new().expect("tempdir should be created");
+    write_file(&dir.path().join("nested"), "not a directory\n");
+
+    treeboot()
+        .args(["init", "-p", "nested/.treeboot.toml"])
+        .current_dir(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("failed to write init target"))
+        .stderr(predicate::str::contains("nested"));
+
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("nested")).expect("file should be readable"),
+        "not a directory\n"
+    );
+}
+
+#[test]
 fn init_config_and_script_should_be_usage_error() {
     let dir = TempDir::new().expect("tempdir should be created");
 

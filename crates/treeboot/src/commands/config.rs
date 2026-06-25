@@ -1,11 +1,12 @@
-use std::io::Write;
 use std::path::PathBuf;
 
-use clap::{Args, ValueEnum};
+use clap::Args;
 use treeboot_core::{
     CommandKind, CommandOperation, ConfigOptions, ConfigReport, Error, FileOperation,
     RuntimeOptionOverrides,
 };
+
+use super::output::{OutputArgs, ReportFormat, write_structured};
 
 #[derive(Debug, Args, Clone, Default)]
 pub(crate) struct ConfigArgs {
@@ -17,41 +18,23 @@ pub(crate) struct ConfigArgs {
     #[arg(short, long)]
     config: Option<PathBuf>,
 
-    /// Output format for normalized config.
-    #[arg(short = 'o', long, value_enum, conflicts_with = "json")]
-    format: Option<ConfigFormat>,
-
-    /// Print normalized config as JSON.
-    #[arg(short = 'J', long)]
-    json: bool,
-}
-
-#[derive(Debug, Clone, Copy, Default, ValueEnum)]
-enum ConfigFormat {
-    #[default]
-    Text,
-    Json,
+    #[command(flatten)]
+    output: OutputArgs,
 }
 
 pub(crate) fn run_config_command(args: ConfigArgs) -> treeboot_core::Result<()> {
-    let format = args.output_format();
+    let format = args.output.format();
     let env_options = RuntimeOptionOverrides::from_env()?;
     let report = treeboot_core::inspect_config(args.into())?;
 
     match format {
-        ConfigFormat::Text => print_config_text(&report).map_err(|source| Error::Output { source }),
-        ConfigFormat::Json => {
+        ReportFormat::Text => print_config_text(&report).map_err(|source| Error::Output { source }),
+        format => {
             let output = serde_json::json!({
                 "path": report.path,
                 "config": report.config,
             });
-            let stdout = std::io::stdout();
-            let mut handle = stdout.lock();
-
-            serde_json::to_writer_pretty(&mut handle, &output).map_err(|source| Error::Output {
-                source: std::io::Error::other(source),
-            })?;
-            writeln!(handle).map_err(|source| Error::Output { source })
+            write_structured(&output, format)
         }
     }?;
 
@@ -152,16 +135,6 @@ impl From<ConfigArgs> for ConfigOptions {
             cwd: None,
             root: args.root,
             config: args.config,
-        }
-    }
-}
-
-impl ConfigArgs {
-    fn output_format(&self) -> ConfigFormat {
-        if self.json {
-            ConfigFormat::Json
-        } else {
-            self.format.unwrap_or_default()
         }
     }
 }

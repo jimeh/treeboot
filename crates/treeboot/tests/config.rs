@@ -3,7 +3,7 @@ use tempfile::TempDir;
 
 mod common;
 
-use common::{git_worktree, treeboot, write_file};
+use common::{assert_json_object_keys, git_worktree, parse_json, treeboot, write_file};
 
 #[test]
 fn config_command_should_print_normalized_config() {
@@ -38,15 +38,129 @@ commands = ["mise install"]
 fn config_command_json_should_print_normalized_config() {
     let repo = git_worktree();
     let config = repo.worktree_path().join(".treeboot.toml");
-    write_file(&config, "commands = [\"mise install\"]\n");
+    write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
+    std::fs::create_dir_all(repo.root_path().join("shared")).expect("shared dir should be created");
+    write_file(&repo.root_path().join("shared/config"), "value\n");
+    write_file(
+        &config,
+        r#"
+copy = [{ source = ".env", target = ".env", required = true }]
+sync = [{ source = "shared", target = ".config/shared", compare = "checksum", delete = true }]
+commands = [
+  { name = "Install packages", run = "mise install", cwd = ".", env = { FOO = "bar" }, allow_failure = true },
+  { program = "npm", args = ["install"] },
+]
+"#,
+    );
 
-    treeboot()
+    let json = treeboot()
         .args(["config", "--format", "json"])
         .current_dir(repo.worktree_path())
         .assert()
         .success()
-        .stdout(predicate::str::contains("\"commands\""))
-        .stdout(predicate::str::contains("\"run\": \"mise install\""));
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    let json = parse_json(json, "config");
+    assert_json_object_keys(&json, &["config", "path"]);
+    assert!(json["path"].is_string());
+
+    let config = &json["config"];
+    assert_json_object_keys(
+        config,
+        &[
+            "commands",
+            "dangerously_allow_sources_outside_root",
+            "dangerously_allow_targets_outside_worktree",
+            "files",
+            "strict",
+        ],
+    );
+    assert_eq!(config["strict"], false);
+    assert_eq!(config["dangerously_allow_sources_outside_root"], false);
+    assert_eq!(config["dangerously_allow_targets_outside_worktree"], false);
+
+    let files = config["files"]
+        .as_array()
+        .expect("files should be an array");
+    assert_eq!(files.len(), 2);
+    for file in files {
+        assert_json_object_keys(
+            file,
+            &[
+                "compare",
+                "declaration",
+                "delete",
+                "operation",
+                "required",
+                "source",
+                "source_path",
+                "symlinks",
+                "target",
+                "target_path",
+            ],
+        );
+        assert_json_object_keys(&file["declaration"], &["column", "end", "line", "start"]);
+    }
+    assert_eq!(files[0]["operation"], "copy");
+    assert_eq!(files[0]["source"], ".env");
+    assert_eq!(files[0]["target"], ".env");
+    assert_eq!(files[0]["required"], true);
+    assert_eq!(files[0]["compare"], serde_json::Value::Null);
+    assert_eq!(files[0]["delete"], serde_json::Value::Null);
+    assert_eq!(files[0]["symlinks"], "preserve");
+    assert!(files[0]["source_path"].is_string());
+    assert!(files[0]["target_path"].is_string());
+
+    assert_eq!(files[1]["operation"], "sync");
+    assert_eq!(files[1]["source"], "shared");
+    assert_eq!(files[1]["target"], ".config/shared");
+    assert_eq!(files[1]["required"], false);
+    assert_eq!(files[1]["compare"], "checksum");
+    assert_eq!(files[1]["delete"], true);
+    assert_eq!(files[1]["symlinks"], "preserve");
+
+    let commands = config["commands"]
+        .as_array()
+        .expect("commands should be an array");
+    assert_eq!(commands.len(), 2);
+    for command in commands {
+        assert_json_object_keys(
+            command,
+            &[
+                "allow_failure",
+                "command",
+                "cwd",
+                "cwd_path",
+                "declaration",
+                "env",
+                "name",
+            ],
+        );
+        assert_json_object_keys(&command["declaration"], &["column", "end", "line", "start"]);
+    }
+    assert_eq!(commands[0]["name"], "Install packages");
+    assert_json_object_keys(&commands[0]["command"], &["kind", "run"]);
+    assert_eq!(commands[0]["command"]["kind"], "shell");
+    assert_eq!(commands[0]["command"]["run"], "mise install");
+    assert_eq!(commands[0]["cwd"], ".");
+    assert!(commands[0]["cwd_path"].is_string());
+    assert_eq!(commands[0]["env"]["FOO"], "bar");
+    assert_eq!(commands[0]["allow_failure"], true);
+
+    assert_eq!(commands[1]["name"], serde_json::Value::Null);
+    assert_json_object_keys(&commands[1]["command"], &["args", "kind", "program"]);
+    assert_eq!(commands[1]["command"]["kind"], "direct");
+    assert_eq!(commands[1]["command"]["program"], "npm");
+    assert_eq!(commands[1]["command"]["args"][0], "install");
+    assert_eq!(commands[1]["cwd"], serde_json::Value::Null);
+    assert_eq!(commands[1]["cwd_path"], serde_json::Value::Null);
+    assert_eq!(
+        commands[1]["env"],
+        serde_json::Value::Object(serde_json::Map::new())
+    );
+    assert_eq!(commands[1]["allow_failure"], false);
 }
 
 #[test]
@@ -65,11 +179,80 @@ fn config_command_json_shortcut_should_print_normalized_config() {
 }
 
 #[test]
+fn config_command_yaml_should_print_normalized_config() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&config, "commands = [\"mise install\"]\n");
+
+    treeboot()
+        .args(["config", "--format", "yaml"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("commands:"))
+        .stdout(predicate::str::contains("run: mise install"));
+}
+
+#[test]
+fn config_command_yaml_shortcut_should_print_normalized_config() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&config, "commands = [\"mise install\"]\n");
+
+    treeboot()
+        .args(["config", "--yaml"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("commands:"))
+        .stdout(predicate::str::contains("run: mise install"));
+}
+
+#[test]
+fn config_command_text_format_should_print_normalized_config() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&config, "commands = [\"mise install\"]\n");
+
+    treeboot()
+        .args(["config", "--format", "text"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("treeboot: config"))
+        .stdout(predicate::str::contains("run \"mise install\""));
+}
+
+#[test]
+fn config_command_output_shortcuts_should_conflict_with_each_other() {
+    let repo = git_worktree();
+
+    treeboot()
+        .args(["config", "--json", "--yaml"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
 fn config_command_json_should_conflict_with_format() {
     let repo = git_worktree();
 
     treeboot()
         .args(["config", "--json", "--format", "json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
+fn config_command_yaml_should_conflict_with_format() {
+    let repo = git_worktree();
+
+    treeboot()
+        .args(["config", "--yaml", "--format", "yaml"])
         .current_dir(repo.worktree_path())
         .assert()
         .code(2)
@@ -169,6 +352,39 @@ commands = [{ run = "npm install", async = true }]
         .assert()
         .failure()
         .stderr(predicate::str::contains("unknown field"));
+}
+
+#[test]
+fn config_command_should_reject_args_with_shell_run() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(
+        &config,
+        r#"commands = [{ run = "npm install", args = ["--silent"] }]"#,
+    );
+
+    treeboot()
+        .arg("config")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid config"))
+        .stderr(predicate::str::contains("`args` requires `program`"));
+}
+
+#[test]
+fn config_command_should_reject_missing_operation_in_mixed_file_entry() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&config, r#"files = [{ source = ".env" }]"#);
+
+    treeboot()
+        .arg("config")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid config"))
+        .stderr(predicate::str::contains("missing required `operation`"));
 }
 
 #[test]

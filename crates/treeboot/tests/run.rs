@@ -3,18 +3,10 @@ use tempfile::TempDir;
 
 mod common;
 
-use common::{display_path, git_repo, git_worktree, treeboot, write_file};
+use common::{display_path, git_repo, git_worktree, toml_string_path, treeboot, write_file};
 
 #[cfg(unix)]
 use common::write_executable_script;
-
-fn toml_string_path(path: &std::path::Path) -> String {
-    toml_string(&path.display().to_string())
-}
-
-fn toml_string(value: &str) -> String {
-    value.replace('\\', "\\\\").replace('"', "\\\"")
-}
 
 #[test]
 fn no_args_should_report_root_checkout_noop() {

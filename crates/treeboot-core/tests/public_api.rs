@@ -5,9 +5,11 @@ use tempfile::TempDir;
 use treeboot_core::{
     ActionPlan, ActionPlanOptions, Config, ConfigOptions, Environment, Error, ExecuteOptions,
     Executor, FileOperation, FileOperationAction, FileOperationKind, FileOperationOptions,
-    InitScriptDiscovery, InitScriptStatus, LoadedConfig, ManualFileOperationOptions, OutputEvent,
-    PlanOrigin, Reporter, RunAction, RunOptions, SourceSpan, StatusOptions, SymlinkMode, Worktree,
-    WorktreeOptions, inspect_config, inspect_status, run, run_file_operation,
+    IgnoredInitScript, InitScriptDiscovery, InitScriptStatus, LoadedConfig,
+    ManualFileOperationOptions, OutputEvent, PlanOrigin, Reporter, RunAction, RunOptions,
+    SourceSpan, StatusOptions, SymlinkMode, Worktree, WorktreeOptions, check, config_schema_json,
+    diagnose, inspect_config, inspect_env, inspect_status, inspect_status_snapshot, run,
+    run_file_operation, treeboot_version_info, version_info,
 };
 
 #[derive(Default)]
@@ -194,6 +196,55 @@ fn public_api_should_discover_load_plan_and_execute_manifest() {
 }
 
 #[test]
+fn public_api_should_expose_metadata_env_check_and_doctor() {
+    let repo = git_worktree();
+    write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [".env"]"#,
+    );
+
+    let version = version_info("treeboot", "0.4.1");
+    assert_eq!(version.spec_version, treeboot_core::SPEC_VERSION);
+    let treeboot_version = treeboot_version_info();
+    assert_eq!(treeboot_version.package, "treeboot");
+    assert_eq!(treeboot_version.version, treeboot_core::TREEBOOT_VERSION);
+    assert_eq!(treeboot_version.spec_version, treeboot_core::SPEC_VERSION);
+    assert!(config_schema_json().contains("\"$defs\""));
+
+    let env = inspect_env(treeboot_core::EnvOptions {
+        cwd: Some(repo.worktree_path().to_path_buf()),
+        root: None,
+    })
+    .expect("environment should inspect");
+    assert!(env.environment.contains_key("TREEBOOT_ROOT_PATH"));
+    let env_json = serde_json::to_value(&env).expect("env should serialize");
+    assert!(env_json.get("environment").is_none());
+    assert!(env_json.get("TREEBOOT_ROOT_PATH").is_some());
+
+    let checked = check(treeboot_core::CheckOptions {
+        cwd: Some(repo.worktree_path().to_path_buf()),
+        root: None,
+        config: None,
+        no_init_script: false,
+        strict: false,
+    })
+    .expect("config should validate");
+    assert!(matches!(
+        checked.action,
+        treeboot_core::CheckAction::Config { .. }
+    ));
+
+    let doctor = diagnose(treeboot_core::DoctorOptions {
+        cwd: Some(repo.worktree_path().to_path_buf()),
+        root: None,
+        config: None,
+        no_init_script: false,
+    });
+    assert!(!doctor.has_fatal());
+}
+
+#[test]
 fn public_api_should_load_discovered_manifest() {
     let repo = git_worktree();
     write_file(
@@ -254,7 +305,13 @@ fn public_api_should_discover_executable_init_script_after_ignored_script() {
     let discovery = InitScriptDiscovery::discover(&worktree);
 
     assert_eq!(discovery.executable.as_deref(), Some(executable.as_path()));
-    assert_eq!(discovery.ignored, vec![ignored]);
+    assert_eq!(
+        discovery.ignored,
+        vec![IgnoredInitScript {
+            path: ignored,
+            reason: "not_executable",
+        }]
+    );
 }
 
 #[test]
@@ -337,8 +394,60 @@ fn public_api_inspect_status_should_report_context_and_config_without_parsing() 
     assert_eq!(report.config.as_deref(), Some(expected_config.as_path()));
     assert!(matches!(
         report.init_script,
-        InitScriptStatus::Missing { ref ignored } if ignored.is_empty()
+        InitScriptStatus::NotFound { ref ignored } if ignored.is_empty()
     ));
+
+    let snapshot = inspect_status_snapshot(StatusOptions {
+        cwd: Some(repo.worktree_path().to_path_buf()),
+        ..StatusOptions::default()
+    })
+    .expect("status snapshot should inspect without parsing config");
+    assert_eq!(snapshot.context.worktree_path, expected_worktree);
+    assert_eq!(snapshot.context.root_path, expected_root);
+    assert_eq!(snapshot.config.as_deref(), Some(expected_config.as_path()));
+}
+
+#[cfg(unix)]
+#[test]
+fn public_api_inspect_status_should_report_ignored_init_script_details() {
+    let repo = git_worktree();
+    let script = repo.worktree_path().join(".treeboot.sh");
+    write_file(&script, "#!/bin/sh\n");
+    let expected_script = std::fs::canonicalize(&script).expect("script should canonicalize");
+
+    let report = inspect_status(StatusOptions {
+        cwd: Some(repo.worktree_path().to_path_buf()),
+        ..StatusOptions::default()
+    })
+    .expect("status should inspect init script candidates");
+
+    let InitScriptStatus::NotFound { ignored } = report.init_script else {
+        panic!("expected not_found init script status");
+    };
+    assert_eq!(
+        ignored,
+        vec![IgnoredInitScript {
+            path: expected_script.clone(),
+            reason: "not_executable",
+        }]
+    );
+
+    let snapshot = inspect_status_snapshot(StatusOptions {
+        cwd: Some(repo.worktree_path().to_path_buf()),
+        ..StatusOptions::default()
+    })
+    .expect("status snapshot should inspect init script candidates");
+
+    let InitScriptStatus::NotFound { ignored } = snapshot.init_script else {
+        panic!("expected not_found init script status");
+    };
+    assert_eq!(
+        ignored,
+        vec![IgnoredInitScript {
+            path: expected_script,
+            reason: "not_executable",
+        }]
+    );
 }
 
 #[cfg(unix)]
@@ -396,19 +505,12 @@ fn public_api_executor_should_skip_commands_when_requested() {
 fn public_api_should_build_manual_file_plan_without_config_path() {
     let (_temp, context) = temp_worktree("manual-plan");
     write_file(&context.root_path.join(".env"), "TOKEN=1\n");
-    let files = FileOperation::from_manual_options(
-        &context,
-        ManualFileOperationOptions {
-            operation: FileOperationKind::Copy,
-            sources: vec![PathBuf::from(".env")],
-            target: Some(PathBuf::from("local.env")),
-            required: false,
-            symlinks: Some(SymlinkMode::Preserve),
-            compare: None,
-            delete: None,
-        },
-    )
-    .expect("manual file specs should build");
+    let mut options = ManualFileOperationOptions::copy(vec![PathBuf::from(".env")]);
+    options.target = Some(PathBuf::from("local.env"));
+    options.symlinks = Some(SymlinkMode::Preserve);
+
+    let files = FileOperation::from_manual_options(&context, options)
+        .expect("manual file specs should build");
 
     let plan = ActionPlan::from_file_operations(
         &context,
@@ -433,17 +535,71 @@ fn public_api_should_build_manual_file_plan_without_config_path() {
 }
 
 #[test]
+fn public_api_file_operation_option_constructors_should_set_operation_and_sources() {
+    for (options, operation) in [
+        (
+            ManualFileOperationOptions::copy(vec![PathBuf::from("copy")]),
+            FileOperationKind::Copy,
+        ),
+        (
+            ManualFileOperationOptions::symlink(vec![PathBuf::from("symlink")]),
+            FileOperationKind::Symlink,
+        ),
+        (
+            ManualFileOperationOptions::sync(vec![PathBuf::from("sync")]),
+            FileOperationKind::Sync,
+        ),
+    ] {
+        assert_eq!(options.operation, operation);
+        assert_eq!(options.sources, vec![PathBuf::from(operation.as_str())]);
+        assert_eq!(
+            options,
+            ManualFileOperationOptions {
+                operation,
+                sources: vec![PathBuf::from(operation.as_str())],
+                ..ManualFileOperationOptions::default()
+            }
+        );
+    }
+
+    for (options, operation) in [
+        (
+            FileOperationOptions::copy(vec![PathBuf::from("copy")]),
+            FileOperationKind::Copy,
+        ),
+        (
+            FileOperationOptions::symlink(vec![PathBuf::from("symlink")]),
+            FileOperationKind::Symlink,
+        ),
+        (
+            FileOperationOptions::sync(vec![PathBuf::from("sync")]),
+            FileOperationKind::Sync,
+        ),
+    ] {
+        assert_eq!(options.operation, operation);
+        assert_eq!(options.sources, vec![PathBuf::from(operation.as_str())]);
+        assert_eq!(
+            options,
+            FileOperationOptions {
+                operation,
+                sources: vec![PathBuf::from(operation.as_str())],
+                ..FileOperationOptions::default()
+            }
+        );
+    }
+}
+
+#[test]
 fn public_api_run_file_operation_should_apply_manual_copy() {
     let repo = git_worktree();
     write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
     let mut reporter = VecReporter::default();
 
     let report = run_file_operation(
-        FileOperationOptions {
-            cwd: Some(repo.worktree_path().to_path_buf()),
-            operation: FileOperationKind::Copy,
-            sources: vec![PathBuf::from(".env")],
-            ..FileOperationOptions::default()
+        {
+            let mut options = FileOperationOptions::copy(vec![PathBuf::from(".env")]);
+            options.cwd = Some(repo.worktree_path().to_path_buf());
+            options
         },
         &mut reporter,
     )

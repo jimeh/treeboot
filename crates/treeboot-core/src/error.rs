@@ -179,6 +179,10 @@ pub enum Error {
         source: std::io::Error,
     },
 
+    /// Doctor diagnostics found fatal issues.
+    #[error("doctor found fatal issues")]
+    DoctorFailed,
+
     /// `treeboot init` refused to replace an existing target.
     #[error("init target already exists: {0:?}")]
     InitTargetExists(PathBuf),

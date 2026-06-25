@@ -5,23 +5,30 @@
 
 #![deny(missing_docs)]
 
+mod check;
 mod commands;
 mod config;
 mod context;
 mod discovery;
+mod doctor;
+mod env;
 mod error;
 mod executor;
 mod files;
 mod git;
 mod init;
 mod manual;
+mod metadata;
 mod output;
 mod run;
 mod status;
 mod validation;
 
+pub use check::{CheckAction, CheckOptions, CheckReport, WorktreeSnapshot, check};
 pub use context::{Environment, Worktree, WorktreeOptions};
-pub use discovery::InitScriptDiscovery;
+pub use discovery::{IgnoredInitScript, InitScriptDiscovery};
+pub use doctor::{Diagnostic, DiagnosticStatus, DoctorOptions, DoctorReport, diagnose};
+pub use env::{EnvOptions, EnvReport, inspect_env};
 pub use error::Error;
 pub use executor::{ExecuteOptions, ExecutionReport, Executor};
 pub use init::{InitKind, InitOptions, InitReport, init};
@@ -29,9 +36,16 @@ pub use manual::{
     FileOperationAction, FileOperationCompletionOptions, FileOperationOptions, FileOperationReport,
     ManualFileOperationOptions, file_operation_source_candidates, run_file_operation,
 };
+pub use metadata::{
+    SPEC_VERSION, TREEBOOT_PACKAGE, TREEBOOT_VERSION, VersionInfo, config_schema_json,
+    treeboot_version_info, treeboot_version_summary, version_info,
+};
 pub use output::{OutputEvent, Reporter};
 pub use run::{RunAction, RunOptions, RunReport, run};
-pub use status::{InitScriptStatus, StatusOptions, StatusReport, inspect_status};
+pub use status::{
+    InitScriptStatus, StatusOptions, StatusReport, StatusSnapshotReport, inspect_status,
+    inspect_status_snapshot,
+};
 pub use validation::{
     ActionPlan, ActionPlanOptions, PlanOrigin, PlannedCommand, PlannedFileOperation,
     PlannedFileStatus,

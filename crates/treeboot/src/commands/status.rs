@@ -2,7 +2,9 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use clap::Args;
-use treeboot_core::{Error, InitScriptStatus, StatusOptions, StatusReport};
+use treeboot_core::{Error, InitScriptStatus, StatusOptions, StatusReport, StatusSnapshotReport};
+
+use super::output::{OutputArgs, ReportFormat, write_structured};
 
 #[derive(Debug, Args, Clone, Default)]
 pub(crate) struct StatusArgs {
@@ -17,11 +19,19 @@ pub(crate) struct StatusArgs {
     /// Skip init script discovery and use declarative config discovery.
     #[arg(long)]
     no_init_script: bool,
+
+    #[command(flatten)]
+    output: OutputArgs,
 }
 
 pub(crate) fn run_status_command(args: StatusArgs) -> treeboot_core::Result<()> {
+    let format = args.output.format();
     let report = treeboot_core::inspect_status(args.into())?;
-    print_status_text(&report).map_err(|source| Error::Output { source })
+
+    match format {
+        ReportFormat::Text => print_status_text(&report).map_err(|source| Error::Output { source }),
+        format => write_structured(&StatusSnapshotReport::from(&report), format),
+    }
 }
 
 fn print_status_text(report: &StatusReport) -> std::io::Result<()> {
@@ -47,10 +57,10 @@ fn print_status_text(report: &StatusReport) -> std::io::Result<()> {
         InitScriptStatus::Found { path } => {
             writeln!(handle, "init_script: {}", path.display())?;
         }
-        InitScriptStatus::Missing { ignored } => {
+        InitScriptStatus::NotFound { ignored } => {
             writeln!(handle, "init_script: (none)")?;
-            for path in ignored {
-                writeln!(handle, "ignored_init_script: {}", path.display())?;
+            for ignored in ignored {
+                writeln!(handle, "ignored_init_script: {}", ignored.path.display())?;
             }
         }
     }
