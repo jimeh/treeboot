@@ -9,6 +9,9 @@ dependencies for small wrappers around the standard library.
 - `indicatif` belongs in the `treeboot` CLI crate for interactive file
   operation progress. Keep progress rendering out of `treeboot-core`; core
   should emit structured output events instead.
+- `console` belongs in the `treeboot` CLI crate when progress rendering needs
+  terminal width or Unicode-aware text measurement. Keep terminal-specific
+  formatting helpers out of `treeboot-core`.
 - `thiserror` belongs in `treeboot-core` for public typed errors.
 - `serde` and `toml` belong in `treeboot-core` for declarative config parsing
   and normalized model serialization.

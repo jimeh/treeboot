@@ -1,11 +1,33 @@
 use std::time::Duration;
 
+use console::{Term, measure_text_width, truncate_str};
 use indicatif::{ProgressBar, ProgressStyle};
 use treeboot_core::{FileOperationKind, OutputEvent, Reporter};
 
+const MIN_PROGRESS_BAR_WIDTH: usize = 24;
+const DEFAULT_TERMINAL_WIDTH: usize = 80;
+
 #[derive(Default)]
 pub(crate) struct StdoutReporter {
-    active_progress: Option<ProgressBar>,
+    active_progress: Option<ActiveProgress>,
+}
+
+struct ActiveProgress {
+    bar: ProgressBar,
+    label: Option<String>,
+}
+
+impl ActiveProgress {
+    fn spinner(bar: ProgressBar) -> Self {
+        Self { bar, label: None }
+    }
+
+    fn progress(bar: ProgressBar, label: String) -> Self {
+        Self {
+            bar,
+            label: Some(label),
+        }
+    }
 }
 
 impl StdoutReporter {
@@ -21,7 +43,7 @@ impl StdoutReporter {
         self.finish_progress();
 
         let bar = ProgressBar::new_spinner();
-        if let Ok(style) = ProgressStyle::with_template("{spinner} {msg}") {
+        if let Ok(style) = ProgressStyle::with_template("{msg} {spinner}") {
             bar.set_style(style);
         }
         bar.set_message(format!(
@@ -31,7 +53,7 @@ impl StdoutReporter {
             target.display()
         ));
         bar.enable_steady_tick(Duration::from_millis(100));
-        self.active_progress = Some(bar);
+        self.active_progress = Some(ActiveProgress::spinner(bar));
     }
 
     fn start_progress(
@@ -50,27 +72,32 @@ impl StdoutReporter {
         }
 
         let bar = ProgressBar::new(action_count as u64);
-        if let Ok(style) = ProgressStyle::with_template("{bar:40.cyan/blue} {pos}/{len} {msg}") {
+        let template = "{msg} {wide_bar:.cyan/blue}";
+        if let Ok(style) = ProgressStyle::with_template(template) {
             bar.set_style(style.progress_chars("=> "));
         }
-        bar.set_message(format!(
+        let label = format!(
             "treeboot: {} {} -> {}",
             operation.as_str(),
             source.display(),
             target.display()
-        ));
-        self.active_progress = Some(bar);
+        );
+        set_progress_message(&bar, &label);
+        self.active_progress = Some(ActiveProgress::progress(bar, label));
     }
 
     fn advance_progress(&self) {
         if let Some(progress) = &self.active_progress {
-            progress.inc(1);
+            progress.bar.inc(1);
+            if let Some(label) = &progress.label {
+                set_progress_message(&progress.bar, label);
+            }
         }
     }
 
     fn finish_progress(&mut self) {
         if let Some(progress) = self.active_progress.take() {
-            progress.finish_and_clear();
+            progress.bar.finish_and_clear();
         }
     }
 
@@ -80,7 +107,7 @@ impl StdoutReporter {
         }
 
         if let Some(progress) = &self.active_progress {
-            progress.suspend(|| println!("{message}"));
+            progress.bar.suspend(|| println!("{message}"));
         } else {
             println!("{message}");
         }
@@ -117,5 +144,65 @@ impl Reporter for StdoutReporter {
         }
 
         Ok(())
+    }
+}
+
+fn set_progress_message(bar: &ProgressBar, label: &str) {
+    let count = format_progress_count(bar);
+    let terminal_width = Term::stderr()
+        .size_checked()
+        .map_or(DEFAULT_TERMINAL_WIDTH, |size| usize::from(size.1));
+    bar.set_message(progress_message(label, &count, terminal_width));
+}
+
+fn format_progress_count(bar: &ProgressBar) -> String {
+    let position = bar.position();
+    match bar.length() {
+        Some(length) => format!("{position}/{length}"),
+        None => position.to_string(),
+    }
+}
+
+fn progress_message(label: &str, count: &str, terminal_width: usize) -> String {
+    let reserved_width = measure_text_width(count) + MIN_PROGRESS_BAR_WIDTH + 2;
+    let label_width = terminal_width.saturating_sub(reserved_width);
+    if label_width == 0 {
+        return count.to_owned();
+    }
+
+    let tail = if label_width >= 4 { "..." } else { "" };
+    format!("{} {count}", truncate_str(label, label_width, tail))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn progress_message_should_keep_count_next_to_label() {
+        assert_eq!(
+            progress_message("treeboot: sync shared -> shared", "12/40", 80),
+            "treeboot: sync shared -> shared 12/40"
+        );
+    }
+
+    #[test]
+    fn progress_message_should_reserve_minimum_bar_width() {
+        let message = progress_message(
+            "treeboot: sync very/long/source/path -> very/long/target/path",
+            "12/40",
+            48,
+        );
+
+        assert_eq!(measure_text_width(&message), 23);
+        assert!(message.ends_with(" 12/40"));
+    }
+
+    #[test]
+    fn progress_message_should_prefer_count_on_tiny_terminals() {
+        assert_eq!(
+            progress_message("treeboot: sync shared -> shared", "12/40", 20),
+            "12/40"
+        );
     }
 }
