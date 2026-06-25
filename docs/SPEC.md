@@ -428,6 +428,7 @@ string. The initial reason is `not_executable`.
         "compare": null,
         "delete": null,
         "symlinks": "preserve",
+        "ignore_metadata": [],
         "declaration": {
           "start": 0,
           "end": 15,

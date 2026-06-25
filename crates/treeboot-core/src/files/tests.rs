@@ -200,6 +200,62 @@ fn apply_file_operations_should_copy_read_only_directory_children_before_metadat
     assert_eq!(mode, 0o555);
 }
 
+#[cfg(unix)]
+#[test]
+fn apply_file_operations_should_force_copy_child_inside_existing_read_only_directory() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (root, worktree) = temp_workspace("read-only-directory-force-copy-child");
+    let source = root.join("shared");
+    let target = worktree.join("shared");
+    fs::create_dir_all(&source).expect("source dir should be created");
+    fs::create_dir_all(&target).expect("target dir should be created");
+    fs::write(source.join("config"), "new\n").expect("source child should be written");
+    fs::write(target.join("config"), "old\n").expect("target child should be written");
+    let mut source_permissions = fs::metadata(&source)
+        .expect("source metadata should be readable")
+        .permissions();
+    source_permissions.set_mode(0o555);
+    fs::set_permissions(&source, source_permissions).expect("source mode should be set");
+    let mut target_permissions = fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .permissions();
+    target_permissions.set_mode(0o555);
+    fs::set_permissions(&target, target_permissions).expect("target mode should be set");
+    let plan = run_plan(
+        &root,
+        &worktree,
+        vec![operation(
+            FileOperationKind::Copy,
+            &root,
+            &worktree,
+            "shared",
+            "shared",
+        )],
+    );
+    let mut reporter = VecReporter::default();
+
+    apply_file_operations(
+        &plan,
+        FileApplyOptions {
+            force: true,
+            ..FileApplyOptions::default()
+        },
+        &mut reporter,
+    )
+    .expect("force copy should replace child inside read-only directory");
+
+    let copied =
+        fs::read_to_string(target.join("config")).expect("target child should be readable");
+    let mode = fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(copied, "new\n");
+    assert_eq!(mode, 0o555);
+}
+
 #[test]
 fn apply_file_operations_should_copy_missing_directory_files_only() {
     let (root, worktree) = temp_workspace("directory-copy");
@@ -938,6 +994,47 @@ fn apply_file_operations_should_repair_directory_metadata_after_child_updates() 
 
 #[cfg(unix)]
 #[test]
+fn apply_file_operations_should_sync_child_inside_existing_read_only_directory() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (root, worktree) = temp_workspace("read-only-directory-sync-child");
+    let source = root.join("shared");
+    let target = worktree.join("shared");
+    fs::create_dir_all(&source).expect("source dir should be created");
+    fs::create_dir_all(&target).expect("target dir should be created");
+    fs::write(source.join("config"), "new\n").expect("source child should be written");
+    fs::write(target.join("config"), "old\n").expect("target child should be written");
+    let mut source_permissions = fs::metadata(&source)
+        .expect("source metadata should be readable")
+        .permissions();
+    source_permissions.set_mode(0o555);
+    fs::set_permissions(&source, source_permissions).expect("source mode should be set");
+    let mut target_permissions = fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .permissions();
+    target_permissions.set_mode(0o555);
+    fs::set_permissions(&target, target_permissions).expect("target mode should be set");
+    let mut sync = sync_operation(&root, &worktree, "shared", "shared");
+    sync.compare = Some(SyncCompare::Checksum);
+    let plan = run_plan(&root, &worktree, vec![sync]);
+    let mut reporter = VecReporter::default();
+
+    apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+        .expect("sync should replace child inside read-only directory");
+
+    let synced =
+        fs::read_to_string(target.join("config")).expect("target child should be readable");
+    let mode = fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(synced, "new\n");
+    assert_eq!(mode, 0o555);
+}
+
+#[cfg(unix)]
+#[test]
 fn apply_file_operations_should_ignore_sync_directory_permissions_when_configured() {
     use std::os::unix::fs::PermissionsExt;
 
@@ -1140,6 +1237,48 @@ fn apply_file_operations_should_repair_sync_file_permissions() {
             target: PathBuf::from(".env"),
         }]
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn apply_file_operations_should_restore_ignored_read_only_directory_permissions_after_sync() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (root, worktree) = temp_workspace("read-only-directory-ignore-perms");
+    let source = root.join("shared");
+    let target = worktree.join("shared");
+    fs::create_dir_all(&source).expect("source dir should be created");
+    fs::create_dir_all(&target).expect("target dir should be created");
+    fs::write(source.join("config"), "new\n").expect("source child should be written");
+    fs::write(target.join("config"), "old\n").expect("target child should be written");
+    let mut source_permissions = fs::metadata(&source)
+        .expect("source metadata should be readable")
+        .permissions();
+    source_permissions.set_mode(0o755);
+    fs::set_permissions(&source, source_permissions).expect("source mode should be set");
+    let mut target_permissions = fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .permissions();
+    target_permissions.set_mode(0o555);
+    fs::set_permissions(&target, target_permissions).expect("target mode should be set");
+    let mut sync = sync_operation(&root, &worktree, "shared", "shared");
+    sync.compare = Some(SyncCompare::Checksum);
+    sync.ignore_metadata = vec![MetadataField::Permissions];
+    let plan = run_plan(&root, &worktree, vec![sync]);
+    let mut reporter = VecReporter::default();
+
+    apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+        .expect("sync should restore ignored target directory permissions");
+
+    let synced =
+        fs::read_to_string(target.join("config")).expect("target child should be readable");
+    let mode = fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(synced, "new\n");
+    assert_eq!(mode, 0o555);
 }
 
 #[cfg(unix)]
@@ -1415,6 +1554,44 @@ fn apply_file_operations_should_delete_before_read_only_directory_metadata() {
 
     apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
         .expect("sync should delete extras before read-only directory metadata");
+
+    let mode = fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert!(!target.join("extra").exists());
+    assert_eq!(mode, 0o555);
+}
+
+#[cfg(unix)]
+#[test]
+fn apply_file_operations_should_delete_inside_existing_read_only_directory() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (root, worktree) = temp_workspace("read-only-directory-sync-delete-child");
+    let source = root.join("shared");
+    let target = worktree.join("shared");
+    fs::create_dir_all(&source).expect("source dir should be created");
+    fs::create_dir_all(&target).expect("target dir should be created");
+    fs::write(target.join("extra"), "remove\n").expect("extra should be written");
+    let mut source_permissions = fs::metadata(&source)
+        .expect("source metadata should be readable")
+        .permissions();
+    source_permissions.set_mode(0o555);
+    fs::set_permissions(&source, source_permissions).expect("source mode should be set");
+    let mut target_permissions = fs::metadata(&target)
+        .expect("target metadata should be readable")
+        .permissions();
+    target_permissions.set_mode(0o555);
+    fs::set_permissions(&target, target_permissions).expect("target mode should be set");
+    let mut sync = sync_operation(&root, &worktree, "shared", "shared");
+    sync.delete = Some(true);
+    let plan = run_plan(&root, &worktree, vec![sync]);
+    let mut reporter = VecReporter::default();
+
+    apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+        .expect("sync should delete child inside read-only directory");
 
     let mode = fs::metadata(&target)
         .expect("target metadata should be readable")
