@@ -1,4 +1,4 @@
-use clap::{ArgAction, Parser, Subcommand};
+use clap::{Command as ClapCommand, CommandFactory, FromArgMatches, Parser, Subcommand};
 use treeboot_core::Reporter;
 
 mod check;
@@ -29,14 +29,9 @@ use version::VersionArgs;
 #[derive(Debug, Parser)]
 #[command(
     name = "treeboot",
-    about = "Bootstrap new Git worktrees from one repo-local setup file.",
-    disable_version_flag = true
+    about = "Bootstrap new Git worktrees from one repo-local setup file."
 )]
 pub(crate) struct Cli {
-    /// Print version metadata.
-    #[arg(short = 'V', long = "version", global = true, action = ArgAction::SetTrue)]
-    version: bool,
-
     #[command(flatten)]
     run: RunArgs,
 
@@ -75,13 +70,18 @@ enum Command {
     Completions(CompletionsArgs),
 }
 
-pub(crate) fn run_cli(cli: Cli, reporter: &mut dyn Reporter) -> treeboot_core::Result<()> {
-    if cli.version {
-        let info = treeboot_core::treeboot_version_info();
-        version::print_version_text(&info);
-        return Ok(());
-    }
+pub(crate) fn command() -> ClapCommand {
+    Cli::command()
+        .version(treeboot_core::treeboot_version_summary())
+        .propagate_version(true)
+}
 
+pub(crate) fn parse() -> Cli {
+    let matches = command().get_matches();
+    Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit())
+}
+
+pub(crate) fn run_cli(cli: Cli, reporter: &mut dyn Reporter) -> treeboot_core::Result<()> {
     match cli.command {
         Some(Command::Run(args)) => treeboot_core::run(args.into(), reporter).map(|_| ()),
         Some(Command::Status(args)) => status::run_status_command(args),

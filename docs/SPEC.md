@@ -83,8 +83,9 @@ JSON and YAML output are defined in
 ### `treeboot version`
 
 Prints version metadata and exits without discovering Git context, init scripts,
-or config. `treeboot --version` and `treeboot -V` print the same
-human-readable package and spec version summary as `treeboot version`.
+or config. `treeboot --version` and `treeboot -V` are global version flags that
+print package and spec version details through the CLI parser's built-in
+version handling.
 
 ```sh
 treeboot version
@@ -308,6 +309,7 @@ Operation-specific flags are valid only on the commands listed in the option tab
 | `-o`, `--format <text\|json\|yaml>` | status/version/config/check/doctor/env | Selects human-readable, JSON, or YAML output. Defaults to `text`. |
 | `-J`, `--json` | status/version/config/check/doctor/env | Shortcut for `--format json`. Conflicts with `--format` and `--yaml`. |
 | `-Y`, `--yaml` | status/version/config/check/doctor/env | Shortcut for `--format yaml`. Conflicts with `--format` and `--json`. |
+| `-V`, `--version` | global | Prints package and spec version details and exits before command validation. |
 | `-o`, `--output <path>` | schema | Writes the bundled config schema to a file instead of stdout. |
 | `-S`, `--strict` | run/check/copy/symlink/sync | Fails if a copy/symlink target exists; rejects sync operations; exits non-zero when run from the root checkout. Declarative config can also enable strict mode with top-level `strict = true`. |
 | `-f`, `--force` | run/copy/symlink/sync | Replaces existing file-operation targets where supported. |

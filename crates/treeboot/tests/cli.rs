@@ -36,7 +36,27 @@ fn version_flags_should_print_package_and_spec_version() {
         .assert()
         .success()
         .stdout(format!(
-            "treeboot {} (spec {})\n",
+            "treeboot-run {} (spec {})\n",
+            treeboot_core::TREEBOOT_VERSION,
+            treeboot_core::SPEC_VERSION
+        ));
+
+    treeboot()
+        .args(["copy", "--version"])
+        .assert()
+        .success()
+        .stdout(format!(
+            "treeboot-copy {} (spec {})\n",
+            treeboot_core::TREEBOOT_VERSION,
+            treeboot_core::SPEC_VERSION
+        ));
+
+    treeboot()
+        .args(["completions", "--version"])
+        .assert()
+        .success()
+        .stdout(format!(
+            "treeboot-completions {} (spec {})\n",
             treeboot_core::TREEBOOT_VERSION,
             treeboot_core::SPEC_VERSION
         ));

@@ -23,6 +23,7 @@ cat >"$tmp" <<EOF
 //! Regenerate with \`mise run generate:metadata\`.
 
 use serde::Serialize;
+use std::sync::OnceLock;
 
 /// treeboot spec version implemented by this crate.
 pub const SPEC_VERSION: &str = "${spec_version}";
@@ -73,6 +74,14 @@ pub const fn version_info(package: &'static str, version: &'static str) -> Versi
 #[must_use]
 pub const fn treeboot_version_info() -> VersionInfo {
     version_info(TREEBOOT_PACKAGE, TREEBOOT_VERSION)
+}
+
+/// Returns the treeboot version summary used by CLI version flags.
+#[must_use]
+pub fn treeboot_version_summary() -> &'static str {
+    static SUMMARY: OnceLock<String> = OnceLock::new();
+
+    SUMMARY.get_or_init(|| format!("{TREEBOOT_VERSION} (spec {SPEC_VERSION})"))
 }
 EOF
 
