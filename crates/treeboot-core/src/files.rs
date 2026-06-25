@@ -28,10 +28,8 @@ enum FileAction {
     CreateDirectory {
         operation: FileOperationKind,
         source: PathBuf,
-        source_path: PathBuf,
         target: PathBuf,
         target_path: PathBuf,
-        metadata_policy: MetadataPolicy,
     },
     CopyFile {
         operation: FileOperationKind,
@@ -43,12 +41,14 @@ enum FileAction {
         replace: bool,
     },
     RepairMetadata {
+        operation: FileOperationKind,
         source: PathBuf,
         target: PathBuf,
         source_path: PathBuf,
         target_path: PathBuf,
         metadata_policy: MetadataPolicy,
         target_kind: MetadataTarget,
+        report: bool,
     },
     CreateSymlink {
         operation: FileOperationKind,
@@ -73,6 +73,12 @@ enum FileAction {
         path: PathBuf,
         reason: String,
     },
+}
+
+impl FileAction {
+    fn counts(&self) -> bool {
+        !matches!(self, Self::RepairMetadata { report: false, .. })
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -143,6 +149,7 @@ pub(crate) fn apply_file_operations(
         plan_operation(plan, operation, options, &mut actions)?;
     }
     add_symlink_warnings(&mut actions);
+    let action_count = actions.iter().filter(|action| action.counts()).count();
 
     for action in &actions {
         if options.dry_run {
@@ -152,9 +159,7 @@ pub(crate) fn apply_file_operations(
         }
     }
 
-    Ok(FileApplyReport {
-        action_count: actions.len(),
-    })
+    Ok(FileApplyReport { action_count })
 }
 
 fn plan_operation(
@@ -236,6 +241,7 @@ fn plan_tree_directory(
     mode: TreePlanMode,
     actions: &mut Vec<FileAction>,
 ) -> Result<()> {
+    let mut directory_metadata = None;
     match maybe_metadata(entry.target_path, operation.operation)? {
         Some(metadata) if metadata.file_type().is_symlink() || metadata.is_file() => {
             return conflict(
@@ -272,13 +278,15 @@ fn plan_tree_directory(
                     MetadataPolicy::from_ignored(&operation.ignore_metadata),
                 )?
             {
-                actions.push(FileAction::RepairMetadata {
+                directory_metadata = Some(FileAction::RepairMetadata {
+                    operation: operation.operation,
                     source: entry.source.to_path_buf(),
                     target: entry.target.to_path_buf(),
                     source_path: entry.source_path.to_path_buf(),
                     target_path: entry.target_path.to_path_buf(),
                     metadata_policy: MetadataPolicy::from_ignored(&operation.ignore_metadata),
                     target_kind: MetadataTarget::Directory,
+                    report: true,
                 });
             }
         }
@@ -289,14 +297,24 @@ fn plan_tree_directory(
                 "target file type is unsupported",
             );
         }
-        None => actions.push(FileAction::CreateDirectory {
-            operation: operation.operation,
-            source: entry.source.to_path_buf(),
-            source_path: entry.source_path.to_path_buf(),
-            target: entry.target.to_path_buf(),
-            target_path: entry.target_path.to_path_buf(),
-            metadata_policy: MetadataPolicy::from_ignored(&operation.ignore_metadata),
-        }),
+        None => {
+            actions.push(FileAction::CreateDirectory {
+                operation: operation.operation,
+                source: entry.source.to_path_buf(),
+                target: entry.target.to_path_buf(),
+                target_path: entry.target_path.to_path_buf(),
+            });
+            directory_metadata = Some(FileAction::RepairMetadata {
+                operation: operation.operation,
+                source: entry.source.to_path_buf(),
+                target: entry.target.to_path_buf(),
+                source_path: entry.source_path.to_path_buf(),
+                target_path: entry.target_path.to_path_buf(),
+                metadata_policy: MetadataPolicy::from_ignored(&operation.ignore_metadata),
+                target_kind: MetadataTarget::Directory,
+                report: false,
+            });
+        }
     }
 
     for child in fs::read_dir(entry.source_path).map_err(|source| Error::FileOperationIo {
@@ -332,6 +350,10 @@ fn plan_tree_directory(
 
     if matches!(mode, TreePlanMode::Sync) && operation.delete.unwrap_or(false) {
         plan_sync_deletes(operation, entry, actions)?;
+    }
+
+    if let Some(action) = directory_metadata {
+        actions.push(action);
     }
 
     Ok(())
@@ -412,12 +434,14 @@ fn plan_tree_file(
                 )? =>
             {
                 actions.push(FileAction::RepairMetadata {
+                    operation: operation.operation,
                     source: entry.source.to_path_buf(),
                     target: entry.target.to_path_buf(),
                     source_path: entry.source_path.to_path_buf(),
                     target_path: entry.target_path.to_path_buf(),
                     metadata_policy: MetadataPolicy::from_ignored(&operation.ignore_metadata),
                     target_kind: MetadataTarget::File,
+                    report: true,
                 });
                 Ok(())
             }
@@ -848,13 +872,19 @@ fn report_dry_run(action: &FileAction, reporter: &mut dyn Reporter) -> Result<()
                 target: target.clone(),
             },
         ),
-        FileAction::RepairMetadata { source, target, .. } => report(
+        FileAction::RepairMetadata {
+            source,
+            target,
+            report: true,
+            ..
+        } => report(
             reporter,
             OutputEvent::FileMetadataWouldApply {
                 source: source.clone(),
                 target: target.clone(),
             },
         ),
+        FileAction::RepairMetadata { report: false, .. } => Ok(()),
         FileAction::Delete { target, .. } => report(
             reporter,
             OutputEvent::FileWouldDelete {
@@ -888,20 +918,10 @@ fn apply_action(plan: &ActionPlan, action: &FileAction, reporter: &mut dyn Repor
         FileAction::CreateDirectory {
             operation,
             source,
-            source_path,
             target,
             target_path,
-            metadata_policy,
         } => {
             create_target_dir(*operation, target_path, &plan.context.worktree_path)?;
-            apply_metadata(
-                *operation,
-                source_path,
-                target_path,
-                *metadata_policy,
-                MetadataTarget::Directory,
-                Some(reporter),
-            )?;
             report_applied(reporter, *operation, source, target)
         }
         FileAction::CopyFile {
@@ -929,28 +949,34 @@ fn apply_action(plan: &ActionPlan, action: &FileAction, reporter: &mut dyn Repor
             report_applied(reporter, *operation, source, target)
         }
         FileAction::RepairMetadata {
+            operation,
             source,
             target,
             source_path,
             target_path,
             metadata_policy,
             target_kind,
+            report: should_report,
         } => {
             apply_metadata(
-                FileOperationKind::Sync,
+                *operation,
                 source_path,
                 target_path,
                 *metadata_policy,
                 *target_kind,
                 Some(reporter),
             )?;
-            report(
-                reporter,
-                OutputEvent::FileMetadataApplied {
-                    source: source.clone(),
-                    target: target.clone(),
-                },
-            )
+            if *should_report {
+                report(
+                    reporter,
+                    OutputEvent::FileMetadataApplied {
+                        source: source.clone(),
+                        target: target.clone(),
+                    },
+                )
+            } else {
+                Ok(())
+            }
         }
         FileAction::CreateSymlink {
             operation,
@@ -1160,7 +1186,7 @@ fn copy_file_with_metadata_with_policy(
     metadata_policy: MetadataPolicy,
     reporter: Option<&mut dyn Reporter>,
 ) -> Result<()> {
-    ensure_source_file_safe(operation, source_path, root_path)?;
+    let source_metadata = ensure_source_file_safe(operation, source_path, root_path)?;
     let mut source_file = File::open(source_path).map_err(|source| Error::FileOperationIo {
         operation: operation.as_str(),
         path: source_path.to_path_buf(),
@@ -1184,10 +1210,10 @@ fn copy_file_with_metadata_with_policy(
     })?;
     drop(target_file);
 
-    apply_metadata(
+    apply_metadata_from_source(
         operation,
-        source_path,
         target_path,
+        &source_metadata,
         metadata_policy,
         MetadataTarget::File,
         reporter,
@@ -1203,9 +1229,27 @@ fn apply_metadata(
     reporter: Option<&mut dyn Reporter>,
 ) -> Result<()> {
     let metadata = metadata(source_path, operation)?;
-    apply_ownership(operation, target_path, &metadata, policy, reporter)?;
+    apply_metadata_from_source(
+        operation,
+        target_path,
+        &metadata,
+        policy,
+        target_kind,
+        reporter,
+    )
+}
+
+fn apply_metadata_from_source(
+    operation: FileOperationKind,
+    target_path: &Path,
+    metadata: &Metadata,
+    policy: MetadataPolicy,
+    target_kind: MetadataTarget,
+    reporter: Option<&mut dyn Reporter>,
+) -> Result<()> {
+    apply_ownership(operation, target_path, metadata, policy, reporter)?;
     if target_kind == MetadataTarget::File {
-        apply_file_times(operation, target_path, &metadata)?;
+        apply_file_times(operation, target_path, metadata)?;
     }
     if policy.permissions {
         fs::set_permissions(target_path, metadata.permissions()).map_err(|source| {
@@ -1231,10 +1275,18 @@ fn apply_file_times(
     if let Ok(modified) = metadata.modified() {
         times = times.set_modified(modified);
     }
-    File::options()
-        .write(true)
-        .open(target_path)
+    File::open(target_path)
         .and_then(|file| file.set_times(times))
+        .or_else(|source| {
+            if source.kind() == std::io::ErrorKind::PermissionDenied {
+                File::options()
+                    .write(true)
+                    .open(target_path)
+                    .and_then(|file| file.set_times(times))
+            } else {
+                Err(source)
+            }
+        })
         .map_err(|source| Error::FileOperationIo {
             operation: operation.as_str(),
             path: target_path.to_path_buf(),
