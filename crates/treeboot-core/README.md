@@ -36,16 +36,29 @@ fn bootstrap(reporter: &mut dyn Reporter) -> treeboot_core::Result<()> {
 }
 ```
 
-Use lower-level types when embedding pieces of the workflow:
+Use lower-level types when embedding pieces of the workflow. Action plans are
+validated values: build them through constructors, then inspect them through
+accessor methods before execution if needed.
 
 ```rust
+use std::path::Path;
+
 use treeboot_core::{ActionPlan, ActionPlanOptions, Config, Worktree};
 
 fn plan_bootstrap(
+    config_path: &Path,
     context: &Worktree,
     config: &Config,
 ) -> treeboot_core::Result<ActionPlan> {
-    ActionPlan::from_manifest(config, context, ActionPlanOptions::default())
+    let plan = ActionPlan::from_manifest(
+        config_path,
+        config,
+        context,
+        ActionPlanOptions::default(),
+    )?;
+    let _file_count = plan.files().len();
+
+    Ok(plan)
 }
 ```
 

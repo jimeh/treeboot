@@ -3,6 +3,7 @@ use std::ffi::OsString;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::*;
+use crate::validation::PlannedFileOperationParts;
 use crate::{PlanOrigin, SourceSpan, Worktree};
 
 #[derive(Default)]
@@ -231,7 +232,25 @@ fn operation(
     source: &str,
     target: &str,
 ) -> PlannedFileOperation {
-    PlannedFileOperation {
+    operation_with_status(
+        operation,
+        root,
+        worktree,
+        source,
+        target,
+        PlannedFileStatus::Ready,
+    )
+}
+
+fn operation_with_status(
+    operation: FileOperationKind,
+    root: &Path,
+    worktree: &Path,
+    source: &str,
+    target: &str,
+    status: PlannedFileStatus,
+) -> PlannedFileOperation {
+    PlannedFileOperation::from_raw_parts_unchecked(PlannedFileOperationParts {
         operation,
         source: PathBuf::from(source),
         target: PathBuf::from(target),
@@ -242,9 +261,9 @@ fn operation(
         delete: None,
         symlinks: None,
         ignore_metadata: Vec::new(),
-        status: PlannedFileStatus::Ready,
+        status,
         declaration: span(),
-    }
+    })
 }
 
 fn sync_operation(
@@ -257,15 +276,15 @@ fn sync_operation(
 }
 
 fn run_plan(root: &Path, worktree: &Path, files: Vec<PlannedFileOperation>) -> ActionPlan {
-    ActionPlan {
-        context: context(root, worktree),
-        origin: PlanOrigin::Manifest {
+    ActionPlan::from_parts_unchecked(
+        context(root, worktree),
+        PlanOrigin::Manifest {
             path: worktree.join(".treeboot.toml"),
         },
-        config_path: Some(worktree.join(".treeboot.toml")),
+        Some(worktree.join(".treeboot.toml")),
         files,
-        commands: Vec::new(),
-    }
+        Vec::new(),
+    )
 }
 
 #[test]
@@ -829,8 +848,14 @@ fn apply_file_operations_should_reject_unsupported_sync_file_target_type() {
 #[test]
 fn apply_file_operations_should_skip_optional_missing_sources() {
     let (root, worktree) = temp_workspace("missing-source");
-    let mut missing = operation(FileOperationKind::Copy, &root, &worktree, ".env", ".env");
-    missing.status = PlannedFileStatus::SkippedMissingSource;
+    let missing = operation_with_status(
+        FileOperationKind::Copy,
+        &root,
+        &worktree,
+        ".env",
+        ".env",
+        PlannedFileStatus::SkippedMissingSource,
+    );
     let plan = run_plan(&root, &worktree, vec![missing]);
     let mut reporter = VecReporter::default();
 
@@ -856,8 +881,14 @@ fn apply_file_operations_should_skip_optional_missing_sources_with_strict_or_for
         },
     ] {
         let (root, worktree) = temp_workspace("missing-source-mode");
-        let mut missing = operation(FileOperationKind::Copy, &root, &worktree, ".env", ".env");
-        missing.status = PlannedFileStatus::SkippedMissingSource;
+        let missing = operation_with_status(
+            FileOperationKind::Copy,
+            &root,
+            &worktree,
+            ".env",
+            ".env",
+            PlannedFileStatus::SkippedMissingSource,
+        );
         let plan = run_plan(&root, &worktree, vec![missing]);
         let mut reporter = VecReporter::default();
 
@@ -874,8 +905,14 @@ fn apply_file_operations_should_skip_optional_missing_sources_with_strict_or_for
 #[test]
 fn apply_file_operations_should_report_optional_missing_source_in_dry_run() {
     let (root, worktree) = temp_workspace("missing-source-dry-run");
-    let mut missing = operation(FileOperationKind::Copy, &root, &worktree, ".env", ".env");
-    missing.status = PlannedFileStatus::SkippedMissingSource;
+    let missing = operation_with_status(
+        FileOperationKind::Copy,
+        &root,
+        &worktree,
+        ".env",
+        ".env",
+        PlannedFileStatus::SkippedMissingSource,
+    );
     let plan = run_plan(&root, &worktree, vec![missing]);
     let mut reporter = VecReporter::default();
 
@@ -1017,8 +1054,8 @@ fn apply_file_operations_should_repair_sync_file_modified_time() {
         .open(&target)
         .and_then(|file| file.set_times(FileTimes::new().set_modified(target_mtime)))
         .expect("target mtime should be set");
-    let mut sync = sync_operation(&root, &worktree, ".env", ".env");
-    sync.compare = Some(SyncCompare::Checksum);
+    let sync =
+        sync_operation(&root, &worktree, ".env", ".env").with_compare(Some(SyncCompare::Checksum));
     let plan = run_plan(&root, &worktree, vec![sync]);
     let mut reporter = VecReporter::default();
 
@@ -1055,8 +1092,8 @@ fn apply_file_operations_should_report_metadata_repair_in_dry_run_without_mutati
         .open(&target)
         .and_then(|file| file.set_times(FileTimes::new().set_modified(target_mtime)))
         .expect("target mtime should be set");
-    let mut sync = sync_operation(&root, &worktree, ".env", ".env");
-    sync.compare = Some(SyncCompare::Checksum);
+    let sync =
+        sync_operation(&root, &worktree, ".env", ".env").with_compare(Some(SyncCompare::Checksum));
     let plan = run_plan(&root, &worktree, vec![sync]);
     let mut reporter = VecReporter::default();
 
@@ -1171,8 +1208,8 @@ fn apply_file_operations_should_repair_directory_metadata_after_child_updates() 
         .permissions();
     target_permissions.set_mode(0o755);
     fs::set_permissions(&target, target_permissions).expect("target mode should be set");
-    let mut sync = sync_operation(&root, &worktree, "shared", "shared");
-    sync.compare = Some(SyncCompare::Checksum);
+    let sync = sync_operation(&root, &worktree, "shared", "shared")
+        .with_compare(Some(SyncCompare::Checksum));
     let plan = run_plan(&root, &worktree, vec![sync]);
     let mut reporter = VecReporter::default();
 
@@ -1216,8 +1253,8 @@ fn apply_file_operations_should_sync_child_inside_existing_read_only_directory()
         .permissions();
     target_permissions.set_mode(0o555);
     fs::set_permissions(&target, target_permissions).expect("target mode should be set");
-    let mut sync = sync_operation(&root, &worktree, "shared", "shared");
-    sync.compare = Some(SyncCompare::Checksum);
+    let sync = sync_operation(&root, &worktree, "shared", "shared")
+        .with_compare(Some(SyncCompare::Checksum));
     let plan = run_plan(&root, &worktree, vec![sync]);
     let mut reporter = VecReporter::default();
 
@@ -1255,8 +1292,8 @@ fn apply_file_operations_should_ignore_sync_directory_permissions_when_configure
         .permissions();
     target_permissions.set_mode(0o755);
     fs::set_permissions(&target, target_permissions).expect("target mode should be set");
-    let mut sync = sync_operation(&root, &worktree, "shared", "shared");
-    sync.ignore_metadata = vec![MetadataField::Permissions];
+    let sync = sync_operation(&root, &worktree, "shared", "shared")
+        .with_ignore_metadata(vec![MetadataField::Permissions]);
     let plan = run_plan(&root, &worktree, vec![sync]);
     let mut reporter = VecReporter::default();
 
@@ -1347,8 +1384,8 @@ fn apply_file_operations_should_update_checksum_sync_when_metadata_matches() {
         .open(&target)
         .and_then(|file| file.set_times(times))
         .expect("target mtime should be aligned");
-    let mut sync = sync_operation(&root, &worktree, ".env", ".env");
-    sync.compare = Some(SyncCompare::Checksum);
+    let sync =
+        sync_operation(&root, &worktree, ".env", ".env").with_compare(Some(SyncCompare::Checksum));
     let plan = run_plan(&root, &worktree, vec![sync]);
     let mut reporter = VecReporter::default();
 
@@ -1376,8 +1413,8 @@ fn apply_file_operations_should_leave_unchanged_checksum_sync_silent() {
         .open(&target)
         .and_then(|file| file.set_times(times))
         .expect("target mtime should be aligned");
-    let mut sync = sync_operation(&root, &worktree, ".env", ".env");
-    sync.compare = Some(SyncCompare::Checksum);
+    let sync =
+        sync_operation(&root, &worktree, ".env", ".env").with_compare(Some(SyncCompare::Checksum));
     let plan = run_plan(&root, &worktree, vec![sync]);
     let mut reporter = VecReporter::default();
 
@@ -1460,9 +1497,9 @@ fn apply_file_operations_should_restore_ignored_read_only_directory_permissions_
         .permissions();
     target_permissions.set_mode(0o555);
     fs::set_permissions(&target, target_permissions).expect("target mode should be set");
-    let mut sync = sync_operation(&root, &worktree, "shared", "shared");
-    sync.compare = Some(SyncCompare::Checksum);
-    sync.ignore_metadata = vec![MetadataField::Permissions];
+    let sync = sync_operation(&root, &worktree, "shared", "shared")
+        .with_compare(Some(SyncCompare::Checksum))
+        .with_ignore_metadata(vec![MetadataField::Permissions]);
     let plan = run_plan(&root, &worktree, vec![sync]);
     let mut reporter = VecReporter::default();
 
@@ -1562,8 +1599,8 @@ fn apply_file_operations_should_repair_read_only_target_file_metadata() {
         .permissions();
     target_permissions.set_mode(0o400);
     fs::set_permissions(&target, target_permissions).expect("target mode should be set");
-    let mut sync = sync_operation(&root, &worktree, ".env", ".env");
-    sync.compare = Some(SyncCompare::Checksum);
+    let sync =
+        sync_operation(&root, &worktree, ".env", ".env").with_compare(Some(SyncCompare::Checksum));
     let plan = run_plan(&root, &worktree, vec![sync]);
     let mut reporter = VecReporter::default();
 
@@ -1608,8 +1645,8 @@ fn apply_file_operations_should_ignore_sync_file_permissions_when_configured() {
         .permissions();
     target_permissions.set_mode(0o644);
     fs::set_permissions(&target, target_permissions).expect("target mode should be set");
-    let mut sync = sync_operation(&root, &worktree, ".env", ".env");
-    sync.ignore_metadata = vec![MetadataField::Permissions];
+    let sync = sync_operation(&root, &worktree, ".env", ".env")
+        .with_ignore_metadata(vec![MetadataField::Permissions]);
     let plan = run_plan(&root, &worktree, vec![sync]);
     let mut reporter = VecReporter::default();
 
@@ -1630,8 +1667,8 @@ fn apply_file_operations_should_update_checksum_sync_when_size_differs() {
     let (root, worktree) = temp_workspace("sync-checksum-size");
     fs::write(root.join(".env"), "longer\n").expect("source should be written");
     fs::write(worktree.join(".env"), "old\n").expect("target should be written");
-    let mut sync = sync_operation(&root, &worktree, ".env", ".env");
-    sync.compare = Some(SyncCompare::Checksum);
+    let sync =
+        sync_operation(&root, &worktree, ".env", ".env").with_compare(Some(SyncCompare::Checksum));
     let plan = run_plan(&root, &worktree, vec![sync]);
     let mut reporter = VecReporter::default();
 
@@ -1704,8 +1741,7 @@ fn apply_file_operations_should_delete_target_only_entries_when_sync_delete_is_t
     fs::write(worktree.join("shared/extra"), "remove\n").expect("extra should be written");
     fs::write(worktree.join("shared/extra-dir/file"), "remove\n")
         .expect("nested extra should be written");
-    let mut sync = sync_operation(&root, &worktree, "shared", "shared");
-    sync.delete = Some(true);
+    let sync = sync_operation(&root, &worktree, "shared", "shared").with_delete(Some(true));
     let plan = run_plan(&root, &worktree, vec![sync]);
     let mut reporter = VecReporter::default();
 
@@ -1741,8 +1777,7 @@ fn apply_file_operations_should_delete_before_read_only_directory_metadata() {
         .permissions();
     target_permissions.set_mode(0o755);
     fs::set_permissions(&target, target_permissions).expect("target mode should be set");
-    let mut sync = sync_operation(&root, &worktree, "shared", "shared");
-    sync.delete = Some(true);
+    let sync = sync_operation(&root, &worktree, "shared", "shared").with_delete(Some(true));
     let plan = run_plan(&root, &worktree, vec![sync]);
     let mut reporter = VecReporter::default();
 
@@ -1779,8 +1814,7 @@ fn apply_file_operations_should_delete_inside_existing_read_only_directory() {
         .permissions();
     target_permissions.set_mode(0o555);
     fs::set_permissions(&target, target_permissions).expect("target mode should be set");
-    let mut sync = sync_operation(&root, &worktree, "shared", "shared");
-    sync.delete = Some(true);
+    let sync = sync_operation(&root, &worktree, "shared", "shared").with_delete(Some(true));
     let plan = run_plan(&root, &worktree, vec![sync]);
     let mut reporter = VecReporter::default();
 
@@ -1802,8 +1836,7 @@ fn apply_file_operations_should_report_sync_delete_in_dry_run_without_mutation()
     fs::create_dir_all(root.join("shared")).expect("source dir should be created");
     fs::create_dir_all(worktree.join("shared")).expect("target dir should be created");
     fs::write(worktree.join("shared/extra"), "keep\n").expect("extra should be written");
-    let mut sync = sync_operation(&root, &worktree, "shared", "shared");
-    sync.delete = Some(true);
+    let sync = sync_operation(&root, &worktree, "shared", "shared").with_delete(Some(true));
     let plan = run_plan(&root, &worktree, vec![sync]);
     let mut reporter = VecReporter::default();
 
@@ -1986,8 +2019,7 @@ fn apply_file_operations_should_delete_nested_target_only_entries() {
     fs::write(root.join("shared/nested/config"), "keep\n").expect("source file should be written");
     fs::write(worktree.join("shared/nested/old"), "remove\n")
         .expect("nested extra should be written");
-    let mut sync = sync_operation(&root, &worktree, "shared", "shared");
-    sync.delete = Some(true);
+    let sync = sync_operation(&root, &worktree, "shared", "shared").with_delete(Some(true));
     let plan = run_plan(&root, &worktree, vec![sync]);
     let mut reporter = VecReporter::default();
 

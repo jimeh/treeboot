@@ -156,6 +156,10 @@ _The normalized model is intentionally separate from the validated plan. Parsing
 4. Normalization emits `Config` plus source spans.
 5. `ActionPlan::from_manifest` validates files and commands.
 
+`ActionPlan` and its planned operation entries keep their fields private.
+External callers inspect validated plans through accessors instead of
+constructing or mutating planned work directly.
+
 ### Manual file path
 
 1. CLI converts subcommand args to `FileOperationOptions`.
@@ -257,7 +261,7 @@ reports the concrete action stream.
 - Reporter failures become typed output errors.
 
 ```text
-ActionPlan.files
+ActionPlan::files()
   -> plan_operation
   -> FileAction::{CreateDirectory, CopyFile, CreateSymlink, Delete, Skip, Warning}
   -> grouped PlannedFileOperationActions

@@ -1,5 +1,7 @@
 use std::process::{Command, ExitStatus};
 
+#[cfg(test)]
+use crate::validation::PlannedCommandParts;
 use crate::{
     ActionPlan, CommandKind, Error, OutputEvent, PlannedCommand, Reporter, Result, Worktree,
 };
@@ -16,7 +18,7 @@ pub(crate) fn execute_commands(
     options: CommandExecutionOptions,
     reporter: &mut dyn Reporter,
 ) -> Result<()> {
-    for command in &plan.commands {
+    for command in plan.commands() {
         if options.dry_run {
             report(
                 reporter,
@@ -25,7 +27,7 @@ pub(crate) fn execute_commands(
                 },
             )?;
         } else {
-            run_sequential(command, &plan.context, reporter)?;
+            run_sequential(command, plan.context(), reporter)?;
         }
     }
 
@@ -48,7 +50,7 @@ fn run_sequential(
     let status = match build_command(command, context).status() {
         Ok(status) => status,
         Err(source) => {
-            if command.allow_failure {
+            if command.allow_failure() {
                 report_allowed_failure(reporter, label, format!("failed to start: {source}"))?;
                 return Ok(());
             }
@@ -57,7 +59,7 @@ fn run_sequential(
         }
     };
 
-    handle_exit_status(command.allow_failure, label, status, reporter)
+    handle_exit_status(command.allow_failure(), label, status, reporter)
 }
 
 fn handle_exit_status(
@@ -89,7 +91,7 @@ fn report_allowed_failure(
 }
 
 fn build_command(command: &PlannedCommand, context: &Worktree) -> Command {
-    let mut process = match &command.command {
+    let mut process = match command.command() {
         CommandKind::Shell { run } => build_shell_command(run),
         CommandKind::Direct { program, args } => {
             let mut process = Command::new(program);
@@ -99,9 +101,9 @@ fn build_command(command: &PlannedCommand, context: &Worktree) -> Command {
     };
 
     process
-        .current_dir(&command.cwd_path)
+        .current_dir(command.cwd_path())
         .envs(&context.environment)
-        .envs(&command.env);
+        .envs(command.env());
     process
 }
 
@@ -120,9 +122,9 @@ fn build_shell_command(run: &str) -> Command {
 }
 
 fn command_label(command: &PlannedCommand) -> String {
-    let invocation = invocation_label(&command.command);
+    let invocation = invocation_label(command.command());
 
-    if let Some(name) = &command.name {
+    if let Some(name) = command.name() {
         format!("{name}: {invocation}")
     } else {
         invocation
@@ -167,7 +169,7 @@ mod tests {
         );
 
         assert_eq!(
-            command_label(&command.inner),
+            command_label(&command.planned()),
             "Install packages: npm install"
         );
     }
@@ -182,7 +184,7 @@ mod tests {
             },
         );
 
-        assert_eq!(command_label(&command.inner), "cargo test --locked");
+        assert_eq!(command_label(&command.planned()), "cargo test --locked");
     }
 
     #[cfg(unix)]
@@ -497,35 +499,39 @@ mod tests {
     }
 
     struct TestCommand {
-        inner: PlannedCommand,
+        parts: PlannedCommandParts,
     }
 
     impl TestCommand {
+        fn planned(&self) -> PlannedCommand {
+            PlannedCommand::from_raw_parts_unchecked(self.parts.clone())
+        }
+
         fn with_allow_failure(mut self) -> Self {
-            self.inner.allow_failure = true;
+            self.parts.allow_failure = true;
             self
         }
 
         fn with_cwd(mut self, cwd: PathBuf) -> Self {
-            self.inner.cwd_path = cwd;
+            self.parts.cwd_path = cwd;
             self
         }
 
         fn with_env(mut self, key: &str, value: &str) -> Self {
-            self.inner.env.insert(key.to_owned(), value.to_owned());
+            self.parts.env.insert(key.to_owned(), value.to_owned());
             self
         }
     }
 
     impl From<TestCommand> for PlannedCommand {
         fn from(command: TestCommand) -> Self {
-            command.inner
+            PlannedCommand::from_raw_parts_unchecked(command.parts)
         }
     }
 
     fn planned_command(name: Option<&str>, command: CommandKind) -> TestCommand {
         TestCommand {
-            inner: PlannedCommand {
+            parts: PlannedCommandParts {
                 name: name.map(str::to_owned),
                 command,
                 cwd: None,
@@ -542,27 +548,26 @@ mod tests {
         }
     }
 
-    fn plan(context: Worktree, commands: Vec<impl Into<PlannedCommand>>) -> ActionPlan {
+    fn plan(context: Worktree, commands: Vec<TestCommand>) -> ActionPlan {
         let commands = commands
             .into_iter()
-            .map(Into::into)
-            .map(|mut command: PlannedCommand| {
-                if command.cwd_path.as_os_str().is_empty() {
-                    command.cwd_path = context.worktree_path.clone();
+            .map(|mut command| {
+                if command.parts.cwd_path.as_os_str().is_empty() {
+                    command.parts.cwd_path = context.worktree_path.clone();
                 }
-                command
+                PlannedCommand::from(command)
             })
             .collect();
 
-        ActionPlan {
-            origin: crate::PlanOrigin::Manifest {
+        ActionPlan::from_parts_unchecked(
+            context.clone(),
+            crate::PlanOrigin::Manifest {
                 path: context.worktree_path.join(".treeboot.toml"),
             },
-            config_path: Some(context.worktree_path.join(".treeboot.toml")),
-            files: Vec::new(),
+            Some(context.worktree_path.join(".treeboot.toml")),
+            Vec::new(),
             commands,
-            context,
-        }
+        )
     }
 
     fn context(name: &str) -> (tempfile::TempDir, Worktree) {

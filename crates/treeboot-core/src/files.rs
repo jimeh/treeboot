@@ -175,21 +175,21 @@ pub(crate) fn apply_file_operations(
     reporter: &mut dyn Reporter,
 ) -> Result<FileApplyReport> {
     let mut groups = Vec::new();
-    for operation in &plan.files {
+    for operation in plan.files() {
         if !options.verbose {
             report_callback(reporter.file_operation_planning_started(
-                operation.operation,
-                &operation.source,
-                &operation.target,
+                operation.operation(),
+                operation.source(),
+                operation.target(),
             ))?;
         }
 
         let mut actions = Vec::new();
         plan_operation(plan, operation, options, &mut actions)?;
         let group = PlannedFileOperationActions {
-            operation: operation.operation,
-            source: operation.source.clone(),
-            target: operation.target.clone(),
+            operation: operation.operation(),
+            source: operation.source().to_path_buf(),
+            target: operation.target().to_path_buf(),
             expanded: operation_source_is_directory(plan, operation),
             actions,
         };
@@ -259,7 +259,7 @@ pub(crate) fn apply_file_operations(
 }
 
 fn operation_source_is_directory(plan: &ActionPlan, operation: &PlannedFileOperation) -> bool {
-    if operation.status == PlannedFileStatus::SkippedMissingSource {
+    if operation.status() == PlannedFileStatus::SkippedMissingSource {
         return false;
     }
 
@@ -279,16 +279,16 @@ fn plan_operation(
     options: FileApplyOptions,
     actions: &mut Vec<FileAction>,
 ) -> Result<()> {
-    if operation.status == PlannedFileStatus::SkippedMissingSource {
+    if operation.status() == PlannedFileStatus::SkippedMissingSource {
         actions.push(FileAction::Skip {
-            operation: operation.operation,
-            target: operation.target.clone(),
+            operation: operation.operation(),
+            target: operation.target().to_path_buf(),
             reason: "missing source".to_owned(),
         });
         return Ok(());
     }
 
-    match operation.operation {
+    match operation.operation() {
         FileOperationKind::Copy => {
             plan_tree(plan, operation, TreePlanMode::Copy { options }, actions)
         }
@@ -304,15 +304,15 @@ fn plan_tree(
     actions: &mut Vec<FileAction>,
 ) -> Result<()> {
     let source_path = raw_source_path(plan, operation);
-    let metadata = metadata(&source_path, operation.operation)?;
+    let metadata = metadata(&source_path, operation.operation())?;
     plan_tree_entry(
         plan,
         operation,
         CopyEntry {
             source_path: &source_path,
-            target_path: &operation.target_path,
-            source: &operation.source,
-            target: &operation.target,
+            target_path: operation.target_path(),
+            source: operation.source(),
+            target: operation.target(),
         },
         &metadata,
         mode,
@@ -339,7 +339,7 @@ fn plan_tree_entry(
     }
 
     conflict(
-        operation.operation,
+        operation.operation(),
         entry.source_path.to_path_buf(),
         "source file type is unsupported",
     )
@@ -353,10 +353,10 @@ fn plan_tree_directory(
     actions: &mut Vec<FileAction>,
 ) -> Result<()> {
     let mut directory_metadata = None;
-    match maybe_metadata(entry.target_path, operation.operation)? {
+    match maybe_metadata(entry.target_path, operation.operation())? {
         Some(metadata) if metadata.file_type().is_symlink() || metadata.is_file() => {
             return conflict(
-                operation.operation,
+                operation.operation(),
                 entry.target_path.to_path_buf(),
                 "target is a file or symlink",
             );
@@ -365,7 +365,7 @@ fn plan_tree_directory(
             if let TreePlanMode::Copy { options } = mode {
                 if options.strict {
                     return conflict(
-                        operation.operation,
+                        operation.operation(),
                         entry.target_path.to_path_buf(),
                         "target directory exists",
                     );
@@ -373,7 +373,7 @@ fn plan_tree_directory(
 
                 if !options.force {
                     actions.push(FileAction::Skip {
-                        operation: operation.operation,
+                        operation: operation.operation(),
                         target: entry.target.to_path_buf(),
                         reason: "target directory exists".to_owned(),
                     });
@@ -381,21 +381,21 @@ fn plan_tree_directory(
             }
             if matches!(mode, TreePlanMode::Sync)
                 && metadata_drifted(
-                    operation.operation,
+                    operation.operation(),
                     entry.source_path,
                     entry.target_path,
                     &metadata,
                     MetadataTarget::Directory,
-                    MetadataPolicy::from_ignored(&operation.ignore_metadata),
+                    MetadataPolicy::from_ignored(operation.ignore_metadata()),
                 )?
             {
                 directory_metadata = Some(FileAction::RepairMetadata {
-                    operation: operation.operation,
+                    operation: operation.operation(),
                     source: entry.source.to_path_buf(),
                     target: entry.target.to_path_buf(),
                     source_path: entry.source_path.to_path_buf(),
                     target_path: entry.target_path.to_path_buf(),
-                    metadata_policy: MetadataPolicy::from_ignored(&operation.ignore_metadata),
+                    metadata_policy: MetadataPolicy::from_ignored(operation.ignore_metadata()),
                     target_kind: MetadataTarget::Directory,
                     report: true,
                 });
@@ -403,25 +403,25 @@ fn plan_tree_directory(
         }
         Some(_) => {
             return conflict(
-                operation.operation,
+                operation.operation(),
                 entry.target_path.to_path_buf(),
                 "target file type is unsupported",
             );
         }
         None => {
             actions.push(FileAction::CreateDirectory {
-                operation: operation.operation,
+                operation: operation.operation(),
                 source: entry.source.to_path_buf(),
                 target: entry.target.to_path_buf(),
                 target_path: entry.target_path.to_path_buf(),
             });
             directory_metadata = Some(FileAction::RepairMetadata {
-                operation: operation.operation,
+                operation: operation.operation(),
                 source: entry.source.to_path_buf(),
                 target: entry.target.to_path_buf(),
                 source_path: entry.source_path.to_path_buf(),
                 target_path: entry.target_path.to_path_buf(),
-                metadata_policy: MetadataPolicy::from_ignored(&operation.ignore_metadata),
+                metadata_policy: MetadataPolicy::from_ignored(operation.ignore_metadata()),
                 target_kind: MetadataTarget::Directory,
                 report: false,
             });
@@ -429,12 +429,12 @@ fn plan_tree_directory(
     }
 
     for child in fs::read_dir(entry.source_path).map_err(|source| Error::FileOperationIo {
-        operation: operation.operation.as_str(),
+        operation: operation.operation().as_str(),
         path: entry.source_path.to_path_buf(),
         source,
     })? {
         let child = child.map_err(|source| Error::FileOperationIo {
-            operation: operation.operation.as_str(),
+            operation: operation.operation().as_str(),
             path: entry.source_path.to_path_buf(),
             source,
         })?;
@@ -442,7 +442,7 @@ fn plan_tree_directory(
         let child_target_path = entry.target_path.join(child.file_name());
         let child_source = entry.source.join(child.file_name());
         let child_target = entry.target.join(child.file_name());
-        let child_metadata = metadata(&child_source_path, operation.operation)?;
+        let child_metadata = metadata(&child_source_path, operation.operation())?;
 
         plan_tree_entry(
             plan,
@@ -459,7 +459,7 @@ fn plan_tree_directory(
         )?;
     }
 
-    if matches!(mode, TreePlanMode::Sync) && operation.delete.unwrap_or(false) {
+    if matches!(mode, TreePlanMode::Sync) && operation.delete().unwrap_or(false) {
         plan_sync_deletes(operation, entry, actions)?;
     }
 
@@ -476,33 +476,33 @@ fn plan_tree_file(
     mode: TreePlanMode,
     actions: &mut Vec<FileAction>,
 ) -> Result<()> {
-    match maybe_metadata(entry.target_path, operation.operation)? {
+    match maybe_metadata(entry.target_path, operation.operation())? {
         Some(metadata) if metadata.is_dir() => conflict(
-            operation.operation,
+            operation.operation(),
             entry.target_path.to_path_buf(),
             "target is a directory",
         ),
         Some(metadata) => match mode {
             TreePlanMode::Copy { options } if options.strict => conflict(
-                operation.operation,
+                operation.operation(),
                 entry.target_path.to_path_buf(),
                 "target exists",
             ),
             TreePlanMode::Copy { options } if options.force => {
                 actions.push(FileAction::CopyFile {
-                    operation: operation.operation,
+                    operation: operation.operation(),
                     source: entry.source.to_path_buf(),
                     target: entry.target.to_path_buf(),
                     source_path: entry.source_path.to_path_buf(),
                     target_path: entry.target_path.to_path_buf(),
-                    metadata_policy: MetadataPolicy::from_ignored(&operation.ignore_metadata),
+                    metadata_policy: MetadataPolicy::from_ignored(operation.ignore_metadata()),
                     replace: true,
                 });
                 Ok(())
             }
             TreePlanMode::Copy { .. } => {
                 actions.push(FileAction::Skip {
-                    operation: operation.operation,
+                    operation: operation.operation(),
                     target: entry.target.to_path_buf(),
                     reason: "target exists".to_owned(),
                 });
@@ -510,7 +510,7 @@ fn plan_tree_file(
             }
             TreePlanMode::Sync if !metadata.is_file() && !metadata.file_type().is_symlink() => {
                 conflict(
-                    operation.operation,
+                    operation.operation(),
                     entry.target_path.to_path_buf(),
                     "target file type is unsupported",
                 )
@@ -524,33 +524,33 @@ fn plan_tree_file(
                 )? =>
             {
                 actions.push(FileAction::CopyFile {
-                    operation: operation.operation,
+                    operation: operation.operation(),
                     source: entry.source.to_path_buf(),
                     target: entry.target.to_path_buf(),
                     source_path: entry.source_path.to_path_buf(),
                     target_path: entry.target_path.to_path_buf(),
-                    metadata_policy: MetadataPolicy::from_ignored(&operation.ignore_metadata),
+                    metadata_policy: MetadataPolicy::from_ignored(operation.ignore_metadata()),
                     replace: true,
                 });
                 Ok(())
             }
             TreePlanMode::Sync
                 if metadata_drifted(
-                    operation.operation,
+                    operation.operation(),
                     entry.source_path,
                     entry.target_path,
                     &metadata,
                     MetadataTarget::File,
-                    MetadataPolicy::from_ignored(&operation.ignore_metadata),
+                    MetadataPolicy::from_ignored(operation.ignore_metadata()),
                 )? =>
             {
                 actions.push(FileAction::RepairMetadata {
-                    operation: operation.operation,
+                    operation: operation.operation(),
                     source: entry.source.to_path_buf(),
                     target: entry.target.to_path_buf(),
                     source_path: entry.source_path.to_path_buf(),
                     target_path: entry.target_path.to_path_buf(),
-                    metadata_policy: MetadataPolicy::from_ignored(&operation.ignore_metadata),
+                    metadata_policy: MetadataPolicy::from_ignored(operation.ignore_metadata()),
                     target_kind: MetadataTarget::File,
                     report: true,
                 });
@@ -560,12 +560,12 @@ fn plan_tree_file(
         },
         None => {
             actions.push(FileAction::CopyFile {
-                operation: operation.operation,
+                operation: operation.operation(),
                 source: entry.source.to_path_buf(),
                 target: entry.target.to_path_buf(),
                 source_path: entry.source_path.to_path_buf(),
                 target_path: entry.target_path.to_path_buf(),
-                metadata_policy: MetadataPolicy::from_ignored(&operation.ignore_metadata),
+                metadata_policy: MetadataPolicy::from_ignored(operation.ignore_metadata()),
                 replace: false,
             });
             Ok(())
@@ -582,12 +582,12 @@ fn plan_tree_symlink(
 ) -> Result<()> {
     let (link_target, final_target, target_is_dir) = preserved_source_link(
         plan,
-        operation.operation,
+        operation.operation(),
         entry.source_path,
         entry.target_path,
     )?;
     let symlink_plan = SymlinkActionPlan {
-        operation: operation.operation,
+        operation: operation.operation(),
         source: entry.source.to_path_buf(),
         target: entry.target.to_path_buf(),
         target_path: entry.target_path.to_path_buf(),
@@ -663,21 +663,21 @@ fn plan_symlink(
     actions: &mut Vec<FileAction>,
 ) -> Result<()> {
     let target_parent = operation
-        .target_path
+        .target_path()
         .parent()
         .unwrap_or_else(|| Path::new("."));
-    let link_target = relative_path(target_parent, &operation.source_path)
-        .unwrap_or_else(|| operation.source_path.clone());
+    let link_target = relative_path(target_parent, operation.source_path())
+        .unwrap_or_else(|| operation.source_path().to_path_buf());
 
     plan_symlink_action(
         SymlinkActionPlan {
-            operation: operation.operation,
-            source: operation.source.clone(),
-            target: operation.target.clone(),
-            target_path: operation.target_path.clone(),
+            operation: operation.operation(),
+            source: operation.source().to_path_buf(),
+            target: operation.target().to_path_buf(),
+            target_path: operation.target_path().to_path_buf(),
             link_target,
-            final_target: operation.source_path.clone(),
-            target_is_dir: operation.source_path.is_dir(),
+            final_target: operation.source_path().to_path_buf(),
+            target_is_dir: operation.source_path().is_dir(),
         },
         options,
         actions,
@@ -736,7 +736,7 @@ fn plan_sync_deletes(
     entry: CopyEntry<'_>,
     actions: &mut Vec<FileAction>,
 ) -> Result<()> {
-    let Some(target_metadata) = maybe_metadata(entry.target_path, operation.operation)? else {
+    let Some(target_metadata) = maybe_metadata(entry.target_path, operation.operation())? else {
         return Ok(());
     };
     if !target_metadata.is_dir() {
@@ -744,18 +744,18 @@ fn plan_sync_deletes(
     }
 
     for child in fs::read_dir(entry.target_path).map_err(|source| Error::FileOperationIo {
-        operation: operation.operation.as_str(),
+        operation: operation.operation().as_str(),
         path: entry.target_path.to_path_buf(),
         source,
     })? {
         let child = child.map_err(|source| Error::FileOperationIo {
-            operation: operation.operation.as_str(),
+            operation: operation.operation().as_str(),
             path: entry.target_path.to_path_buf(),
             source,
         })?;
         let child_target_path = child.path();
         let child_source_path = entry.source_path.join(child.file_name());
-        if maybe_metadata(&child_source_path, operation.operation)?.is_none() {
+        if maybe_metadata(&child_source_path, operation.operation())?.is_none() {
             actions.push(FileAction::Delete {
                 target: entry.target.join(child.file_name()),
                 target_path: child_target_path,
@@ -776,7 +776,7 @@ fn file_sync_changed(
         return Ok(true);
     }
 
-    match operation.compare.unwrap_or(SyncCompare::Metadata) {
+    match operation.compare().unwrap_or(SyncCompare::Metadata) {
         SyncCompare::Metadata => {
             metadata_changed(operation, source_path, target_path, target_metadata)
         }
@@ -790,7 +790,7 @@ fn metadata_changed(
     target_path: &Path,
     target_metadata: &Metadata,
 ) -> Result<bool> {
-    let source_metadata = metadata(source_path, operation.operation)?;
+    let source_metadata = metadata(source_path, operation.operation())?;
     if source_metadata.len() != target_metadata.len() {
         return Ok(true);
     }
@@ -798,14 +798,14 @@ fn metadata_changed(
     let source_modified = source_metadata
         .modified()
         .map_err(|source| Error::FileOperationIo {
-            operation: operation.operation.as_str(),
+            operation: operation.operation().as_str(),
             path: source_path.to_path_buf(),
             source,
         })?;
     let target_modified = target_metadata
         .modified()
         .map_err(|source| Error::FileOperationIo {
-            operation: operation.operation.as_str(),
+            operation: operation.operation().as_str(),
             path: target_path.to_path_buf(),
             source,
         })?;
@@ -818,19 +818,19 @@ fn contents_changed(
     source_path: &Path,
     target_path: &Path,
 ) -> Result<bool> {
-    let source_metadata = metadata(source_path, operation.operation)?;
-    let target_metadata = metadata(target_path, operation.operation)?;
+    let source_metadata = metadata(source_path, operation.operation())?;
+    let target_metadata = metadata(target_path, operation.operation())?;
     if source_metadata.len() != target_metadata.len() {
         return Ok(true);
     }
 
     let mut source_file = File::open(source_path).map_err(|source| Error::FileOperationIo {
-        operation: operation.operation.as_str(),
+        operation: operation.operation().as_str(),
         path: source_path.to_path_buf(),
         source,
     })?;
     let mut target_file = File::open(target_path).map_err(|source| Error::FileOperationIo {
-        operation: operation.operation.as_str(),
+        operation: operation.operation().as_str(),
         path: target_path.to_path_buf(),
         source,
     })?;
@@ -841,7 +841,7 @@ fn contents_changed(
             ContentInput::Target => target_path,
         };
         Error::FileOperationIo {
-            operation: operation.operation.as_str(),
+            operation: operation.operation().as_str(),
             path: path.to_path_buf(),
             source: error.source,
         }
@@ -1113,9 +1113,12 @@ fn apply_action(
             target,
             target_path,
         } => {
-            with_writable_parent(*operation, target_path, &plan.context.worktree_path, || {
-                create_target_dir(*operation, target_path, &plan.context.worktree_path)
-            })?;
+            with_writable_parent(
+                *operation,
+                target_path,
+                &plan.context().worktree_path,
+                || create_target_dir(*operation, target_path, &plan.context().worktree_path),
+            )?;
             if detailed {
                 report_applied(reporter, *operation, source, target)?;
             }
@@ -1130,21 +1133,30 @@ fn apply_action(
             metadata_policy,
             replace,
         } => {
-            with_writable_parent(*operation, target_path, &plan.context.worktree_path, || {
-                create_parent_dir(*operation, target_path, &plan.context.worktree_path)?;
-                if *replace {
-                    remove_file_checked(*operation, target_path, &plan.context.worktree_path)?;
-                }
-                copy_file_with_metadata_with_policy(
-                    *operation,
-                    source_path,
-                    target_path,
-                    &plan.context.root_path,
-                    &plan.context.worktree_path,
-                    *metadata_policy,
-                    Some(reporter),
-                )
-            })?;
+            with_writable_parent(
+                *operation,
+                target_path,
+                &plan.context().worktree_path,
+                || {
+                    create_parent_dir(*operation, target_path, &plan.context().worktree_path)?;
+                    if *replace {
+                        remove_file_checked(
+                            *operation,
+                            target_path,
+                            &plan.context().worktree_path,
+                        )?;
+                    }
+                    copy_file_with_metadata_with_policy(
+                        *operation,
+                        source_path,
+                        target_path,
+                        &plan.context().root_path,
+                        &plan.context().worktree_path,
+                        *metadata_policy,
+                        Some(reporter),
+                    )
+                },
+            )?;
             if detailed {
                 report_applied(reporter, *operation, source, target)?;
             }
@@ -1189,19 +1201,28 @@ fn apply_action(
             target_is_dir,
             replace,
         } => {
-            with_writable_parent(*operation, target_path, &plan.context.worktree_path, || {
-                create_parent_dir(*operation, target_path, &plan.context.worktree_path)?;
-                if *replace {
-                    remove_file_checked(*operation, target_path, &plan.context.worktree_path)?;
-                }
-                create_symlink(
-                    *operation,
-                    link_target,
-                    *target_is_dir,
-                    target_path,
-                    &plan.context.worktree_path,
-                )
-            })?;
+            with_writable_parent(
+                *operation,
+                target_path,
+                &plan.context().worktree_path,
+                || {
+                    create_parent_dir(*operation, target_path, &plan.context().worktree_path)?;
+                    if *replace {
+                        remove_file_checked(
+                            *operation,
+                            target_path,
+                            &plan.context().worktree_path,
+                        )?;
+                    }
+                    create_symlink(
+                        *operation,
+                        link_target,
+                        *target_is_dir,
+                        target_path,
+                        &plan.context().worktree_path,
+                    )
+                },
+            )?;
             if detailed {
                 report_applied(reporter, *operation, source, target)?;
             }
@@ -1214,12 +1235,12 @@ fn apply_action(
             with_writable_parent(
                 FileOperationKind::Sync,
                 target_path,
-                &plan.context.worktree_path,
+                &plan.context().worktree_path,
                 || {
                     remove_any(
                         FileOperationKind::Sync,
                         target_path,
-                        &plan.context.worktree_path,
+                        &plan.context().worktree_path,
                     )
                 },
             )?;
@@ -1859,9 +1880,9 @@ fn preserved_source_link(
         .map(|metadata| metadata.is_dir())
         .unwrap_or(false);
     let final_target = resolved_target
-        .strip_prefix(&plan.context.root_path)
+        .strip_prefix(&plan.context().root_path)
         .map_or(resolved_target.clone(), |relative| {
-            plan.context.worktree_path.join(relative)
+            plan.context().worktree_path.join(relative)
         });
     let target_parent = target_path.parent().unwrap_or_else(|| Path::new("."));
     let link_target =
@@ -1871,10 +1892,10 @@ fn preserved_source_link(
 }
 
 fn raw_source_path(plan: &ActionPlan, operation: &PlannedFileOperation) -> PathBuf {
-    if operation.source.is_absolute() {
-        operation.source.clone()
+    if operation.source().is_absolute() {
+        operation.source().to_path_buf()
     } else {
-        normalize_lexical(&plan.context.root_path.join(&operation.source))
+        normalize_lexical(&plan.context().root_path.join(operation.source()))
     }
 }
 

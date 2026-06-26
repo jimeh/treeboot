@@ -186,11 +186,11 @@ fn public_api_should_discover_load_plan_and_execute_manifest() {
     )
     .expect("manifest plan should build");
 
-    assert_eq!(plan.context, worktree);
-    assert_eq!(plan.config_path.as_deref(), Some(config_path.as_path()));
-    assert!(matches!(plan.origin, PlanOrigin::Manifest { ref path } if path == &config_path));
-    assert_eq!(plan.files.len(), 1);
-    assert!(plan.commands.is_empty());
+    assert_eq!(plan.context(), &worktree);
+    assert_eq!(plan.config_path(), Some(config_path.as_path()));
+    assert!(matches!(plan.origin(), PlanOrigin::Manifest { path } if path == &config_path));
+    assert_eq!(plan.files().len(), 1);
+    assert!(plan.commands().is_empty());
 
     let mut reporter = VecReporter::default();
     let report = Executor::new(ExecuteOptions::default())
@@ -543,16 +543,16 @@ fn public_api_should_build_manual_file_plan_without_config_path() {
     )
     .expect("manual file plan should build");
 
-    assert_eq!(plan.context, context);
+    assert_eq!(plan.context(), &context);
     assert!(matches!(
-        plan.origin,
+        plan.origin(),
         PlanOrigin::Manual {
             operation: FileOperationKind::Copy
         }
     ));
-    assert_eq!(plan.config_path, None);
-    assert_eq!(plan.files.len(), 1);
-    assert!(plan.commands.is_empty());
+    assert_eq!(plan.config_path(), None);
+    assert_eq!(plan.files().len(), 1);
+    assert!(plan.commands().is_empty());
 }
 
 #[test]
@@ -670,8 +670,8 @@ fn public_api_file_operation_plan_should_preserve_manifest_origin() {
     )
     .expect("manifest-origin file plan should build");
 
-    assert_eq!(plan.config_path.as_deref(), Some(config_path.as_path()));
-    assert!(matches!(plan.origin, PlanOrigin::Manifest { path } if path == config_path));
+    assert_eq!(plan.config_path(), Some(config_path.as_path()));
+    assert!(matches!(plan.origin(), PlanOrigin::Manifest { path } if path == &config_path));
 }
 
 #[test]

@@ -50,21 +50,75 @@ pub enum PlanOrigin {
 }
 
 /// A validated set of file operations and commands ready for execution.
+///
+/// Plans can only be built through validation constructors. Callers may inspect
+/// plans through accessor methods, but cannot construct or mutate planned work
+/// directly.
+///
+/// ```compile_fail
+/// # use treeboot_core::ActionPlan;
+/// # fn cannot_construct() {
+/// ActionPlan {
+///     context: todo!(),
+///     origin: todo!(),
+///     config_path: None,
+///     files: Vec::new(),
+///     commands: Vec::new(),
+/// };
+/// # }
+/// ```
+///
+/// ```compile_fail
+/// # use treeboot_core::ActionPlan;
+/// # fn cannot_mutate(plan: &mut ActionPlan) {
+/// plan.commands = Vec::new();
+/// # }
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActionPlan {
     /// Runtime context used while building the plan.
-    pub context: Worktree,
+    context: Worktree,
     /// Origin of this plan.
-    pub origin: PlanOrigin,
+    origin: PlanOrigin,
     /// Config file used for this plan, when it came from a manifest.
-    pub config_path: Option<PathBuf>,
+    config_path: Option<PathBuf>,
     /// Planned file operations.
-    pub files: Vec<PlannedFileOperation>,
+    files: Vec<PlannedFileOperation>,
     /// Planned command operations.
-    pub commands: Vec<PlannedCommand>,
+    commands: Vec<PlannedCommand>,
 }
 
 impl ActionPlan {
+    /// Returns the runtime context used while building the plan.
+    #[must_use]
+    pub const fn context(&self) -> &Worktree {
+        &self.context
+    }
+
+    /// Returns the origin of this plan.
+    #[must_use]
+    pub const fn origin(&self) -> &PlanOrigin {
+        &self.origin
+    }
+
+    /// Returns the config file used for this plan, when it came from a manifest.
+    #[must_use]
+    pub fn config_path(&self) -> Option<&Path> {
+        self.config_path.as_deref()
+    }
+
+    /// Returns the planned file operations.
+    #[must_use]
+    pub fn files(&self) -> &[PlannedFileOperation] {
+        &self.files
+    }
+
+    /// Returns the planned command operations.
+    #[must_use]
+    pub fn commands(&self) -> &[PlannedCommand] {
+        &self.commands
+    }
+
     /// Builds a validated action plan from a parsed treeboot manifest.
     ///
     /// This does not apply file operations or execute commands. It normalizes
@@ -140,35 +194,185 @@ impl ActionPlan {
             commands: Vec::new(),
         })
     }
+
+    #[cfg(test)]
+    pub(crate) fn from_parts_unchecked(
+        context: Worktree,
+        origin: PlanOrigin,
+        config_path: Option<PathBuf>,
+        files: Vec<PlannedFileOperation>,
+        commands: Vec<PlannedCommand>,
+    ) -> Self {
+        Self {
+            context,
+            origin,
+            config_path,
+            files,
+            commands,
+        }
+    }
 }
 
 /// A validated file operation ready for execution.
+///
+/// ```compile_fail
+/// # use treeboot_core::PlannedFileOperation;
+/// # fn cannot_mutate(operation: &mut PlannedFileOperation) {
+/// operation.target_path = std::path::PathBuf::from("outside");
+/// # }
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlannedFileOperation {
     /// File operation kind.
-    pub operation: FileOperationKind,
+    operation: FileOperationKind,
     /// Declared source path.
-    pub source: PathBuf,
+    source: PathBuf,
     /// Declared target path.
-    pub target: PathBuf,
+    target: PathBuf,
     /// Normalized source path.
-    pub source_path: PathBuf,
+    source_path: PathBuf,
     /// Normalized target path.
-    pub target_path: PathBuf,
+    target_path: PathBuf,
     /// Whether a missing source should fail validation.
-    pub required: bool,
+    required: bool,
     /// Sync comparison mode.
-    pub compare: Option<SyncCompare>,
+    compare: Option<SyncCompare>,
     /// Whether sync should delete target-only files.
-    pub delete: Option<bool>,
+    delete: Option<bool>,
     /// How copy and sync should treat source symlinks.
-    pub symlinks: Option<SymlinkMode>,
+    symlinks: Option<SymlinkMode>,
     /// Metadata fields ignored by copy and sync.
-    pub ignore_metadata: Vec<MetadataField>,
+    ignore_metadata: Vec<MetadataField>,
     /// Whether this operation should execute.
-    pub status: PlannedFileStatus,
+    status: PlannedFileStatus,
     /// Source location for the operation declaration.
-    pub declaration: SourceSpan,
+    declaration: SourceSpan,
+}
+
+impl PlannedFileOperation {
+    /// Returns the file operation kind.
+    #[must_use]
+    pub const fn operation(&self) -> FileOperationKind {
+        self.operation
+    }
+
+    /// Returns the declared source path.
+    #[must_use]
+    pub fn source(&self) -> &Path {
+        &self.source
+    }
+
+    /// Returns the declared target path.
+    #[must_use]
+    pub fn target(&self) -> &Path {
+        &self.target
+    }
+
+    /// Returns the normalized source path.
+    #[must_use]
+    pub fn source_path(&self) -> &Path {
+        &self.source_path
+    }
+
+    /// Returns the normalized target path.
+    #[must_use]
+    pub fn target_path(&self) -> &Path {
+        &self.target_path
+    }
+
+    /// Returns whether a missing source should fail validation.
+    #[must_use]
+    pub const fn required(&self) -> bool {
+        self.required
+    }
+
+    /// Returns the sync comparison mode.
+    #[must_use]
+    pub const fn compare(&self) -> Option<SyncCompare> {
+        self.compare
+    }
+
+    /// Returns whether sync should delete target-only files.
+    #[must_use]
+    pub const fn delete(&self) -> Option<bool> {
+        self.delete
+    }
+
+    /// Returns how copy and sync should treat source symlinks.
+    #[must_use]
+    pub const fn symlinks(&self) -> Option<SymlinkMode> {
+        self.symlinks
+    }
+
+    /// Returns metadata fields ignored by copy and sync.
+    #[must_use]
+    pub fn ignore_metadata(&self) -> &[MetadataField] {
+        &self.ignore_metadata
+    }
+
+    /// Returns whether this operation should execute.
+    #[must_use]
+    pub const fn status(&self) -> PlannedFileStatus {
+        self.status
+    }
+
+    /// Returns the source location for the operation declaration.
+    #[must_use]
+    pub const fn declaration(&self) -> SourceSpan {
+        self.declaration
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_raw_parts_unchecked(parts: PlannedFileOperationParts) -> Self {
+        Self {
+            operation: parts.operation,
+            source: parts.source,
+            target: parts.target,
+            source_path: parts.source_path,
+            target_path: parts.target_path,
+            required: parts.required,
+            compare: parts.compare,
+            delete: parts.delete,
+            symlinks: parts.symlinks,
+            ignore_metadata: parts.ignore_metadata,
+            status: parts.status,
+            declaration: parts.declaration,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn with_compare(mut self, compare: Option<SyncCompare>) -> Self {
+        self.compare = compare;
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn with_delete(mut self, delete: Option<bool>) -> Self {
+        self.delete = delete;
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_ignore_metadata(mut self, ignore_metadata: Vec<MetadataField>) -> Self {
+        self.ignore_metadata = ignore_metadata;
+        self
+    }
+}
+
+#[cfg(test)]
+pub(crate) struct PlannedFileOperationParts {
+    pub(crate) operation: FileOperationKind,
+    pub(crate) source: PathBuf,
+    pub(crate) target: PathBuf,
+    pub(crate) source_path: PathBuf,
+    pub(crate) target_path: PathBuf,
+    pub(crate) required: bool,
+    pub(crate) compare: Option<SyncCompare>,
+    pub(crate) delete: Option<bool>,
+    pub(crate) symlinks: Option<SymlinkMode>,
+    pub(crate) ignore_metadata: Vec<MetadataField>,
+    pub(crate) status: PlannedFileStatus,
+    pub(crate) declaration: SourceSpan,
 }
 
 /// Execution status for a planned file operation.
@@ -181,22 +385,98 @@ pub enum PlannedFileStatus {
 }
 
 /// A validated command operation ready for execution.
+///
+/// ```compile_fail
+/// # use treeboot_core::PlannedCommand;
+/// # fn cannot_mutate(command: &mut PlannedCommand) {
+/// command.cwd_path = std::path::PathBuf::from("outside");
+/// # }
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlannedCommand {
     /// Optional display name.
-    pub name: Option<String>,
+    name: Option<String>,
     /// Command invocation.
-    pub command: CommandKind,
+    command: CommandKind,
     /// Declared working directory.
-    pub cwd: Option<PathBuf>,
+    cwd: Option<PathBuf>,
     /// Normalized working directory.
-    pub cwd_path: PathBuf,
+    cwd_path: PathBuf,
     /// Extra environment variables for this command.
-    pub env: BTreeMap<String, String>,
+    env: BTreeMap<String, String>,
     /// Whether a non-zero exit status should be non-fatal.
-    pub allow_failure: bool,
+    allow_failure: bool,
     /// Source location for the command declaration.
-    pub declaration: SourceSpan,
+    declaration: SourceSpan,
+}
+
+impl PlannedCommand {
+    /// Returns the optional display name.
+    #[must_use]
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    /// Returns the command invocation.
+    #[must_use]
+    pub const fn command(&self) -> &CommandKind {
+        &self.command
+    }
+
+    /// Returns the declared working directory.
+    #[must_use]
+    pub fn cwd(&self) -> Option<&Path> {
+        self.cwd.as_deref()
+    }
+
+    /// Returns the normalized working directory.
+    #[must_use]
+    pub fn cwd_path(&self) -> &Path {
+        &self.cwd_path
+    }
+
+    /// Returns extra environment variables for this command.
+    #[must_use]
+    pub const fn env(&self) -> &BTreeMap<String, String> {
+        &self.env
+    }
+
+    /// Returns whether a non-zero exit status should be non-fatal.
+    #[must_use]
+    pub const fn allow_failure(&self) -> bool {
+        self.allow_failure
+    }
+
+    /// Returns the source location for the command declaration.
+    #[must_use]
+    pub const fn declaration(&self) -> SourceSpan {
+        self.declaration
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_raw_parts_unchecked(parts: PlannedCommandParts) -> Self {
+        Self {
+            name: parts.name,
+            command: parts.command,
+            cwd: parts.cwd,
+            cwd_path: parts.cwd_path,
+            env: parts.env,
+            allow_failure: parts.allow_failure,
+            declaration: parts.declaration,
+        }
+    }
+}
+
+#[cfg(test)]
+#[derive(Clone)]
+pub(crate) struct PlannedCommandParts {
+    pub(crate) name: Option<String>,
+    pub(crate) command: CommandKind,
+    pub(crate) cwd: Option<PathBuf>,
+    pub(crate) cwd_path: PathBuf,
+    pub(crate) env: BTreeMap<String, String>,
+    pub(crate) allow_failure: bool,
+    pub(crate) declaration: SourceSpan,
 }
 
 pub(super) fn plan_file_operations(
