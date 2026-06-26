@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.6.0](https://github.com/jimeh/treeboot/compare/v0.5.1...v0.6.0) (2026-06-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* **treeboot-core:** treeboot-core command-shaped option defaults no longer use ambient process environment. Public option structs now require explicit EnvironmentInput, and RuntimeOptionOverrides::from_env() has been replaced by RuntimeOptionOverrides::from_environment(&EnvironmentInput) or RuntimeOptionOverrides::from_process_env().
+
+### Bug Fixes
+
+* avoid false checksum-sync change on short reads ([#57](https://github.com/jimeh/treeboot/issues/57)) ([a20ac67](https://github.com/jimeh/treeboot/commit/a20ac671639ed896c5bc0a23a226f21bf05406ad))
+* enforce validated action plan boundaries ([#60](https://github.com/jimeh/treeboot/issues/60)) ([e8f641b](https://github.com/jimeh/treeboot/commit/e8f641b1a8b81621b7ec56c6f8de19e45be71211))
+* recheck preserved source symlinks before apply ([#62](https://github.com/jimeh/treeboot/issues/62)) ([57c0888](https://github.com/jimeh/treeboot/commit/57c0888d45f8b57a92897050a1a297309f3aa7d3))
+
+
+### Code Refactoring
+
+* **treeboot-core:** make core environment input explicit ([#61](https://github.com/jimeh/treeboot/issues/61)) ([8e61a7f](https://github.com/jimeh/treeboot/commit/8e61a7f5b8d8e584c74fcf4a77f5ad0b986dd9b3))
+
 ## [0.5.1](https://github.com/jimeh/treeboot/compare/v0.5.0...v0.5.1) (2026-06-26)
 
 
