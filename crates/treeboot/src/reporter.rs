@@ -6,6 +6,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use treeboot_core::{FileOperationKind, OutputEvent, Reporter};
 
 const DEFAULT_TERMINAL_WIDTH: usize = 80;
+const PROGRESS_BAR_INDENT: &str = "          ";
 
 pub(crate) struct StdoutReporter {
     active_progress: Option<ActiveProgress>,
@@ -15,23 +16,17 @@ pub(crate) struct StdoutReporter {
 struct ActiveProgress {
     bar: ProgressBar,
     label: Option<String>,
-    prefix: Option<&'static str>,
 }
 
 impl ActiveProgress {
     fn spinner(bar: ProgressBar) -> Self {
-        Self {
-            bar,
-            label: None,
-            prefix: None,
-        }
+        Self { bar, label: None }
     }
 
-    fn progress(bar: ProgressBar, label: String, prefix: &'static str) -> Self {
+    fn progress(bar: ProgressBar, label: String) -> Self {
         Self {
             bar,
             label: Some(label),
-            prefix: Some(prefix),
         }
     }
 }
@@ -92,12 +87,10 @@ impl StdoutReporter {
         }
 
         let bar = ProgressBar::new(action_count as u64);
-        let template = "{msg}\n  {prefix} {bar:24.cyan/dim} {pos}/{len}";
-        if let Ok(style) = ProgressStyle::with_template(template) {
+        let template = progress_bar_template();
+        if let Ok(style) = ProgressStyle::with_template(&template) {
             bar.set_style(style.progress_chars("━╸─"));
         }
-        let prefix = progress_prefix(operation);
-        bar.set_prefix(prefix);
         let label = format!(
             "treeboot: {} {} -> {}",
             operation.as_str(),
@@ -105,16 +98,13 @@ impl StdoutReporter {
             target.display()
         );
         set_progress_message(&bar, &label);
-        self.active_progress = Some(ActiveProgress::progress(bar, label, prefix));
+        self.active_progress = Some(ActiveProgress::progress(bar, label));
     }
 
     fn advance_progress(&self) {
         if let Some(progress) = &self.active_progress {
             progress.bar.inc(1);
             if let Some(label) = &progress.label {
-                if let Some(prefix) = progress.prefix {
-                    progress.bar.set_prefix(prefix);
-                }
                 set_progress_message(&progress.bar, label);
             }
         }
@@ -196,12 +186,13 @@ fn progress_message(label: &str, terminal_width: usize) -> String {
     truncate_str(label, terminal_width, tail).into_owned()
 }
 
-fn progress_prefix(operation: FileOperationKind) -> &'static str {
-    match operation {
-        FileOperationKind::Copy => "Copying",
-        FileOperationKind::Sync => "Syncing",
-        FileOperationKind::Symlink => "Linking",
-    }
+fn progress_bar_template() -> String {
+    [
+        "{msg}\n",
+        PROGRESS_BAR_INDENT,
+        "{bar:24.cyan/dim} {pos}/{len}",
+    ]
+    .concat()
 }
 
 const fn progress_enabled(stdout_is_terminal: bool, stderr_is_terminal: bool) -> bool {
@@ -263,10 +254,9 @@ mod tests {
     }
 
     #[test]
-    fn progress_prefix_should_match_operation_kind() {
-        assert_eq!(progress_prefix(FileOperationKind::Copy), "Copying");
-        assert_eq!(progress_prefix(FileOperationKind::Sync), "Syncing");
-        assert_eq!(progress_prefix(FileOperationKind::Symlink), "Linking");
+    fn progress_bar_indent_should_align_after_treeboot_prefix() {
+        assert_eq!(PROGRESS_BAR_INDENT.len(), "treeboot: ".len());
+        assert!(progress_bar_template().starts_with("{msg}\n          "));
     }
 
     #[test]
@@ -287,7 +277,6 @@ mod tests {
         reporter.start_spinner(FileOperationKind::Copy, &source(), &target());
         let progress = active(&reporter);
         assert_eq!(progress.label, None);
-        assert_eq!(progress.prefix, None);
         assert_eq!(
             progress.bar.message(),
             "treeboot: copy shared -> local/shared planning"
@@ -316,7 +305,7 @@ mod tests {
     }
 
     #[test]
-    fn progress_should_store_label_prefix_and_length_for_copy() {
+    fn progress_should_store_label_and_length_for_copy() {
         let mut reporter = StdoutReporter::with_progress_enabled(true);
 
         reporter.start_progress(FileOperationKind::Copy, &source(), &target(), 42);
@@ -326,8 +315,7 @@ mod tests {
             progress.label.as_deref(),
             Some("treeboot: copy shared -> local/shared")
         );
-        assert_eq!(progress.prefix, Some("Copying"));
-        assert_eq!(progress.bar.prefix(), "Copying");
+        assert_eq!(progress.bar.prefix(), "");
         assert_eq!(progress.bar.length(), Some(42));
         assert_eq!(progress.bar.position(), 0);
         assert_eq!(
@@ -337,14 +325,13 @@ mod tests {
     }
 
     #[test]
-    fn progress_should_use_sync_prefix() {
+    fn progress_should_store_sync_label_without_prefix() {
         let mut reporter = StdoutReporter::with_progress_enabled(true);
 
         reporter.start_progress(FileOperationKind::Sync, &source(), &target(), 12);
 
         let progress = active(&reporter);
-        assert_eq!(progress.prefix, Some("Syncing"));
-        assert_eq!(progress.bar.prefix(), "Syncing");
+        assert_eq!(progress.bar.prefix(), "");
         assert_eq!(
             progress.label.as_deref(),
             Some("treeboot: sync shared -> local/shared")
@@ -352,7 +339,7 @@ mod tests {
     }
 
     #[test]
-    fn progress_should_advance_position_and_keep_prefix() {
+    fn progress_should_advance_position_and_keep_message() {
         let mut reporter = StdoutReporter::with_progress_enabled(true);
 
         reporter.start_progress(FileOperationKind::Sync, &source(), &target(), 12);
@@ -361,7 +348,6 @@ mod tests {
 
         let progress = active(&reporter);
         assert_eq!(progress.bar.position(), 2);
-        assert_eq!(progress.bar.prefix(), "Syncing");
         assert_eq!(
             progress.bar.message(),
             "treeboot: sync shared -> local/shared"
