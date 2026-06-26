@@ -34,6 +34,11 @@ checksum = "sha256:5b44c3bc2255115c9b69e30efc0fecdf498fdb63c5d58e17084fd5f16324c
 url = "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_darwin_amd64.tar.gz"
 provenance = "github-attestations"
 
+[tools.actionlint."platforms.windows-arm64"]
+checksum = "sha256:cadcf7ea4efe3a68728893813643cebe1185e5b1d4be5b96245f65c9a4d5ea41"
+url = "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_windows_arm64.zip"
+provenance = "github-attestations"
+
 [tools.actionlint."platforms.windows-x64"]
 checksum = "sha256:6e7241b51e6817ea6a047693d8e6fed13b31819c9a0dd6c5a726e1592d22f6e9"
 url = "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_windows_amd64.zip"
@@ -79,6 +84,12 @@ url = "https://github.com/jimeh/treeboot/releases/download/v0.4.1/treeboot-x86_6
 url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/455182982"
 provenance = "github-attestations"
 
+[tools."github:jimeh/treeboot"."platforms.windows-arm64"]
+checksum = "sha256:47bc6533a8449bd209407e96e5757859f38a8cc03a99695b25ac79fb0e4dd626"
+url = "https://github.com/jimeh/treeboot/releases/download/v0.4.1/treeboot-aarch64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/455182962"
+provenance = "github-attestations"
+
 [tools."github:jimeh/treeboot"."platforms.windows-x64"]
 checksum = "sha256:636c376589a8884c8c1a242bbe01160ddd1a24e21921453a6bc4b2ce03c5f29d"
 url = "https://github.com/jimeh/treeboot/releases/download/v0.4.1/treeboot-x86_64-pc-windows-msvc.zip"
@@ -119,6 +130,11 @@ checksum = "sha256:371c3c75cb07a8cdf41295596d3981adc1f92dee7795001f7d471e1f36fe2
 url = "https://github.com/evilmartians/lefthook/releases/download/v2.1.9/lefthook_2.1.9_MacOS_x86_64.gz"
 provenance = "github-attestations"
 
+[tools.lefthook."platforms.windows-arm64"]
+checksum = "sha256:34f771b8e0c362f1221ebcf569c16f4b51fcb06abd0b6e6751ecf1f6c02e133b"
+url = "https://github.com/evilmartians/lefthook/releases/download/v2.1.9/lefthook_2.1.9_Windows_arm64.gz"
+provenance = "github-attestations"
+
 [tools.lefthook."platforms.windows-x64"]
 checksum = "sha256:1f29681dfbc36b9bdde52139cca6c4668ea4d51fd81e9127a3b78f49369db67e"
 url = "https://github.com/evilmartians/lefthook/releases/download/v2.1.9/lefthook_2.1.9_Windows_x86_64.gz"
@@ -156,6 +172,11 @@ provenance = "github-attestations"
 [tools.pinact."platforms.macos-x64"]
 checksum = "sha256:6338d0220a28093c2c6916a047eea8a17f4ba03a8562010dc8e942b2a2884364"
 url = "https://github.com/suzuki-shunsuke/pinact/releases/download/v4.1.0/pinact_darwin_amd64.tar.gz"
+provenance = "github-attestations"
+
+[tools.pinact."platforms.windows-arm64"]
+checksum = "sha256:3f8fedf5f7490b903497a8844a6954deb80a1eca5b1f38747e21aa9198a7c203"
+url = "https://github.com/suzuki-shunsuke/pinact/releases/download/v4.1.0/pinact_windows_arm64.zip"
 provenance = "github-attestations"
 
 [tools.pinact."platforms.windows-x64"]
@@ -198,6 +219,10 @@ url = "https://github.com/mozilla/sccache/releases/download/v0.16.0/sccache-v0.1
 checksum = "sha256:f7dbd055db75a938ab1539f5316c5d08e73a1b94c40ab170ddcc617f5bf18343"
 url = "https://github.com/mozilla/sccache/releases/download/v0.16.0/sccache-v0.16.0-x86_64-apple-darwin.tar.gz"
 
+[tools.sccache."platforms.windows-arm64"]
+checksum = "sha256:09ca24bf12288b4b7ff8a852d89e533aa67353f7b956e73a3d7c298256ededa7"
+url = "https://github.com/mozilla/sccache/releases/download/v0.16.0/sccache-v0.16.0-aarch64-pc-windows-msvc.tar.gz"
+
 [tools.sccache."platforms.windows-x64"]
 checksum = "sha256:c82319cc392b693e9fc72e6567cce47e218308f00fbf1df942e39b62e30f98da"
 url = "https://github.com/mozilla/sccache/releases/download/v0.16.0/sccache-v0.16.0-x86_64-pc-windows-msvc.tar.gz"
@@ -229,6 +254,10 @@ url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellche
 [tools.shellcheck."platforms.macos-x64"]
 checksum = "sha256:3c89db4edcab7cf1c27bff178882e0f6f27f7afdf54e859fa041fca10febe4c6"
 url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.x86_64.tar.xz"
+
+[tools.shellcheck."platforms.windows-arm64"]
+checksum = "sha256:8a4e35ab0b331c85d73567b12f2a444df187f483e5079ceffa6bda1faa2e740e"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.zip"
 
 [tools.shellcheck."platforms.windows-x64"]
 checksum = "sha256:8a4e35ab0b331c85d73567b12f2a444df187f483e5079ceffa6bda1faa2e740e"
@@ -262,6 +291,11 @@ provenance = "github-attestations"
 [tools.zizmor."platforms.macos-x64"]
 checksum = "sha256:2967414a561f8c1264121e8f723c3b5abcf3d1bf7ce5063114df99985dd75801"
 url = "https://github.com/zizmorcore/zizmor/releases/download/v1.26.1/zizmor-x86_64-apple-darwin.tar.gz"
+provenance = "github-attestations"
+
+[tools.zizmor."platforms.windows-arm64"]
+checksum = "sha256:c6cea156935e3b9d36faeca4fd8f622d23f7a7578da26adb34e6456abd9beb9a"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.26.1/zizmor-x86_64-pc-windows-msvc.zip"
 provenance = "github-attestations"
 
 [tools.zizmor."platforms.windows-x64"]

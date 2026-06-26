@@ -81,6 +81,100 @@ impl VecReporter {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum FailingCallback {
+    PlanningStarted,
+    PlanningFinished,
+    ExecutionStarted,
+    ActionAdvanced,
+    Finished,
+}
+
+struct FailingCallbackReporter {
+    fail_on: FailingCallback,
+}
+
+impl FailingCallbackReporter {
+    fn fail() -> std::io::Result<()> {
+        Err(std::io::Error::other("reporter callback failed"))
+    }
+}
+
+impl Reporter for FailingCallbackReporter {
+    fn report(&mut self, _event: OutputEvent) -> std::io::Result<()> {
+        Ok(())
+    }
+
+    fn file_operation_planning_started(
+        &mut self,
+        operation: FileOperationKind,
+        source: &Path,
+        target: &Path,
+    ) -> std::io::Result<()> {
+        let _ = (operation, source, target);
+        match self.fail_on {
+            FailingCallback::PlanningStarted => Self::fail(),
+            _ => Ok(()),
+        }
+    }
+
+    fn file_operation_planning_finished(
+        &mut self,
+        operation: FileOperationKind,
+        source: &Path,
+        target: &Path,
+        action_count: usize,
+    ) -> std::io::Result<()> {
+        let _ = (operation, source, target, action_count);
+        match self.fail_on {
+            FailingCallback::PlanningFinished => Self::fail(),
+            _ => Ok(()),
+        }
+    }
+
+    fn file_operation_execution_started(
+        &mut self,
+        operation: FileOperationKind,
+        source: &Path,
+        target: &Path,
+        action_count: usize,
+    ) -> std::io::Result<()> {
+        let _ = (operation, source, target, action_count);
+        match self.fail_on {
+            FailingCallback::ExecutionStarted => Self::fail(),
+            _ => Ok(()),
+        }
+    }
+
+    fn file_operation_action_advanced(
+        &mut self,
+        operation: FileOperationKind,
+        source: &Path,
+        target: &Path,
+    ) -> std::io::Result<()> {
+        let _ = (operation, source, target);
+        match self.fail_on {
+            FailingCallback::ActionAdvanced => Self::fail(),
+            _ => Ok(()),
+        }
+    }
+
+    fn file_operation_finished(
+        &mut self,
+        operation: FileOperationKind,
+        source: &Path,
+        target: &Path,
+        summary: &FileOperationSummary,
+        dry_run: bool,
+    ) -> std::io::Result<()> {
+        let _ = (operation, source, target, summary, dry_run);
+        match self.fail_on {
+            FailingCallback::Finished => Self::fail(),
+            _ => Ok(()),
+        }
+    }
+}
+
 fn span() -> SourceSpan {
     SourceSpan {
         start: 0,
@@ -204,6 +298,51 @@ fn apply_file_operations_should_copy_missing_directory_tree() {
         reporter.messages(),
         ["treeboot: copy shared -> shared (3 changed)"]
     );
+}
+
+#[test]
+fn apply_file_operations_should_map_callback_failures_to_output_errors() {
+    for fail_on in [
+        FailingCallback::PlanningStarted,
+        FailingCallback::PlanningFinished,
+        FailingCallback::ExecutionStarted,
+        FailingCallback::ActionAdvanced,
+        FailingCallback::Finished,
+    ] {
+        let (root, worktree) = temp_workspace(&format!("callback-failure-{fail_on:?}"));
+        fs::write(root.join(".env"), "TOKEN=1\n").expect("source should be written");
+        let plan = run_plan(
+            &root,
+            &worktree,
+            vec![operation(
+                FileOperationKind::Copy,
+                &root,
+                &worktree,
+                ".env",
+                ".env",
+            )],
+        );
+        let mut reporter = FailingCallbackReporter { fail_on };
+
+        let error = apply_file_operations(
+            &plan,
+            FileApplyOptions {
+                dry_run: true,
+                ..FileApplyOptions::default()
+            },
+            &mut reporter,
+        )
+        .expect_err("callback failure should fail apply");
+
+        assert!(
+            matches!(error, Error::Output { .. }),
+            "{fail_on:?} should map to Error::Output"
+        );
+        assert!(
+            !worktree.join(".env").exists(),
+            "{fail_on:?} should not mutate during dry-run"
+        );
+    }
 }
 
 #[cfg(unix)]

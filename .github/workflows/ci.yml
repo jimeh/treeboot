@@ -103,33 +103,21 @@ jobs:
       - run: mise run msrv
 
   test:
-    name: test (${{ matrix.os }}, ${{ matrix.task }})
-    runs-on: ${{ matrix.os }}
+    name: test (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
     env:
       MISE_RUSTUP_HOME: ${{ github.workspace }}/.mise-rustup
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            task: test:core
-          - os: ubuntu-latest
-            task: test:cli
-          - os: ubuntu-latest
-            task: test:release-helper
-          - os: macos-26
-            task: test:core
-          - os: macos-26
-            task: test:cli
-          - os: macos-26
-            task: test:release-helper
-          - os: windows-2025
-            task: test:core
-          - os: windows-2025
-            task: test:cli
-          - os: windows-2025
-            task: test:release-helper
+        runner:
+          - ubuntu-latest
+          - ubuntu-24.04-arm
+          - macos-26
+          - macos-26-intel
+          - windows-2025
+          - windows-11-arm
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -138,4 +126,12 @@ jobs:
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           cache_key: mise-v2-${{ github.event_name }}-{{platform}}-{{file_hash}}
-      - run: mise run ${{ matrix.task }}
+      - name: Install Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install "${RUSTUP_TOOLCHAIN}" \
+            --component clippy \
+            --component rust-analyzer \
+            --component rust-src \
+            --component rustfmt
+      - run: mise run test

@@ -54,11 +54,10 @@ GitHub Actions runs these mise tasks:
 - `mise run harness:check`
 - `mise run lint`
 - `mise run msrv`
-- `mise run test:core`
-- `mise run test:cli`
-- `mise run test:release-helper`
+- `mise run test`
 
-The test tasks run on Ubuntu, macOS, and Windows in CI. The local
+The full test suite runs once on each supported GitHub Actions host platform:
+Linux x64/ARM64, macOS x64/ARM64, and Windows x64/ARM64. The local
 `mise run ci` task mirrors the task set, but only on the current host platform.
 
 ## Coverage
