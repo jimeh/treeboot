@@ -261,9 +261,9 @@ ActionPlan.files
   -> plan_operation
   -> FileAction::{CreateDirectory, CopyFile, CreateSymlink, Delete, Skip, Warning}
   -> grouped PlannedFileOperationActions
-  -> report planning/execution lifecycle events
+  -> report planning/execution lifecycle callbacks
   -> report_dry_run(action) or apply_action(action)
-  -> compact OutputEvent::FileOperationFinished summary
+  -> compact file-operation summary callback
      or verbose OutputEvent::{FileWouldApply, FileApplied, FileWarning, ...}
 ```
 

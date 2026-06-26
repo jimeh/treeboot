@@ -1183,8 +1183,8 @@ operations may render ephemeral progress on stderr: a spinner while planning a
 top-level operation and a determinate progress bar while applying planned
 actions. Progress rendering must not change the final stdout summary lines.
 When output is redirected, captured by CI, or otherwise non-interactive,
-treeboot must suppress spinner/progress control output and print only normal
-summary, warning, command, and error lines.
+non-verbose file operations must suppress spinner/progress control output and
+print only normal summary, warning, command, and error lines.
 
 File-operation warnings remain visible in compact mode. If a warning is emitted
 while progress is active, progress must be cleared or suspended before printing

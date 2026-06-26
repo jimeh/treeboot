@@ -8,22 +8,76 @@ use crate::{PlanOrigin, SourceSpan, Worktree};
 #[derive(Default)]
 struct VecReporter {
     events: Vec<OutputEvent>,
+    messages: Vec<String>,
+    planning_finished_counts: Vec<usize>,
+    execution_started_counts: Vec<usize>,
+    action_advanced_count: usize,
+    summary_count: usize,
 }
 
 impl Reporter for VecReporter {
     fn report(&mut self, event: OutputEvent) -> std::io::Result<()> {
+        let message = event.message();
+        if !message.is_empty() {
+            self.messages.push(message);
+        }
         self.events.push(event);
+        Ok(())
+    }
+
+    fn file_operation_planning_finished(
+        &mut self,
+        operation: FileOperationKind,
+        source: &Path,
+        target: &Path,
+        action_count: usize,
+    ) -> std::io::Result<()> {
+        let _ = (operation, source, target);
+        self.planning_finished_counts.push(action_count);
+        Ok(())
+    }
+
+    fn file_operation_execution_started(
+        &mut self,
+        operation: FileOperationKind,
+        source: &Path,
+        target: &Path,
+        action_count: usize,
+    ) -> std::io::Result<()> {
+        let _ = (operation, source, target);
+        self.execution_started_counts.push(action_count);
+        Ok(())
+    }
+
+    fn file_operation_action_advanced(
+        &mut self,
+        operation: FileOperationKind,
+        source: &Path,
+        target: &Path,
+    ) -> std::io::Result<()> {
+        let _ = (operation, source, target);
+        self.action_advanced_count += 1;
+        Ok(())
+    }
+
+    fn file_operation_finished(
+        &mut self,
+        operation: FileOperationKind,
+        source: &Path,
+        target: &Path,
+        summary: &FileOperationSummary,
+        dry_run: bool,
+    ) -> std::io::Result<()> {
+        self.summary_count += 1;
+        self.messages
+            .push(summary.message(operation, source, target, dry_run));
         Ok(())
     }
 }
 
 impl VecReporter {
     fn messages(&self) -> Vec<String> {
-        self.events
-            .iter()
-            .map(OutputEvent::message)
-            .filter(|message| !message.is_empty())
-            .collect()
+        self.messages.clone()
     }
 }
 
@@ -289,12 +343,7 @@ fn apply_file_operations_verbose_should_report_concrete_directory_actions() {
             } if target == Path::new("shared/nested/config")
         )
     }));
-    assert!(
-        !reporter
-            .events
-            .iter()
-            .any(|event| { matches!(event, OutputEvent::FileOperationFinished { .. }) })
-    );
+    assert_eq!(reporter.summary_count, 0);
 }
 
 #[test]
@@ -2370,28 +2419,9 @@ fn apply_file_operations_should_report_symlink_warning_in_dry_run() {
             "treeboot: would copy shared/link -> shared/link"
         ]
     );
-    assert!(reporter.events.iter().any(|event| matches!(
-        event,
-        OutputEvent::FileOperationPlanningFinished {
-            action_count: 1,
-            ..
-        }
-    )));
-    assert!(reporter.events.iter().any(|event| matches!(
-        event,
-        OutputEvent::FileOperationExecutionStarted {
-            action_count: 1,
-            ..
-        }
-    )));
-    assert_eq!(
-        reporter
-            .events
-            .iter()
-            .filter(|event| matches!(event, OutputEvent::FileOperationActionAdvanced { .. }))
-            .count(),
-        1
-    );
+    assert_eq!(reporter.planning_finished_counts, [1]);
+    assert_eq!(reporter.execution_started_counts, [1]);
+    assert_eq!(reporter.action_advanced_count, 1);
 }
 
 #[cfg(unix)]

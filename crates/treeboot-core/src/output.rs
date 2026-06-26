@@ -28,6 +28,18 @@ impl FileOperationSummary {
         self.changed + self.skipped + self.deleted
     }
 
+    /// Formats the summary as a user-facing file-operation line.
+    #[must_use]
+    pub fn message(
+        &self,
+        operation: FileOperationKind,
+        source: &Path,
+        target: &Path,
+        dry_run: bool,
+    ) -> String {
+        format_file_operation_summary(operation, source, target, self, dry_run)
+    }
+
     fn count_details(&self, dry_run: bool) -> Vec<String> {
         let mut details = Vec::new();
         if self.changed > 0 {
@@ -93,64 +105,6 @@ pub enum OutputEvent {
     ConfigDetected {
         /// Config file path.
         path: PathBuf,
-    },
-
-    /// A top-level file operation is being planned.
-    FileOperationPlanningStarted {
-        /// File operation kind.
-        operation: FileOperationKind,
-        /// Display source path.
-        source: PathBuf,
-        /// Display target path.
-        target: PathBuf,
-    },
-
-    /// A top-level file operation has been planned.
-    FileOperationPlanningFinished {
-        /// File operation kind.
-        operation: FileOperationKind,
-        /// Display source path.
-        source: PathBuf,
-        /// Display target path.
-        target: PathBuf,
-        /// Number of concrete actions planned.
-        action_count: usize,
-    },
-
-    /// A top-level file operation is being executed.
-    FileOperationExecutionStarted {
-        /// File operation kind.
-        operation: FileOperationKind,
-        /// Display source path.
-        source: PathBuf,
-        /// Display target path.
-        target: PathBuf,
-        /// Number of concrete actions to execute or report.
-        action_count: usize,
-    },
-
-    /// One concrete file-operation action has completed.
-    FileOperationActionAdvanced {
-        /// File operation kind.
-        operation: FileOperationKind,
-        /// Display source path.
-        source: PathBuf,
-        /// Display target path.
-        target: PathBuf,
-    },
-
-    /// A top-level file operation finished.
-    FileOperationFinished {
-        /// File operation kind.
-        operation: FileOperationKind,
-        /// Display source path.
-        source: PathBuf,
-        /// Display target path.
-        target: PathBuf,
-        /// Summary of concrete decisions.
-        summary: FileOperationSummary,
-        /// Whether the operation was reported in dry-run mode.
-        dry_run: bool,
     },
 
     /// A file operation was applied.
@@ -285,17 +239,6 @@ impl OutputEvent {
             Self::ConfigDetected { path } => {
                 format!("treeboot: config detected {}", path.display())
             }
-            Self::FileOperationPlanningStarted { .. }
-            | Self::FileOperationPlanningFinished { .. }
-            | Self::FileOperationExecutionStarted { .. }
-            | Self::FileOperationActionAdvanced { .. } => String::new(),
-            Self::FileOperationFinished {
-                operation,
-                source,
-                target,
-                summary,
-                dry_run,
-            } => format_file_operation_summary(*operation, source, target, summary, *dry_run),
             Self::FileApplied {
                 operation,
                 source,
@@ -467,6 +410,65 @@ fn format_file_operation_summary(
 pub trait Reporter {
     /// Handles one output event.
     fn report(&mut self, event: OutputEvent) -> std::io::Result<()>;
+
+    /// Handles the start of planning for one top-level file operation.
+    fn file_operation_planning_started(
+        &mut self,
+        operation: FileOperationKind,
+        source: &Path,
+        target: &Path,
+    ) -> std::io::Result<()> {
+        let _ = (operation, source, target);
+        Ok(())
+    }
+
+    /// Handles completion of planning for one top-level file operation.
+    fn file_operation_planning_finished(
+        &mut self,
+        operation: FileOperationKind,
+        source: &Path,
+        target: &Path,
+        action_count: usize,
+    ) -> std::io::Result<()> {
+        let _ = (operation, source, target, action_count);
+        Ok(())
+    }
+
+    /// Handles the start of execution for one top-level file operation.
+    fn file_operation_execution_started(
+        &mut self,
+        operation: FileOperationKind,
+        source: &Path,
+        target: &Path,
+        action_count: usize,
+    ) -> std::io::Result<()> {
+        let _ = (operation, source, target, action_count);
+        Ok(())
+    }
+
+    /// Handles completion of one concrete file-operation action.
+    fn file_operation_action_advanced(
+        &mut self,
+        operation: FileOperationKind,
+        source: &Path,
+        target: &Path,
+    ) -> std::io::Result<()> {
+        let _ = (operation, source, target);
+        Ok(())
+    }
+
+    /// Handles completion of one top-level compact file operation.
+    fn file_operation_finished(
+        &mut self,
+        operation: FileOperationKind,
+        source: &Path,
+        target: &Path,
+        summary: &FileOperationSummary,
+        dry_run: bool,
+    ) -> std::io::Result<()> {
+        let _ = (operation, source, target, summary, dry_run);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -626,73 +628,75 @@ mod tests {
 
     #[test]
     fn message_should_format_single_file_operation_summary_without_counts() {
-        let event = OutputEvent::FileOperationFinished {
-            operation: FileOperationKind::Copy,
-            source: PathBuf::from(".env"),
-            target: PathBuf::from(".env"),
-            summary: FileOperationSummary {
-                changed: 1,
-                ..FileOperationSummary::default()
-            },
-            dry_run: false,
+        let summary = FileOperationSummary {
+            changed: 1,
+            ..FileOperationSummary::default()
         };
 
-        assert_eq!(event.message(), "treeboot: copy .env -> .env");
+        assert_eq!(
+            summary.message(
+                FileOperationKind::Copy,
+                Path::new(".env"),
+                Path::new(".env"),
+                false
+            ),
+            "treeboot: copy .env -> .env"
+        );
     }
 
     #[test]
     fn message_should_format_expanded_file_operation_summary_with_counts() {
-        let event = OutputEvent::FileOperationFinished {
-            operation: FileOperationKind::Sync,
-            source: PathBuf::from("shared"),
-            target: PathBuf::from("shared"),
-            summary: FileOperationSummary {
-                changed: 4,
-                deleted: 1,
-                expanded: true,
-                ..FileOperationSummary::default()
-            },
-            dry_run: false,
+        let summary = FileOperationSummary {
+            changed: 4,
+            deleted: 1,
+            expanded: true,
+            ..FileOperationSummary::default()
         };
 
         assert_eq!(
-            event.message(),
+            summary.message(
+                FileOperationKind::Sync,
+                Path::new("shared"),
+                Path::new("shared"),
+                false
+            ),
             "treeboot: sync shared -> shared (4 changed, 1 deleted)"
         );
     }
 
     #[test]
     fn message_should_omit_empty_file_operation_summary_counts() {
-        let event = OutputEvent::FileOperationFinished {
-            operation: FileOperationKind::Copy,
-            source: PathBuf::from("shared/link"),
-            target: PathBuf::from("shared/link"),
-            summary: FileOperationSummary {
-                warnings: 1,
-                ..FileOperationSummary::default()
-            },
-            dry_run: false,
+        let summary = FileOperationSummary {
+            warnings: 1,
+            ..FileOperationSummary::default()
         };
 
-        assert_eq!(event.message(), "treeboot: copy shared/link -> shared/link");
+        assert_eq!(
+            summary.message(
+                FileOperationKind::Copy,
+                Path::new("shared/link"),
+                Path::new("shared/link"),
+                false
+            ),
+            "treeboot: copy shared/link -> shared/link"
+        );
     }
 
     #[test]
     fn message_should_format_single_dry_run_skip_summary() {
-        let event = OutputEvent::FileOperationFinished {
-            operation: FileOperationKind::Copy,
-            source: PathBuf::from(".env"),
-            target: PathBuf::from(".env"),
-            summary: FileOperationSummary {
-                skipped: 1,
-                skip_reason: Some("target exists".to_owned()),
-                ..FileOperationSummary::default()
-            },
-            dry_run: true,
+        let summary = FileOperationSummary {
+            skipped: 1,
+            skip_reason: Some("target exists".to_owned()),
+            ..FileOperationSummary::default()
         };
 
         assert_eq!(
-            event.message(),
+            summary.message(
+                FileOperationKind::Copy,
+                Path::new(".env"),
+                Path::new(".env"),
+                true
+            ),
             "treeboot: would skip copy .env; target exists"
         );
     }
