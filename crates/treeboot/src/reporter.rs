@@ -11,6 +11,8 @@ const PROGRESS_BAR_INDENT: &str = "          ";
 pub(crate) struct StdoutReporter {
     active_progress: Option<ActiveProgress>,
     progress_enabled: bool,
+    #[cfg(test)]
+    line_writer: fn(&str) -> std::io::Result<()>,
 }
 
 struct ActiveProgress {
@@ -37,6 +39,19 @@ impl StdoutReporter {
         Self {
             active_progress: None,
             progress_enabled,
+            line_writer: write_line,
+        }
+    }
+
+    #[cfg(test)]
+    fn with_line_writer(
+        progress_enabled: bool,
+        line_writer: fn(&str) -> std::io::Result<()>,
+    ) -> Self {
+        Self {
+            active_progress: None,
+            progress_enabled,
+            line_writer,
         }
     }
 
@@ -122,9 +137,20 @@ impl StdoutReporter {
         }
 
         if let Some(progress) = &self.active_progress {
-            progress.bar.suspend(|| write_line(&message))
+            progress.bar.suspend(|| self.write_message(&message))
         } else {
-            write_line(&message)
+            self.write_message(&message)
+        }
+    }
+
+    fn write_message(&self, message: &str) -> std::io::Result<()> {
+        #[cfg(test)]
+        {
+            (self.line_writer)(message)
+        }
+        #[cfg(not(test))]
+        {
+            write_line(message)
         }
     }
 }
@@ -137,6 +163,8 @@ impl Default for StdoutReporter {
                 io::stdout().is_terminal(),
                 io::stderr().is_terminal(),
             ),
+            #[cfg(test)]
+            line_writer: write_line,
         }
     }
 }
@@ -207,6 +235,7 @@ fn write_line(message: &str) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write as _;
     use std::path::PathBuf;
 
     use super::*;
@@ -224,6 +253,10 @@ mod tests {
             .active_progress
             .as_ref()
             .expect("progress should be active")
+    }
+
+    fn sink_line(message: &str) -> std::io::Result<()> {
+        std::io::sink().write_all(message.as_bytes())
     }
 
     #[test]
@@ -246,6 +279,11 @@ mod tests {
     }
 
     #[test]
+    fn progress_message_should_omit_ellipsis_when_it_cannot_fit() {
+        assert_eq!(progress_message("treeboot: sync shared -> shared", 0), "");
+    }
+
+    #[test]
     fn progress_message_should_support_tiny_terminals() {
         assert_eq!(
             progress_message("treeboot: sync shared -> shared", 3),
@@ -256,7 +294,10 @@ mod tests {
     #[test]
     fn progress_bar_indent_should_align_after_treeboot_prefix() {
         assert_eq!(PROGRESS_BAR_INDENT.len(), "treeboot: ".len());
-        assert!(progress_bar_template().starts_with("{msg}\n          "));
+        assert_eq!(
+            progress_bar_template(),
+            "{msg}\n          {bar:24.cyan/dim} {pos}/{len}"
+        );
     }
 
     #[test]
@@ -302,6 +343,33 @@ mod tests {
 
         reporter.start_progress(FileOperationKind::Symlink, &source(), &target(), 3);
         assert!(reporter.active_progress.is_none());
+    }
+
+    #[test]
+    fn single_action_progress_should_clear_existing_spinner() {
+        let mut reporter = StdoutReporter::with_progress_enabled(true);
+
+        reporter.start_spinner(FileOperationKind::Copy, &source(), &target());
+        assert!(reporter.active_progress.is_some());
+
+        reporter.start_progress(FileOperationKind::Copy, &source(), &target(), 1);
+        assert!(reporter.active_progress.is_none());
+    }
+
+    #[test]
+    fn multi_action_progress_should_replace_existing_spinner() {
+        let mut reporter = StdoutReporter::with_progress_enabled(true);
+
+        reporter.start_spinner(FileOperationKind::Sync, &source(), &target());
+        assert_eq!(active(&reporter).label, None);
+
+        reporter.start_progress(FileOperationKind::Sync, &source(), &target(), 2);
+        let progress = active(&reporter);
+        assert_eq!(
+            progress.label.as_deref(),
+            Some("treeboot: sync shared -> local/shared")
+        );
+        assert_eq!(progress.bar.length(), Some(2));
     }
 
     #[test]
@@ -363,6 +431,27 @@ mod tests {
 
         reporter.finish_progress();
         assert!(reporter.active_progress.is_none());
+    }
+
+    #[test]
+    fn print_line_should_ignore_empty_messages() {
+        let reporter = StdoutReporter::with_progress_enabled(true);
+
+        reporter
+            .print_line(String::new())
+            .expect("empty messages should be ignored");
+    }
+
+    #[test]
+    fn print_line_should_suspend_active_progress() {
+        let mut reporter = StdoutReporter::with_line_writer(true, sink_line);
+
+        reporter.start_progress(FileOperationKind::Copy, &source(), &target(), 2);
+        reporter
+            .print_line("treeboot: warning: example".to_owned())
+            .expect("line should print while progress is active");
+
+        assert!(reporter.active_progress.is_some());
     }
 
     #[test]
