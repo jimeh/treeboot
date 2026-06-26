@@ -25,6 +25,8 @@ pub struct RunOptions {
     pub force: bool,
     /// Prints planned work without changing files or running commands.
     pub dry_run: bool,
+    /// Prints detailed file-operation actions instead of compact summaries.
+    pub verbose: bool,
     /// Runs file operations only.
     pub skip_commands: bool,
 }
@@ -124,6 +126,7 @@ pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport
                 strict: plan_options.strict,
                 force: options.force,
                 dry_run: options.dry_run,
+                verbose: options.verbose,
                 skip_commands: options.skip_commands,
             })
             .execute(&plan, reporter)?;

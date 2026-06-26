@@ -155,11 +155,9 @@ fn sync_should_update_changed_files() {
         .current_dir(repo.worktree_path())
         .assert()
         .success()
-        .stdout(predicate::str::contains(format!(
-            "treeboot: sync {} -> {}",
-            display_path("shared/config"),
-            display_path("shared/config")
-        )));
+        .stdout(predicate::str::contains(
+            "treeboot: sync shared -> shared (1 changed)",
+        ));
 
     assert_eq!(
         std::fs::read_to_string(repo.worktree_path().join("shared/config"))
@@ -214,6 +212,25 @@ fn sync_should_honor_ignore_metadata_permissions() {
 }
 
 #[test]
+fn sync_verbose_should_report_concrete_file_actions() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("shared/config"), "new\n");
+
+    treeboot()
+        .args(["sync", "shared", "--verbose"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "treeboot: sync {} -> {}",
+            display_path("shared/config"),
+            display_path("shared/config")
+        )));
+}
+
+#[test]
 fn sync_delete_should_remove_target_only_files() {
     let repo = git_worktree();
     std::fs::create_dir_all(repo.root_path().join("shared"))
@@ -228,10 +245,9 @@ fn sync_delete_should_remove_target_only_files() {
         .current_dir(repo.worktree_path())
         .assert()
         .success()
-        .stdout(predicate::str::contains(format!(
-            "treeboot: delete {}",
-            display_path("shared/extra")
-        )));
+        .stdout(predicate::str::contains(
+            "treeboot: sync shared -> shared (1 changed, 1 deleted)",
+        ));
 
     assert!(!repo.worktree_path().join("shared/extra").exists());
 }

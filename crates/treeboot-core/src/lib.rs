@@ -40,7 +40,7 @@ pub use metadata::{
     SPEC_VERSION, TREEBOOT_PACKAGE, TREEBOOT_VERSION, VersionInfo, config_schema_json,
     treeboot_version_info, treeboot_version_summary, version_info,
 };
-pub use output::{OutputEvent, Reporter};
+pub use output::{FileOperationSummary, OutputEvent, Reporter};
 pub use run::{RunAction, RunOptions, RunReport, run};
 pub use status::{
     InitScriptStatus, StatusOptions, StatusReport, StatusSnapshotReport, inspect_status,

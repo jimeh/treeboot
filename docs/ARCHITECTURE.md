@@ -33,7 +33,8 @@ _Core owns behavior and side effects. The CLI converts arguments into core optio
 
 - Defines `clap` commands and value enums.
 - Converts CLI structs into core option structs.
-- Prints `OutputEvent::message()` to stdout.
+- Prints durable `OutputEvent::message()` lines to stdout and handles
+  structured-only lifecycle events for interactive file-operation progress.
 - Renders inspection reports as text, JSON, or YAML.
 - Prints errors to stderr and maps exit codes.
 - Generates shell completion registration scripts.
@@ -233,7 +234,11 @@ _`run.rs` is the broad orchestrator. Manual file commands load top-level config 
 
 ## Filesystem effects: File Operation Engine
 
-File execution is two-stage: validated file operations become concrete `FileAction`s, then actions are reported or applied depending on dry-run mode.
+File execution is grouped by top-level validated file operation. Each group is
+planned into concrete `FileAction`s, optional cross-action symlink warnings are
+attached, and then the group is reported or applied depending on dry-run mode.
+Compact mode reports lifecycle events and one summary per group; verbose mode
+reports the concrete action stream.
 
 ### Planning inside `files.rs`
 
@@ -255,8 +260,11 @@ File execution is two-stage: validated file operations become concrete `FileActi
 ActionPlan.files
   -> plan_operation
   -> FileAction::{CreateDirectory, CopyFile, CreateSymlink, Delete, Skip, Warning}
+  -> grouped PlannedFileOperationActions
+  -> report planning/execution lifecycle callbacks
   -> report_dry_run(action) or apply_action(action)
-  -> OutputEvent::{FileWouldApply, FileApplied, FileWarning, ...}
+  -> compact file-operation summary callback
+     or verbose OutputEvent::{FileWouldApply, FileApplied, FileWarning, ...}
 ```
 
 ## Process effects: Command Runtime
@@ -284,7 +292,11 @@ Core reports structured events and typed errors. The CLI decides how those becom
 | `OutputEvent` | Public enum | Captures non-error user-visible events such as config detected, file applied, command started, and init created. |
 | `Reporter` | Public trait | Lets CLI and tests receive events without hard-coding stdout into the core implementation. |
 | `Error` | Public enum | Represents typed failure categories for Git, config, planning, file operations, commands, init, output, and environment. |
-| `StdoutReporter` | CLI adapter | Prints `OutputEvent::message()`. Errors are printed separately by `main`. |
+| `StdoutReporter` | CLI adapter | Prints durable `OutputEvent::message()` lines, manages structured file-operation lifecycle events as interactive progress when stdout and stderr are both terminals, and suppresses blank lifecycle messages from log output. Errors are printed separately by `main`. |
+
+`OutputEvent::message()` is the durable text-log representation. Some
+file-operation lifecycle events intentionally return an empty message because
+they are structured presentation hooks for reporters rather than log lines.
 
 ## Verification boundaries: Testing Architecture
 

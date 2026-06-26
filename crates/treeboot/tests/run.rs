@@ -655,11 +655,9 @@ fn run_sync_config_should_copy_then_sync() {
         .assert()
         .success()
         .stdout(predicate::str::contains("treeboot: copy .env -> .env"))
-        .stdout(predicate::str::contains(format!(
-            "treeboot: sync {} -> {}",
-            display_path("shared/config"),
-            display_path("shared/config")
-        )));
+        .stdout(predicate::str::contains(
+            "treeboot: sync shared -> shared (2 changed)",
+        ));
 
     let copied = std::fs::read_to_string(repo.worktree_path().join(".env"))
         .expect("copied file should be readable");
@@ -667,6 +665,27 @@ fn run_sync_config_should_copy_then_sync() {
         .expect("synced file should be readable");
     assert_eq!(copied, "TOKEN=1\n");
     assert_eq!(synced, "value\n");
+}
+
+#[test]
+fn run_verbose_sync_should_report_concrete_file_actions() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("sync source should be created");
+    write_file(&repo.root_path().join("shared/config"), "value\n");
+    write_file(&config, "sync = [\"shared\"]\n");
+
+    treeboot()
+        .args(["run", "--verbose"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "treeboot: sync {} -> {}",
+            display_path("shared/config"),
+            display_path("shared/config")
+        )));
 }
 
 #[test]
@@ -689,10 +708,9 @@ fn run_sync_delete_should_remove_target_only_file() {
         .current_dir(repo.worktree_path())
         .assert()
         .success()
-        .stdout(predicate::str::contains(format!(
-            "treeboot: delete {}",
-            display_path("shared/old")
-        )));
+        .stdout(predicate::str::contains(
+            "treeboot: sync shared -> shared (1 changed, 1 deleted)",
+        ));
 
     assert!(!repo.worktree_path().join("shared/old").exists());
 }
@@ -743,10 +761,9 @@ fn run_dry_run_sync_delete_should_not_remove_target_only_file() {
         .current_dir(repo.worktree_path())
         .assert()
         .success()
-        .stdout(predicate::str::contains(format!(
-            "treeboot: would delete {}",
-            display_path("shared/old")
-        )));
+        .stdout(predicate::str::contains(
+            "treeboot: would sync shared -> shared (1 delete)",
+        ));
 
     let extra = std::fs::read_to_string(repo.worktree_path().join("shared/old"))
         .expect("target-only file should remain readable");
@@ -1140,11 +1157,9 @@ fn run_sync_config_with_commands_and_skip_commands_should_sync_file() {
         .current_dir(repo.worktree_path())
         .assert()
         .success()
-        .stdout(predicate::str::contains(format!(
-            "treeboot: sync {} -> {}",
-            display_path("shared/config"),
-            display_path("shared/config")
-        )));
+        .stdout(predicate::str::contains(
+            "treeboot: sync shared -> shared (2 changed)",
+        ));
 
     let synced = std::fs::read_to_string(repo.worktree_path().join("shared/config"))
         .expect("synced file should be readable");

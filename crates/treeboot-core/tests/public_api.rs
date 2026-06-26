@@ -5,7 +5,7 @@ use tempfile::TempDir;
 use treeboot_core::{
     ActionPlan, ActionPlanOptions, Config, ConfigOptions, Environment, Error, ExecuteOptions,
     Executor, FileOperation, FileOperationAction, FileOperationKind, FileOperationOptions,
-    IgnoredInitScript, InitScriptDiscovery, InitScriptStatus, LoadedConfig,
+    FileOperationSummary, IgnoredInitScript, InitScriptDiscovery, InitScriptStatus, LoadedConfig,
     ManualFileOperationOptions, OutputEvent, PlanOrigin, Reporter, RunAction, RunOptions,
     SourceSpan, StatusOptions, SymlinkMode, Worktree, WorktreeOptions, check, config_schema_json,
     diagnose, inspect_config, inspect_env, inspect_status, inspect_status_snapshot, run,
@@ -15,11 +15,30 @@ use treeboot_core::{
 #[derive(Default)]
 struct VecReporter {
     events: Vec<OutputEvent>,
+    summaries: Vec<(FileOperationKind, PathBuf, PathBuf, FileOperationSummary)>,
 }
 
 impl Reporter for VecReporter {
     fn report(&mut self, event: OutputEvent) -> std::io::Result<()> {
         self.events.push(event);
+        Ok(())
+    }
+
+    fn file_operation_finished(
+        &mut self,
+        operation: FileOperationKind,
+        source: &Path,
+        target: &Path,
+        summary: &FileOperationSummary,
+        dry_run: bool,
+    ) -> std::io::Result<()> {
+        assert!(!dry_run);
+        self.summaries.push((
+            operation,
+            source.to_path_buf(),
+            target.to_path_buf(),
+            summary.clone(),
+        ));
         Ok(())
     }
 }
@@ -184,16 +203,17 @@ fn public_api_should_discover_load_plan_and_execute_manifest() {
             .expect("copied file should be readable"),
         "TOKEN=1\n"
     );
-    assert!(reporter.events.iter().any(|event| {
-        matches!(
-            event,
-            OutputEvent::FileApplied {
-                operation: FileOperationKind::Copy,
-                source,
-                target,
-            } if source == Path::new(".env") && target == Path::new(".env")
-        )
-    }));
+    assert!(
+        reporter
+            .summaries
+            .iter()
+            .any(|(operation, source, target, summary)| {
+                *operation == FileOperationKind::Copy
+                    && source == Path::new(".env")
+                    && target == Path::new(".env")
+                    && summary.changed == 1
+            })
+    );
 }
 
 #[test]

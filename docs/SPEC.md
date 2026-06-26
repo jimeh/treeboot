@@ -1,4 +1,4 @@
-# treeboot Specification v1.10.0
+# treeboot Specification v1.11.0
 
 A portable worktree bootstrapper that lets every coding agent, editor, and orchestration tool run the same repo-local setup command.
 
@@ -53,6 +53,7 @@ Runs worktree bootstrap. This is also the implicit command when no subcommand is
 treeboot
 treeboot run
 treeboot run --dry-run
+treeboot run --verbose
 treeboot run --strict
 treeboot run --force
 treeboot run --root /path/to/root-checkout
@@ -100,7 +101,7 @@ treeboot -V
 Human-readable output is a compact, flag-like summary:
 
 ```text
-treeboot 0.4.1 (spec 1.10.0)
+treeboot 0.4.1 (spec 1.11.0)
 ```
 
 JSON and YAML output are defined in
@@ -205,6 +206,7 @@ treeboot copy .env.local
 treeboot copy .env.local mise.local.toml --target local
 treeboot copy templates/editorconfig --target .editorconfig
 treeboot copy shared/config --symlinks preserve
+treeboot copy shared/config --verbose
 ```
 
 ### `treeboot symlink`
@@ -226,6 +228,7 @@ treeboot sync shared/config
 treeboot sync shared/config shared/editor --target .config
 treeboot sync shared/config --delete
 treeboot sync shared/config --compare checksum
+treeboot sync shared/config --verbose
 ```
 
 ### `treeboot completions`
@@ -299,6 +302,13 @@ After worktree/root context checks, manual file operation commands discover and 
 
 With one source, `--target` is the exact target path. With multiple sources, `--target` is a directory or path prefix joined with each source value. For example, `treeboot copy .env.local mise.local.toml --target local` copies `.env.local` to `local/.env.local` and `mise.local.toml` to `local/mise.local.toml`.
 
+Manual commands apply the same output contract as declarative file operations.
+Multiple source arguments create multiple top-level file operations for output
+and progress as well as execution. A command such as
+`treeboot copy a b --target local` reports separate decisions for
+`a -> local/a` and `b -> local/b`; it does not collapse them into one
+command-wide summary.
+
 Operation-specific flags are valid only on the commands listed in the option table. For example, using `--compare` on `copy` or `--symlinks` on `symlink` is a CLI usage error and exits with code `2`.
 
 | Option | Scope | Behavior |
@@ -314,6 +324,7 @@ Operation-specific flags are valid only on the commands listed in the option tab
 | `-S`, `--strict` | run/check/copy/symlink/sync | Fails if a copy/symlink target exists; rejects sync operations; exits non-zero when run from the root checkout. Declarative config can also enable strict mode with top-level `strict = true`. |
 | `-f`, `--force` | run/copy/symlink/sync | Replaces existing file-operation targets where supported. |
 | `-n`, `--dry-run` | run/copy/symlink/sync | Prints planned work without writing files or running commands. |
+| `-v`, `--verbose` | run/copy/symlink/sync | Prints detailed file-operation actions instead of compact summaries. Interactive progress is disabled in verbose mode. |
 | `--skip-commands` | run | Runs file operations only. |
 | `-t`, `--target <path>` | copy/symlink/sync | Overrides the target. With multiple sources, acts as the target path prefix for each source. |
 | `--required` | copy/symlink/sync | Fails when any requested source does not exist. |
@@ -399,7 +410,7 @@ string. The initial reason is `not_executable`.
 {
   "package": "treeboot",
   "version": "0.4.1",
-  "spec_version": "1.10.0"
+  "spec_version": "1.11.0"
 }
 ```
 
@@ -1027,19 +1038,22 @@ Missing sources are optional by default for copy, symlink, and sync. When a sour
 
 Copies files and directories. Directory copies recursively copy the source directory into the configured target path. This is a copy operation, not a sync operation: treeboot never deletes target files merely because they are absent from the source. Source symlinks are preserved by default when they are safe. By default, copy preserves the metadata described in [File metadata preservation](#file-metadata-preservation). Configure `ignore_metadata`, or use `--ignore-metadata`, to opt out of selected metadata fields.
 
-`treeboot copy` exposes `--target`, `--required`, `--symlinks`, `--ignore-metadata`, `--dry-run`, `--strict`, and `--force`.
+`treeboot copy` exposes `--target`, `--required`, `--symlinks`,
+`--ignore-metadata`, `--dry-run`, `--verbose`, `--strict`, and `--force`.
 
 ### Symlink
 
 Creates relative symlinks whenever treeboot can compute the path from the target parent to the source. If it cannot, it falls back to an absolute symlink.
 
-`treeboot symlink` exposes `--target`, `--required`, `--dry-run`, `--strict`, and `--force`.
+`treeboot symlink` exposes `--target`, `--required`, `--dry-run`, `--verbose`, `--strict`, and `--force`.
 
 ### Sync
 
 Reconciles target content to match source content. Files are compared by size and modified time by default, or by content when `compare = "checksum"` is set. Checksum comparison must detect content changes even when size and modified time do not change. Sync also compares and repairs the metadata fields described in [File metadata preservation](#file-metadata-preservation), unless those fields are listed in `ignore_metadata`. Source symlinks are preserved by default when they are safe.
 
-`treeboot sync` exposes `--target`, `--required`, `--compare`, `--delete`, `--no-delete`, `--symlinks`, `--ignore-metadata`, `--dry-run`, `--strict`, and `--force`.
+`treeboot sync` exposes `--target`, `--required`, `--compare`, `--delete`,
+`--no-delete`, `--symlinks`, `--ignore-metadata`, `--dry-run`, `--verbose`,
+`--strict`, and `--force`.
 
 ### Symlinks inside copy and sync
 
@@ -1080,21 +1094,29 @@ The default mode is optimized for repeated worktree setup. Strict mode is for CI
 
 `treeboot run` is intended for repositories whose setup contract the user trusts. The trust boundary includes declarative config files, executable init scripts (`.treeboot.sh`, `.treebootrc`, and `.config/treeboot/init`), and configured commands. By default, executable init scripts are discovered before TOML config and can run arbitrary project setup code. Use `treeboot config` to inspect TOML without execution, or `treeboot run --no-init-script` to skip executable init scripts while still using normal config discovery.
 
-Dry-run reports the same file-operation decision that treeboot would take without mutating files. The table below is the compatibility contract for file-operation conflicts.
+Dry-run reports the same file-operation decision that treeboot would take
+without mutating files. Default text output reports one compact line per
+top-level file operation when that operation has a visible decision. A single
+file create, update, symlink, delete, or skip uses the same direct line shape as
+the concrete action. Directory copy and sync operations summarize expanded
+child actions with counts. `--verbose` reports each concrete child action
+instead of the compact top-level summary.
+
+The table below is the compatibility contract for file-operation conflicts.
 
 | Case | Default | `--strict` | `--force` | `--dry-run` |
 | --- | --- | --- | --- | --- |
 | Copy file to missing destination | Create file and parents. | Create file and parents. | Create file and parents. | Report planned create. |
 | Copy file to existing file or symlink | Skip with info output. | Fail before mutation. | Replace file or symlink. | Report skip, fail, or replace. |
 | Copy file to existing directory | Fail operation. | Fail before mutation. | Fail; do not remove directory. | Report failure. |
-| Copy directory to missing destination | Recursively create directory tree. | Recursively create directory tree. | Recursively create directory tree. | Report planned creates. |
-| Copy directory to existing directory | Recursively copy missing files and skip existing files. | Fail before mutation. | Merge and overwrite matching files only. | Report planned creates, skips, fail, or merge. |
+| Copy directory to missing destination | Recursively create directory tree. Summarize expanded child actions by default. | Recursively create directory tree. | Recursively create directory tree. | Report planned creates, summarized by default. |
+| Copy directory to existing directory | Recursively copy missing files and skip existing files. Summarize expanded child actions by default. | Fail before mutation. | Merge and overwrite matching files only. | Report planned creates, skips, fail, or merge, summarized by default. |
 | Copy directory to file or symlink | Fail operation. | Fail before mutation. | Fail; do not replace with directory. | Report failure. |
 | Symlink to missing destination | Create parent directories and symlink. | Create parent directories and symlink. | Create parent directories and symlink. | Report planned symlink. |
 | Symlink to existing file or symlink | Skip with info output. | Fail before mutation. | Replace file or symlink. | Report skip, fail, or replace. |
 | Symlink to existing directory | Fail operation. | Fail before mutation. | Fail; do not remove directory. | Report failure. |
 | Sync file | Create or update when changed. | Rejected by validation. | Same as default. | Report create or update; stay silent when unchanged. |
-| Sync directory | Reconcile tree; preserve target-only files by default. | Rejected by validation. | Same as default. | Report creates, updates, and explicit deletes; stay silent when unchanged. |
+| Sync directory | Reconcile tree; preserve target-only files by default. Summarize expanded child actions by default. | Rejected by validation. | Same as default. | Report creates, updates, and explicit deletes, summarized by default; stay silent when unchanged. |
 | Optional missing source | Skip and leave target unchanged. | Skip and leave target unchanged. | Skip and leave target unchanged. | Report planned skip. |
 
 ### Directory copy under force
@@ -1108,6 +1130,65 @@ Force mode may replace existing regular files and symlinks. It must not delete a
 ### Sync is intentionally destructive
 
 Sync is the operation that may delete target-only files when deletion is explicitly enabled. Existing targets are expected for sync and are not treated as conflicts in default or force mode. Strict mode rejects configs with sync operations before runtime. Use `--dry-run` to preview sync creates, updates, and explicit deletes.
+
+## File operation output and progress
+
+File-operation output should stay compact by default while preserving detailed
+diagnostics when requested. Default text output is grouped by top-level file
+operation. Top-level operations are declarative config entries or normalized
+manual source arguments.
+
+Single concrete actions omit parenthesized counts because the source and target
+already describe the work:
+
+```text
+treeboot: copy .env -> .env
+treeboot: sync .env -> .env
+treeboot: would copy .env -> .env
+treeboot: skip copy .env; target exists
+treeboot: would skip copy .env; target exists
+```
+
+Expanded operations include counts after the source and target:
+
+```text
+treeboot: copy shared -> shared (12 changed)
+treeboot: copy node_modules -> node_modules (1842 changed, 27 skipped)
+treeboot: sync shared -> shared (4 changed, 1 deleted)
+treeboot: would sync shared -> shared (4 changes, 1 delete)
+```
+
+Count words are singular when the count is one and plural otherwise.
+`changed` counts created directories, copied files, created symlinks, and
+replaced files or symlinks. `skipped` counts planned or actual skip decisions.
+`deleted` counts sync target-only paths removed or planned for removal.
+
+Manual multi-source commands report each normalized source operation
+independently:
+
+```text
+treeboot copy a b --target local
+
+treeboot: copy a -> local/a (12 changed)
+treeboot: copy b -> local/b (4 changed, 2 skipped)
+```
+
+`--verbose` preserves the detailed action stream. In verbose mode, directory
+copy and sync report concrete creates, updates, deletes, skips, and warnings
+rather than only the grouped summary. Verbose mode disables interactive
+progress rendering so detailed lines do not interleave with progress redraws.
+
+When stdout and stderr are interactive terminals, non-verbose copy and sync
+operations may render ephemeral progress on stderr: a spinner while planning a
+top-level operation and a determinate progress bar while applying planned
+actions. Progress rendering must not change the final stdout summary lines.
+When output is redirected, captured by CI, or otherwise non-interactive,
+non-verbose file operations must suppress spinner/progress control output and
+print only normal summary, warning, command, and error lines.
+
+File-operation warnings remain visible in compact mode. If a warning is emitted
+while progress is active, progress must be cleared or suspended before printing
+the warning so terminal output remains readable.
 
 ## After files: Command runtime
 
@@ -1170,12 +1251,16 @@ treeboot: skip copy .env.local; target exists
 treeboot: symlink .tool-versions -> ../repo/.tool-versions
 treeboot: sync shared/config -> .config
 treeboot: sync metadata shared/editor/settings.json -> .editor/settings.json
+treeboot: sync shared -> shared (4 changed, 1 deleted)
 treeboot: run Install packages: npm install
 treeboot: warning: could not preserve ownership shared/cache: operation not permitted
 treeboot: warning: command optional lint: npm run lint failed with exit status: 1
 ```
 
-Unchanged sync files and directories produce no output. Sync reports creates, content updates, metadata-only updates, and deletes when deletion is explicitly enabled. Command child output is inherited directly.
+Unchanged sync files and directories produce no output. Sync reports creates,
+content updates, metadata-only updates, and deletes directly for single concrete
+actions and as grouped counts for expanded directory operations. Command child
+output is inherited directly.
 
 Metadata-only sync updates use the same source and target display style as content updates:
 
@@ -1184,6 +1269,11 @@ treeboot: sync metadata shared/config -> shared/config
 treeboot: would sync metadata shared/config -> shared/config
 treeboot: warning: could not preserve ownership shared/config: operation not permitted
 ```
+
+Interactive progress is ephemeral terminal UI, not durable log output. It is
+rendered to stderr only for non-verbose copy and sync operations on interactive
+terminals. Final summaries, warnings, and command lifecycle lines remain normal
+`treeboot:` lines.
 
 Command start lines use `treeboot: run <label>`. Dry-run uses `treeboot: would run <label>` and does not spawn commands. Fatal command failures are reported as `treeboot: command <label> failed with <status>`. Fatal spawn failures are reported as `treeboot: failed to run command <label>: <io-error>`. Allowed spawn failures are reported as `treeboot: warning: command <label> failed to start: <io-error>`.
 

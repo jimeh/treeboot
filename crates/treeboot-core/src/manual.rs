@@ -132,6 +132,8 @@ pub struct FileOperationOptions {
     pub force: bool,
     /// Prints planned work without changing files.
     pub dry_run: bool,
+    /// Prints detailed file-operation actions instead of compact summaries.
+    pub verbose: bool,
 }
 
 impl Default for FileOperationOptions {
@@ -150,6 +152,7 @@ impl Default for FileOperationOptions {
             strict: false,
             force: false,
             dry_run: false,
+            verbose: false,
         }
     }
 }
@@ -240,6 +243,7 @@ pub fn run_file_operation(
         strict,
         force,
         dry_run,
+        verbose,
     } = options;
     let manual_options = ManualFileOperationOptions {
         operation,
@@ -286,6 +290,7 @@ pub fn run_file_operation(
         strict: plan_options.strict,
         force,
         dry_run,
+        verbose,
         skip_commands: true,
     })
     .execute_files(&plan, reporter)?;

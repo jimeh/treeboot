@@ -1,6 +1,76 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::FileOperationKind;
+
+/// Counts produced by one top-level file operation.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FileOperationSummary {
+    /// Number of created, updated, or replaced paths.
+    pub changed: usize,
+    /// Number of skipped paths.
+    pub skipped: usize,
+    /// Number of deleted target-only paths.
+    pub deleted: usize,
+    /// Number of warnings emitted.
+    pub warnings: usize,
+    /// Number of metadata-only sync repairs.
+    pub metadata_changed: usize,
+    /// Whether the summary represents expanded directory work.
+    pub expanded: bool,
+    /// Reason for a single skipped top-level operation.
+    pub skip_reason: Option<String>,
+}
+
+impl FileOperationSummary {
+    /// Returns the number of visible action decisions in the summary.
+    #[must_use]
+    pub const fn decision_count(&self) -> usize {
+        self.changed + self.skipped + self.deleted
+    }
+
+    /// Formats the summary as a user-facing file-operation line.
+    #[must_use]
+    pub fn message(
+        &self,
+        operation: FileOperationKind,
+        source: &Path,
+        target: &Path,
+        dry_run: bool,
+    ) -> String {
+        format_file_operation_summary(operation, source, target, self, dry_run)
+    }
+
+    fn count_details(&self, dry_run: bool) -> Vec<String> {
+        let mut details = Vec::new();
+        if self.changed > 0 {
+            details.push(count_detail(
+                self.changed,
+                if dry_run { "change" } else { "changed" },
+                if dry_run { "changes" } else { "changed" },
+            ));
+        }
+        if self.skipped > 0 {
+            details.push(count_detail(
+                self.skipped,
+                if dry_run { "skip" } else { "skipped" },
+                if dry_run { "skips" } else { "skipped" },
+            ));
+        }
+        if self.deleted > 0 {
+            details.push(count_detail(
+                self.deleted,
+                if dry_run { "delete" } else { "deleted" },
+                if dry_run { "deletes" } else { "deleted" },
+            ));
+        }
+        details
+    }
+}
+
+fn count_detail(count: usize, singular: &str, plural: &str) -> String {
+    let noun = if count == 1 { singular } else { plural };
+    format!("{count} {noun}")
+}
 
 /// A structured message produced during a treeboot operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -249,10 +319,156 @@ impl OutputEvent {
     }
 }
 
+fn format_file_operation_summary(
+    operation: FileOperationKind,
+    source: &Path,
+    target: &Path,
+    summary: &FileOperationSummary,
+    dry_run: bool,
+) -> String {
+    if summary.decision_count() == 1 {
+        if summary.changed == 1 {
+            if summary.metadata_changed == 1 {
+                if dry_run {
+                    return format!(
+                        "treeboot: would sync metadata {} -> {}",
+                        source.display(),
+                        target.display()
+                    );
+                }
+
+                return format!(
+                    "treeboot: sync metadata {} -> {}",
+                    source.display(),
+                    target.display()
+                );
+            }
+
+            if !summary.expanded && dry_run {
+                return format!(
+                    "treeboot: would {} {} -> {}",
+                    operation.as_str(),
+                    source.display(),
+                    target.display()
+                );
+            }
+
+            if !summary.expanded {
+                return format!(
+                    "treeboot: {} {} -> {}",
+                    operation.as_str(),
+                    source.display(),
+                    target.display()
+                );
+            }
+        }
+
+        if summary.skipped == 1 {
+            let reason = summary.skip_reason.as_deref().unwrap_or("skipped");
+            if dry_run {
+                return format!(
+                    "treeboot: would skip {} {}; {}",
+                    operation.as_str(),
+                    target.display(),
+                    reason
+                );
+            }
+
+            return format!(
+                "treeboot: skip {} {}; {}",
+                operation.as_str(),
+                target.display(),
+                reason
+            );
+        }
+    }
+
+    let details = summary.count_details(dry_run).join(", ");
+    let suffix = if details.is_empty() {
+        String::new()
+    } else {
+        format!(" ({details})")
+    };
+    if dry_run {
+        format!(
+            "treeboot: would {} {} -> {}{suffix}",
+            operation.as_str(),
+            source.display(),
+            target.display()
+        )
+    } else {
+        format!(
+            "treeboot: {} {} -> {}{suffix}",
+            operation.as_str(),
+            source.display(),
+            target.display()
+        )
+    }
+}
+
 /// Receives structured output events from core operations.
 pub trait Reporter {
     /// Handles one output event.
     fn report(&mut self, event: OutputEvent) -> std::io::Result<()>;
+
+    /// Handles the start of planning for one top-level file operation.
+    fn file_operation_planning_started(
+        &mut self,
+        operation: FileOperationKind,
+        source: &Path,
+        target: &Path,
+    ) -> std::io::Result<()> {
+        let _ = (operation, source, target);
+        Ok(())
+    }
+
+    /// Handles completion of planning for one top-level file operation.
+    fn file_operation_planning_finished(
+        &mut self,
+        operation: FileOperationKind,
+        source: &Path,
+        target: &Path,
+        action_count: usize,
+    ) -> std::io::Result<()> {
+        let _ = (operation, source, target, action_count);
+        Ok(())
+    }
+
+    /// Handles the start of execution for one top-level file operation.
+    fn file_operation_execution_started(
+        &mut self,
+        operation: FileOperationKind,
+        source: &Path,
+        target: &Path,
+        action_count: usize,
+    ) -> std::io::Result<()> {
+        let _ = (operation, source, target, action_count);
+        Ok(())
+    }
+
+    /// Handles completion of one concrete file-operation action.
+    fn file_operation_action_advanced(
+        &mut self,
+        operation: FileOperationKind,
+        source: &Path,
+        target: &Path,
+    ) -> std::io::Result<()> {
+        let _ = (operation, source, target);
+        Ok(())
+    }
+
+    /// Handles completion of one top-level compact file operation.
+    fn file_operation_finished(
+        &mut self,
+        operation: FileOperationKind,
+        source: &Path,
+        target: &Path,
+        summary: &FileOperationSummary,
+        dry_run: bool,
+    ) -> std::io::Result<()> {
+        let _ = (operation, source, target, summary, dry_run);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -407,6 +623,81 @@ mod tests {
         assert_eq!(
             event.message(),
             "treeboot: warning: could not preserve ownership shared/config: operation not permitted"
+        );
+    }
+
+    #[test]
+    fn message_should_format_single_file_operation_summary_without_counts() {
+        let summary = FileOperationSummary {
+            changed: 1,
+            ..FileOperationSummary::default()
+        };
+
+        assert_eq!(
+            summary.message(
+                FileOperationKind::Copy,
+                Path::new(".env"),
+                Path::new(".env"),
+                false
+            ),
+            "treeboot: copy .env -> .env"
+        );
+    }
+
+    #[test]
+    fn message_should_format_expanded_file_operation_summary_with_counts() {
+        let summary = FileOperationSummary {
+            changed: 4,
+            deleted: 1,
+            expanded: true,
+            ..FileOperationSummary::default()
+        };
+
+        assert_eq!(
+            summary.message(
+                FileOperationKind::Sync,
+                Path::new("shared"),
+                Path::new("shared"),
+                false
+            ),
+            "treeboot: sync shared -> shared (4 changed, 1 deleted)"
+        );
+    }
+
+    #[test]
+    fn message_should_omit_empty_file_operation_summary_counts() {
+        let summary = FileOperationSummary {
+            warnings: 1,
+            ..FileOperationSummary::default()
+        };
+
+        assert_eq!(
+            summary.message(
+                FileOperationKind::Copy,
+                Path::new("shared/link"),
+                Path::new("shared/link"),
+                false
+            ),
+            "treeboot: copy shared/link -> shared/link"
+        );
+    }
+
+    #[test]
+    fn message_should_format_single_dry_run_skip_summary() {
+        let summary = FileOperationSummary {
+            skipped: 1,
+            skip_reason: Some("target exists".to_owned()),
+            ..FileOperationSummary::default()
+        };
+
+        assert_eq!(
+            summary.message(
+                FileOperationKind::Copy,
+                Path::new(".env"),
+                Path::new(".env"),
+                true
+            ),
+            "treeboot: would skip copy .env; target exists"
         );
     }
 

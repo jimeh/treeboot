@@ -18,10 +18,20 @@ workspace = true
 [dependencies]
 clap = { version = "4", features = ["derive", "wrap_help"] }
 clap_complete = { version = "4", features = ["unstable-dynamic"] }
+console = { version = "0.16", default-features = false, features = [
+  "ansi-parsing",
+  "std",
+  "unicode-width",
+] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 yaml_serde = "0.10"
 treeboot-core = { path = "../treeboot-core", version = "0.4.1" }
+
+[dependencies.indicatif]
+version = "0.18"
+default-features = false
+features = ["unicode-width"]
 
 [dev-dependencies]
 assert_cmd = "2"
