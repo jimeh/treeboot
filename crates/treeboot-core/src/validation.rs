@@ -3,7 +3,7 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::{
     CommandKind, CommandOperation, Config, ConfigRuntimeOptions, Error, FileOperation,
-    FileOperationKind, Result, SourceSpan, SymlinkMode, SyncCompare, Worktree,
+    FileOperationKind, MetadataField, Result, SourceSpan, SymlinkMode, SyncCompare, Worktree,
 };
 
 /// Options that affect declarative run planning.
@@ -163,6 +163,8 @@ pub struct PlannedFileOperation {
     pub delete: Option<bool>,
     /// How copy and sync should treat source symlinks.
     pub symlinks: Option<SymlinkMode>,
+    /// Metadata fields ignored by copy and sync.
+    pub ignore_metadata: Vec<MetadataField>,
     /// Whether this operation should execute.
     pub status: PlannedFileStatus,
     /// Source location for the operation declaration.
@@ -452,6 +454,7 @@ fn build_file_operations(
             compare: operation.compare,
             delete: operation.delete,
             symlinks: operation.symlinks,
+            ignore_metadata: operation.ignore_metadata.clone(),
             status,
             declaration: operation.declaration,
         });
@@ -877,6 +880,7 @@ mod tests {
                 FileOperationKind::Copy | FileOperationKind::Sync => Some(SymlinkMode::Preserve),
                 FileOperationKind::Symlink => None,
             },
+            ignore_metadata: Vec::new(),
             declaration: span(),
         }
     }
@@ -921,6 +925,7 @@ mod tests {
                 compare: None,
                 delete: None,
                 symlinks: Some(SymlinkMode::Preserve),
+                ignore_metadata: Vec::new(),
                 declaration: span(),
             }],
             commands: Vec::new(),
@@ -1085,6 +1090,7 @@ mod tests {
                 compare: None,
                 delete: None,
                 symlinks: Some(SymlinkMode::Preserve),
+                ignore_metadata: Vec::new(),
                 declaration: span(),
             }],
             commands: Vec::new(),

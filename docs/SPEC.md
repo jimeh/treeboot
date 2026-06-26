@@ -1,4 +1,4 @@
-# treeboot Specification v1.9.0
+# treeboot Specification v1.10.0
 
 A portable worktree bootstrapper that lets every coding agent, editor, and orchestration tool run the same repo-local setup command.
 
@@ -100,7 +100,7 @@ treeboot -V
 Human-readable output is a compact, flag-like summary:
 
 ```text
-treeboot 0.4.1 (spec 1.9.0)
+treeboot 0.4.1 (spec 1.10.0)
 ```
 
 JSON and YAML output are defined in
@@ -318,6 +318,7 @@ Operation-specific flags are valid only on the commands listed in the option tab
 | `-t`, `--target <path>` | copy/symlink/sync | Overrides the target. With multiple sources, acts as the target path prefix for each source. |
 | `--required` | copy/symlink/sync | Fails when any requested source does not exist. |
 | `--symlinks <preserve>` | copy/sync | Selects how source symlinks are handled. The initial supported value is `preserve`. |
+| `--ignore-metadata <permissions\|owner\|group\|ownership>` | copy/sync | Repeats to opt out of metadata comparison and preservation. `ownership` means owner and group. |
 | `--compare <metadata\|checksum>` | sync | Selects sync comparison behavior. |
 | `-D`, `--delete` / `--no-delete` | sync | Controls whether sync deletes target-only files. Defaults to `--no-delete`. |
 | `--config` | init | Creates a starter TOML config. This intentionally has no short alias so `-c` can consistently mean config path for run/config. |
@@ -398,7 +399,7 @@ string. The initial reason is `not_executable`.
 {
   "package": "treeboot",
   "version": "0.4.1",
-  "spec_version": "1.9.0"
+  "spec_version": "1.10.0"
 }
 ```
 
@@ -427,6 +428,7 @@ string. The initial reason is `not_executable`.
         "compare": null,
         "delete": null,
         "symlinks": "preserve",
+        "ignore_metadata": [],
         "declaration": {
           "start": 0,
           "end": 15,
@@ -461,6 +463,9 @@ string. The initial reason is `not_executable`.
 `files` and `commands` are ordered arrays. File `operation` is `copy`,
 `symlink`, or `sync`. `compare` is `metadata`, `checksum`, or `null`. `delete`
 is a boolean or `null`. `symlinks` is `preserve` or `null`.
+`ignore_metadata` is an ordered array of canonical ignored metadata fields:
+`permissions`, `owner`, and `group`. Config input can use `ownership` as a
+shorthand, but normalized inspection output expands it to `owner` and `group`.
 
 Command `name`, `cwd`, and `cwd_path` are strings or `null`. `env` is an object
 whose keys and values are strings. `command` is one of:
@@ -873,10 +878,12 @@ sync = [
   "shared/config",
   { source = "tooling/config", target = ".config/tooling", delete = true },
   { source = "shared/tool.lock", target = ".tool.lock", compare = "checksum" },
+  { source = "shared/cache", target = ".cache/shared", ignore_metadata = ["ownership"] },
 ]
 
 files = [
   { operation = "copy", source = ".npmrc", target = ".npmrc" },
+  { operation = "copy", source = ".env.local", ignore_metadata = ["permissions"] },
   { operation = "symlink", source = "shared/bin", target = "bin" },
   { operation = "sync", source = "shared/editor", target = ".editor" },
 ]
@@ -898,6 +905,7 @@ The verbose table-array name is singular `[[file]]` so it can coexist with the p
 | `compare` | `sync` | `metadata` by default; `checksum` for content checks. |
 | `delete` | `sync` directories | Defaults to `false`; when true, deletes target-only files and directories. |
 | `symlinks` | `copy`, `sync` | Defaults to `preserve`; safe source symlinks are recreated as symlinks and unsafe symlinks are validation errors. |
+| `ignore_metadata` | `copy`, `sync` | Optional list of metadata fields to ignore. Supported values are `permissions`, `owner`, `group`, and `ownership`. `ownership` is shorthand for owner and group. |
 
 ### Command objects
 
@@ -1005,7 +1013,7 @@ Completion candidate generation uses root/worktree discovery only. It must not p
 
 ### Manual operation normalization
 
-Manual file operation commands normalize to the same internal file operation shape as config entries. The subcommand supplies `operation`, each positional source supplies `source`, `--required` supplies `required = true`, and operation-specific flags supply `symlinks`, `compare`, or `delete`.
+Manual file operation commands normalize to the same internal file operation shape as config entries. The subcommand supplies `operation`, each positional source supplies `source`, `--required` supplies `required = true`, and operation-specific flags supply `symlinks`, `compare`, `delete`, or `ignore_metadata`.
 
 Manual normalization happens under the same resolved runtime policy as declarative file operations: defaults, then config top-level policy when a config is present, then environment overrides, then CLI strictness.
 
@@ -1017,9 +1025,9 @@ Missing sources are optional by default for copy, symlink, and sync. When a sour
 
 ### Copy
 
-Copies files and directories. Directory copies recursively copy the source directory into the configured target path. This is a copy operation, not a sync operation: treeboot never deletes target files merely because they are absent from the source. Source symlinks are preserved by default when they are safe.
+Copies files and directories. Directory copies recursively copy the source directory into the configured target path. This is a copy operation, not a sync operation: treeboot never deletes target files merely because they are absent from the source. Source symlinks are preserved by default when they are safe. By default, copy preserves the metadata described in [File metadata preservation](#file-metadata-preservation). Configure `ignore_metadata`, or use `--ignore-metadata`, to opt out of selected metadata fields.
 
-`treeboot copy` exposes `--target`, `--required`, `--symlinks`, `--dry-run`, `--strict`, and `--force`.
+`treeboot copy` exposes `--target`, `--required`, `--symlinks`, `--ignore-metadata`, `--dry-run`, `--strict`, and `--force`.
 
 ### Symlink
 
@@ -1029,9 +1037,9 @@ Creates relative symlinks whenever treeboot can compute the path from the target
 
 ### Sync
 
-Reconciles target content to match source content. Files are compared by size and modified time by default, or by content when `compare = "checksum"` is set. Checksum comparison must detect content changes even when size and modified time do not change. Source symlinks are preserved by default when they are safe.
+Reconciles target content to match source content. Files are compared by size and modified time by default, or by content when `compare = "checksum"` is set. Checksum comparison must detect content changes even when size and modified time do not change. Sync also compares and repairs the metadata fields described in [File metadata preservation](#file-metadata-preservation), unless those fields are listed in `ignore_metadata`. Source symlinks are preserved by default when they are safe.
 
-`treeboot sync` exposes `--target`, `--required`, `--compare`, `--delete`, `--no-delete`, `--symlinks`, `--dry-run`, `--strict`, and `--force`.
+`treeboot sync` exposes `--target`, `--required`, `--compare`, `--delete`, `--no-delete`, `--symlinks`, `--ignore-metadata`, `--dry-run`, `--strict`, and `--force`.
 
 ### Symlinks inside copy and sync
 
@@ -1039,7 +1047,22 @@ Copy and sync use `symlinks = "preserve"` by default: safe source symlinks are r
 
 ### File metadata preservation
 
-Copy and sync preserve regular file contents, permissions, and modified time where the platform supports them. Modified time preservation is part of the sync contract because metadata mode compares size and modified time for idempotent reruns.
+Copy and sync preserve regular file contents, permissions, owner, group, and modified time where the platform supports them. For directories, copy and sync preserve permissions, owner, and group where supported. Directory modified time is not preserved or compared because directory modified times change as children are created, removed, or updated.
+
+`ignore_metadata` lets a copy or sync operation opt out of selected metadata comparison and preservation. Supported values are:
+
+| Value | Meaning |
+| --- | --- |
+| `permissions` | Do not compare or apply file or directory permission metadata. |
+| `owner` | Do not compare or apply owner metadata. |
+| `group` | Do not compare or apply group metadata. |
+| `ownership` | Shorthand for `owner` and `group`. |
+
+Ignored metadata fields do not trigger sync updates and are not applied after copy or sync content updates. Non-ignored metadata fields are still compared and applied. Modified time is not configurable in this version; regular-file modified time remains part of the default sync idempotency contract because `compare = "metadata"` compares size and modified time for content drift.
+
+Permission preservation failures are operation failures. Owner and group preservation is best-effort when the operating system denies ownership changes, because unprivileged users often cannot set arbitrary owners or groups. In that case treeboot reports a warning and continues. Other unexpected ownership errors are operation failures.
+
+This metadata contract is intentionally narrower than archive copying. treeboot does not preserve ACLs, extended attributes, resource forks, file flags, hard-link identity, sparse-file layout, or other platform-specific archive metadata. Projects that need archive semantics should use project-local commands such as `rsync`, `cp -a`, `ditto`, or another purpose-built tool.
 
 ### Sync preserves extras by default
 
@@ -1146,11 +1169,21 @@ treeboot: copy .env.local -> .env.local
 treeboot: skip copy .env.local; target exists
 treeboot: symlink .tool-versions -> ../repo/.tool-versions
 treeboot: sync shared/config -> .config
+treeboot: sync metadata shared/editor/settings.json -> .editor/settings.json
 treeboot: run Install packages: npm install
+treeboot: warning: could not preserve ownership shared/cache: operation not permitted
 treeboot: warning: command optional lint: npm run lint failed with exit status: 1
 ```
 
-Unchanged sync files and directories produce no output. Sync reports creates, updates, and deletes when deletion is explicitly enabled. Command child output is inherited directly.
+Unchanged sync files and directories produce no output. Sync reports creates, content updates, metadata-only updates, and deletes when deletion is explicitly enabled. Command child output is inherited directly.
+
+Metadata-only sync updates use the same source and target display style as content updates:
+
+```text
+treeboot: sync metadata shared/config -> shared/config
+treeboot: would sync metadata shared/config -> shared/config
+treeboot: warning: could not preserve ownership shared/config: operation not permitted
+```
 
 Command start lines use `treeboot: run <label>`. Dry-run uses `treeboot: would run <label>` and does not spawn commands. Fatal command failures are reported as `treeboot: command <label> failed with <status>`. Fatal spawn failures are reported as `treeboot: failed to run command <label>: <io-error>`. Allowed spawn failures are reported as `treeboot: warning: command <label> failed to start: <io-error>`.
 

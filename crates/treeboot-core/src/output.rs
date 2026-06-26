@@ -57,6 +57,22 @@ pub enum OutputEvent {
         target: PathBuf,
     },
 
+    /// A sync operation applied metadata-only changes.
+    FileMetadataApplied {
+        /// Display source path.
+        source: PathBuf,
+        /// Display target path.
+        target: PathBuf,
+    },
+
+    /// A dry run would apply metadata-only sync changes.
+    FileMetadataWouldApply {
+        /// Display source path.
+        source: PathBuf,
+        /// Display target path.
+        target: PathBuf,
+    },
+
     /// A file operation was skipped.
     FileSkipped {
         /// File operation kind.
@@ -91,6 +107,14 @@ pub enum OutputEvent {
 
     /// A file operation warning was produced.
     FileWarning {
+        /// Warning path.
+        path: PathBuf,
+        /// Human-readable warning detail.
+        reason: String,
+    },
+
+    /// Ownership metadata could not be preserved.
+    OwnershipWarning {
         /// Warning path.
         path: PathBuf,
         /// Human-readable warning detail.
@@ -165,6 +189,16 @@ impl OutputEvent {
                 source.display(),
                 target.display()
             ),
+            Self::FileMetadataApplied { source, target } => format!(
+                "treeboot: sync metadata {} -> {}",
+                source.display(),
+                target.display()
+            ),
+            Self::FileMetadataWouldApply { source, target } => format!(
+                "treeboot: would sync metadata {} -> {}",
+                source.display(),
+                target.display()
+            ),
             Self::FileSkipped {
                 operation,
                 target,
@@ -194,6 +228,11 @@ impl OutputEvent {
             Self::FileWarning { path, reason } => {
                 format!("treeboot: warning: {} {}", path.display(), reason)
             }
+            Self::OwnershipWarning { path, reason } => format!(
+                "treeboot: warning: could not preserve ownership {}: {}",
+                path.display(),
+                reason
+            ),
             Self::CommandStarted { label } => {
                 format!("treeboot: run {label}")
             }
@@ -277,6 +316,32 @@ mod tests {
     }
 
     #[test]
+    fn message_should_format_file_metadata_applied() {
+        let event = OutputEvent::FileMetadataApplied {
+            source: PathBuf::from("shared/config"),
+            target: PathBuf::from(".config"),
+        };
+
+        assert_eq!(
+            event.message(),
+            "treeboot: sync metadata shared/config -> .config"
+        );
+    }
+
+    #[test]
+    fn message_should_format_file_metadata_would_apply() {
+        let event = OutputEvent::FileMetadataWouldApply {
+            source: PathBuf::from("shared/config"),
+            target: PathBuf::from(".config"),
+        };
+
+        assert_eq!(
+            event.message(),
+            "treeboot: would sync metadata shared/config -> .config"
+        );
+    }
+
+    #[test]
     fn message_should_format_file_skipped() {
         let event = OutputEvent::FileSkipped {
             operation: FileOperationKind::Copy,
@@ -329,6 +394,19 @@ mod tests {
         assert_eq!(
             event.message(),
             "treeboot: warning: shared/link symlink target does not exist"
+        );
+    }
+
+    #[test]
+    fn message_should_format_ownership_warning() {
+        let event = OutputEvent::OwnershipWarning {
+            path: PathBuf::from("shared/config"),
+            reason: "operation not permitted".to_owned(),
+        };
+
+        assert_eq!(
+            event.message(),
+            "treeboot: warning: could not preserve ownership shared/config: operation not permitted"
         );
     }
 

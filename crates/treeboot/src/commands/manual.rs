@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use clap::{Args, ValueEnum, ValueHint};
 use clap_complete::{ArgValueCompleter, CompletionCandidate};
 use treeboot_core::{
-    FileOperationCompletionOptions, FileOperationKind, FileOperationOptions, SymlinkMode,
-    SyncCompare,
+    FileOperationCompletionOptions, FileOperationKind, FileOperationOptions, MetadataField,
+    SymlinkMode, SyncCompare,
 };
 
 #[derive(Debug, Args, Clone, Default)]
@@ -52,6 +52,10 @@ pub(crate) struct CopyArgs {
     /// How to handle source symlinks.
     #[arg(long, value_enum)]
     symlinks: Option<CliSymlinkMode>,
+
+    /// Metadata field to ignore. Repeat to ignore multiple fields.
+    #[arg(long = "ignore-metadata", value_enum)]
+    ignore_metadata: Vec<CliMetadataField>,
 }
 
 #[derive(Debug, Args, Clone, Default)]
@@ -68,6 +72,10 @@ pub(crate) struct SyncArgs {
     /// How to handle source symlinks.
     #[arg(long, value_enum)]
     symlinks: Option<CliSymlinkMode>,
+
+    /// Metadata field to ignore. Repeat to ignore multiple fields.
+    #[arg(long = "ignore-metadata", value_enum)]
+    ignore_metadata: Vec<CliMetadataField>,
 
     /// How to compare source and target files.
     #[arg(long, value_enum)]
@@ -91,6 +99,14 @@ enum CliSymlinkMode {
 enum CliSyncCompare {
     Metadata,
     Checksum,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum CliMetadataField {
+    Permissions,
+    Owner,
+    Group,
+    Ownership,
 }
 
 fn root_source_completer(current: &OsStr) -> Vec<CompletionCandidate> {
@@ -129,6 +145,7 @@ impl CopyArgs {
     pub(crate) fn into_options(self) -> FileOperationOptions {
         FileOperationOptions {
             symlinks: self.symlinks.map(Into::into),
+            ignore_metadata: normalize_ignored_metadata(self.ignore_metadata),
             ..self.manual.into_options(FileOperationKind::Copy)
         }
     }
@@ -144,6 +161,7 @@ impl SyncArgs {
     pub(crate) fn into_options(self) -> FileOperationOptions {
         FileOperationOptions {
             symlinks: self.symlinks.map(Into::into),
+            ignore_metadata: normalize_ignored_metadata(self.ignore_metadata),
             compare: self.compare.map(Into::into),
             delete: sync_delete_option(self.delete, self.no_delete),
             ..self.manual.into_options(FileOperationKind::Sync)
@@ -197,6 +215,29 @@ impl From<CliSyncCompare> for SyncCompare {
     }
 }
 
+fn normalize_ignored_metadata(fields: Vec<CliMetadataField>) -> Vec<MetadataField> {
+    let mut normalized = Vec::new();
+    for field in fields {
+        for expanded in field.expanded() {
+            if !normalized.contains(expanded) {
+                normalized.push(*expanded);
+            }
+        }
+    }
+    normalized
+}
+
+impl CliMetadataField {
+    const fn expanded(self) -> &'static [MetadataField] {
+        match self {
+            Self::Permissions => &[MetadataField::Permissions],
+            Self::Owner => &[MetadataField::Owner],
+            Self::Group => &[MetadataField::Group],
+            Self::Ownership => &[MetadataField::Owner, MetadataField::Group],
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -228,6 +269,7 @@ mod tests {
                 ..manual_args()
             },
             symlinks: Some(CliSymlinkMode::Preserve),
+            ignore_metadata: vec![CliMetadataField::Ownership],
         };
 
         let options = args.into_options();
@@ -239,6 +281,10 @@ mod tests {
         assert!(options.force);
         assert!(options.dry_run);
         assert_eq!(options.symlinks, Some(SymlinkMode::Preserve));
+        assert_eq!(
+            options.ignore_metadata,
+            vec![MetadataField::Owner, MetadataField::Group]
+        );
     }
 
     #[test]
@@ -256,6 +302,7 @@ mod tests {
         let options = SyncArgs {
             manual: manual_args(),
             symlinks: Some(CliSymlinkMode::Preserve),
+            ignore_metadata: vec![CliMetadataField::Permissions],
             compare: Some(CliSyncCompare::Checksum),
             delete: true,
             no_delete: false,
@@ -264,8 +311,25 @@ mod tests {
 
         assert_eq!(options.operation, FileOperationKind::Sync);
         assert_eq!(options.symlinks, Some(SymlinkMode::Preserve));
+        assert_eq!(options.ignore_metadata, vec![MetadataField::Permissions]);
         assert_eq!(options.compare, Some(SyncCompare::Checksum));
         assert_eq!(options.delete, Some(true));
+    }
+
+    #[test]
+    fn ignored_metadata_should_deduplicate_expanded_fields() {
+        assert_eq!(
+            normalize_ignored_metadata(vec![
+                CliMetadataField::Owner,
+                CliMetadataField::Ownership,
+                CliMetadataField::Permissions,
+            ]),
+            vec![
+                MetadataField::Owner,
+                MetadataField::Group,
+                MetadataField::Permissions,
+            ]
+        );
     }
 
     #[test]
