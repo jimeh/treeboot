@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use clap::Args;
 use treeboot_core::{Error, InitScriptStatus, StatusOptions, StatusReport, StatusSnapshotReport};
 
+use super::environment_input;
 use super::output::{OutputArgs, ReportFormat, write_structured};
 
 #[derive(Debug, Args, Clone, Default)]
@@ -77,6 +78,7 @@ impl From<StatusArgs> for StatusOptions {
         Self {
             cwd: None,
             root: args.root,
+            environment: environment_input(),
             config: args.config,
             no_init_script: args.no_init_script,
         }

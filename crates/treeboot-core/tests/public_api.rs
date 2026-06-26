@@ -1,15 +1,16 @@
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use tempfile::TempDir;
 use treeboot_core::{
-    ActionPlan, ActionPlanOptions, Config, ConfigOptions, Environment, Error, ExecuteOptions,
-    Executor, FileOperation, FileOperationAction, FileOperationKind, FileOperationOptions,
-    FileOperationSummary, IgnoredInitScript, InitScriptDiscovery, InitScriptStatus, LoadedConfig,
-    ManualFileOperationOptions, OutputEvent, PlanOrigin, Reporter, RunAction, RunOptions,
-    SourceSpan, StatusOptions, SymlinkMode, Worktree, WorktreeOptions, check, config_schema_json,
-    diagnose, inspect_config, inspect_env, inspect_status, inspect_status_snapshot, run,
-    run_file_operation, treeboot_version_info, version_info,
+    ActionPlan, ActionPlanOptions, Config, ConfigOptions, Environment, EnvironmentInput, Error,
+    ExecuteOptions, Executor, FileOperation, FileOperationAction, FileOperationKind,
+    FileOperationOptions, FileOperationSummary, IgnoredInitScript, InitScriptDiscovery,
+    InitScriptStatus, LoadedConfig, ManualFileOperationOptions, OutputEvent, PlanOrigin, Reporter,
+    RunAction, RunOptions, SourceSpan, StatusOptions, SymlinkMode, Worktree, WorktreeOptions,
+    check, config_schema_json, diagnose, inspect_config, inspect_env, inspect_status,
+    inspect_status_snapshot, run, run_file_operation, treeboot_version_info, version_info,
 };
 
 #[derive(Default)]
@@ -175,6 +176,7 @@ fn public_api_should_discover_load_plan_and_execute_manifest() {
     let worktree = Worktree::discover(WorktreeOptions {
         cwd: Some(repo.worktree_path().to_path_buf()),
         root: None,
+        environment: EnvironmentInput::empty(),
     })
     .expect("worktree should be discovered");
     let config = Config::load(&config_path, &worktree).expect("config should load");
@@ -217,6 +219,49 @@ fn public_api_should_discover_load_plan_and_execute_manifest() {
 }
 
 #[test]
+fn public_api_worktree_discover_should_use_explicit_environment_input() {
+    let repo = git_worktree();
+    let alternate_root = TempDir::new().expect("alternate root should be created");
+    let expected_root =
+        std::fs::canonicalize(alternate_root.path()).expect("root should canonicalize");
+
+    let worktree = Worktree::discover(WorktreeOptions {
+        cwd: Some(repo.worktree_path().to_path_buf()),
+        root: None,
+        environment: EnvironmentInput {
+            treeboot_root_path: Some(OsString::from(alternate_root.path())),
+            conductor_default_branch: Some(OsString::from("trunk")),
+            ..EnvironmentInput::empty()
+        },
+    })
+    .expect("worktree should be discovered");
+
+    assert_eq!(worktree.root_path, expected_root);
+    assert_eq!(worktree.default_branch, "trunk");
+    assert_eq!(
+        worktree.environment.get("CONDUCTOR_DEFAULT_BRANCH"),
+        Some(&OsString::from("trunk"))
+    );
+}
+
+#[test]
+fn public_api_check_should_use_explicit_runtime_environment_input() {
+    let repo = git_worktree();
+
+    let error = check(treeboot_core::CheckOptions {
+        cwd: Some(repo.root_path().to_path_buf()),
+        environment: EnvironmentInput {
+            treeboot_strict: Some(OsString::from("yes")),
+            ..EnvironmentInput::empty()
+        },
+        ..treeboot_core::CheckOptions::default()
+    })
+    .expect_err("strict root checkout should fail");
+
+    assert!(matches!(error, Error::RootWorktreeStrict));
+}
+
+#[test]
 fn public_api_should_expose_metadata_env_check_and_doctor() {
     let repo = git_worktree();
     write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
@@ -236,6 +281,7 @@ fn public_api_should_expose_metadata_env_check_and_doctor() {
     let env = inspect_env(treeboot_core::EnvOptions {
         cwd: Some(repo.worktree_path().to_path_buf()),
         root: None,
+        environment: EnvironmentInput::empty(),
     })
     .expect("environment should inspect");
     assert!(env.environment.contains_key("TREEBOOT_ROOT_PATH"));
@@ -246,6 +292,7 @@ fn public_api_should_expose_metadata_env_check_and_doctor() {
     let checked = check(treeboot_core::CheckOptions {
         cwd: Some(repo.worktree_path().to_path_buf()),
         root: None,
+        environment: EnvironmentInput::empty(),
         config: None,
         no_init_script: false,
         strict: false,
@@ -259,6 +306,7 @@ fn public_api_should_expose_metadata_env_check_and_doctor() {
     let doctor = diagnose(treeboot_core::DoctorOptions {
         cwd: Some(repo.worktree_path().to_path_buf()),
         root: None,
+        environment: EnvironmentInput::empty(),
         config: None,
         no_init_script: false,
     });
@@ -275,6 +323,7 @@ fn public_api_should_load_discovered_manifest() {
     let worktree = Worktree::discover(WorktreeOptions {
         cwd: Some(repo.worktree_path().to_path_buf()),
         root: None,
+        environment: EnvironmentInput::empty(),
     })
     .expect("worktree should be discovered");
     let config_path = worktree.worktree_path.join(".treeboot.toml");
@@ -604,6 +653,7 @@ fn public_api_file_operation_option_constructors_should_set_operation_and_source
             FileOperationOptions {
                 operation,
                 sources: vec![PathBuf::from(operation.as_str())],
+                environment: EnvironmentInput::empty(),
                 ..FileOperationOptions::default()
             }
         );
@@ -645,6 +695,7 @@ fn public_api_inspect_config_should_load_normalized_manifest() {
     let report = inspect_config(ConfigOptions {
         cwd: Some(repo.worktree_path().to_path_buf()),
         root: None,
+        environment: EnvironmentInput::empty(),
         config: None,
     })
     .expect("config should inspect");

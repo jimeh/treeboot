@@ -26,15 +26,25 @@ to embed treeboot behavior directly.
 Use command-shaped facade functions when you want the same behavior as the CLI:
 
 ```rust
-use treeboot_core::{RunOptions, Reporter, run};
+use treeboot_core::{EnvironmentInput, RunOptions, Reporter, run};
 
 fn bootstrap(reporter: &mut dyn Reporter) -> treeboot_core::Result<()> {
-    let report = run(RunOptions::default(), reporter)?;
+    let report = run(
+        RunOptions {
+            environment: EnvironmentInput::from_process_env(),
+            ..RunOptions::default()
+        },
+        reporter,
+    )?;
     let _ = report;
 
     Ok(())
 }
 ```
+
+`RunOptions::default()` and the other command-shaped option defaults are
+environment-pure. Pass `EnvironmentInput::from_process_env()` when embedding
+the CLI's process-environment compatibility behavior.
 
 Use lower-level types when embedding pieces of the workflow. Action plans are
 validated values: build them through constructors, then inspect them through

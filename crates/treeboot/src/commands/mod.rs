@@ -81,6 +81,10 @@ pub(crate) fn parse() -> Cli {
     Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit())
 }
 
+pub(crate) fn environment_input() -> treeboot_core::EnvironmentInput {
+    treeboot_core::EnvironmentInput::from_process_env()
+}
+
 pub(crate) fn run_cli(cli: Cli, reporter: &mut dyn Reporter) -> treeboot_core::Result<()> {
     match cli.command {
         Some(Command::Run(args)) => treeboot_core::run(args.into(), reporter).map(|_| ()),

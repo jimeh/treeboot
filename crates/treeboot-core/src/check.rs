@@ -4,7 +4,10 @@ use serde::Serialize;
 
 use crate::config::RuntimeOptionOverrides;
 use crate::context;
-use crate::{ActionPlan, Config, Error, InitScriptDiscovery, Result, Worktree, WorktreeOptions};
+use crate::{
+    ActionPlan, Config, EnvironmentInput, Error, InitScriptDiscovery, Result, Worktree,
+    WorktreeOptions,
+};
 
 /// Options for checking treeboot bootstrap behavior.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -13,6 +16,8 @@ pub struct CheckOptions {
     pub cwd: Option<PathBuf>,
     /// Overrides the root checkout used as the file-operation source.
     pub root: Option<PathBuf>,
+    /// Explicit environment input used for compatibility discovery and options.
+    pub environment: EnvironmentInput,
     /// Uses one specific config file and skips init script discovery.
     pub config: Option<PathBuf>,
     /// Skips init script discovery and uses declarative config discovery.
@@ -79,11 +84,12 @@ impl From<&Worktree> for WorktreeSnapshot {
 /// current state as invalid, config loading fails, or declarative validation
 /// fails.
 pub fn check(options: CheckOptions) -> Result<CheckReport> {
-    let env_options = RuntimeOptionOverrides::from_env()?;
+    let env_options = RuntimeOptionOverrides::from_environment(&options.environment)?;
     let pre_config_strict = env_options.pre_config_strict(options.strict);
     let context = context::resolve(&WorktreeOptions {
         cwd: options.cwd.clone(),
         root: options.root.clone(),
+        environment: options.environment.clone(),
     })?;
 
     if context.root_path == context.worktree_path {

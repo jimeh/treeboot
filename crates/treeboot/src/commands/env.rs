@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use clap::Args;
 use treeboot_core::EnvOptions;
 
+use super::environment_input;
 use super::output::{OutputArgs, ReportFormat, write_structured};
 
 #[derive(Debug, Args, Clone, Default)]
@@ -35,6 +36,7 @@ impl From<EnvArgs> for EnvOptions {
         Self {
             cwd: None,
             root: args.root,
+            environment: environment_input(),
         }
     }
 }

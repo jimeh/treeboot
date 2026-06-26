@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use clap::Args;
 use treeboot_core::RunOptions;
 
+use super::environment_input;
+
 #[derive(Debug, Args, Clone, Default)]
 pub(crate) struct RunArgs {
     /// Override the checkout used as the file-operation source.
@@ -43,6 +45,7 @@ impl From<RunArgs> for RunOptions {
         Self {
             cwd: None,
             root: args.root,
+            environment: environment_input(),
             config: args.config,
             no_init_script: args.no_init_script,
             strict: args.strict,

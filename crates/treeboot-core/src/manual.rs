@@ -7,9 +7,9 @@ use crate::config::{
 };
 use crate::context;
 use crate::{
-    ActionPlan, ActionPlanOptions, Error, ExecuteOptions, Executor, FileOperation,
-    FileOperationKind, MetadataField, OutputEvent, PlanOrigin, Reporter, Result, SourceSpan,
-    SymlinkMode, SyncCompare, Worktree, WorktreeOptions,
+    ActionPlan, ActionPlanOptions, EnvironmentInput, Error, ExecuteOptions, Executor,
+    FileOperation, FileOperationKind, MetadataField, OutputEvent, PlanOrigin, Reporter, Result,
+    SourceSpan, SymlinkMode, SyncCompare, Worktree, WorktreeOptions,
 };
 
 /// Options for building manual file operation specs.
@@ -110,6 +110,8 @@ pub struct FileOperationOptions {
     pub cwd: Option<PathBuf>,
     /// Overrides the root checkout used as the source base.
     pub root: Option<PathBuf>,
+    /// Explicit environment input used for compatibility discovery and options.
+    pub environment: EnvironmentInput,
     /// File operation kind to run.
     pub operation: FileOperationKind,
     /// Source paths resolved from the root checkout.
@@ -141,6 +143,7 @@ impl Default for FileOperationOptions {
         Self {
             cwd: None,
             root: None,
+            environment: EnvironmentInput::empty(),
             operation: FileOperationKind::Copy,
             sources: Vec::new(),
             target: None,
@@ -214,6 +217,8 @@ pub struct FileOperationCompletionOptions {
     pub cwd: Option<PathBuf>,
     /// Overrides the root checkout used as the completion base.
     pub root: Option<PathBuf>,
+    /// Explicit environment input used for compatibility discovery.
+    pub environment: EnvironmentInput,
     /// Current partial value being completed.
     pub current: PathBuf,
 }
@@ -232,6 +237,7 @@ pub fn run_file_operation(
     let FileOperationOptions {
         cwd,
         root,
+        environment,
         operation,
         sources,
         target,
@@ -256,9 +262,13 @@ pub fn run_file_operation(
         ignore_metadata,
     };
 
-    let env_options = RuntimeOptionOverrides::from_env()?;
+    let env_options = RuntimeOptionOverrides::from_environment(&environment)?;
     let pre_config_strict = env_options.pre_config_strict(strict);
-    let context = context::resolve(&WorktreeOptions { cwd, root })?;
+    let context = context::resolve(&WorktreeOptions {
+        cwd,
+        root,
+        environment,
+    })?;
 
     if context.root_path == context.worktree_path {
         report(reporter, OutputEvent::RootWorktreeDetected)?;
@@ -313,6 +323,7 @@ pub fn file_operation_source_candidates(options: FileOperationCompletionOptions)
     let Ok(context) = context::resolve(&WorktreeOptions {
         cwd: options.cwd,
         root: options.root,
+        environment: options.environment,
     }) else {
         return Vec::new();
     };
@@ -887,6 +898,7 @@ mod tests {
             file_operation_source_candidates(FileOperationCompletionOptions {
                 cwd: Some(root),
                 root: None,
+                environment: EnvironmentInput::empty(),
                 current: PathBuf::new(),
             })
             .is_empty()

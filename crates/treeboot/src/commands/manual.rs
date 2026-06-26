@@ -8,6 +8,8 @@ use treeboot_core::{
     SymlinkMode, SyncCompare,
 };
 
+use super::environment_input;
+
 #[derive(Debug, Args, Clone, Default)]
 struct ManualArgs {
     /// Override the checkout used as the file-operation source.
@@ -118,6 +120,7 @@ fn root_source_completer(current: &OsStr) -> Vec<CompletionCandidate> {
     treeboot_core::file_operation_source_candidates(FileOperationCompletionOptions {
         cwd: std::env::current_dir().ok(),
         root,
+        environment: environment_input(),
         current: PathBuf::from(current),
     })
     .into_iter()
@@ -183,6 +186,7 @@ impl ManualArgs {
 
         options.cwd = None;
         options.root = self.root;
+        options.environment = environment_input();
         options.target = self.target;
         options.required = self.required;
         options.strict = self.strict;
