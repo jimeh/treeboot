@@ -119,6 +119,11 @@ and CI mapping.
 
 - Keep public `treeboot-core` APIs documented; the crate denies missing docs.
 - Use typed errors in `treeboot-core`; keep `anyhow` out of the public library.
+- When a fallible helper spans several inputs (e.g. source vs target file), keep
+  it context-agnostic: return a typed error tagged with which input failed, then
+  resolve that tag to the path and public `Error` at the caller boundary. If
+  you are tempted to thread caller context into a helper only to preserve error
+  attribution, treat that as the cue to reach for a tagged error instead.
 - Keep `crates/treeboot/src/main.rs` focused on argument parsing, reporting, and
   exit-code mapping.
 - Review [docs/agents/dependencies.md](docs/agents/dependencies.md) before
@@ -140,6 +145,9 @@ and CI mapping.
 - For run/config CLI behavior inside Git, prefer `git_worktree()` so tests run
   from an actual linked worktree; reserve `git_repo()` for root-checkout cases.
 - Use core unit tests for pure helpers, formatting, and validation logic.
+- Unit-test chunked or buffered I/O through injected `Read`/`Write` adapters
+  (short or staggered reads, `Interrupted`), not just real temp files, and size
+  inputs past the internal buffer (8 KiB here) so multi-chunk refill paths run.
 - For non-trivial features, run `mise run coverage:missing`, inspect uncovered
   lines in touched modules, and add high-value tests for reachable branches.
   Do not chase brittle coverage for OS permission quirks, platform-only code, or

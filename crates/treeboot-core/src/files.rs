@@ -143,6 +143,23 @@ enum MetadataTarget {
     Directory,
 }
 
+/// Identifies which side of a checksum comparison produced a read error so the
+/// caller can attribute it to the right path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ContentInput {
+    Source,
+    Target,
+}
+
+/// A read error from one side of a checksum comparison, tagged with the side
+/// it came from. The comparison itself is path-agnostic; the caller resolves
+/// `input` back to a concrete path when building the public error.
+#[derive(Debug)]
+struct ContentReadError {
+    input: ContentInput,
+    source: io::Error,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PlannedFileOperationActions {
     operation: FileOperationKind,
@@ -817,26 +834,38 @@ fn contents_changed(
         path: target_path.to_path_buf(),
         source,
     })?;
+
+    reader_contents_changed(&mut source_file, &mut target_file).map_err(|error| {
+        let path = match error.input {
+            ContentInput::Source => source_path,
+            ContentInput::Target => target_path,
+        };
+        Error::FileOperationIo {
+            operation: operation.operation.as_str(),
+            path: path.to_path_buf(),
+            source: error.source,
+        }
+    })
+}
+
+/// Compare two readers byte-for-byte, treating any divergence as changed.
+///
+/// The caller guarantees the underlying sources are the same length, so a
+/// difference in read counts can only come from a concurrent truncation and is
+/// reported as changed. Each chunk is filled with [`read_full_chunk`] so a
+/// short read on one side cannot masquerade as a content difference. The error
+/// carries which side failed via [`ContentInput`]; the caller maps it back to
+/// a path.
+fn reader_contents_changed(
+    source: &mut impl Read,
+    target: &mut impl Read,
+) -> std::result::Result<bool, ContentReadError> {
     let mut source_buf = [0; 8192];
     let mut target_buf = [0; 8192];
 
     loop {
-        let source_read =
-            source_file
-                .read(&mut source_buf)
-                .map_err(|source| Error::FileOperationIo {
-                    operation: operation.operation.as_str(),
-                    path: source_path.to_path_buf(),
-                    source,
-                })?;
-        let target_read =
-            target_file
-                .read(&mut target_buf)
-                .map_err(|source| Error::FileOperationIo {
-                    operation: operation.operation.as_str(),
-                    path: target_path.to_path_buf(),
-                    source,
-                })?;
+        let source_read = read_full_chunk(source, &mut source_buf, ContentInput::Source)?;
+        let target_read = read_full_chunk(target, &mut target_buf, ContentInput::Target)?;
 
         if source_read != target_read {
             return Ok(true);
@@ -848,6 +877,32 @@ fn contents_changed(
             return Ok(true);
         }
     }
+}
+
+/// Read into `buffer` until it is full or end of file is reached.
+///
+/// [`Read::read`] may return fewer bytes than requested even when more data
+/// remains, so a single call is not a reliable chunk boundary. This retries
+/// until `buffer` is completely filled or the reader reports EOF, and returns
+/// the number of bytes read; a count below `buffer.len()` means EOF was
+/// reached. [`io::ErrorKind::Interrupted`] is retried to match the standard
+/// library's own read helpers. Read errors are tagged with `input` so the
+/// caller can attribute them to the correct file.
+fn read_full_chunk(
+    reader: &mut impl Read,
+    buffer: &mut [u8],
+    input: ContentInput,
+) -> std::result::Result<usize, ContentReadError> {
+    let mut filled = 0;
+    while filled < buffer.len() {
+        match reader.read(&mut buffer[filled..]) {
+            Ok(0) => break,
+            Ok(read) => filled += read,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(source) => return Err(ContentReadError { input, source }),
+        }
+    }
+    Ok(filled)
 }
 
 fn metadata_drifted(
