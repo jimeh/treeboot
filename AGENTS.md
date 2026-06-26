@@ -165,6 +165,9 @@ and CI mapping.
   install `llvm-tools-preview` for the active Rust toolchain.
 - Keep optional heavyweight tools task-scoped in `mise.toml`; GitHub Actions
   installs top-level mise tools in every job.
+- Keep `settings.lockfile_platforms` aligned with GitHub Actions host runner
+  platforms. Release target triples such as Android or musl do not need lockfile
+  platforms unless `mise install --locked` runs on that host OS/architecture.
 - Pre-commit hooks are managed by Lefthook and installed by `mise run setup`.
 - `mise.toml` pins `sccache` and sets `RUSTC_WRAPPER=sccache` so Cargo tasks use
   the project-managed compiler cache instead of relying on global shell setup.

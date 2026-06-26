@@ -4,6 +4,14 @@
 
 [settings]
 lockfile = true
+lockfile_platforms = [
+    "linux-x64",
+    "linux-arm64",
+    "macos-x64",
+    "macos-arm64",
+    "windows-x64",
+    "windows-arm64",
+]
 minimum_release_age = "3d"
 minimum_release_age_excludes = ["github:jimeh/treeboot"]
 
