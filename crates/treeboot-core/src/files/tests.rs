@@ -147,24 +147,8 @@ fn apply_file_operations_should_copy_missing_directory_tree() {
     assert_eq!(copied, "value\n");
     assert_eq!(report.action_count, 3);
     assert_eq!(
-        reporter.events,
-        vec![
-            OutputEvent::FileApplied {
-                operation: FileOperationKind::Copy,
-                source: PathBuf::from("shared"),
-                target: PathBuf::from("shared"),
-            },
-            OutputEvent::FileApplied {
-                operation: FileOperationKind::Copy,
-                source: PathBuf::from("shared/nested"),
-                target: PathBuf::from("shared/nested"),
-            },
-            OutputEvent::FileApplied {
-                operation: FileOperationKind::Copy,
-                source: PathBuf::from("shared/nested/config"),
-                target: PathBuf::from("shared/nested/config"),
-            },
-        ]
+        reporter.messages(),
+        ["treeboot: copy shared -> shared (3 changed)"]
     );
 }
 
@@ -859,11 +843,8 @@ fn apply_file_operations_should_repair_sync_file_modified_time() {
         .expect("target mtime should be readable");
     assert_eq!(repaired, source_mtime);
     assert_eq!(
-        reporter.events,
-        vec![OutputEvent::FileMetadataApplied {
-            source: PathBuf::from(".env"),
-            target: PathBuf::from(".env"),
-        }]
+        reporter.messages(),
+        ["treeboot: sync metadata .env -> .env"]
     );
 }
 
@@ -908,11 +889,8 @@ fn apply_file_operations_should_report_metadata_repair_in_dry_run_without_mutati
     assert_eq!(unchanged, target_mtime);
     assert_eq!(report.action_count, 1);
     assert_eq!(
-        reporter.events,
-        vec![OutputEvent::FileMetadataWouldApply {
-            source: PathBuf::from(".env"),
-            target: PathBuf::from(".env"),
-        }]
+        reporter.messages(),
+        ["treeboot: would sync metadata .env -> .env"]
     );
 }
 
@@ -978,11 +956,8 @@ fn apply_file_operations_should_repair_sync_directory_permissions() {
         & 0o777;
     assert_eq!(mode, 0o700);
     assert_eq!(
-        reporter.events,
-        vec![OutputEvent::FileMetadataApplied {
-            source: PathBuf::from("shared"),
-            target: PathBuf::from("shared"),
-        }]
+        reporter.messages(),
+        ["treeboot: sync metadata shared -> shared"]
     );
 }
 
@@ -1026,18 +1001,8 @@ fn apply_file_operations_should_repair_directory_metadata_after_child_updates() 
     assert_eq!(synced, "new\n");
     assert_eq!(mode, 0o555);
     assert_eq!(
-        reporter.events,
-        vec![
-            OutputEvent::FileApplied {
-                operation: FileOperationKind::Sync,
-                source: PathBuf::from("shared/config"),
-                target: PathBuf::from("shared/config"),
-            },
-            OutputEvent::FileMetadataApplied {
-                source: PathBuf::from("shared"),
-                target: PathBuf::from("shared"),
-            },
-        ]
+        reporter.messages(),
+        ["treeboot: sync shared -> shared (2 changed)"]
     );
 }
 
@@ -1116,7 +1081,7 @@ fn apply_file_operations_should_ignore_sync_directory_permissions_when_configure
         .mode()
         & 0o777;
     assert_eq!(mode, 0o755);
-    assert!(reporter.events.is_empty());
+    assert!(reporter.messages().is_empty());
 }
 
 #[cfg(unix)]
@@ -1280,11 +1245,8 @@ fn apply_file_operations_should_repair_sync_file_permissions() {
         & 0o777;
     assert_eq!(mode, 0o600);
     assert_eq!(
-        reporter.events,
-        vec![OutputEvent::FileMetadataApplied {
-            source: PathBuf::from(".env"),
-            target: PathBuf::from(".env"),
-        }]
+        reporter.messages(),
+        ["treeboot: sync metadata .env -> .env"]
     );
 }
 
@@ -1375,11 +1337,8 @@ fn apply_file_operations_should_repair_write_only_target_file_metadata() {
     let mode = metadata.permissions().mode() & 0o777;
     assert_eq!(mode, 0o600);
     assert_eq!(
-        reporter.events,
-        vec![OutputEvent::FileMetadataApplied {
-            source: PathBuf::from(".env"),
-            target: PathBuf::from(".env"),
-        }]
+        reporter.messages(),
+        ["treeboot: sync metadata .env -> .env"]
     );
 }
 
@@ -1475,7 +1434,7 @@ fn apply_file_operations_should_ignore_sync_file_permissions_when_configured() {
         .mode()
         & 0o777;
     assert_eq!(mode, 0o644);
-    assert!(reporter.events.is_empty());
+    assert!(reporter.messages().is_empty());
 }
 
 #[test]

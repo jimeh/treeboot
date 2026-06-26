@@ -13,6 +13,8 @@ pub struct FileOperationSummary {
     pub deleted: usize,
     /// Number of warnings emitted.
     pub warnings: usize,
+    /// Number of metadata-only sync repairs.
+    pub metadata_changed: usize,
     /// Whether the summary represents expanded directory work.
     pub expanded: bool,
     /// Reason for a single skipped top-level operation.
@@ -383,6 +385,22 @@ fn format_file_operation_summary(
 ) -> String {
     if summary.decision_count() == 1 {
         if summary.changed == 1 {
+            if summary.metadata_changed == 1 {
+                if dry_run {
+                    return format!(
+                        "treeboot: would sync metadata {} -> {}",
+                        source.display(),
+                        target.display()
+                    );
+                }
+
+                return format!(
+                    "treeboot: sync metadata {} -> {}",
+                    source.display(),
+                    target.display()
+                );
+            }
+
             if !summary.expanded && dry_run {
                 return format!(
                     "treeboot: would {} {} -> {}",

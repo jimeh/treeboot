@@ -968,8 +968,11 @@ fn summarize_actions(actions: &[FileAction], expanded: bool) -> FileOperationSum
         match action {
             FileAction::CreateDirectory { .. }
             | FileAction::CopyFile { .. }
-            | FileAction::CreateSymlink { .. }
-            | FileAction::RepairMetadata { report: true, .. } => summary.changed += 1,
+            | FileAction::CreateSymlink { .. } => summary.changed += 1,
+            FileAction::RepairMetadata { report: true, .. } => {
+                summary.changed += 1;
+                summary.metadata_changed += 1;
+            }
             FileAction::RepairMetadata { report: false, .. } => {}
             FileAction::Delete { .. } => summary.deleted += 1,
             FileAction::Skip { reason, .. } => {
