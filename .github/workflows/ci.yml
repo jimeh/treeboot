@@ -126,4 +126,12 @@ jobs:
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           cache_key: mise-v2-${{ github.event_name }}-{{platform}}-{{file_hash}}
+      - name: Install Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install "${RUSTUP_TOOLCHAIN}" \
+            --component clippy \
+            --component rust-analyzer \
+            --component rust-src \
+            --component rustfmt
       - run: mise run test
