@@ -6,7 +6,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use treeboot_core::{FileOperationKind, OutputEvent, Reporter};
 
 const DEFAULT_TERMINAL_WIDTH: usize = 80;
-const PROGRESS_BAR_INDENT: &str = "          ";
+const PROGRESS_BAR_TEMPLATE: &str = "{msg}\n          {bar:24.cyan/dim} {pos}/{len}";
 
 pub(crate) struct StdoutReporter {
     active_progress: Option<ActiveProgress>,
@@ -102,8 +102,7 @@ impl StdoutReporter {
         }
 
         let bar = ProgressBar::new(action_count as u64);
-        let template = progress_bar_template();
-        if let Ok(style) = ProgressStyle::with_template(&template) {
+        if let Ok(style) = ProgressStyle::with_template(PROGRESS_BAR_TEMPLATE) {
             bar.set_style(style.progress_chars("━╸─"));
         }
         let label = format!(
@@ -214,15 +213,6 @@ fn progress_message(label: &str, terminal_width: usize) -> String {
     truncate_str(label, terminal_width, tail).into_owned()
 }
 
-fn progress_bar_template() -> String {
-    [
-        "{msg}\n",
-        PROGRESS_BAR_INDENT,
-        "{bar:24.cyan/dim} {pos}/{len}",
-    ]
-    .concat()
-}
-
 const fn progress_enabled(stdout_is_terminal: bool, stderr_is_terminal: bool) -> bool {
     stdout_is_terminal && stderr_is_terminal
 }
@@ -293,9 +283,16 @@ mod tests {
 
     #[test]
     fn progress_bar_indent_should_align_after_treeboot_prefix() {
-        assert_eq!(PROGRESS_BAR_INDENT.len(), "treeboot: ".len());
+        let (_, bar_line) = PROGRESS_BAR_TEMPLATE
+            .split_once('\n')
+            .expect("progress template should contain message and bar lines");
+        let indent_width = bar_line
+            .find("{bar")
+            .expect("progress template should include a bar token");
+
+        assert_eq!(indent_width, "treeboot: ".len());
         assert_eq!(
-            progress_bar_template(),
+            PROGRESS_BAR_TEMPLATE,
             "{msg}\n          {bar:24.cyan/dim} {pos}/{len}"
         );
     }
