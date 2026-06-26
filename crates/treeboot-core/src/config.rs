@@ -8,7 +8,7 @@ use toml::Spanned;
 
 use crate::context;
 use crate::discovery;
-use crate::{Error, Result, Worktree, WorktreeOptions};
+use crate::{EnvironmentInput, Error, Result, Worktree, WorktreeOptions};
 
 /// Options for inspecting a treeboot config.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -17,6 +17,8 @@ pub struct ConfigOptions {
     pub cwd: Option<PathBuf>,
     /// Overrides the root checkout used for resolved source paths.
     pub root: Option<PathBuf>,
+    /// Explicit environment input used for compatibility discovery.
+    pub environment: EnvironmentInput,
     /// Uses one specific config file instead of discovery.
     pub config: Option<PathBuf>,
 }
@@ -287,21 +289,36 @@ pub struct RuntimeOptionOverrides {
 }
 
 impl RuntimeOptionOverrides {
+    /// Parses treeboot runtime option overrides from explicit environment input.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when an environment value is not a supported boolean.
+    pub fn from_environment(environment: &EnvironmentInput) -> Result<Self> {
+        Ok(Self {
+            strict: env_bool("TREEBOOT_STRICT", environment.treeboot_strict.as_deref())?,
+            dangerously_allow_sources_outside_root: env_bool(
+                "TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT",
+                environment
+                    .treeboot_dangerously_allow_sources_outside_root
+                    .as_deref(),
+            )?,
+            dangerously_allow_targets_outside_worktree: env_bool(
+                "TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE",
+                environment
+                    .treeboot_dangerously_allow_targets_outside_worktree
+                    .as_deref(),
+            )?,
+        })
+    }
+
     /// Reads treeboot runtime option overrides from the process environment.
     ///
     /// # Errors
     ///
     /// Returns an error when an environment value is not a supported boolean.
-    pub fn from_env() -> Result<Self> {
-        Ok(Self {
-            strict: env_bool("TREEBOOT_STRICT")?,
-            dangerously_allow_sources_outside_root: env_bool(
-                "TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT",
-            )?,
-            dangerously_allow_targets_outside_worktree: env_bool(
-                "TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE",
-            )?,
-        })
+    pub fn from_process_env() -> Result<Self> {
+        Self::from_environment(&EnvironmentInput::from_process_env())
     }
 
     /// Returns strict mode before config discovery.
@@ -463,6 +480,7 @@ pub fn inspect_config(options: ConfigOptions) -> Result<ConfigReport> {
     let worktree_options = WorktreeOptions {
         cwd: options.cwd,
         root: options.root,
+        environment: options.environment,
     };
     let context = context::resolve(&worktree_options)?;
     Config::load_discovered(&context, options.config.as_deref())?
@@ -975,8 +993,8 @@ struct RawCommandObject {
     allow_failure: bool,
 }
 
-fn env_bool(name: &'static str) -> Result<Option<bool>> {
-    let Some(value) = std::env::var_os(name) else {
+fn env_bool(name: &'static str, value: Option<&std::ffi::OsStr>) -> Result<Option<bool>> {
+    let Some(value) = value else {
         return Ok(None);
     };
 
@@ -1169,6 +1187,63 @@ dangerously_allow_sources_outside_root = true
 "#,
             "unknown field",
         );
+    }
+
+    #[test]
+    fn runtime_option_overrides_should_parse_explicit_environment_input() {
+        let overrides = RuntimeOptionOverrides::from_environment(&EnvironmentInput {
+            treeboot_strict: Some(OsString::from("yes")),
+            treeboot_dangerously_allow_sources_outside_root: Some(OsString::from("true")),
+            treeboot_dangerously_allow_targets_outside_worktree: Some(OsString::from("0")),
+            ..EnvironmentInput::empty()
+        })
+        .expect("environment should parse");
+
+        assert_eq!(
+            overrides,
+            RuntimeOptionOverrides {
+                strict: Some(true),
+                dangerously_allow_sources_outside_root: Some(true),
+                dangerously_allow_targets_outside_worktree: Some(false),
+            }
+        );
+    }
+
+    #[test]
+    fn runtime_option_overrides_should_reject_invalid_explicit_environment_input() {
+        let error = RuntimeOptionOverrides::from_environment(&EnvironmentInput {
+            treeboot_strict: Some(OsString::from("sometimes")),
+            ..EnvironmentInput::empty()
+        })
+        .expect_err("environment should fail");
+
+        assert!(matches!(
+            error,
+            Error::InvalidBooleanEnv {
+                name: "TREEBOOT_STRICT",
+                ..
+            }
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn runtime_option_overrides_should_reject_non_utf8_explicit_environment_input() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let error = RuntimeOptionOverrides::from_environment(&EnvironmentInput {
+            treeboot_strict: Some(OsString::from_vec(vec![0xFF])),
+            ..EnvironmentInput::empty()
+        })
+        .expect_err("environment should fail");
+
+        assert!(matches!(
+            error,
+            Error::InvalidBooleanEnv {
+                name: "TREEBOOT_STRICT",
+                ..
+            }
+        ));
     }
 
     #[test]

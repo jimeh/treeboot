@@ -10,6 +10,7 @@
 The CLI crate should remain a small adapter over the library. It owns:
 
 - `clap` argument definitions
+- process-environment capture for CLI compatibility variables
 - text, JSON, and YAML presentation for inspection commands
 - stdout/stderr presentation for structured output events and errors
 - shell completion generation and completion integration
@@ -61,5 +62,8 @@ The core crate owns reusable behavior:
   validated before side effects.
 - File-operation targets are worktree-anchored. Sources are root-anchored.
 - Commands and scripts receive the same treeboot environment aliases.
+- `treeboot-core` command-shaped option defaults are environment-pure. When the
+  CLI or an embedder wants process-environment compatibility behavior, it must
+  pass `EnvironmentInput::from_process_env()` explicitly.
 - New reusable behavior should extend `treeboot-core`; the CLI should only
   expose arguments, output formatting, completions, and process handling.

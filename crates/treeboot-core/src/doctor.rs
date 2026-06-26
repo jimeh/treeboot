@@ -5,7 +5,7 @@ use serde::Serialize;
 use crate::check::WorktreeSnapshot;
 use crate::config::RuntimeOptionOverrides;
 use crate::context;
-use crate::{ActionPlan, Config, InitScriptDiscovery, WorktreeOptions};
+use crate::{ActionPlan, Config, EnvironmentInput, InitScriptDiscovery, WorktreeOptions};
 
 /// Options for diagnosing treeboot discovery and validation.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -14,6 +14,8 @@ pub struct DoctorOptions {
     pub cwd: Option<PathBuf>,
     /// Overrides the root checkout used as the file-operation source.
     pub root: Option<PathBuf>,
+    /// Explicit environment input used for compatibility discovery and options.
+    pub environment: EnvironmentInput,
     /// Uses one specific config file and skips init script discovery.
     pub config: Option<PathBuf>,
     /// Skips init script discovery and uses declarative config discovery.
@@ -68,7 +70,7 @@ pub fn diagnose(options: DoctorOptions) -> DoctorReport {
     let mut diagnostics = Vec::new();
     let mut fatal = false;
 
-    let env_options = match RuntimeOptionOverrides::from_env() {
+    let env_options = match RuntimeOptionOverrides::from_environment(&options.environment) {
         Ok(options) => {
             diagnostics.push(ok("environment_options", "environment options are valid"));
             options
@@ -86,6 +88,7 @@ pub fn diagnose(options: DoctorOptions) -> DoctorReport {
     let context = match context::resolve(&WorktreeOptions {
         cwd: options.cwd.clone(),
         root: options.root.clone(),
+        environment: options.environment.clone(),
     }) {
         Ok(context) => {
             diagnostics.push(ok("worktree", "worktree context resolved"));

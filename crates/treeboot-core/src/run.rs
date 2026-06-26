@@ -4,8 +4,8 @@ use std::process::Command;
 use crate::config::RuntimeOptionOverrides;
 use crate::context;
 use crate::{
-    ActionPlan, Config, Error, ExecuteOptions, Executor, InitScriptDiscovery, OutputEvent,
-    Reporter, Result, Worktree, WorktreeOptions,
+    ActionPlan, Config, EnvironmentInput, Error, ExecuteOptions, Executor, InitScriptDiscovery,
+    OutputEvent, Reporter, Result, Worktree, WorktreeOptions,
 };
 
 /// Options for running worktree bootstrap.
@@ -15,6 +15,8 @@ pub struct RunOptions {
     pub cwd: Option<PathBuf>,
     /// Overrides the root checkout used as the file-operation source.
     pub root: Option<PathBuf>,
+    /// Explicit environment input used for compatibility discovery and options.
+    pub environment: EnvironmentInput,
     /// Uses one specific config file and skips init script discovery.
     pub config: Option<PathBuf>,
     /// Skips init script discovery and uses declarative config discovery.
@@ -81,11 +83,12 @@ pub struct RunReport {
 /// script cannot be started or exits unsuccessfully, a configured file cannot
 /// be read, or strict mode treats a missing config as a failure.
 pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport> {
-    let env_options = RuntimeOptionOverrides::from_env()?;
+    let env_options = RuntimeOptionOverrides::from_environment(&options.environment)?;
     let pre_config_strict = env_options.pre_config_strict(options.strict);
     let context = context::resolve(&WorktreeOptions {
         cwd: options.cwd.clone(),
         root: options.root.clone(),
+        environment: options.environment.clone(),
     })?;
 
     if context.root_path == context.worktree_path {

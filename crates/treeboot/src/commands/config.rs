@@ -6,6 +6,7 @@ use treeboot_core::{
     RuntimeOptionOverrides,
 };
 
+use super::environment_input;
 use super::output::{OutputArgs, ReportFormat, write_structured};
 
 #[derive(Debug, Args, Clone, Default)]
@@ -24,8 +25,9 @@ pub(crate) struct ConfigArgs {
 
 pub(crate) fn run_config_command(args: ConfigArgs) -> treeboot_core::Result<()> {
     let format = args.output.format();
-    let env_options = RuntimeOptionOverrides::from_env()?;
-    let report = treeboot_core::inspect_config(args.into())?;
+    let options: ConfigOptions = args.into();
+    let env_options = RuntimeOptionOverrides::from_environment(&options.environment)?;
+    let report = treeboot_core::inspect_config(options)?;
 
     match format {
         ReportFormat::Text => print_config_text(&report).map_err(|source| Error::Output { source }),
@@ -143,6 +145,7 @@ impl From<ConfigArgs> for ConfigOptions {
         Self {
             cwd: None,
             root: args.root,
+            environment: environment_input(),
             config: args.config,
         }
     }

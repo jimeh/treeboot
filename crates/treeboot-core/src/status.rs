@@ -4,7 +4,10 @@ use serde::Serialize;
 
 use crate::check::WorktreeSnapshot;
 use crate::context;
-use crate::{Config, IgnoredInitScript, InitScriptDiscovery, Result, Worktree, WorktreeOptions};
+use crate::{
+    Config, EnvironmentInput, IgnoredInitScript, InitScriptDiscovery, Result, Worktree,
+    WorktreeOptions,
+};
 
 /// Options for inspecting treeboot discovery status.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -13,6 +16,8 @@ pub struct StatusOptions {
     pub cwd: Option<PathBuf>,
     /// Overrides the root checkout used for discovery.
     pub root: Option<PathBuf>,
+    /// Explicit environment input used for compatibility discovery.
+    pub environment: EnvironmentInput,
     /// Uses one specific config file instead of config discovery.
     pub config: Option<PathBuf>,
     /// Skips init script discovery.
@@ -82,6 +87,7 @@ pub fn inspect_status(options: StatusOptions) -> Result<StatusReport> {
     let context = context::resolve(&WorktreeOptions {
         cwd: options.cwd,
         root: options.root,
+        environment: options.environment,
     })?;
     let init_script = if options.no_init_script || options.config.is_some() {
         InitScriptStatus::Skipped

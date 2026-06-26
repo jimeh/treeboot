@@ -1,19 +1,118 @@
 use std::collections::BTreeMap;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 use crate::git::Git;
 use crate::{Error, Result};
 
-const ROOT_ENV_KEYS: &[&str] = &[
-    "TREEBOOT_ROOT_PATH",
-    "CODEX_SOURCE_TREE_PATH",
-    "CONDUCTOR_ROOT_PATH",
-    "SUPERSET_ROOT_PATH",
-];
+const TREEBOOT_ROOT_PATH: &str = "TREEBOOT_ROOT_PATH";
+const CODEX_SOURCE_TREE_PATH: &str = "CODEX_SOURCE_TREE_PATH";
+const CONDUCTOR_ROOT_PATH: &str = "CONDUCTOR_ROOT_PATH";
+const SUPERSET_ROOT_PATH: &str = "SUPERSET_ROOT_PATH";
+const CONDUCTOR_DEFAULT_BRANCH: &str = "CONDUCTOR_DEFAULT_BRANCH";
+const TREEBOOT_STRICT: &str = "TREEBOOT_STRICT";
+const TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT: &str =
+    "TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT";
+const TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE: &str =
+    "TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE";
 
 /// Environment variable map built for scripts and configured commands.
 pub type Environment = BTreeMap<String, OsString>;
+
+/// Explicit environment variable input used while resolving treeboot behavior.
+///
+/// This type only models the process environment variables that treeboot reads.
+/// Unknown process environment variables are intentionally not captured.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EnvironmentInput {
+    /// Root checkout override from `TREEBOOT_ROOT_PATH`.
+    pub treeboot_root_path: Option<OsString>,
+    /// Root checkout compatibility override from `CODEX_SOURCE_TREE_PATH`.
+    pub codex_source_tree_path: Option<OsString>,
+    /// Root checkout compatibility override from `CONDUCTOR_ROOT_PATH`.
+    pub conductor_root_path: Option<OsString>,
+    /// Root checkout compatibility override from `SUPERSET_ROOT_PATH`.
+    pub superset_root_path: Option<OsString>,
+    /// Default branch compatibility override from `CONDUCTOR_DEFAULT_BRANCH`.
+    pub conductor_default_branch: Option<OsString>,
+    /// Runtime strict-mode override from `TREEBOOT_STRICT`.
+    pub treeboot_strict: Option<OsString>,
+    /// Runtime source-boundary override from
+    /// `TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT`.
+    pub treeboot_dangerously_allow_sources_outside_root: Option<OsString>,
+    /// Runtime target-boundary override from
+    /// `TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE`.
+    pub treeboot_dangerously_allow_targets_outside_worktree: Option<OsString>,
+}
+
+impl EnvironmentInput {
+    /// Returns an empty environment input.
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self {
+            treeboot_root_path: None,
+            codex_source_tree_path: None,
+            conductor_root_path: None,
+            superset_root_path: None,
+            conductor_default_branch: None,
+            treeboot_strict: None,
+            treeboot_dangerously_allow_sources_outside_root: None,
+            treeboot_dangerously_allow_targets_outside_worktree: None,
+        }
+    }
+
+    /// Captures treeboot's known environment variables from the process.
+    ///
+    /// Empty values are captured as-is; lookup helpers ignore empty values to
+    /// preserve the CLI compatibility behavior.
+    #[must_use]
+    pub fn from_process_env() -> Self {
+        Self {
+            treeboot_root_path: std::env::var_os(TREEBOOT_ROOT_PATH),
+            codex_source_tree_path: std::env::var_os(CODEX_SOURCE_TREE_PATH),
+            conductor_root_path: std::env::var_os(CONDUCTOR_ROOT_PATH),
+            superset_root_path: std::env::var_os(SUPERSET_ROOT_PATH),
+            conductor_default_branch: std::env::var_os(CONDUCTOR_DEFAULT_BRANCH),
+            treeboot_strict: std::env::var_os(TREEBOOT_STRICT),
+            treeboot_dangerously_allow_sources_outside_root: std::env::var_os(
+                TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT,
+            ),
+            treeboot_dangerously_allow_targets_outside_worktree: std::env::var_os(
+                TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE,
+            ),
+        }
+    }
+
+    /// Returns non-empty root path candidates in treeboot precedence order.
+    pub fn root_candidates(&self) -> impl Iterator<Item = (&'static str, &OsStr)> {
+        [
+            (
+                TREEBOOT_ROOT_PATH,
+                non_empty_value(&self.treeboot_root_path),
+            ),
+            (
+                CODEX_SOURCE_TREE_PATH,
+                non_empty_value(&self.codex_source_tree_path),
+            ),
+            (
+                CONDUCTOR_ROOT_PATH,
+                non_empty_value(&self.conductor_root_path),
+            ),
+            (
+                SUPERSET_ROOT_PATH,
+                non_empty_value(&self.superset_root_path),
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(name, value)| value.map(|value| (name, value)))
+    }
+
+    /// Returns the non-empty `CONDUCTOR_DEFAULT_BRANCH` value.
+    #[must_use]
+    pub fn conductor_default_branch(&self) -> Option<&OsStr> {
+        non_empty_value(&self.conductor_default_branch)
+    }
+}
 
 /// Options for discovering a Git worktree.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -22,6 +121,8 @@ pub struct WorktreeOptions {
     pub cwd: Option<PathBuf>,
     /// Overrides the root checkout used as the file-operation source.
     pub root: Option<PathBuf>,
+    /// Explicit environment input used for compatibility discovery.
+    pub environment: EnvironmentInput,
 }
 
 /// Resolved Git worktree metadata used by treeboot operations.
@@ -58,7 +159,7 @@ pub(crate) fn resolve(options: &WorktreeOptions) -> Result<Worktree> {
     let git = Git::new(&cwd);
     let worktree_path = normalize_existing_path(&git.worktree_path()?)?;
     let root_path = discover_root_path(options, &cwd, &git)?;
-    let default_branch = discover_default_branch(&git)?;
+    let default_branch = discover_default_branch(options, &git)?;
     let environment = build_environment(&root_path, &worktree_path, &default_branch);
 
     Ok(Worktree {
@@ -74,10 +175,8 @@ fn discover_root_path(options: &WorktreeOptions, cwd: &Path, git: &Git) -> Resul
         return normalize_existing_path(&resolve_input_path(cwd, path));
     }
 
-    for key in ROOT_ENV_KEYS {
-        if let Some(value) = non_empty_env(key) {
-            return normalize_existing_path(&resolve_input_path(cwd, &PathBuf::from(value)));
-        }
+    if let Some((_key, value)) = options.environment.root_candidates().next() {
+        return normalize_existing_path(&resolve_input_path(cwd, &PathBuf::from(value)));
     }
 
     git.main_worktree_path()?
@@ -86,8 +185,8 @@ fn discover_root_path(options: &WorktreeOptions, cwd: &Path, git: &Git) -> Resul
         .ok_or(Error::RootPathNotFound)
 }
 
-fn discover_default_branch(git: &Git) -> Result<String> {
-    if let Some(branch) = non_empty_env("CONDUCTOR_DEFAULT_BRANCH") {
+fn discover_default_branch(options: &WorktreeOptions, git: &Git) -> Result<String> {
+    if let Some(branch) = options.environment.conductor_default_branch() {
         return Ok(branch.to_string_lossy().into_owned());
     }
 
@@ -114,8 +213,8 @@ fn build_environment(root_path: &Path, worktree_path: &Path, default_branch: &st
     env
 }
 
-fn non_empty_env(key: &str) -> Option<OsString> {
-    std::env::var_os(key).filter(|value| !value.is_empty())
+fn non_empty_value(value: &Option<OsString>) -> Option<&OsStr> {
+    value.as_deref().filter(|value| !value.is_empty())
 }
 
 pub(crate) fn resolve_worktree_path(worktree_path: &Path, path: &Path) -> PathBuf {
@@ -144,6 +243,41 @@ fn normalize_existing_path(path: &Path) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn environment_input_root_candidates_should_ignore_empty_values_in_order() {
+        let environment = EnvironmentInput {
+            treeboot_root_path: Some(OsString::new()),
+            codex_source_tree_path: Some(OsString::from("/codex")),
+            conductor_root_path: Some(OsString::from("/conductor")),
+            superset_root_path: Some(OsString::from("/superset")),
+            ..EnvironmentInput::empty()
+        };
+
+        let candidates = environment
+            .root_candidates()
+            .map(|(name, value)| (name, value.to_os_string()))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            candidates,
+            vec![
+                (CODEX_SOURCE_TREE_PATH, OsString::from("/codex")),
+                (CONDUCTOR_ROOT_PATH, OsString::from("/conductor")),
+                (SUPERSET_ROOT_PATH, OsString::from("/superset")),
+            ]
+        );
+    }
+
+    #[test]
+    fn environment_input_conductor_default_branch_should_ignore_empty_value() {
+        let environment = EnvironmentInput {
+            conductor_default_branch: Some(OsString::new()),
+            ..EnvironmentInput::empty()
+        };
+
+        assert_eq!(environment.conductor_default_branch(), None);
+    }
 
     #[test]
     fn build_environment_should_set_codex_worktree_to_worktree_path() {

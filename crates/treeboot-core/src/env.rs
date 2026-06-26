@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use serde::Serialize;
 
 use crate::context;
-use crate::{Result, WorktreeOptions};
+use crate::{EnvironmentInput, Result, WorktreeOptions};
 
 /// Options for inspecting the treeboot child environment.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -13,6 +13,8 @@ pub struct EnvOptions {
     pub cwd: Option<PathBuf>,
     /// Overrides the root checkout used for discovery.
     pub root: Option<PathBuf>,
+    /// Explicit environment input used for compatibility discovery.
+    pub environment: EnvironmentInput,
 }
 
 /// Result summary for a `treeboot env` invocation.
@@ -35,6 +37,7 @@ pub fn inspect_env(options: EnvOptions) -> Result<EnvReport> {
     let context = context::resolve(&WorktreeOptions {
         cwd: options.cwd,
         root: options.root,
+        environment: options.environment,
     })?;
     let environment = context
         .environment
