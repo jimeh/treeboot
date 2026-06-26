@@ -1,4 +1,4 @@
-# treeboot Specification v1.11.0
+# treeboot Specification v1.11.1
 
 A portable worktree bootstrapper that lets every coding agent, editor, and orchestration tool run the same repo-local setup command.
 
@@ -410,7 +410,7 @@ string. The initial reason is `not_executable`.
 {
   "package": "treeboot",
   "version": "0.4.1",
-  "spec_version": "1.11.0"
+  "spec_version": "1.11.1"
 }
 ```
 
@@ -985,6 +985,7 @@ Command `cwd` values are normalized relative to `TREEBOOT_WORKTREE_PATH`. Paths 
 | Command `cwd` resolves outside the worktree | Fail before any file operation or command runs. |
 | Command `env` overrides treeboot-owned variables | Fail before any file operation or command runs. |
 | Copy or sync encounters an unsafe source symlink | Fail before any file operation or command runs. |
+| Preserved copy or sync source symlink changes before apply | Fail that operation before mutating the target. |
 | Strict mode with any sync operation | Fail before any file operation or command runs. |
 | `--dry-run` | Print the validation error, change no files, and exit non-zero. |
 
@@ -1057,7 +1058,7 @@ Reconciles target content to match source content. Files are compared by size an
 
 ### Symlinks inside copy and sync
 
-Copy and sync use `symlinks = "preserve"` by default: safe source symlinks are recreated as symlinks instead of copying their referents. A symlink is unsafe if it is empty or resolves outside `TREEBOOT_ROOT_PATH`. When source and target layouts differ, treeboot rewrites copied symlinks to point at the analogous worktree destination when it can. Root-local symlink targets are mapped by root-relative path into the worktree before treeboot computes the destination symlink. When no rewrite is needed, treeboot preserves the symlink target text. If the final symlink target does not exist and will not be created by the current run, treeboot prints a warning. Unsafe symlinks are validation errors in declarative config. Projects that need custom symlink handling should use an init script.
+Copy and sync use `symlinks = "preserve"` by default: safe source symlinks are recreated as symlinks instead of copying their referents. A symlink is unsafe if it is empty or resolves outside `TREEBOOT_ROOT_PATH`. Preserved source symlinks are rechecked immediately before target mutation; if the source stops being a symlink, changes the planned target, or resolves outside `TREEBOOT_ROOT_PATH`, treeboot fails the operation before creating or replacing the worktree link. When source and target layouts differ, treeboot rewrites copied symlinks to point at the analogous worktree destination when it can. Root-local symlink targets are mapped by root-relative path into the worktree before treeboot computes the destination symlink. When no rewrite is needed, treeboot preserves the symlink target text. If the final symlink target does not exist and will not be created by the current run, treeboot prints a warning. Unsafe symlinks are validation errors in declarative config. Projects that need custom symlink handling should use an init script.
 
 ### File metadata preservation
 

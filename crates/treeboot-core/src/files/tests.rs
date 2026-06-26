@@ -4,7 +4,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::*;
 use crate::validation::PlannedFileOperationParts;
-use crate::{PlanOrigin, SourceSpan, Worktree};
+use crate::{ActionPlanOptions, FileOperation, PlanOrigin, SourceSpan, Worktree};
 
 #[derive(Default)]
 struct VecReporter {
@@ -176,6 +176,93 @@ impl Reporter for FailingCallbackReporter {
     }
 }
 
+#[cfg(unix)]
+enum SourceSymlinkMutation {
+    DeleteTarget { target: PathBuf },
+    PointInside { target: PathBuf },
+    PointOutside { target: PathBuf },
+    ReplaceWithFile,
+}
+
+#[cfg(unix)]
+struct SourceSymlinkMutationReporter {
+    link: PathBuf,
+    mutation: SourceSymlinkMutation,
+    mutated: bool,
+}
+
+#[cfg(unix)]
+impl SourceSymlinkMutationReporter {
+    fn delete_target(link: PathBuf, target: PathBuf) -> Self {
+        Self {
+            link,
+            mutation: SourceSymlinkMutation::DeleteTarget { target },
+            mutated: false,
+        }
+    }
+
+    fn point_inside(link: PathBuf, target: PathBuf) -> Self {
+        Self {
+            link,
+            mutation: SourceSymlinkMutation::PointInside { target },
+            mutated: false,
+        }
+    }
+
+    fn point_outside(link: PathBuf, target: PathBuf) -> Self {
+        Self {
+            link,
+            mutation: SourceSymlinkMutation::PointOutside { target },
+            mutated: false,
+        }
+    }
+
+    fn replace_with_file(link: PathBuf) -> Self {
+        Self {
+            link,
+            mutation: SourceSymlinkMutation::ReplaceWithFile,
+            mutated: false,
+        }
+    }
+}
+
+#[cfg(unix)]
+impl Reporter for SourceSymlinkMutationReporter {
+    fn report(&mut self, _event: OutputEvent) -> std::io::Result<()> {
+        Ok(())
+    }
+
+    fn file_operation_execution_started(
+        &mut self,
+        operation: FileOperationKind,
+        source: &Path,
+        target: &Path,
+        action_count: usize,
+    ) -> std::io::Result<()> {
+        let _ = (operation, source, target, action_count);
+        if self.mutated {
+            return Ok(());
+        }
+
+        fs::remove_file(&self.link)?;
+        match &self.mutation {
+            SourceSymlinkMutation::DeleteTarget { target } => {
+                fs::remove_file(target)?;
+                std::os::unix::fs::symlink(target, &self.link)?;
+            }
+            SourceSymlinkMutation::PointInside { target }
+            | SourceSymlinkMutation::PointOutside { target } => {
+                std::os::unix::fs::symlink(target, &self.link)?;
+            }
+            SourceSymlinkMutation::ReplaceWithFile => {
+                fs::write(&self.link, "changed\n")?;
+            }
+        }
+        self.mutated = true;
+        Ok(())
+    }
+}
+
 fn span() -> SourceSpan {
     SourceSpan {
         start: 0,
@@ -285,6 +372,35 @@ fn run_plan(root: &Path, worktree: &Path, files: Vec<PlannedFileOperation>) -> A
         files,
         Vec::new(),
     )
+}
+
+fn validated_file_plan(
+    operation: FileOperationKind,
+    root: &Path,
+    worktree: &Path,
+    source: &str,
+    target: &str,
+) -> ActionPlan {
+    let file = FileOperation {
+        operation,
+        source: PathBuf::from(source),
+        target: PathBuf::from(target),
+        source_path: root.join(source),
+        target_path: worktree.join(target),
+        required: false,
+        compare: None,
+        delete: None,
+        symlinks: None,
+        ignore_metadata: Vec::new(),
+        declaration: span(),
+    };
+    ActionPlan::from_file_operations(
+        &context(root, worktree),
+        PlanOrigin::Manual { operation },
+        &[file],
+        ActionPlanOptions::default(),
+    )
+    .expect("file operation should validate")
 }
 
 #[test]
@@ -2516,6 +2632,177 @@ fn apply_file_operations_should_preserve_copied_source_symlinks() {
 
     let link = fs::read_link(worktree.join("shared/link")).expect("copied symlink should exist");
     assert_eq!(link, PathBuf::from("config"));
+}
+
+#[cfg(unix)]
+#[test]
+fn apply_file_operations_should_reject_preserved_source_symlink_that_escapes_before_apply() {
+    let (root, worktree) = temp_workspace("preserved-symlink-escape");
+    let source_dir = root.join("shared");
+    let outside = root
+        .parent()
+        .expect("root should have parent")
+        .join("outside-preserved-symlink");
+    fs::create_dir_all(&source_dir).expect("source dir should be created");
+    fs::create_dir_all(&outside).expect("outside dir should be created");
+    fs::write(source_dir.join("config"), "value\n").expect("source should be written");
+    fs::write(outside.join("secret"), "secret\n").expect("outside source should be written");
+    std::os::unix::fs::symlink("config", source_dir.join("link"))
+        .expect("source symlink should be created");
+    let plan = validated_file_plan(
+        FileOperationKind::Copy,
+        &root,
+        &worktree,
+        "shared/link",
+        "shared/link",
+    );
+    let mut reporter = SourceSymlinkMutationReporter::point_outside(
+        source_dir.join("link"),
+        outside.join("secret"),
+    );
+
+    let error = apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+        .expect_err("escaped source symlink should fail before apply");
+
+    assert!(
+        error
+            .to_string()
+            .contains("source symlink resolves outside root during apply")
+    );
+    assert!(fs::symlink_metadata(worktree.join("shared/link")).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn apply_file_operations_should_reject_preserved_source_that_stops_being_symlink() {
+    let (root, worktree) = temp_workspace("preserved-symlink-type-change");
+    let source_dir = root.join("shared");
+    fs::create_dir_all(&source_dir).expect("source dir should be created");
+    fs::write(source_dir.join("config"), "value\n").expect("source should be written");
+    std::os::unix::fs::symlink("config", source_dir.join("link"))
+        .expect("source symlink should be created");
+    let plan = validated_file_plan(
+        FileOperationKind::Copy,
+        &root,
+        &worktree,
+        "shared/link",
+        "shared/link",
+    );
+    let mut reporter = SourceSymlinkMutationReporter::replace_with_file(source_dir.join("link"));
+
+    let error = apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+        .expect_err("source type change should fail before apply");
+
+    assert!(
+        error
+            .to_string()
+            .contains("source changed from a symlink before apply")
+    );
+    assert!(fs::symlink_metadata(worktree.join("shared/link")).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn apply_file_operations_should_reject_preserved_source_symlink_that_changes_target() {
+    let (root, worktree) = temp_workspace("preserved-symlink-target-change");
+    let source_dir = root.join("shared");
+    fs::create_dir_all(&source_dir).expect("source dir should be created");
+    fs::write(source_dir.join("config"), "value\n").expect("source should be written");
+    fs::write(source_dir.join("other"), "other\n").expect("other source should be written");
+    std::os::unix::fs::symlink("config", source_dir.join("link"))
+        .expect("source symlink should be created");
+    let plan = validated_file_plan(
+        FileOperationKind::Copy,
+        &root,
+        &worktree,
+        "shared/link",
+        "shared/link",
+    );
+    let mut reporter = SourceSymlinkMutationReporter::point_inside(
+        source_dir.join("link"),
+        PathBuf::from("other"),
+    );
+
+    let error = apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+        .expect_err("source target change should fail before apply");
+
+    assert!(
+        error
+            .to_string()
+            .contains("source symlink changed before apply")
+    );
+    assert!(fs::symlink_metadata(worktree.join("shared/link")).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn apply_file_operations_should_reject_preserved_source_symlink_with_missing_target() {
+    let (root, worktree) = temp_workspace("preserved-symlink-missing-target");
+    let source_dir = root.join("shared");
+    fs::create_dir_all(&source_dir).expect("source dir should be created");
+    fs::write(source_dir.join("config"), "value\n").expect("source should be written");
+    std::os::unix::fs::symlink("config", source_dir.join("link"))
+        .expect("source symlink should be created");
+    let plan = validated_file_plan(
+        FileOperationKind::Copy,
+        &root,
+        &worktree,
+        "shared/link",
+        "shared/link",
+    );
+    let mut reporter = SourceSymlinkMutationReporter::delete_target(
+        source_dir.join("link"),
+        source_dir.join("config"),
+    );
+
+    let error = apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+        .expect_err("missing symlink target should fail before apply");
+
+    assert!(
+        error
+            .to_string()
+            .contains("source symlink changed before apply")
+    );
+    assert!(fs::symlink_metadata(worktree.join("shared/link")).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn apply_file_operations_should_reject_sync_source_symlink_change_before_replacing_target() {
+    let (root, worktree) = temp_workspace("preserved-sync-symlink-target-change");
+    let source_dir = root.join("shared");
+    let target_dir = worktree.join("shared");
+    fs::create_dir_all(&source_dir).expect("source dir should be created");
+    fs::create_dir_all(&target_dir).expect("target dir should be created");
+    fs::write(source_dir.join("config"), "value\n").expect("source should be written");
+    fs::write(source_dir.join("other"), "other\n").expect("other source should be written");
+    fs::write(target_dir.join("link"), "keep\n").expect("target should be written");
+    std::os::unix::fs::symlink("config", source_dir.join("link"))
+        .expect("source symlink should be created");
+    let plan = validated_file_plan(
+        FileOperationKind::Sync,
+        &root,
+        &worktree,
+        "shared/link",
+        "shared/link",
+    );
+    let mut reporter = SourceSymlinkMutationReporter::point_inside(
+        source_dir.join("link"),
+        PathBuf::from("other"),
+    );
+
+    let error = apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+        .expect_err("source target change should fail before target replacement");
+
+    assert!(
+        error
+            .to_string()
+            .contains("source symlink changed before apply")
+    );
+    assert_eq!(
+        fs::read_to_string(target_dir.join("link")).expect("target file should remain readable"),
+        "keep\n"
+    );
 }
 
 #[cfg(unix)]

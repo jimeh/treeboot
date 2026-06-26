@@ -56,6 +56,7 @@ enum FileAction {
         source: PathBuf,
         target: PathBuf,
         target_path: PathBuf,
+        preserved_source_path: Option<PathBuf>,
         link_target: PathBuf,
         final_target: PathBuf,
         target_is_dir: bool,
@@ -99,9 +100,26 @@ struct SymlinkActionPlan {
     source: PathBuf,
     target: PathBuf,
     target_path: PathBuf,
+    preserved_source_path: Option<PathBuf>,
     link_target: PathBuf,
     final_target: PathBuf,
     target_is_dir: bool,
+}
+
+impl SymlinkActionPlan {
+    fn into_action(self, replace: bool) -> FileAction {
+        FileAction::CreateSymlink {
+            operation: self.operation,
+            source: self.source,
+            target: self.target,
+            target_path: self.target_path,
+            preserved_source_path: self.preserved_source_path,
+            link_target: self.link_target,
+            final_target: self.final_target,
+            target_is_dir: self.target_is_dir,
+            replace,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -591,6 +609,7 @@ fn plan_tree_symlink(
         source: entry.source.to_path_buf(),
         target: entry.target.to_path_buf(),
         target_path: entry.target_path.to_path_buf(),
+        preserved_source_path: Some(entry.source_path.to_path_buf()),
         link_target,
         final_target,
         target_is_dir,
@@ -615,43 +634,16 @@ fn plan_sync_symlink_action(plan: SymlinkActionPlan, actions: &mut Vec<FileActio
                     source,
                 })?;
             if existing != plan.link_target {
-                actions.push(FileAction::CreateSymlink {
-                    operation: plan.operation,
-                    source: plan.source,
-                    target: plan.target,
-                    target_path: plan.target_path,
-                    link_target: plan.link_target,
-                    final_target: plan.final_target,
-                    target_is_dir: plan.target_is_dir,
-                    replace: true,
-                });
+                actions.push(plan.into_action(true));
             }
             Ok(())
         }
         Some(_) => {
-            actions.push(FileAction::CreateSymlink {
-                operation: plan.operation,
-                source: plan.source,
-                target: plan.target,
-                target_path: plan.target_path,
-                link_target: plan.link_target,
-                final_target: plan.final_target,
-                target_is_dir: plan.target_is_dir,
-                replace: true,
-            });
+            actions.push(plan.into_action(true));
             Ok(())
         }
         None => {
-            actions.push(FileAction::CreateSymlink {
-                operation: plan.operation,
-                source: plan.source,
-                target: plan.target,
-                target_path: plan.target_path,
-                link_target: plan.link_target,
-                final_target: plan.final_target,
-                target_is_dir: plan.target_is_dir,
-                replace: false,
-            });
+            actions.push(plan.into_action(false));
             Ok(())
         }
     }
@@ -675,6 +667,7 @@ fn plan_symlink(
             source: operation.source().to_path_buf(),
             target: operation.target().to_path_buf(),
             target_path: operation.target_path().to_path_buf(),
+            preserved_source_path: None,
             link_target,
             final_target: operation.source_path().to_path_buf(),
             target_is_dir: operation.source_path().is_dir(),
@@ -695,16 +688,7 @@ fn plan_symlink_action(
         }
         Some(_) if options.strict => conflict(plan.operation, plan.target_path, "target exists"),
         Some(_) if options.force => {
-            actions.push(FileAction::CreateSymlink {
-                operation: plan.operation,
-                source: plan.source,
-                target: plan.target,
-                target_path: plan.target_path,
-                link_target: plan.link_target,
-                final_target: plan.final_target,
-                target_is_dir: plan.target_is_dir,
-                replace: true,
-            });
+            actions.push(plan.into_action(true));
             Ok(())
         }
         Some(_) => {
@@ -716,16 +700,7 @@ fn plan_symlink_action(
             Ok(())
         }
         None => {
-            actions.push(FileAction::CreateSymlink {
-                operation: plan.operation,
-                source: plan.source,
-                target: plan.target,
-                target_path: plan.target_path,
-                link_target: plan.link_target,
-                final_target: plan.final_target,
-                target_is_dir: plan.target_is_dir,
-                replace: false,
-            });
+            actions.push(plan.into_action(false));
             Ok(())
         }
     }
@@ -1196,11 +1171,23 @@ fn apply_action(
             source,
             target,
             target_path,
+            preserved_source_path,
             link_target,
-            final_target: _,
+            final_target,
             target_is_dir,
             replace,
         } => {
+            if let Some(source_path) = preserved_source_path {
+                ensure_preserved_source_symlink_safe(
+                    plan,
+                    *operation,
+                    source_path,
+                    target_path,
+                    link_target,
+                    final_target,
+                    *target_is_dir,
+                )?;
+            }
             with_writable_parent(
                 *operation,
                 target_path,
@@ -1749,6 +1736,68 @@ fn ensure_source_file_safe(
     }
 
     Ok(metadata)
+}
+
+fn ensure_preserved_source_symlink_safe(
+    plan: &ActionPlan,
+    operation: FileOperationKind,
+    source_path: &Path,
+    target_path: &Path,
+    link_target: &Path,
+    final_target: &Path,
+    target_is_dir: bool,
+) -> Result<()> {
+    let metadata = metadata(source_path, operation)?;
+    if !metadata.file_type().is_symlink() {
+        return conflict(
+            operation,
+            source_path.to_path_buf(),
+            "source changed from a symlink before apply",
+        );
+    }
+
+    let source_target = fs::canonicalize(source_path).map_err(|source| {
+        if source.kind() == std::io::ErrorKind::NotFound {
+            return Error::FileOperationConflict {
+                operation: operation.as_str(),
+                path: source_path.to_path_buf(),
+                message: "source symlink changed before apply".to_owned(),
+            };
+        }
+        Error::FileOperationIo {
+            operation: operation.as_str(),
+            path: source_path.to_path_buf(),
+            source,
+        }
+    })?;
+    let root_path =
+        fs::canonicalize(&plan.context().root_path).map_err(|source| Error::FileOperationIo {
+            operation: operation.as_str(),
+            path: plan.context().root_path.clone(),
+            source,
+        })?;
+    if !source_target.starts_with(&root_path) {
+        return conflict(
+            operation,
+            source_target,
+            "source symlink resolves outside root during apply",
+        );
+    }
+
+    let (current_link_target, current_final_target, current_target_is_dir) =
+        preserved_source_link(plan, operation, source_path, target_path)?;
+    if current_link_target != link_target
+        || current_final_target != final_target
+        || current_target_is_dir != target_is_dir
+    {
+        return conflict(
+            operation,
+            source_path.to_path_buf(),
+            "source symlink changed before apply",
+        );
+    }
+
+    Ok(())
 }
 
 fn remove_file_checked(
