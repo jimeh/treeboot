@@ -4,12 +4,13 @@ use std::process::Command;
 
 use tempfile::TempDir;
 use treeboot_core::{
-    ActionPlan, ActionPlanOptions, Config, ConfigOptions, Environment, EnvironmentInput, Error,
-    ExecuteOptions, Executor, FileOperation, FileOperationAction, FileOperationKind,
-    FileOperationOptions, FileOperationSummary, IgnoredInitScript, InitScriptDiscovery,
-    InitScriptStatus, LoadedConfig, ManualFileOperationOptions, OutputEvent, PlanOrigin, Reporter,
-    RunAction, RunOptions, SourceSpan, StatusOptions, SymlinkMode, Worktree, WorktreeOptions,
-    check, config_schema_json, diagnose, inspect_config, inspect_env, inspect_status,
+    ActionPlan, ActionPlanOptions, Config, ConfigOptions, DiagnosticStatus, Environment,
+    EnvironmentInput, Error, ExecuteOptions, Executor, FileOperation, FileOperationAction,
+    FileOperationCompletionOptions, FileOperationKind, FileOperationOptions, FileOperationSummary,
+    IgnoredInitScript, InitScriptDiscovery, InitScriptStatus, LoadedConfig,
+    ManualFileOperationOptions, OutputEvent, PlanOrigin, Reporter, RunAction, RunOptions,
+    SourceSpan, StatusOptions, SymlinkMode, Worktree, WorktreeOptions, check, config_schema_json,
+    diagnose, file_operation_source_candidates, inspect_config, inspect_env, inspect_status,
     inspect_status_snapshot, run, run_file_operation, treeboot_version_info, version_info,
 };
 
@@ -245,6 +246,27 @@ fn public_api_worktree_discover_should_use_explicit_environment_input() {
 }
 
 #[test]
+fn public_api_worktree_discover_should_use_next_non_empty_environment_alias() {
+    let repo = git_worktree();
+    let alternate_root = TempDir::new().expect("alternate root should be created");
+    let expected_root =
+        std::fs::canonicalize(alternate_root.path()).expect("root should canonicalize");
+
+    let worktree = Worktree::discover(WorktreeOptions {
+        cwd: Some(repo.worktree_path().to_path_buf()),
+        root: None,
+        environment: EnvironmentInput {
+            treeboot_root_path: Some(OsString::new()),
+            codex_source_tree_path: Some(OsString::from(alternate_root.path())),
+            ..EnvironmentInput::empty()
+        },
+    })
+    .expect("worktree should be discovered");
+
+    assert_eq!(worktree.root_path, expected_root);
+}
+
+#[test]
 fn public_api_check_should_use_explicit_runtime_environment_input() {
     let repo = git_worktree();
 
@@ -259,6 +281,36 @@ fn public_api_check_should_use_explicit_runtime_environment_input() {
     .expect_err("strict root checkout should fail");
 
     assert!(matches!(error, Error::RootWorktreeStrict));
+}
+
+#[test]
+fn public_api_diagnose_should_report_explicit_default_branch_as_resolved() {
+    let repo = git_worktree();
+
+    let report = diagnose(treeboot_core::DoctorOptions {
+        cwd: Some(repo.worktree_path().to_path_buf()),
+        environment: EnvironmentInput {
+            conductor_default_branch: Some(OsString::from("stable")),
+            ..EnvironmentInput::empty()
+        },
+        no_init_script: true,
+        ..treeboot_core::DoctorOptions::default()
+    });
+    let diagnostic = report
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.name == "default_branch")
+        .expect("default_branch diagnostic should be present");
+
+    assert_eq!(diagnostic.status, DiagnosticStatus::Ok);
+    assert_eq!(
+        report
+            .context
+            .as_ref()
+            .expect("context should resolve")
+            .default_branch,
+        "stable"
+    );
 }
 
 #[test]
@@ -542,6 +594,29 @@ fn public_api_inspect_status_should_report_executable_init_script() {
 }
 
 #[test]
+fn public_api_inspect_status_should_use_explicit_environment_input() {
+    let repo = git_worktree();
+    let alternate_root = TempDir::new().expect("alternate root should be created");
+    let expected_root =
+        std::fs::canonicalize(alternate_root.path()).expect("root should canonicalize");
+
+    let report = inspect_status(StatusOptions {
+        cwd: Some(repo.worktree_path().to_path_buf()),
+        environment: EnvironmentInput {
+            treeboot_root_path: Some(OsString::from(alternate_root.path())),
+            conductor_default_branch: Some(OsString::from("release")),
+            ..EnvironmentInput::empty()
+        },
+        no_init_script: true,
+        ..StatusOptions::default()
+    })
+    .expect("status should inspect with explicit environment");
+
+    assert_eq!(report.context.root_path, expected_root);
+    assert_eq!(report.context.default_branch, "release");
+}
+
+#[test]
 fn public_api_executor_should_skip_commands_when_requested() {
     let (_temp, context) = temp_worktree("skip-command");
     let config = Config::parse(
@@ -681,6 +756,34 @@ fn public_api_run_file_operation_should_apply_manual_copy() {
         std::fs::read_to_string(repo.worktree_path().join(".env"))
             .expect("copied file should be readable"),
         "TOKEN=1\n"
+    );
+}
+
+#[test]
+fn public_api_file_operation_source_candidates_should_use_explicit_environment_input() {
+    let repo = git_worktree();
+    let alternate_root = TempDir::new().expect("alternate root should be created");
+    write_file(&alternate_root.path().join(".env"), "TOKEN=1\n");
+    std::fs::create_dir_all(alternate_root.path().join("shared/nested"))
+        .expect("shared directory should be created");
+
+    let candidates = file_operation_source_candidates(FileOperationCompletionOptions {
+        cwd: Some(repo.worktree_path().to_path_buf()),
+        root: None,
+        environment: EnvironmentInput {
+            treeboot_root_path: Some(OsString::new()),
+            codex_source_tree_path: Some(OsString::from(alternate_root.path())),
+            ..EnvironmentInput::empty()
+        },
+        current: PathBuf::new(),
+    });
+
+    assert_eq!(
+        candidates,
+        vec![
+            ".env".to_owned(),
+            format!("shared{}", std::path::MAIN_SEPARATOR),
+        ]
     );
 }
 

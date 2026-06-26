@@ -1226,6 +1226,26 @@ dangerously_allow_sources_outside_root = true
         ));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn runtime_option_overrides_should_reject_non_utf8_explicit_environment_input() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let error = RuntimeOptionOverrides::from_environment(&EnvironmentInput {
+            treeboot_strict: Some(OsString::from_vec(vec![0xFF])),
+            ..EnvironmentInput::empty()
+        })
+        .expect_err("environment should fail");
+
+        assert!(matches!(
+            error,
+            Error::InvalidBooleanEnv {
+                name: "TREEBOOT_STRICT",
+                ..
+            }
+        ));
+    }
+
     #[test]
     fn parse_bool_should_accept_supported_true_values() {
         for value in ["1", "true", "TRUE", "yes", "on"] {
