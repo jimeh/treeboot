@@ -24,6 +24,8 @@ musl, Linux ARM64 musl, Windows x86_64/ARM64 MSVC, and Android x86_64/ARM64.
 Release-please creates release PRs, updates `CHANGELOG.md`, bumps Cargo
 versions, creates `vX.Y.Z` tags, and leaves draft GitHub Releases. It must run
 with a GitHub App token so tag pushes trigger the release workflow.
+While `treeboot` is pre-1.0, release-please treats breaking changes as minor
+bumps instead of major bumps.
 
 The tag-triggered release workflow should reuse the draft GitHub Release for
 the pushed tag. If no draft exists, it should extract the matching changelog
