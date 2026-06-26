@@ -1,6 +1,6 @@
 [package]
 name = "treeboot"
-version = "0.4.1"
+version = "0.5.0"
 description = "Bootstrap Git worktrees from one repo-local setup file."
 edition.workspace = true
 rust-version.workspace = true
@@ -26,7 +26,7 @@ console = { version = "0.16", default-features = false, features = [
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 yaml_serde = "0.10"
-treeboot-core = { path = "../treeboot-core", version = "0.4.1" }
+treeboot-core = { path = "../treeboot-core", version = "0.5.0" }
 
 [dependencies.indicatif]
 version = "0.18"
