@@ -753,7 +753,7 @@ checksum = "756daf9b1013ebe47a8776667b466417e2d4c5679d441c26230efd9ef78692db"
 
 [[package]]
 name = "treeboot"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -770,7 +770,7 @@ dependencies = [
 
 [[package]]
 name = "treeboot-core"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "schemars",
  "serde",
@@ -782,7 +782,7 @@ dependencies = [
 
 [[package]]
 name = "treeboot-release-helper"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "clap",
  "markdown",
@@ -792,7 +792,7 @@ dependencies = [
 
 [[package]]
 name = "treeboot-workspace"
-version = "0.5.0"
+version = "0.5.1"
 
 [[package]]
 name = "unicode-id"

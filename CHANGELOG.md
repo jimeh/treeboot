@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/jimeh/treeboot/compare/v0.5.0...v0.5.1) (2026-06-26)
+
+
+### Bug Fixes
+
+* cover Windows ARM64 runner setup ([#55](https://github.com/jimeh/treeboot/issues/55)) ([04df08b](https://github.com/jimeh/treeboot/commit/04df08bc4e7530bae51a7308aacd3c56afca9b94))
+
 ## [0.5.0](https://github.com/jimeh/treeboot/compare/v0.4.1...v0.5.0) (2026-06-26)
 
 
