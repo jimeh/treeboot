@@ -33,7 +33,8 @@ publication complete.
 
 The manual release workflow path should generate the same build assets but
 default to workflow artifacts only. It must not publish a GitHub Release or
-crates.io packages.
+crates.io packages. Manual runs derive their test artifact version from the
+checked-out Git state; do not add a manual version input.
 
 Crates.io publishing uses two packages: publish `treeboot-core` first, then
 publish `treeboot` after the registry index can resolve the matching
