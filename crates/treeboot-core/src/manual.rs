@@ -294,7 +294,7 @@ pub fn run_file_operation(
         skip_commands: true,
     })
     .execute_files(&plan, reporter)?;
-    let context = plan.context;
+    let context = plan.context().clone();
 
     Ok(FileOperationReport {
         context,
