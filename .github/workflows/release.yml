@@ -2,11 +2,6 @@ name: release
 
 on:
   workflow_dispatch:
-    inputs:
-      version:
-        description: "Version to use for manual artifacts, without the v prefix"
-        required: false
-        type: string
   push:
     tags: ["v*"]
 
@@ -43,8 +38,6 @@ jobs:
           cache_key: mise-v2-${{ github.event_name }}-release-prepare-{{platform}}-{{file_hash}}
 
       - id: version
-        env:
-          TREEBOOT_RELEASE_VERSION: ${{ inputs.version }}
         run: scripts/release-version.sh
 
   build:
