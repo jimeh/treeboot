@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.0](https://github.com/jimeh/treeboot/compare/v0.4.1...v0.5.0) (2026-06-26)
+
+
+### Features
+
+* add treeboot inspection commands ([#50](https://github.com/jimeh/treeboot/issues/50)) ([d04ae44](https://github.com/jimeh/treeboot/commit/d04ae448d485a362a2d2f6e48534e994d8db0cb5))
+* make file operation output compact by default ([#53](https://github.com/jimeh/treeboot/issues/53)) ([872e80d](https://github.com/jimeh/treeboot/commit/872e80da76d479c057fac3da5ae0ea9bd92a3876))
+* preserve copy and sync metadata by default ([#54](https://github.com/jimeh/treeboot/issues/54)) ([671baf3](https://github.com/jimeh/treeboot/commit/671baf3cfb399268dd077b749534ffc25daf575f))
+
 ## [0.4.1](https://github.com/jimeh/treeboot/compare/v0.4.0...v0.4.1) (2026-06-23)
 
 
