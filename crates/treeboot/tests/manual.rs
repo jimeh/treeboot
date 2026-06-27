@@ -118,6 +118,57 @@ fn copy_should_apply_explicit_ignore_without_loading_gitignore() {
 }
 
 #[test]
+fn copy_should_apply_config_default_ignore() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("source directory should be created");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"default_ignore = [".DS_Store"]"#,
+    );
+    write_file(&repo.root_path().join("shared/config"), "copy\n");
+    write_file(&repo.root_path().join("shared/.DS_Store"), "skip\n");
+
+    treeboot()
+        .args(["copy", "shared"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("shared/config"))
+            .expect("target should be readable"),
+        "copy\n"
+    );
+    assert!(!repo.worktree_path().join("shared/.DS_Store").exists());
+}
+
+#[test]
+fn copy_should_allow_cli_ignore_to_reinclude_config_default_ignore() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("source directory should be created");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"default_ignore = [".DS_Store"]"#,
+    );
+    write_file(&repo.root_path().join("shared/config"), "copy\n");
+    write_file(&repo.root_path().join("shared/.DS_Store"), "keep\n");
+
+    treeboot()
+        .args(["copy", "shared", "--ignore", "!.DS_Store"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("shared/.DS_Store"))
+            .expect("re-included target should be readable"),
+        "keep\n"
+    );
+}
+
+#[test]
 fn copy_should_place_multiple_sources_under_target_prefix() {
     let repo = git_worktree();
     write_file(&repo.root_path().join("a"), "a\n");
@@ -331,6 +382,58 @@ fn sync_delete_should_preserve_ignored_target_only_files() {
             .join("shared/vendor/keep/remove")
             .exists()
     );
+}
+
+#[test]
+fn sync_delete_should_preserve_config_default_ignored_target_only_files() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("source directory should be created");
+    std::fs::create_dir_all(repo.worktree_path().join("shared"))
+        .expect("target directory should be created");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"default_ignore = [".DS_Store"]"#,
+    );
+    write_file(&repo.worktree_path().join("shared/stale"), "remove\n");
+    write_file(&repo.worktree_path().join("shared/.DS_Store"), "keep\n");
+
+    treeboot()
+        .args(["sync", "shared", "--delete"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert!(!repo.worktree_path().join("shared/stale").exists());
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("shared/.DS_Store"))
+            .expect("ignored target should be readable"),
+        "keep\n"
+    );
+}
+
+#[test]
+fn sync_delete_should_allow_cli_ignore_to_reinclude_config_default_ignore() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("source directory should be created");
+    std::fs::create_dir_all(repo.worktree_path().join("shared"))
+        .expect("target directory should be created");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"default_ignore = [".DS_Store"]"#,
+    );
+    write_file(&repo.worktree_path().join("shared/stale"), "remove\n");
+    write_file(&repo.worktree_path().join("shared/.DS_Store"), "remove\n");
+
+    treeboot()
+        .args(["sync", "shared", "--delete", "--ignore", "!.DS_Store"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert!(!repo.worktree_path().join("shared/stale").exists());
+    assert!(!repo.worktree_path().join("shared/.DS_Store").exists());
 }
 
 #[test]

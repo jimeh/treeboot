@@ -422,6 +422,13 @@
       "description": "Allows file operation targets outside the current worktree.",
       "type": "boolean"
     },
+    "default_ignore": {
+      "description": "Default path ignore patterns prepended to copy and sync operations.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "file": {
       "description": "Verbose mixed file operation entries. TOML uses this as [[file]].",
       "items": {

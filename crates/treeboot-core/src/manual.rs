@@ -3,7 +3,7 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::config::{
     Config, FileOperationSettings, FileOperationSettingsInput, RawMetadataField,
-    RuntimeOptionOverrides, normalize_file_operation_settings,
+    RuntimeOptionOverrides, effective_ignore_patterns, normalize_file_operation_settings,
 };
 use crate::context;
 use crate::{
@@ -259,7 +259,7 @@ pub fn run_file_operation(
         dry_run,
         verbose,
     } = options;
-    let manual_options = ManualFileOperationOptions {
+    let mut manual_options = ManualFileOperationOptions {
         operation,
         sources,
         target,
@@ -298,6 +298,12 @@ pub fn run_file_operation(
         .map(|loaded| loaded.config.options)
         .unwrap_or_default();
     let plan_options = env_options.resolve(&config_options, strict);
+    manual_options.ignore = effective_ignore_patterns(
+        operation,
+        &plan_options.default_ignore,
+        manual_options.ignore,
+    );
+    let strict = plan_options.strict;
     let operations = FileOperation::from_manual_options(&context, manual_options)?;
     let plan = ActionPlan::from_file_operations(
         &context,
@@ -306,7 +312,7 @@ pub fn run_file_operation(
         ActionPlanOptions::from(plan_options),
     )?;
     let report = Executor::new(ExecuteOptions {
-        strict: plan_options.strict,
+        strict,
         force,
         dry_run,
         verbose,

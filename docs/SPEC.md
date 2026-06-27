@@ -427,6 +427,7 @@ string. The initial reason is `not_executable`.
   "path": "/repo-worktree/.treeboot.toml",
   "config": {
     "strict": false,
+    "default_ignore": [],
     "dangerously_allow_sources_outside_root": false,
     "dangerously_allow_targets_outside_worktree": false,
     "files": [
@@ -828,6 +829,7 @@ The checked-in JSON Schema for the config file format lives at `schemas/treeboot
 #:schema https://github.com/jimeh/treeboot/releases/latest/download/config.schema.json
 
 strict = false
+default_ignore = [".DS_Store", "Thumbs.db"]
 dangerously_allow_sources_outside_root = false
 dangerously_allow_targets_outside_worktree = false
 
@@ -862,13 +864,16 @@ files = [
 
 ### Top-level options
 
-Top-level boolean options are project defaults for declarative config execution. Environment variables override matching config values. CLI flags override both where an equivalent flag exists.
+Top-level options are project defaults for declarative config execution.
+Environment variables override matching config values. CLI flags override both
+where an equivalent flag exists.
 
 | Option | Environment | Meaning |
 | --- | --- | --- |
 | `strict` | `TREEBOOT_STRICT` | Defaults to `false`. Enables stricter declarative validation and conflict handling. CLI or environment strictness also applies before config discovery. |
 | `dangerously_allow_sources_outside_root` | `TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT` | Defaults to `false`. Allows declarative file operation sources outside `TREEBOOT_ROOT_PATH`. |
 | `dangerously_allow_targets_outside_worktree` | `TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE` | Defaults to `false`. Allows declarative file operation targets outside `TREEBOOT_WORKTREE_PATH`. |
+| `default_ignore` | none | Defaults to `[]`. Ordered path ignore patterns prepended to every `copy` and `sync` operation's effective ignore list. |
 
 ### File objects
 
@@ -920,7 +925,7 @@ The verbose table-array name is singular `[[file]]` so it can coexist with the p
 | `compare` | `sync` | `metadata` by default; `checksum` for content checks. |
 | `delete` | `sync` directories | Defaults to `false`; when true, deletes target-only files and directories. |
 | `symlinks` | `copy`, `sync` | Defaults to `preserve`; safe source symlinks are recreated as symlinks and unsafe symlinks are validation errors. |
-| `ignore` | `copy`, `sync` | Optional list of operation-local path ignore patterns. |
+| `ignore` | `copy`, `sync` | Optional list of operation-local path ignore patterns appended after top-level `default_ignore`. |
 | `ignore_metadata` | `copy`, `sync` | Optional list of metadata fields to ignore. Supported values are `permissions`, `owner`, `group`, and `ownership`. `ownership` is shorthand for owner and group. |
 
 ### Command objects
@@ -1032,7 +1037,11 @@ Completion candidate generation uses root/worktree discovery only. It must not p
 
 Manual file operation commands normalize to the same internal file operation shape as config entries. The subcommand supplies `operation`, each positional source supplies `source`, `--required` supplies `required = true`, and operation-specific flags supply `symlinks`, `compare`, `delete`, `ignore`, or `ignore_metadata`.
 
-Manual normalization happens under the same resolved runtime policy as declarative file operations: defaults, then config top-level policy when a config is present, then environment overrides, then CLI strictness.
+Manual normalization happens under the same resolved runtime policy as declarative
+file operations: defaults, then config top-level policy when a config is present,
+then environment overrides, then CLI strictness. For manual `copy` and `sync`,
+effective ignore rules are the loaded config's `default_ignore` patterns followed
+by repeated `--ignore` flags.
 
 If `--target` is omitted, each target defaults to its source value. If one source is passed, `--target` is that operation's target. If more than one source is passed, `--target` is joined with each source value to produce each operation's target.
 
@@ -1064,17 +1073,25 @@ Reconciles target content to match source content. Files are compared by size an
 
 ### Path ignore rules
 
-`ignore` is an ordered list of operation-local path patterns for `copy` and
-`sync`. Patterns use gitignore-style syntax, including `*`, `?`, `**`,
-character classes, trailing slash directory matches, comments, escaped
-metacharacters, and `!` negation. Later matching patterns override earlier
-matching patterns. A path matched by a non-negated pattern is ignored. A path
-matched by a later negated pattern is re-included.
+`default_ignore` is an ordered top-level list of path patterns prepended to every
+`copy` and `sync` operation's effective ignore list. `ignore` is an ordered list
+of operation-local path patterns appended after `default_ignore`. Patterns use
+gitignore-style syntax, including `*`, `?`, `**`, character classes, trailing
+slash directory matches, comments, escaped metacharacters, and `!` negation.
+Later matching patterns override earlier matching patterns. A path matched by a
+non-negated pattern is ignored. A path matched by a later negated pattern is
+re-included. Because operation-local `ignore` patterns come after
+`default_ignore`, an operation-local `!` pattern can re-include a path ignored by
+the top-level defaults.
+
+Normalized file operations expose the effective merged ignore list in their
+`ignore` field. Normalized config output also preserves `default_ignore` as a
+top-level policy field.
 
 treeboot never loads `.gitignore`, `.ignore`, `.rgignore`,
 `.git/info/exclude`, or global Git ignore files for file operations. Ignore
-rules come only from the operation's `ignore` field or repeated manual
-`--ignore` flags.
+rules come only from top-level `default_ignore`, the operation's `ignore` field,
+or repeated manual `--ignore` flags.
 
 Patterns match source-relative paths for the operation. For example, with
 `source = "shared"` and `ignore = ["**/vendor/**"]`, the pattern is evaluated

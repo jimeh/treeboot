@@ -194,6 +194,7 @@ fn run_should_apply_configured_file_ignore_patterns() {
     std::fs::create_dir_all(repo.root_path().join("shared/vendor/keep"))
         .expect("source directory should be created");
     write_file(&repo.root_path().join("shared/config"), "copy\n");
+    write_file(&repo.root_path().join("shared/.DS_Store"), "keep\n");
     write_file(&repo.root_path().join("shared/vendor/drop"), "skip\n");
     write_file(
         &repo.root_path().join("shared/vendor/keep/config"),
@@ -201,7 +202,10 @@ fn run_should_apply_configured_file_ignore_patterns() {
     );
     write_file(
         &repo.worktree_path().join(".treeboot.toml"),
-        r#"copy = [{ source = "shared", ignore = ["**/vendor/**", "!**/vendor/keep/**"] }]"#,
+        r#"
+default_ignore = [".DS_Store"]
+copy = [{ source = "shared", ignore = ["!.DS_Store", "**/vendor/**", "!**/vendor/keep/**"] }]
+"#,
     );
 
     treeboot()
@@ -219,6 +223,11 @@ fn run_should_apply_configured_file_ignore_patterns() {
     assert_eq!(
         std::fs::read_to_string(repo.worktree_path().join("shared/vendor/keep/config"))
             .expect("re-included target should be readable"),
+        "keep\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("shared/.DS_Store"))
+            .expect("default re-included target should be readable"),
         "keep\n"
     );
     assert!(!repo.worktree_path().join("shared/vendor/drop").exists());
@@ -749,6 +758,39 @@ fn run_sync_delete_should_remove_target_only_file() {
         ));
 
     assert!(!repo.worktree_path().join("shared/old").exists());
+}
+
+#[test]
+fn run_sync_delete_should_preserve_default_ignored_target_only_file() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("sync source should be created");
+    std::fs::create_dir_all(repo.worktree_path().join("shared"))
+        .expect("sync target should be created");
+    write_file(&repo.root_path().join("shared/config"), "value\n");
+    write_file(&repo.worktree_path().join("shared/old"), "remove\n");
+    write_file(&repo.worktree_path().join("shared/.DS_Store"), "keep\n");
+    write_file(
+        &config,
+        r#"
+default_ignore = [".DS_Store"]
+sync = [{ source = "shared", target = "shared", delete = true }]
+"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert!(!repo.worktree_path().join("shared/old").exists());
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("shared/.DS_Store"))
+            .expect("default-ignored target-only file should be readable"),
+        "keep\n"
+    );
 }
 
 #[test]

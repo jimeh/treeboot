@@ -143,6 +143,7 @@ The common top-level config keys are:
 #:schema https://github.com/jimeh/treeboot/releases/latest/download/config.schema.json
 
 strict = false
+default_ignore = [".DS_Store", "Thumbs.db"]
 dangerously_allow_sources_outside_root = false
 dangerously_allow_targets_outside_worktree = false
 

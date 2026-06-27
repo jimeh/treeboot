@@ -58,7 +58,8 @@ metadata commands:
 - declarative TOML validation and action-plan construction
 - config/env/CLI runtime option precedence for declarative validation
 - manual root-to-worktree file operation planning and execution
-- operation-local copy/sync path ignore rules, including `!` re-inclusion
+- top-level and operation-local copy/sync path ignore rules, including `!`
+  re-inclusion
 - public Worktree/Manifest/ActionPlan/Executor API surface, with command-shaped
   workflow facades for full treeboot behavior
 - view-only discovery status inspection

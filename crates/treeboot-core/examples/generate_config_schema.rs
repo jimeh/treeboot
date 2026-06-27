@@ -15,6 +15,9 @@ struct TreebootConfig {
     /// Enables strict declarative validation and conflict handling.
     #[serde(skip_serializing_if = "Option::is_none")]
     strict: Option<bool>,
+    /// Default path ignore patterns prepended to copy and sync operations.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    default_ignore: Option<Vec<String>>,
     /// Allows file operation sources outside the root checkout.
     #[serde(skip_serializing_if = "Option::is_none")]
     dangerously_allow_sources_outside_root: Option<bool>,

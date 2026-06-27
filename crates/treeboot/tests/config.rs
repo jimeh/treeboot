@@ -12,6 +12,7 @@ fn config_command_should_print_normalized_config() {
     write_file(
         &config,
         r#"
+default_ignore = [".DS_Store"]
 copy = [{ source = ".env.local", ignore = ["**/vendor/**"] }]
 sync = ["shared/config"]
 commands = ["mise install"]
@@ -24,12 +25,13 @@ commands = ["mise install"]
         .assert()
         .success()
         .stdout(predicate::str::contains("treeboot: config"))
-        .stdout(predicate::str::contains(
-            "copy .env.local -> .env.local symlinks=preserve ignore=[\"**/vendor/**\"]",
-        ))
         .stdout(predicate::str::contains(concat!(
-            "sync shared/config -> shared/config ",
-            "compare=metadata delete=false symlinks=preserve"
+            "copy .env.local -> .env.local symlinks=preserve ",
+            "ignore=[\".DS_Store\",\"**/vendor/**\"]"
+        )))
+        .stdout(predicate::str::contains(concat!(
+            "sync shared/config -> shared/config compare=metadata ",
+            "delete=false symlinks=preserve ignore=[\".DS_Store\"]"
         )))
         .stdout(predicate::str::contains("run \"mise install\""));
 }
@@ -44,6 +46,7 @@ fn config_command_json_should_print_normalized_config() {
     write_file(
         &config,
         r#"
+default_ignore = [".DS_Store"]
 copy = [{ source = ".env", target = ".env", required = true, ignore = ["**/vendor/**"] }]
 sync = [{ source = "shared", target = ".config/shared", compare = "checksum", delete = true, ignore = ["cache/", "!cache/keep"] }]
 commands = [
@@ -73,11 +76,13 @@ commands = [
             "commands",
             "dangerously_allow_sources_outside_root",
             "dangerously_allow_targets_outside_worktree",
+            "default_ignore",
             "files",
             "strict",
         ],
     );
     assert_eq!(config["strict"], false);
+    assert_eq!(config["default_ignore"], serde_json::json!([".DS_Store"]));
     assert_eq!(config["dangerously_allow_sources_outside_root"], false);
     assert_eq!(config["dangerously_allow_targets_outside_worktree"], false);
 
@@ -112,7 +117,10 @@ commands = [
     assert_eq!(files[0]["compare"], serde_json::Value::Null);
     assert_eq!(files[0]["delete"], serde_json::Value::Null);
     assert_eq!(files[0]["symlinks"], "preserve");
-    assert_eq!(files[0]["ignore"], serde_json::json!(["**/vendor/**"]));
+    assert_eq!(
+        files[0]["ignore"],
+        serde_json::json!([".DS_Store", "**/vendor/**"])
+    );
     assert_eq!(files[0]["ignore_metadata"], serde_json::json!([]));
     assert!(files[0]["source_path"].is_string());
     assert!(files[0]["target_path"].is_string());
@@ -126,7 +134,7 @@ commands = [
     assert_eq!(files[1]["symlinks"], "preserve");
     assert_eq!(
         files[1]["ignore"],
-        serde_json::json!(["cache/", "!cache/keep"])
+        serde_json::json!([".DS_Store", "cache/", "!cache/keep"])
     );
     assert_eq!(files[1]["ignore_metadata"], serde_json::json!([]));
 
