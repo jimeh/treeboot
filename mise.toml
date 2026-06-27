@@ -135,8 +135,8 @@ run = "bash scripts/generate-metadata.sh check"
 # Tests
 
 [tasks.test]
-depends = ["test:core", "test:cli", "test:release-helper"]
 description = "Run all Rust tests"
+run = "cargo test --all-targets --all-features --locked"
 
 [tasks."test:core"]
 description = "Run treeboot-core tests"

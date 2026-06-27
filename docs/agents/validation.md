@@ -18,8 +18,8 @@ mise run test:release-helper
 
 Use `test:core` for library behavior and `test:cli` for user-visible command
 behavior. Use `test:release-helper` for release workflow helper logic. Running
-`mise run test` executes all test tasks through mise dependencies. `format`
-applies Rust formatting, while `format:check` is non-mutating.
+`mise run test` executes the same packages through one Cargo invocation.
+`format` applies Rust formatting, while `format:check` is non-mutating.
 
 ### Check
 

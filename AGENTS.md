@@ -203,8 +203,8 @@ and CI mapping.
   components declared by the project; cross-OS test jobs use a workspace-local
   path instead of the Ubuntu-only default.
 - CI test jobs install the configured Rust toolchain in one serial step before
-  `mise run test`; the task fans out core/CLI/release-helper tests in parallel,
-  and fresh rustup homes can race while downloading shared components.
+  `mise run test`; the aggregate test task uses one Cargo invocation so shared
+  test-profile compilation is not split across parallel package tasks.
 - Release-please and Renovate must use the repo's `RELEASE_BOT_CLIENT_ID`
   variable and `RELEASE_BOT_PRIVATE_KEY` secret so automation-created commits
   and PRs trigger the expected follow-up workflows.
