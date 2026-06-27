@@ -172,6 +172,8 @@ and CI mapping.
 - Repo harness invariants are wrapped by `mise run harness:check`; keep
   dependency-boundary and spec-version drift checks there when they can be
   expressed without heavyweight tooling.
+- Dependabot version updates use a 7-day cooldown. Security updates are not
+  affected by Dependabot cooldown and should stay alert-driven.
 - Mise-managed tools use a 3-day release-age cooldown and checked-in
   `mise.lock`; use a narrow override only for urgent security or
   CI-maintenance updates.
@@ -188,8 +190,11 @@ and CI mapping.
 - Pre-commit hooks are managed by Lefthook and installed by `mise run setup`.
 - `mise.toml` pins `sccache` and sets `RUSTC_WRAPPER=sccache` so Cargo tasks use
   the project-managed compiler cache instead of relying on global shell setup.
+- Rust toolchain version and components live in `rust-toolchain.toml` so
+  Dependabot can update them. `mise.toml` enables Rust idiomatic version files
+  so mise consumes the same source.
 - CI sets `MISE_RUSTUP_HOME` so `mise-action` caches the rustup toolchains and
-  components declared in `mise.toml`; cross-OS test jobs use a workspace-local
+  components declared by the project; cross-OS test jobs use a workspace-local
   path instead of the Ubuntu-only default.
 - CI test jobs install the configured Rust toolchain in one serial step before
   `mise run test`; the task fans out core/CLI/release-helper tests in parallel,

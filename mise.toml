@@ -14,6 +14,7 @@ lockfile_platforms = [
 ]
 minimum_release_age = "3d"
 minimum_release_age_excludes = ["github:jimeh/treeboot"]
+idiomatic_version_file_enable_tools = ["rust"]
 
 [settings.task]
 run_auto_install = true
@@ -26,7 +27,6 @@ run_auto_install = true
 actionlint = "1"
 lefthook = "2"
 pinact = "4"
-rust = { version = "1.96", components = "clippy,rust-analyzer,rust-src,rustfmt" }
 sccache = "0"
 "github:jimeh/treeboot" = "latest"
 shellcheck = "0"

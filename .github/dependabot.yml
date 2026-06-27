@@ -1,0 +1,44 @@
+version: 2
+
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    cooldown:
+      default-days: 7
+    groups:
+      cargo-dependencies:
+        patterns: ["*"]
+      cargo-security:
+        applies-to: "security-updates"
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    cooldown:
+      default-days: 7
+    groups:
+      actions-dependencies:
+        patterns: ["*"]
+      actions-security:
+        applies-to: "security-updates"
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "rust-toolchain"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    cooldown:
+      default-days: 7
+    groups:
+      rust-toolchain:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(deps)"
