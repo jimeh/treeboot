@@ -486,73 +486,15 @@ fn plan_tree_directory(
         }
     }
 
-    for child in fs::read_dir(entry.source_path).map_err(|source| Error::FileOperationIo {
-        operation: operation.operation().as_str(),
-        path: entry.source_path.to_path_buf(),
-        source,
-    })? {
-        let child = child.map_err(|source| Error::FileOperationIo {
-            operation: operation.operation().as_str(),
-            path: entry.source_path.to_path_buf(),
-            source,
-        })?;
-        let child_source_path = child.path();
-        let child_target_path = entry.target_path.join(child.file_name());
-        let child_source = entry.source.join(child.file_name());
-        let child_target = entry.target.join(child.file_name());
-        let child_metadata = metadata(&child_source_path, operation.operation())?;
-
-        if ignored_source_entry(
-            source_root_path,
-            &child_source_path,
-            &child_metadata,
-            ignore_rules,
-        ) {
-            if child_metadata.is_dir()
-                && ignore_rules
-                    .map(PathIgnoreRules::has_negation)
-                    .unwrap_or(false)
-            {
-                plan_ignored_tree_directory(
-                    plan,
-                    operation,
-                    source_root_path,
-                    CopyEntry {
-                        source_path: &child_source_path,
-                        target_path: &child_target_path,
-                        source: &child_source,
-                        target: &child_target,
-                    },
-                    mode,
-                    ignore_rules,
-                    actions,
-                )?;
-            }
-            continue;
-        }
-
-        plan_tree_entry(
-            plan,
-            operation,
-            TreeIgnoreContext {
-                source_root_path,
-                rules: ignore_rules,
-            },
-            CopyEntry {
-                source_path: &child_source_path,
-                target_path: &child_target_path,
-                source: &child_source,
-                target: &child_target,
-            },
-            &child_metadata,
-            mode,
-            actions,
-        )?;
-    }
-
-    if matches!(mode, TreePlanMode::Sync) && operation.delete().unwrap_or(false) {
-        let _ = plan_sync_deletes(operation, entry, ignore_rules, actions)?;
-    }
+    plan_tree_directory_children(
+        plan,
+        operation,
+        source_root_path,
+        entry,
+        mode,
+        ignore_rules,
+        actions,
+    )?;
 
     if let Some(action) = directory_metadata {
         actions.push(action);
@@ -562,6 +504,26 @@ fn plan_tree_directory(
 }
 
 fn plan_ignored_tree_directory(
+    plan: &ActionPlan,
+    operation: &PlannedFileOperation,
+    source_root_path: &Path,
+    entry: CopyEntry<'_>,
+    mode: TreePlanMode,
+    ignore_rules: Option<&PathIgnoreRules>,
+    actions: &mut Vec<FileAction>,
+) -> Result<()> {
+    plan_tree_directory_children(
+        plan,
+        operation,
+        source_root_path,
+        entry,
+        mode,
+        ignore_rules,
+        actions,
+    )
+}
+
+fn plan_tree_directory_children(
     plan: &ActionPlan,
     operation: &PlannedFileOperation,
     source_root_path: &Path,
