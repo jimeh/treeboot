@@ -180,6 +180,10 @@ and CI mapping.
   so `allowedUnsafeExecutions = ["mise"]` can permit `mise lock` refreshes.
   Manual dispatch sets `RENOVATE_BYPASS_SCHEDULE` so emergency runs bypass the
   internal Renovate schedule as well as the GitHub Actions cron gate.
+  Keep `:disableDependencyDashboard` in the Renovate preset list; with
+  `config:recommended`, `dependencyDashboard: false` alone can still produce a
+  Dependency Dashboard issue in this self-hosted flow. Renovate PR creation is
+  intentionally `immediate` so mise updates behave like Dependabot updates.
 - Mise-managed tools use a 7-day release-age cooldown and checked-in
   `mise.lock`; use a narrow override only for urgent security or
   CI-maintenance updates.

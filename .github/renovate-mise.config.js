@@ -7,7 +7,7 @@ module.exports = {
   branchPrefix: "renovate-mise/",
   dependencyDashboard: false,
   enabledManagers: ["mise"],
-  extends: ["config:recommended"],
+  extends: ["config:recommended", ":disableDependencyDashboard"],
   lockFileMaintenance: {
     enabled: true,
     groupName: "mise lockfile",
@@ -23,6 +23,7 @@ module.exports = {
     },
   ],
   requireConfig: "optional",
+  prCreation: "immediate",
   schedule: updateSchedule,
   semanticCommitScope: "deps",
   semanticCommitType: "chore",
