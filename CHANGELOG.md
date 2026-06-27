@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/jimeh/treeboot/compare/v0.6.0...v0.7.0) (2026-06-27)
+
+
+### Features
+
+* add ignore rules for copy and sync ([#64](https://github.com/jimeh/treeboot/issues/64)) ([182c0f6](https://github.com/jimeh/treeboot/commit/182c0f62295c4ee9dad14b049098400061968560))
+
 ## [0.6.0](https://github.com/jimeh/treeboot/compare/v0.5.1...v0.6.0) (2026-06-26)
 
 
