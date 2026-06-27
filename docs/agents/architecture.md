@@ -44,6 +44,7 @@ The core crate owns reusable behavior:
 - `env.rs`: inspects child environment variables for scripts and commands
 - `executor.rs`: applies validated action plans
 - `files.rs`: applies copy, symlink, and sync file operations
+- `ignore_rules.rs`: compiles operation-local copy/sync ignore patterns
 - `examples/generate_config_schema.rs`: generates `schemas/treeboot.schema.json`
 - `metadata.rs`: exposes embedded schema and version metadata
 - `manual.rs`: maps manual `copy`, `symlink`, and `sync` commands to action plans

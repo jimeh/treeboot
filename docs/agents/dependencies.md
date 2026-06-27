@@ -15,6 +15,11 @@ dependencies for small wrappers around the standard library.
 - `thiserror` belongs in `treeboot-core` for public typed errors.
 - `serde` and `toml` belong in `treeboot-core` for declarative config parsing
   and normalized model serialization.
+- `ignore` belongs in `treeboot-core` for operation-local gitignore-style path
+  matching. Use `ignore::gitignore::GitignoreBuilder` with explicit
+  `add_line` patterns only; do not load ambient `.gitignore`, `.ignore`,
+  `.rgignore`, Git exclude, or global ignore files for treeboot file
+  operations.
 - `serde_json` belongs in the `treeboot` CLI crate for `treeboot config
   --format json` and other JSON report rendering.
 - `yaml_serde` belongs in the `treeboot` CLI crate for YAML report rendering.

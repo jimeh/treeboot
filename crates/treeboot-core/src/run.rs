@@ -124,9 +124,10 @@ pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport
             report(reporter, OutputEvent::ConfigDetected { path: path.clone() })?;
             let config = Config::load(&path, &context)?;
             let plan_options = env_options.resolve(&config.options, options.strict);
+            let strict = plan_options.strict;
             let plan = ActionPlan::from_manifest(&path, &config, &context, plan_options.into())?;
             Executor::new(ExecuteOptions {
-                strict: plan_options.strict,
+                strict,
                 force: options.force,
                 dry_run: options.dry_run,
                 verbose: options.verbose,

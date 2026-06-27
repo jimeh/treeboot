@@ -15,6 +15,9 @@ struct TreebootConfig {
     /// Enables strict declarative validation and conflict handling.
     #[serde(skip_serializing_if = "Option::is_none")]
     strict: Option<bool>,
+    /// Default path ignore patterns prepended to copy and sync operations.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    default_ignore: Option<Vec<String>>,
     /// Allows file operation sources outside the root checkout.
     #[serde(skip_serializing_if = "Option::is_none")]
     dangerously_allow_sources_outside_root: Option<bool>,
@@ -94,6 +97,9 @@ struct CopyObject {
     /// How safe source symlinks are handled.
     #[serde(skip_serializing_if = "Option::is_none")]
     symlinks: Option<SymlinkMode>,
+    /// Source-relative path patterns that copy should skip.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ignore: Option<Vec<String>>,
     /// Metadata fields that copy should not compare or apply.
     #[serde(skip_serializing_if = "Option::is_none")]
     ignore_metadata: Option<Vec<MetadataField>>,
@@ -132,6 +138,9 @@ struct SyncObject {
     /// How safe source symlinks are handled.
     #[serde(skip_serializing_if = "Option::is_none")]
     symlinks: Option<SymlinkMode>,
+    /// Source-relative path patterns that sync should skip.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ignore: Option<Vec<String>>,
     /// Metadata fields that sync should not compare or apply.
     #[serde(skip_serializing_if = "Option::is_none")]
     ignore_metadata: Option<Vec<MetadataField>>,
@@ -153,6 +162,9 @@ enum MixedFileObject {
         /// How safe source symlinks are handled.
         #[serde(skip_serializing_if = "Option::is_none")]
         symlinks: Option<SymlinkMode>,
+        /// Source-relative path patterns that copy should skip.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        ignore: Option<Vec<String>>,
         /// Metadata fields that copy should not compare or apply.
         #[serde(skip_serializing_if = "Option::is_none")]
         ignore_metadata: Option<Vec<MetadataField>>,
@@ -187,6 +199,9 @@ enum MixedFileObject {
         /// How safe source symlinks are handled.
         #[serde(skip_serializing_if = "Option::is_none")]
         symlinks: Option<SymlinkMode>,
+        /// Source-relative path patterns that sync should skip.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        ignore: Option<Vec<String>>,
         /// Metadata fields that sync should not compare or apply.
         #[serde(skip_serializing_if = "Option::is_none")]
         ignore_metadata: Option<Vec<MetadataField>>,

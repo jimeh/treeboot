@@ -143,6 +143,8 @@ pub struct FileOperation {
     pub delete: Option<bool>,
     /// How copy and sync should treat source symlinks.
     pub symlinks: Option<SymlinkMode>,
+    /// Source-relative path patterns ignored by copy and sync.
+    pub ignore: Vec<String>,
     /// Metadata fields ignored by copy and sync.
     pub ignore_metadata: Vec<MetadataField>,
     /// Source location for the operation declaration.
@@ -267,10 +269,12 @@ pub enum CommandKind {
 }
 
 /// Runtime options declared by a config file.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct ConfigRuntimeOptions {
     /// Enables strict declarative validation and conflict handling.
     pub strict: bool,
+    /// Default path ignore patterns prepended to copy and sync operations.
+    pub default_ignore: Vec<String>,
     /// Allows file operation sources outside the root checkout.
     pub dangerously_allow_sources_outside_root: bool,
     /// Allows file operation targets outside the current worktree.
@@ -330,7 +334,7 @@ impl RuntimeOptionOverrides {
     /// Resolves runtime options using defaults, config, environment, then CLI.
     #[must_use]
     pub fn resolve(self, config: &ConfigRuntimeOptions, cli_strict: bool) -> ConfigRuntimeOptions {
-        let mut resolved = *config;
+        let mut resolved = config.clone();
 
         if let Some(strict) = self.strict {
             resolved.strict = strict;
@@ -367,6 +371,7 @@ pub(crate) struct FileOperationSettingsInput {
     pub(crate) compare: Option<SyncCompare>,
     pub(crate) delete: Option<bool>,
     pub(crate) symlinks: Option<SymlinkMode>,
+    pub(crate) ignore: Vec<String>,
     pub(crate) ignore_metadata: Vec<RawMetadataField>,
 }
 
@@ -375,6 +380,7 @@ pub(crate) struct FileOperationSettings {
     pub(crate) compare: Option<SyncCompare>,
     pub(crate) delete: Option<bool>,
     pub(crate) symlinks: Option<SymlinkMode>,
+    pub(crate) ignore: Vec<String>,
     pub(crate) ignore_metadata: Vec<MetadataField>,
 }
 
@@ -383,6 +389,7 @@ pub(crate) enum InvalidFileOperationField {
     Compare,
     Delete,
     Symlinks,
+    Ignore,
     IgnoreMetadata,
 }
 
@@ -392,6 +399,7 @@ impl InvalidFileOperationField {
             Self::Compare => "compare",
             Self::Delete => "delete",
             Self::Symlinks => "symlinks",
+            Self::Ignore => "ignore",
             Self::IgnoreMetadata => "ignore_metadata",
         }
     }
@@ -399,7 +407,7 @@ impl InvalidFileOperationField {
     pub(crate) const fn allowed_operations(self) -> &'static str {
         match self {
             Self::Compare | Self::Delete => "sync",
-            Self::Symlinks | Self::IgnoreMetadata => "copy and sync",
+            Self::Symlinks | Self::Ignore | Self::IgnoreMetadata => "copy and sync",
         }
     }
 }
@@ -437,6 +445,15 @@ pub(crate) fn normalize_file_operation_settings(
             None
         }
     };
+    let ignore = match operation {
+        FileOperationKind::Copy | FileOperationKind::Sync => input.ignore,
+        FileOperationKind::Symlink => {
+            if !input.ignore.is_empty() {
+                return Err(InvalidFileOperationField::Ignore);
+            }
+            Vec::new()
+        }
+    };
     let ignore_metadata = match operation {
         FileOperationKind::Copy | FileOperationKind::Sync => {
             normalize_ignored_metadata(input.ignore_metadata)
@@ -453,8 +470,25 @@ pub(crate) fn normalize_file_operation_settings(
         compare,
         delete,
         symlinks,
+        ignore,
         ignore_metadata,
     })
+}
+
+pub(crate) fn effective_ignore_patterns(
+    operation: FileOperationKind,
+    default_ignore: &[String],
+    ignore: Vec<String>,
+) -> Vec<String> {
+    match operation {
+        FileOperationKind::Copy | FileOperationKind::Sync => {
+            let mut effective = Vec::with_capacity(default_ignore.len() + ignore.len());
+            effective.extend(default_ignore.iter().cloned());
+            effective.extend(ignore);
+            effective
+        }
+        FileOperationKind::Symlink => ignore,
+    }
 }
 
 pub(crate) fn normalize_ignored_metadata(fields: Vec<RawMetadataField>) -> Vec<MetadataField> {
@@ -496,6 +530,7 @@ fn parse_config(path: &Path, content: &str, context: &Worktree) -> Result<Config
         }
     })?;
 
+    let default_ignore = raw.default_ignore;
     let mut files = Vec::new();
     normalize_file_group(
         path,
@@ -504,6 +539,7 @@ fn parse_config(path: &Path, content: &str, context: &Worktree) -> Result<Config
         &mut files,
         FileOperationKind::Copy,
         raw.copy,
+        &default_ignore,
     )?;
     normalize_file_group(
         path,
@@ -512,6 +548,7 @@ fn parse_config(path: &Path, content: &str, context: &Worktree) -> Result<Config
         &mut files,
         FileOperationKind::Symlink,
         raw.symlink,
+        &default_ignore,
     )?;
     normalize_file_group(
         path,
@@ -520,9 +557,24 @@ fn parse_config(path: &Path, content: &str, context: &Worktree) -> Result<Config
         &mut files,
         FileOperationKind::Sync,
         raw.sync,
+        &default_ignore,
     )?;
-    normalize_mixed_files(path, content, context, &mut files, raw.files)?;
-    normalize_file_tables(path, content, context, &mut files, raw.file)?;
+    normalize_mixed_files(
+        path,
+        content,
+        context,
+        &mut files,
+        raw.files,
+        &default_ignore,
+    )?;
+    normalize_file_tables(
+        path,
+        content,
+        context,
+        &mut files,
+        raw.file,
+        &default_ignore,
+    )?;
 
     let mut commands = Vec::new();
     normalize_command_entries(path, content, context, &mut commands, raw.commands)?;
@@ -531,6 +583,7 @@ fn parse_config(path: &Path, content: &str, context: &Worktree) -> Result<Config
     Ok(Config {
         options: ConfigRuntimeOptions {
             strict: raw.strict,
+            default_ignore,
             dangerously_allow_sources_outside_root: raw.dangerously_allow_sources_outside_root,
             dangerously_allow_targets_outside_worktree: raw
                 .dangerously_allow_targets_outside_worktree,
@@ -547,6 +600,7 @@ fn normalize_file_group(
     files: &mut Vec<FileOperation>,
     operation: FileOperationKind,
     entries: Vec<Spanned<RawFileEntry>>,
+    default_ignore: &[String],
 ) -> Result<()> {
     for entry in entries {
         let span = entry_span(content, &entry);
@@ -560,6 +614,7 @@ fn normalize_file_group(
                 compare: None,
                 delete: None,
                 symlinks: None,
+                ignore: Vec::new(),
                 ignore_metadata: Vec::new(),
             },
             RawFileEntry::Object(object) => object,
@@ -575,7 +630,13 @@ fn normalize_file_group(
         }
 
         files.push(normalize_file_object(
-            path, content, context, operation, object, span,
+            path,
+            content,
+            context,
+            operation,
+            object,
+            span,
+            default_ignore,
         )?);
     }
 
@@ -588,13 +649,20 @@ fn normalize_mixed_files(
     context: &Worktree,
     files: &mut Vec<FileOperation>,
     entries: Vec<Spanned<RawFileObject>>,
+    default_ignore: &[String],
 ) -> Result<()> {
     for entry in entries {
         let span = entry_span(content, &entry);
         let object = entry.into_inner();
         let operation = required_operation(path, content, span, object.operation)?;
         files.push(normalize_file_object(
-            path, content, context, operation, object, span,
+            path,
+            content,
+            context,
+            operation,
+            object,
+            span,
+            default_ignore,
         )?);
     }
 
@@ -607,8 +675,9 @@ fn normalize_file_tables(
     context: &Worktree,
     files: &mut Vec<FileOperation>,
     entries: Vec<Spanned<RawFileObject>>,
+    default_ignore: &[String],
 ) -> Result<()> {
-    normalize_mixed_files(path, content, context, files, entries)
+    normalize_mixed_files(path, content, context, files, entries, default_ignore)
 }
 
 fn normalize_file_object(
@@ -618,6 +687,7 @@ fn normalize_file_object(
     operation: FileOperationKind,
     object: RawFileObject,
     span: SourceSpan,
+    default_ignore: &[String],
 ) -> Result<FileOperation> {
     let source = object.source.ok_or_else(|| {
         invalid_config_error(
@@ -634,6 +704,7 @@ fn normalize_file_object(
             compare: object.compare,
             delete: object.delete,
             symlinks: object.symlinks,
+            ignore: object.ignore,
             ignore_metadata: object.ignore_metadata,
         },
     )
@@ -660,6 +731,7 @@ fn normalize_file_object(
         compare: settings.compare,
         delete: settings.delete,
         symlinks: settings.symlinks,
+        ignore: effective_ignore_patterns(operation, default_ignore, settings.ignore),
         ignore_metadata: settings.ignore_metadata,
         declaration: span,
     })
@@ -863,6 +935,7 @@ fn line_column(content: &str, offset: usize) -> (usize, usize) {
 #[serde(default, deny_unknown_fields)]
 struct RawConfig {
     strict: bool,
+    default_ignore: Vec<String>,
     dangerously_allow_sources_outside_root: bool,
     dangerously_allow_targets_outside_worktree: bool,
     copy: Vec<Spanned<RawFileEntry>>,
@@ -931,6 +1004,7 @@ struct RawFileObject {
     compare: Option<SyncCompare>,
     delete: Option<bool>,
     symlinks: Option<SymlinkMode>,
+    ignore: Vec<String>,
     ignore_metadata: Vec<RawMetadataField>,
 }
 
@@ -1107,9 +1181,11 @@ sync = ["shared/config"]
         assert_eq!(copy.target, PathBuf::from(".env.local"));
         assert!(!copy.required);
         assert_eq!(copy.symlinks, Some(SymlinkMode::Preserve));
+        assert!(copy.ignore.is_empty());
         assert!(copy.ignore_metadata.is_empty());
         assert_eq!(sync.compare, Some(SyncCompare::Metadata));
         assert_eq!(sync.delete, Some(false));
+        assert!(sync.ignore.is_empty());
         assert!(sync.ignore_metadata.is_empty());
     }
 
@@ -1154,6 +1230,90 @@ sync = [{ source = "shared", ignore_metadata = ["group"] }]
     }
 
     #[test]
+    fn parse_config_should_preserve_explicit_ignore_patterns() {
+        let config = parse(
+            r#"
+copy = [{ source = ".env", ignore = ["**/vendor/**", "!**/vendor/keep/**"] }]
+sync = [{ source = "shared", ignore = ["cache/", "!cache/keep"] }]
+"#,
+        );
+
+        assert_eq!(
+            config.files[0].ignore,
+            vec!["**/vendor/**", "!**/vendor/keep/**"]
+        );
+        assert_eq!(config.files[1].ignore, vec!["cache/", "!cache/keep"]);
+    }
+
+    #[test]
+    fn parse_config_should_prepend_default_ignore_to_copy_and_sync() {
+        let config = parse(
+            r#"
+default_ignore = [".DS_Store", "Thumbs.db"]
+copy = [{ source = ".env", ignore = ["!.DS_Store"] }]
+sync = [{ source = "shared", ignore = ["cache/"] }]
+"#,
+        );
+
+        assert_eq!(
+            config.options.default_ignore,
+            vec![".DS_Store", "Thumbs.db"]
+        );
+        assert_eq!(
+            config.files[0].ignore,
+            vec![".DS_Store", "Thumbs.db", "!.DS_Store"]
+        );
+        assert_eq!(
+            config.files[1].ignore,
+            vec![".DS_Store", "Thumbs.db", "cache/"]
+        );
+    }
+
+    #[test]
+    fn parse_config_should_prepend_default_ignore_to_mixed_file_entries() {
+        let config = parse(
+            r#"
+default_ignore = [".DS_Store"]
+files = [
+  { operation = "copy", source = ".env", ignore = ["!.DS_Store"] },
+  { operation = "symlink", source = "bin" },
+]
+
+[[file]]
+operation = "sync"
+source = "shared"
+ignore = ["cache/"]
+"#,
+        );
+
+        assert_eq!(config.files[0].ignore, vec![".DS_Store", "!.DS_Store"]);
+        assert!(config.files[1].ignore.is_empty());
+        assert_eq!(config.files[2].ignore, vec![".DS_Store", "cache/"]);
+    }
+
+    #[test]
+    fn parse_config_should_not_apply_default_ignore_to_symlink() {
+        let config = parse(
+            r#"
+default_ignore = [".DS_Store"]
+symlink = ["shared/bin"]
+"#,
+        );
+
+        assert!(config.files[0].ignore.is_empty());
+    }
+
+    #[test]
+    fn parse_config_should_reject_ignore_on_symlink_file_operations() {
+        assert_parse_error_contains(
+            r#"
+symlink = [{ source = "link", ignore = ["**/tmp/**"] }]
+"#,
+            "`ignore` is only valid for copy and sync",
+        );
+    }
+
+    #[test]
     fn parse_config_should_reject_ignored_metadata_on_symlink_file_operations() {
         assert_parse_error_contains(
             r#"
@@ -1168,12 +1328,14 @@ symlink = [{ source = "link", ignore_metadata = ["ownership"] }]
         let config = parse(
             r#"
 strict = true
+default_ignore = [".DS_Store"]
 dangerously_allow_sources_outside_root = true
 dangerously_allow_targets_outside_worktree = true
 "#,
         );
 
         assert!(config.options.strict);
+        assert_eq!(config.options.default_ignore, vec![".DS_Store"]);
         assert!(config.options.dangerously_allow_sources_outside_root);
         assert!(config.options.dangerously_allow_targets_outside_worktree);
     }

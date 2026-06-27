@@ -22,6 +22,13 @@ When changing the observable contract in [docs/SPEC.md](docs/SPEC.md),
 bump the visible spec version in that file and keep the README's referenced
 spec version in sync.
 
+## Pull Request Titles
+
+Pull request titles become changelog entries through release automation. Write
+PR titles as concise, user-facing changelog lines, not just branch summaries.
+Prefer conventional prefixes when they fit, and make the subject clear when read
+in a release note.
+
 ## Repo Shape
 
 - `crates/treeboot` is the CLI package and should stay thin.
@@ -58,6 +65,8 @@ metadata commands:
 - declarative TOML validation and action-plan construction
 - config/env/CLI runtime option precedence for declarative validation
 - manual root-to-worktree file operation planning and execution
+- top-level and operation-local copy/sync path ignore rules, including `!`
+  re-inclusion
 - public Worktree/Manifest/ActionPlan/Executor API surface, with command-shaped
   workflow facades for full treeboot behavior
 - view-only discovery status inspection

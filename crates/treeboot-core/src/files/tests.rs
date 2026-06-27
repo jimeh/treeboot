@@ -347,6 +347,7 @@ fn operation_with_status(
         compare: None,
         delete: None,
         symlinks: None,
+        ignore: Vec::new(),
         ignore_metadata: Vec::new(),
         status,
         declaration: span(),
@@ -360,6 +361,13 @@ fn sync_operation(
     target: &str,
 ) -> PlannedFileOperation {
     operation(FileOperationKind::Sync, root, worktree, source, target)
+}
+
+fn ignore(patterns: &[&str]) -> Vec<String> {
+    patterns
+        .iter()
+        .map(|pattern| (*pattern).to_owned())
+        .collect()
 }
 
 fn run_plan(root: &Path, worktree: &Path, files: Vec<PlannedFileOperation>) -> ActionPlan {
@@ -391,6 +399,7 @@ fn validated_file_plan(
         compare: None,
         delete: None,
         symlinks: None,
+        ignore: Vec::new(),
         ignore_metadata: Vec::new(),
         declaration: span(),
     };
@@ -432,6 +441,81 @@ fn apply_file_operations_should_copy_missing_directory_tree() {
     assert_eq!(
         reporter.messages(),
         ["treeboot: copy shared -> shared (3 changed)"]
+    );
+}
+
+#[test]
+fn apply_file_operations_should_skip_ignored_copy_source_paths() {
+    let (root, worktree) = temp_workspace("copy-ignore");
+    fs::create_dir_all(root.join("shared/vendor/keep")).expect("source dirs should be created");
+    fs::write(root.join("shared/config"), "copy\n").expect("source should be written");
+    fs::write(root.join("shared/vendor/drop"), "skip\n").expect("ignored source should be written");
+    fs::write(root.join("shared/vendor/keep/config"), "keep\n")
+        .expect("re-included source should be written");
+    let copy = operation(
+        FileOperationKind::Copy,
+        &root,
+        &worktree,
+        "shared",
+        "shared",
+    )
+    .with_ignore(ignore(&["**/vendor/**", "!**/vendor/keep/**"]));
+    let plan = run_plan(&root, &worktree, vec![copy]);
+    let mut reporter = VecReporter::default();
+
+    apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+        .expect("copy should apply ignore rules");
+
+    assert_eq!(
+        fs::read_to_string(worktree.join("shared/config")).expect("target should be readable"),
+        "copy\n"
+    );
+    assert_eq!(
+        fs::read_to_string(worktree.join("shared/vendor/keep/config"))
+            .expect("re-included target should be readable"),
+        "keep\n"
+    );
+    assert!(!worktree.join("shared/vendor/drop").exists());
+}
+
+#[test]
+fn apply_file_operations_should_not_force_copy_ignored_targets() {
+    let (root, worktree) = temp_workspace("copy-ignore-force");
+    fs::create_dir_all(root.join("shared/vendor")).expect("source dirs should be created");
+    fs::create_dir_all(worktree.join("shared/vendor")).expect("target dirs should be created");
+    fs::write(root.join("shared/config"), "copy\n").expect("source should be written");
+    fs::write(root.join("shared/vendor/drop"), "new\n").expect("ignored source should be written");
+    fs::write(worktree.join("shared/vendor/drop"), "old\n")
+        .expect("ignored target should be written");
+    let copy = operation(
+        FileOperationKind::Copy,
+        &root,
+        &worktree,
+        "shared",
+        "shared",
+    )
+    .with_ignore(ignore(&["**/vendor/**"]));
+    let plan = run_plan(&root, &worktree, vec![copy]);
+    let mut reporter = VecReporter::default();
+
+    apply_file_operations(
+        &plan,
+        FileApplyOptions {
+            force: true,
+            ..FileApplyOptions::default()
+        },
+        &mut reporter,
+    )
+    .expect("copy should not touch ignored targets");
+
+    assert_eq!(
+        fs::read_to_string(worktree.join("shared/config")).expect("target should be readable"),
+        "copy\n"
+    );
+    assert_eq!(
+        fs::read_to_string(worktree.join("shared/vendor/drop"))
+            .expect("ignored target should be readable"),
+        "old\n"
     );
 }
 
@@ -1870,6 +1954,35 @@ fn apply_file_operations_should_delete_target_only_entries_when_sync_delete_is_t
         reporter.messages(),
         ["treeboot: sync shared -> shared (1 changed, 2 deleted)"]
     );
+}
+
+#[test]
+fn apply_file_operations_should_preserve_ignored_sync_delete_targets() {
+    let (root, worktree) = temp_workspace("sync-delete-ignore");
+    fs::create_dir_all(root.join("shared")).expect("source dir should be created");
+    fs::create_dir_all(worktree.join("shared/vendor/keep")).expect("target dirs should be created");
+    fs::write(worktree.join("shared/stale"), "remove\n").expect("stale target should be written");
+    fs::write(worktree.join("shared/vendor/drop"), "keep\n")
+        .expect("ignored target should be written");
+    fs::write(worktree.join("shared/vendor/keep/remove"), "remove\n")
+        .expect("re-included target should be written");
+    let sync = sync_operation(&root, &worktree, "shared", "shared")
+        .with_delete(Some(true))
+        .with_ignore(ignore(&["**/vendor/**", "!**/vendor/keep/**"]));
+    let plan = run_plan(&root, &worktree, vec![sync]);
+    let mut reporter = VecReporter::default();
+
+    apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+        .expect("sync delete should apply ignore rules");
+
+    assert!(!worktree.join("shared/stale").exists());
+    assert_eq!(
+        fs::read_to_string(worktree.join("shared/vendor/drop"))
+            .expect("ignored target should be readable"),
+        "keep\n"
+    );
+    assert!(!worktree.join("shared/vendor/keep/remove").exists());
+    assert!(worktree.join("shared/vendor/keep").exists());
 }
 
 #[cfg(unix)]

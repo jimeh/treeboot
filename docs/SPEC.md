@@ -1,4 +1,4 @@
-# treeboot Specification v1.11.1
+# treeboot Specification v1.12.0
 
 A portable worktree bootstrapper that lets every coding agent, editor, and orchestration tool run the same repo-local setup command.
 
@@ -101,7 +101,7 @@ treeboot -V
 Human-readable output is a compact, flag-like summary:
 
 ```text
-treeboot 0.4.1 (spec 1.11.0)
+treeboot 0.4.1 (spec 1.12.0)
 ```
 
 JSON and YAML output are defined in
@@ -122,7 +122,7 @@ treeboot config --yaml
 
 This command is view-only. It is intended for validating and inspecting config parsing behavior; editing config values is out of scope.
 
-Human-readable text output lists normalized source and target values plus behavior-affecting normalized fields such as `required`, `compare`, `delete`, `symlinks`, `allow_failure`, `cwd`, and command `env` values when present. JSON and YAML output emit the full normalized config structure.
+Human-readable text output lists normalized source and target values plus behavior-affecting normalized fields such as `required`, `compare`, `delete`, `symlinks`, `ignore`, `allow_failure`, `cwd`, and command `env` values when present. JSON and YAML output emit the full normalized config structure.
 
 ### `treeboot check`
 
@@ -329,6 +329,7 @@ Operation-specific flags are valid only on the commands listed in the option tab
 | `-t`, `--target <path>` | copy/symlink/sync | Overrides the target. With multiple sources, acts as the target path prefix for each source. |
 | `--required` | copy/symlink/sync | Fails when any requested source does not exist. |
 | `--symlinks <preserve>` | copy/sync | Selects how source symlinks are handled. The initial supported value is `preserve`. |
+| `--ignore <pattern>` | copy/sync | Repeats to skip source paths matching operation-local ignore patterns. Patterns use gitignore-style syntax and are not read from `.gitignore` files. |
 | `--ignore-metadata <permissions\|owner\|group\|ownership>` | copy/sync | Repeats to opt out of metadata comparison and preservation. `ownership` means owner and group. |
 | `--compare <metadata\|checksum>` | sync | Selects sync comparison behavior. |
 | `-D`, `--delete` / `--no-delete` | sync | Controls whether sync deletes target-only files. Defaults to `--no-delete`. |
@@ -410,7 +411,7 @@ string. The initial reason is `not_executable`.
 {
   "package": "treeboot",
   "version": "0.4.1",
-  "spec_version": "1.11.1"
+  "spec_version": "1.12.0"
 }
 ```
 
@@ -426,6 +427,7 @@ string. The initial reason is `not_executable`.
   "path": "/repo-worktree/.treeboot.toml",
   "config": {
     "strict": false,
+    "default_ignore": [],
     "dangerously_allow_sources_outside_root": false,
     "dangerously_allow_targets_outside_worktree": false,
     "files": [
@@ -439,6 +441,7 @@ string. The initial reason is `not_executable`.
         "compare": null,
         "delete": null,
         "symlinks": "preserve",
+        "ignore": [],
         "ignore_metadata": [],
         "declaration": {
           "start": 0,
@@ -474,6 +477,7 @@ string. The initial reason is `not_executable`.
 `files` and `commands` are ordered arrays. File `operation` is `copy`,
 `symlink`, or `sync`. `compare` is `metadata`, `checksum`, or `null`. `delete`
 is a boolean or `null`. `symlinks` is `preserve` or `null`.
+`ignore` is an ordered array of operation-local path ignore patterns.
 `ignore_metadata` is an ordered array of canonical ignored metadata fields:
 `permissions`, `owner`, and `group`. Config input can use `ownership` as a
 shorthand, but normalized inspection output expands it to `owner` and `group`.
@@ -825,6 +829,7 @@ The checked-in JSON Schema for the config file format lives at `schemas/treeboot
 #:schema https://github.com/jimeh/treeboot/releases/latest/download/config.schema.json
 
 strict = false
+default_ignore = [".DS_Store", "Thumbs.db"]
 dangerously_allow_sources_outside_root = false
 dangerously_allow_targets_outside_worktree = false
 
@@ -859,13 +864,16 @@ files = [
 
 ### Top-level options
 
-Top-level boolean options are project defaults for declarative config execution. Environment variables override matching config values. CLI flags override both where an equivalent flag exists.
+Top-level options are project defaults for declarative config execution.
+Environment variables override matching config values. CLI flags override both
+where an equivalent flag exists.
 
 | Option | Environment | Meaning |
 | --- | --- | --- |
 | `strict` | `TREEBOOT_STRICT` | Defaults to `false`. Enables stricter declarative validation and conflict handling. CLI or environment strictness also applies before config discovery. |
 | `dangerously_allow_sources_outside_root` | `TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT` | Defaults to `false`. Allows declarative file operation sources outside `TREEBOOT_ROOT_PATH`. |
 | `dangerously_allow_targets_outside_worktree` | `TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE` | Defaults to `false`. Allows declarative file operation targets outside `TREEBOOT_WORKTREE_PATH`. |
+| `default_ignore` | none | Defaults to `[]`. Ordered path ignore patterns prepended to every `copy` and `sync` operation's effective ignore list. |
 
 ### File objects
 
@@ -890,6 +898,7 @@ sync = [
   { source = "tooling/config", target = ".config/tooling", delete = true },
   { source = "shared/tool.lock", target = ".tool.lock", compare = "checksum" },
   { source = "shared/cache", target = ".cache/shared", ignore_metadata = ["ownership"] },
+  { source = "shared/vendor", ignore = ["**/tmp/**", "!**/tmp/keep/**"] },
 ]
 
 files = [
@@ -916,6 +925,7 @@ The verbose table-array name is singular `[[file]]` so it can coexist with the p
 | `compare` | `sync` | `metadata` by default; `checksum` for content checks. |
 | `delete` | `sync` directories | Defaults to `false`; when true, deletes target-only files and directories. |
 | `symlinks` | `copy`, `sync` | Defaults to `preserve`; safe source symlinks are recreated as symlinks and unsafe symlinks are validation errors. |
+| `ignore` | `copy`, `sync` | Optional list of operation-local path ignore patterns appended after top-level `default_ignore`. |
 | `ignore_metadata` | `copy`, `sync` | Optional list of metadata fields to ignore. Supported values are `permissions`, `owner`, `group`, and `ownership`. `ownership` is shorthand for owner and group. |
 
 ### Command objects
@@ -1025,9 +1035,13 @@ Completion candidate generation uses root/worktree discovery only. It must not p
 
 ### Manual operation normalization
 
-Manual file operation commands normalize to the same internal file operation shape as config entries. The subcommand supplies `operation`, each positional source supplies `source`, `--required` supplies `required = true`, and operation-specific flags supply `symlinks`, `compare`, `delete`, or `ignore_metadata`.
+Manual file operation commands normalize to the same internal file operation shape as config entries. The subcommand supplies `operation`, each positional source supplies `source`, `--required` supplies `required = true`, and operation-specific flags supply `symlinks`, `compare`, `delete`, `ignore`, or `ignore_metadata`.
 
-Manual normalization happens under the same resolved runtime policy as declarative file operations: defaults, then config top-level policy when a config is present, then environment overrides, then CLI strictness.
+Manual normalization happens under the same resolved runtime policy as declarative
+file operations: defaults, then config top-level policy when a config is present,
+then environment overrides, then CLI strictness. For manual `copy` and `sync`,
+effective ignore rules are the loaded config's `default_ignore` patterns followed
+by repeated `--ignore` flags.
 
 If `--target` is omitted, each target defaults to its source value. If one source is passed, `--target` is that operation's target. If more than one source is passed, `--target` is joined with each source value to produce each operation's target.
 
@@ -1037,10 +1051,11 @@ Missing sources are optional by default for copy, symlink, and sync. When a sour
 
 ### Copy
 
-Copies files and directories. Directory copies recursively copy the source directory into the configured target path. This is a copy operation, not a sync operation: treeboot never deletes target files merely because they are absent from the source. Source symlinks are preserved by default when they are safe. By default, copy preserves the metadata described in [File metadata preservation](#file-metadata-preservation). Configure `ignore_metadata`, or use `--ignore-metadata`, to opt out of selected metadata fields.
+Copies files and directories. Directory copies recursively copy the source directory into the configured target path. This is a copy operation, not a sync operation: treeboot never deletes target files merely because they are absent from the source. Source symlinks are preserved by default when they are safe. By default, copy preserves the metadata described in [File metadata preservation](#file-metadata-preservation). Configure `ignore`, or use `--ignore`, to skip selected source paths during directory copies. Configure `ignore_metadata`, or use `--ignore-metadata`, to opt out of selected metadata fields.
 
 `treeboot copy` exposes `--target`, `--required`, `--symlinks`,
-`--ignore-metadata`, `--dry-run`, `--verbose`, `--strict`, and `--force`.
+`--ignore`, `--ignore-metadata`, `--dry-run`, `--verbose`, `--strict`, and
+`--force`.
 
 ### Symlink
 
@@ -1050,11 +1065,60 @@ Creates relative symlinks whenever treeboot can compute the path from the target
 
 ### Sync
 
-Reconciles target content to match source content. Files are compared by size and modified time by default, or by content when `compare = "checksum"` is set. Checksum comparison must detect content changes even when size and modified time do not change. Sync also compares and repairs the metadata fields described in [File metadata preservation](#file-metadata-preservation), unless those fields are listed in `ignore_metadata`. Source symlinks are preserved by default when they are safe.
+Reconciles target content to match source content. Files are compared by size and modified time by default, or by content when `compare = "checksum"` is set. Checksum comparison must detect content changes even when size and modified time do not change. Sync also compares and repairs the metadata fields described in [File metadata preservation](#file-metadata-preservation), unless those fields are listed in `ignore_metadata`. Configure `ignore`, or use `--ignore`, to skip selected source and target paths during directory sync. Source symlinks are preserved by default when they are safe.
 
 `treeboot sync` exposes `--target`, `--required`, `--compare`, `--delete`,
-`--no-delete`, `--symlinks`, `--ignore-metadata`, `--dry-run`, `--verbose`,
-`--strict`, and `--force`.
+`--no-delete`, `--symlinks`, `--ignore`, `--ignore-metadata`, `--dry-run`,
+`--verbose`, `--strict`, and `--force`.
+
+### Path ignore rules
+
+`default_ignore` is an ordered top-level list of path patterns prepended to every
+`copy` and `sync` operation's effective ignore list. `ignore` is an ordered list
+of operation-local path patterns appended after `default_ignore`. Patterns use
+gitignore-style syntax, including `*`, `?`, `**`, character classes, trailing
+slash directory matches, comments, escaped metacharacters, and `!` negation.
+Later matching patterns override earlier matching patterns. A path matched by a
+non-negated pattern is ignored. A path matched by a later negated pattern is
+re-included. Because operation-local `ignore` patterns come after
+`default_ignore`, an operation-local `!` pattern can re-include a path ignored by
+the top-level defaults.
+
+Normalized file operations expose the effective merged ignore list in their
+`ignore` field. Normalized config output also preserves `default_ignore` as a
+top-level policy field.
+
+treeboot never loads `.gitignore`, `.ignore`, `.rgignore`,
+`.git/info/exclude`, or global Git ignore files for file operations. Ignore
+rules come only from top-level `default_ignore`, the operation's `ignore` field,
+or repeated manual `--ignore` flags.
+
+Patterns match source-relative paths for the operation. For example, with
+`source = "shared"` and `ignore = ["**/vendor/**"]`, the pattern is evaluated
+against paths below `TREEBOOT_ROOT_PATH/shared`, not against paths below the
+repository root unless the operation source is the root itself. Matching uses
+directory knowledge, so directory-only patterns match only directories.
+
+Ignore rules affect directory sources only. When a `copy` or `sync` source is a
+single file or a source symlink, treeboot validates the patterns but does not
+apply them to skip the top-level source. Use a directory source when selective
+path filtering is required.
+
+Ignored source paths are skipped before copy/sync action planning and before
+unsafe source-symlink validation. Ignored unsafe symlinks are therefore not
+validation errors. Re-included paths are planned and validated normally.
+
+When negated patterns are present, treeboot must still be able to discover
+re-included descendants under ignored directories. Implementations may traverse
+ignored directories conservatively to find re-included descendants. Ignored
+directories that exist only as ancestors of re-included descendants may be
+created as target parent directories, but treeboot must not report or repair
+the ignored directory itself unless that directory is re-included.
+
+For directory sync with `delete = true`, ignore rules also apply to target-only
+paths by evaluating the same operation-relative path under the sync target.
+Ignored target-only files and directories are preserved. Re-included
+target-only paths remain eligible for deletion.
 
 ### Symlinks inside copy and sync
 
