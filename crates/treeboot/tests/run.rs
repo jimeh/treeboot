@@ -189,6 +189,42 @@ fn run_command_only_config_should_execute_from_worktree() {
 }
 
 #[test]
+fn run_should_apply_configured_file_ignore_patterns() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared/vendor/keep"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("shared/config"), "copy\n");
+    write_file(&repo.root_path().join("shared/vendor/drop"), "skip\n");
+    write_file(
+        &repo.root_path().join("shared/vendor/keep/config"),
+        "keep\n",
+    );
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "shared", ignore = ["**/vendor/**", "!**/vendor/keep/**"] }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("treeboot: copy shared -> shared"));
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("shared/config"))
+            .expect("target should be readable"),
+        "copy\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("shared/vendor/keep/config"))
+            .expect("re-included target should be readable"),
+        "keep\n"
+    );
+    assert!(!repo.worktree_path().join("shared/vendor/drop").exists());
+}
+
+#[test]
 fn run_invalid_config_should_exit_with_config_error() {
     let repo = git_worktree();
     let config = repo.worktree_path().join(".treeboot.toml");

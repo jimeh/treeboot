@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
+use crate::ignore_rules::PathIgnoreRules;
 use crate::{
     CommandKind, CommandOperation, Config, ConfigRuntimeOptions, Error, FileOperation,
     FileOperationKind, MetadataField, Result, SourceSpan, SymlinkMode, SyncCompare, Worktree,
@@ -241,6 +242,8 @@ pub struct PlannedFileOperation {
     delete: Option<bool>,
     /// How copy and sync should treat source symlinks.
     symlinks: Option<SymlinkMode>,
+    /// Source-relative path patterns ignored by copy and sync.
+    ignore: Vec<String>,
     /// Metadata fields ignored by copy and sync.
     ignore_metadata: Vec<MetadataField>,
     /// Whether this operation should execute.
@@ -304,6 +307,12 @@ impl PlannedFileOperation {
         self.symlinks
     }
 
+    /// Returns source-relative path patterns ignored by copy and sync.
+    #[must_use]
+    pub fn ignore(&self) -> &[String] {
+        &self.ignore
+    }
+
     /// Returns metadata fields ignored by copy and sync.
     #[must_use]
     pub fn ignore_metadata(&self) -> &[MetadataField] {
@@ -334,6 +343,7 @@ impl PlannedFileOperation {
             compare: parts.compare,
             delete: parts.delete,
             symlinks: parts.symlinks,
+            ignore: parts.ignore,
             ignore_metadata: parts.ignore_metadata,
             status: parts.status,
             declaration: parts.declaration,
@@ -349,6 +359,12 @@ impl PlannedFileOperation {
     #[cfg(test)]
     pub(crate) const fn with_delete(mut self, delete: Option<bool>) -> Self {
         self.delete = delete;
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_ignore(mut self, ignore: Vec<String>) -> Self {
+        self.ignore = ignore;
         self
     }
 
@@ -370,6 +386,7 @@ pub(crate) struct PlannedFileOperationParts {
     pub(crate) compare: Option<SyncCompare>,
     pub(crate) delete: Option<bool>,
     pub(crate) symlinks: Option<SymlinkMode>,
+    pub(crate) ignore: Vec<String>,
     pub(crate) ignore_metadata: Vec<MetadataField>,
     pub(crate) status: PlannedFileStatus,
     pub(crate) declaration: SourceSpan,
@@ -699,6 +716,7 @@ fn build_file_operations(
             )
         })?;
         validate_source_boundary(origin, options, operation, &source_path, root_path)?;
+        let ignore_rules = operation_ignore_rules(origin, operation, &source_path)?;
 
         let status = match source_exists(origin, operation, source_path.as_path())? {
             true => {
@@ -706,7 +724,13 @@ fn build_file_operations(
                     operation.operation,
                     FileOperationKind::Copy | FileOperationKind::Sync
                 ) {
-                    validate_source_symlinks(origin, operation, source_path.as_path(), root_path)?;
+                    validate_source_symlinks(
+                        origin,
+                        operation,
+                        source_path.as_path(),
+                        root_path,
+                        ignore_rules.as_ref(),
+                    )?;
                 }
 
                 PlannedFileStatus::Ready
@@ -734,6 +758,7 @@ fn build_file_operations(
             compare: operation.compare,
             delete: operation.delete,
             symlinks: operation.symlinks,
+            ignore: operation.ignore.clone(),
             ignore_metadata: operation.ignore_metadata.clone(),
             status,
             declaration: operation.declaration,
@@ -791,6 +816,33 @@ fn validate_source_boundary(
     }
 
     Ok(())
+}
+
+fn operation_ignore_rules(
+    origin: FilePlanOrigin<'_>,
+    operation: &FileOperation,
+    source_path: &Path,
+) -> Result<Option<PathIgnoreRules>> {
+    if !matches!(
+        operation.operation,
+        FileOperationKind::Copy | FileOperationKind::Sync
+    ) || operation.ignore.is_empty()
+    {
+        return Ok(None);
+    }
+
+    PathIgnoreRules::new(source_path, &operation.ignore)
+        .map(Some)
+        .map_err(|source| {
+            file_plan_error(
+                origin,
+                Some(operation.declaration),
+                format!(
+                    "invalid ignore pattern for {}: {source}",
+                    operation_summary(origin, operation)
+                ),
+            )
+        })
 }
 
 fn plan_commands(
@@ -854,15 +906,25 @@ fn validate_source_symlinks(
     operation: &FileOperation,
     source_path: &Path,
     root_path: &Path,
+    ignore_rules: Option<&PathIgnoreRules>,
 ) -> Result<()> {
-    validate_source_symlink_path(origin, operation, source_path, root_path)
+    validate_source_symlink_path(
+        origin,
+        operation,
+        source_path,
+        source_path,
+        root_path,
+        ignore_rules,
+    )
 }
 
 fn validate_source_symlink_path(
     origin: FilePlanOrigin<'_>,
     operation: &FileOperation,
+    source_root: &Path,
     path: &Path,
     root_path: &Path,
+    ignore_rules: Option<&PathIgnoreRules>,
 ) -> Result<()> {
     let metadata = std::fs::symlink_metadata(path).map_err(|source| {
         file_plan_error(
@@ -925,10 +987,58 @@ fn validate_source_symlink_path(
                 ),
             )
         })?;
-        validate_source_symlink_path(origin, operation, &entry.path(), root_path)?;
+        let path = entry.path();
+        let metadata = std::fs::symlink_metadata(&path).map_err(|source| {
+            file_plan_error(
+                origin,
+                Some(operation.declaration),
+                format!(
+                    "failed to inspect source directory {}: {source}",
+                    path.display()
+                ),
+            )
+        })?;
+
+        if ignored_source_path(source_root, &path, &metadata, ignore_rules) {
+            if metadata.is_dir()
+                && ignore_rules
+                    .map(PathIgnoreRules::has_negation)
+                    .unwrap_or(false)
+            {
+                validate_source_symlink_path(
+                    origin,
+                    operation,
+                    source_root,
+                    &path,
+                    root_path,
+                    ignore_rules,
+                )?;
+            }
+            continue;
+        }
+
+        validate_source_symlink_path(
+            origin,
+            operation,
+            source_root,
+            &path,
+            root_path,
+            ignore_rules,
+        )?;
     }
 
     Ok(())
+}
+
+fn ignored_source_path(
+    source_root: &Path,
+    path: &Path,
+    metadata: &std::fs::Metadata,
+    ignore_rules: Option<&PathIgnoreRules>,
+) -> bool {
+    ignore_rules
+        .zip(path.strip_prefix(source_root).ok())
+        .is_some_and(|(rules, relative)| rules.is_ignored(relative, metadata.is_dir()))
 }
 
 fn source_exists(
@@ -1160,6 +1270,7 @@ mod tests {
                 FileOperationKind::Copy | FileOperationKind::Sync => Some(SymlinkMode::Preserve),
                 FileOperationKind::Symlink => None,
             },
+            ignore: Vec::new(),
             ignore_metadata: Vec::new(),
             declaration: span(),
         }
@@ -1205,6 +1316,7 @@ mod tests {
                 compare: None,
                 delete: None,
                 symlinks: Some(SymlinkMode::Preserve),
+                ignore: Vec::new(),
                 ignore_metadata: Vec::new(),
                 declaration: span(),
             }],
@@ -1370,6 +1482,7 @@ mod tests {
                 compare: None,
                 delete: None,
                 symlinks: Some(SymlinkMode::Preserve),
+                ignore: Vec::new(),
                 ignore_metadata: Vec::new(),
                 declaration: span(),
             }],

@@ -29,6 +29,8 @@ pub struct ManualFileOperationOptions {
     pub compare: Option<SyncCompare>,
     /// Whether sync should delete target-only files.
     pub delete: Option<bool>,
+    /// Source-relative path patterns ignored by copy and sync.
+    pub ignore: Vec<String>,
     /// Metadata fields ignored by copy and sync.
     pub ignore_metadata: Vec<MetadataField>,
 }
@@ -43,6 +45,7 @@ impl Default for ManualFileOperationOptions {
             symlinks: None,
             compare: None,
             delete: None,
+            ignore: Vec::new(),
             ignore_metadata: Vec::new(),
         }
     }
@@ -97,6 +100,7 @@ impl FileOperation {
             options.symlinks,
             options.compare,
             options.delete,
+            &options.ignore,
             &options.ignore_metadata,
         )?;
         manual_operations(options, context, settings)
@@ -126,6 +130,8 @@ pub struct FileOperationOptions {
     pub compare: Option<SyncCompare>,
     /// Whether sync should delete target-only files.
     pub delete: Option<bool>,
+    /// Source-relative path patterns ignored by copy and sync.
+    pub ignore: Vec<String>,
     /// Metadata fields ignored by copy and sync.
     pub ignore_metadata: Vec<MetadataField>,
     /// Fails on stricter file-operation conflicts.
@@ -151,6 +157,7 @@ impl Default for FileOperationOptions {
             symlinks: None,
             compare: None,
             delete: None,
+            ignore: Vec::new(),
             ignore_metadata: Vec::new(),
             strict: false,
             force: false,
@@ -245,6 +252,7 @@ pub fn run_file_operation(
         symlinks,
         compare,
         delete,
+        ignore,
         ignore_metadata,
         strict,
         force,
@@ -259,6 +267,7 @@ pub fn run_file_operation(
         symlinks,
         compare,
         delete,
+        ignore,
         ignore_metadata,
     };
 
@@ -337,6 +346,7 @@ fn validate_manual_options(
     symlinks: Option<SymlinkMode>,
     compare: Option<SyncCompare>,
     delete: Option<bool>,
+    ignore: &[String],
     ignore_metadata: &[MetadataField],
 ) -> Result<FileOperationSettings> {
     if sources.is_empty() {
@@ -354,6 +364,7 @@ fn validate_manual_options(
             compare,
             delete,
             symlinks,
+            ignore: ignore.to_vec(),
             ignore_metadata,
         },
     )
@@ -377,6 +388,7 @@ fn manual_operations(
         sources,
         target,
         required,
+        ignore,
         ..
     } = options;
     let multiple_sources = sources.len() > 1;
@@ -394,6 +406,7 @@ fn manual_operations(
                 compare: settings.compare,
                 delete: settings.delete,
                 symlinks: settings.symlinks,
+                ignore: ignore.clone(),
                 ignore_metadata: settings.ignore_metadata.clone(),
                 declaration: manual_span(),
             })
@@ -570,6 +583,7 @@ mod tests {
             symlinks: None,
             compare: None,
             delete: None,
+            ignore: Vec::new(),
             ignore_metadata: Vec::new(),
         }
     }
@@ -643,6 +657,7 @@ mod tests {
             symlinks: None,
             compare: None,
             delete: None,
+            ignore: Vec::new(),
             ignore_metadata: Vec::new(),
         };
         options.sources.push(root.join("b"));
@@ -688,6 +703,7 @@ mod tests {
             options.symlinks,
             options.compare,
             options.delete,
+            &options.ignore,
             &options.ignore_metadata,
         )
         .expect_err("symlinks should fail");
@@ -707,6 +723,7 @@ mod tests {
             options.symlinks,
             options.compare,
             options.delete,
+            &options.ignore,
             &options.ignore_metadata,
         )
         .expect_err("compare should fail");
@@ -729,6 +746,7 @@ mod tests {
             options.symlinks,
             options.compare,
             options.delete,
+            &options.ignore,
             &options.ignore_metadata,
         )
         .expect_err("delete should fail");
@@ -751,6 +769,7 @@ mod tests {
             options.symlinks,
             options.compare,
             options.delete,
+            &options.ignore,
             &options.ignore_metadata,
         )
         .expect_err("compare should fail");
@@ -773,6 +792,7 @@ mod tests {
             options.symlinks,
             options.compare,
             options.delete,
+            &options.ignore,
             &options.ignore_metadata,
         )
         .expect_err("delete should fail");
@@ -793,6 +813,7 @@ mod tests {
             options.symlinks,
             options.compare,
             options.delete,
+            &options.ignore,
             &options.ignore_metadata,
         )
         .expect_err("empty sources should fail");
@@ -812,6 +833,7 @@ mod tests {
         options.compare = Some(SyncCompare::Checksum);
         options.delete = Some(true);
         options.symlinks = Some(SymlinkMode::Preserve);
+        options.ignore = vec!["**/vendor/**".to_owned(), "!**/vendor/keep/**".to_owned()];
         options.ignore_metadata = vec![MetadataField::Owner, MetadataField::Group];
 
         let operations = FileOperation::from_manual_options(&context, options)
@@ -821,8 +843,35 @@ mod tests {
         assert_eq!(operations[0].delete, Some(true));
         assert_eq!(operations[0].symlinks, Some(SymlinkMode::Preserve));
         assert_eq!(
+            operations[0].ignore,
+            vec!["**/vendor/**", "!**/vendor/keep/**"]
+        );
+        assert_eq!(
             operations[0].ignore_metadata,
             vec![MetadataField::Owner, MetadataField::Group]
+        );
+    }
+
+    #[test]
+    fn validate_manual_options_should_reject_ignore_for_symlink() {
+        let mut options = options(FileOperationKind::Symlink, &["file"]);
+        options.ignore = vec!["**/tmp/**".to_owned()];
+
+        let error = validate_manual_options(
+            options.operation,
+            &options.sources,
+            options.symlinks,
+            options.compare,
+            options.delete,
+            &options.ignore,
+            &options.ignore_metadata,
+        )
+        .expect_err("ignore should fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("`ignore` is only valid for copy and sync")
         );
     }
 
@@ -837,6 +886,7 @@ mod tests {
             options.symlinks,
             options.compare,
             options.delete,
+            &options.ignore,
             &options.ignore_metadata,
         )
         .expect_err("ignore_metadata should fail");
@@ -923,6 +973,7 @@ mod tests {
                 compare: None,
                 delete: None,
                 symlinks: Some(SymlinkMode::Preserve),
+                ignore: Vec::new(),
                 ignore_metadata: Vec::new(),
                 declaration: manual_span(),
             }],
@@ -955,6 +1006,7 @@ mod tests {
                 compare: Some(SyncCompare::Metadata),
                 delete: Some(false),
                 symlinks: Some(SymlinkMode::Preserve),
+                ignore: Vec::new(),
                 ignore_metadata: Vec::new(),
                 declaration: manual_span(),
             }],

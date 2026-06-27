@@ -3,6 +3,7 @@ use std::fs::{self, File, FileTimes, Metadata};
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
 
+use crate::ignore_rules::PathIgnoreRules;
 use crate::{
     ActionPlan, Error, FileOperationKind, FileOperationSummary, MetadataField, OutputEvent,
     PlannedFileOperation, PlannedFileStatus, Reporter, Result, SyncCompare,
@@ -92,6 +93,12 @@ struct CopyEntry<'a> {
     target_path: &'a Path,
     source: &'a Path,
     target: &'a Path,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TreeIgnoreContext<'a> {
+    source_root_path: &'a Path,
+    rules: Option<&'a PathIgnoreRules>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -323,9 +330,15 @@ fn plan_tree(
 ) -> Result<()> {
     let source_path = raw_source_path(plan, operation);
     let metadata = metadata(&source_path, operation.operation())?;
+    let ignore_rules = operation_ignore_rules(operation, &source_path)?;
+    let ignore_context = TreeIgnoreContext {
+        source_root_path: &source_path,
+        rules: ignore_rules.as_ref(),
+    };
     plan_tree_entry(
         plan,
         operation,
+        ignore_context,
         CopyEntry {
             source_path: &source_path,
             target_path: operation.target_path(),
@@ -338,9 +351,26 @@ fn plan_tree(
     )
 }
 
+fn operation_ignore_rules(
+    operation: &PlannedFileOperation,
+    source_path: &Path,
+) -> Result<Option<PathIgnoreRules>> {
+    if operation.ignore().is_empty() {
+        return Ok(None);
+    }
+
+    PathIgnoreRules::new(source_path, operation.ignore())
+        .map(Some)
+        .map_err(|source| Error::FileOperationInvalid {
+            operation: operation.operation().as_str(),
+            message: format!("invalid ignore pattern: {source}"),
+        })
+}
+
 fn plan_tree_entry(
     plan: &ActionPlan,
     operation: &PlannedFileOperation,
+    ignore_context: TreeIgnoreContext<'_>,
     entry: CopyEntry<'_>,
     source_metadata: &Metadata,
     mode: TreePlanMode,
@@ -353,7 +383,15 @@ fn plan_tree_entry(
         return plan_tree_file(operation, entry, mode, actions);
     }
     if source_metadata.is_dir() {
-        return plan_tree_directory(plan, operation, entry, mode, actions);
+        return plan_tree_directory(
+            plan,
+            operation,
+            ignore_context.source_root_path,
+            entry,
+            mode,
+            ignore_context.rules,
+            actions,
+        );
     }
 
     conflict(
@@ -366,8 +404,10 @@ fn plan_tree_entry(
 fn plan_tree_directory(
     plan: &ActionPlan,
     operation: &PlannedFileOperation,
+    source_root_path: &Path,
     entry: CopyEntry<'_>,
     mode: TreePlanMode,
+    ignore_rules: Option<&PathIgnoreRules>,
     actions: &mut Vec<FileAction>,
 ) -> Result<()> {
     let mut directory_metadata = None;
@@ -462,9 +502,42 @@ fn plan_tree_directory(
         let child_target = entry.target.join(child.file_name());
         let child_metadata = metadata(&child_source_path, operation.operation())?;
 
+        if ignored_source_entry(
+            source_root_path,
+            &child_source_path,
+            &child_metadata,
+            ignore_rules,
+        ) {
+            if child_metadata.is_dir()
+                && ignore_rules
+                    .map(PathIgnoreRules::has_negation)
+                    .unwrap_or(false)
+            {
+                plan_ignored_tree_directory(
+                    plan,
+                    operation,
+                    source_root_path,
+                    CopyEntry {
+                        source_path: &child_source_path,
+                        target_path: &child_target_path,
+                        source: &child_source,
+                        target: &child_target,
+                    },
+                    mode,
+                    ignore_rules,
+                    actions,
+                )?;
+            }
+            continue;
+        }
+
         plan_tree_entry(
             plan,
             operation,
+            TreeIgnoreContext {
+                source_root_path,
+                rules: ignore_rules,
+            },
             CopyEntry {
                 source_path: &child_source_path,
                 target_path: &child_target_path,
@@ -478,7 +551,7 @@ fn plan_tree_directory(
     }
 
     if matches!(mode, TreePlanMode::Sync) && operation.delete().unwrap_or(false) {
-        plan_sync_deletes(operation, entry, actions)?;
+        let _ = plan_sync_deletes(operation, entry, ignore_rules, actions)?;
     }
 
     if let Some(action) = directory_metadata {
@@ -486,6 +559,97 @@ fn plan_tree_directory(
     }
 
     Ok(())
+}
+
+fn plan_ignored_tree_directory(
+    plan: &ActionPlan,
+    operation: &PlannedFileOperation,
+    source_root_path: &Path,
+    entry: CopyEntry<'_>,
+    mode: TreePlanMode,
+    ignore_rules: Option<&PathIgnoreRules>,
+    actions: &mut Vec<FileAction>,
+) -> Result<()> {
+    for child in fs::read_dir(entry.source_path).map_err(|source| Error::FileOperationIo {
+        operation: operation.operation().as_str(),
+        path: entry.source_path.to_path_buf(),
+        source,
+    })? {
+        let child = child.map_err(|source| Error::FileOperationIo {
+            operation: operation.operation().as_str(),
+            path: entry.source_path.to_path_buf(),
+            source,
+        })?;
+        let child_source_path = child.path();
+        let child_target_path = entry.target_path.join(child.file_name());
+        let child_source = entry.source.join(child.file_name());
+        let child_target = entry.target.join(child.file_name());
+        let child_metadata = metadata(&child_source_path, operation.operation())?;
+
+        if ignored_source_entry(
+            source_root_path,
+            &child_source_path,
+            &child_metadata,
+            ignore_rules,
+        ) {
+            if child_metadata.is_dir()
+                && ignore_rules
+                    .map(PathIgnoreRules::has_negation)
+                    .unwrap_or(false)
+            {
+                plan_ignored_tree_directory(
+                    plan,
+                    operation,
+                    source_root_path,
+                    CopyEntry {
+                        source_path: &child_source_path,
+                        target_path: &child_target_path,
+                        source: &child_source,
+                        target: &child_target,
+                    },
+                    mode,
+                    ignore_rules,
+                    actions,
+                )?;
+            }
+            continue;
+        }
+
+        plan_tree_entry(
+            plan,
+            operation,
+            TreeIgnoreContext {
+                source_root_path,
+                rules: ignore_rules,
+            },
+            CopyEntry {
+                source_path: &child_source_path,
+                target_path: &child_target_path,
+                source: &child_source,
+                target: &child_target,
+            },
+            &child_metadata,
+            mode,
+            actions,
+        )?;
+    }
+
+    if matches!(mode, TreePlanMode::Sync) && operation.delete().unwrap_or(false) {
+        let _ = plan_sync_deletes(operation, entry, ignore_rules, actions)?;
+    }
+
+    Ok(())
+}
+
+fn ignored_source_entry(
+    source_root_path: &Path,
+    source_path: &Path,
+    metadata: &Metadata,
+    ignore_rules: Option<&PathIgnoreRules>,
+) -> bool {
+    ignore_rules
+        .zip(source_path.strip_prefix(source_root_path).ok())
+        .is_some_and(|(rules, relative)| rules.is_ignored(relative, metadata.is_dir()))
 }
 
 fn plan_tree_file(
@@ -709,15 +873,17 @@ fn plan_symlink_action(
 fn plan_sync_deletes(
     operation: &PlannedFileOperation,
     entry: CopyEntry<'_>,
+    ignore_rules: Option<&PathIgnoreRules>,
     actions: &mut Vec<FileAction>,
-) -> Result<()> {
+) -> Result<bool> {
     let Some(target_metadata) = maybe_metadata(entry.target_path, operation.operation())? else {
-        return Ok(());
+        return Ok(false);
     };
     if !target_metadata.is_dir() {
-        return Ok(());
+        return Ok(false);
     }
 
+    let mut preserves_ignored = false;
     for child in fs::read_dir(entry.target_path).map_err(|source| Error::FileOperationIo {
         operation: operation.operation().as_str(),
         path: entry.target_path.to_path_buf(),
@@ -730,15 +896,74 @@ fn plan_sync_deletes(
         })?;
         let child_target_path = child.path();
         let child_source_path = entry.source_path.join(child.file_name());
+        let child_source = entry.source.join(child.file_name());
+        let child_target = entry.target.join(child.file_name());
+        let child_target_metadata = metadata(&child_target_path, operation.operation())?;
+        if ignored_target_entry(
+            operation,
+            &child_target_path,
+            &child_target_metadata,
+            ignore_rules,
+        ) {
+            preserves_ignored = true;
+            if child_target_metadata.is_dir()
+                && ignore_rules
+                    .map(PathIgnoreRules::has_negation)
+                    .unwrap_or(false)
+            {
+                let _ = plan_sync_deletes(
+                    operation,
+                    CopyEntry {
+                        source_path: &child_source_path,
+                        target_path: &child_target_path,
+                        source: &child_source,
+                        target: &child_target,
+                    },
+                    ignore_rules,
+                    actions,
+                )?;
+            }
+            continue;
+        }
         if maybe_metadata(&child_source_path, operation.operation())?.is_none() {
+            if child_target_metadata.is_dir() && ignore_rules.is_some() {
+                let mut child_actions = Vec::new();
+                let child_preserves_ignored = plan_sync_deletes(
+                    operation,
+                    CopyEntry {
+                        source_path: &child_source_path,
+                        target_path: &child_target_path,
+                        source: &child_source,
+                        target: &child_target,
+                    },
+                    ignore_rules,
+                    &mut child_actions,
+                )?;
+                if child_preserves_ignored {
+                    preserves_ignored = true;
+                    actions.extend(child_actions);
+                    continue;
+                }
+            }
             actions.push(FileAction::Delete {
-                target: entry.target.join(child.file_name()),
+                target: child_target,
                 target_path: child_target_path,
             });
         }
     }
 
-    Ok(())
+    Ok(preserves_ignored)
+}
+
+fn ignored_target_entry(
+    operation: &PlannedFileOperation,
+    target_path: &Path,
+    metadata: &Metadata,
+    ignore_rules: Option<&PathIgnoreRules>,
+) -> bool {
+    ignore_rules
+        .zip(target_path.strip_prefix(operation.target_path()).ok())
+        .is_some_and(|(rules, relative)| rules.is_ignored(relative, metadata.is_dir()))
 }
 
 fn file_sync_changed(

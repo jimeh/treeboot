@@ -79,6 +79,45 @@ fn copy_should_create_files_and_directories_from_root() {
 }
 
 #[test]
+fn copy_should_apply_explicit_ignore_without_loading_gitignore() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared/vendor/keep"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join(".gitignore"), "shared/config\n");
+    write_file(&repo.root_path().join("shared/config"), "copy\n");
+    write_file(&repo.root_path().join("shared/vendor/drop"), "skip\n");
+    write_file(
+        &repo.root_path().join("shared/vendor/keep/config"),
+        "keep\n",
+    );
+
+    treeboot()
+        .args([
+            "copy",
+            "shared",
+            "--ignore",
+            "**/vendor/**",
+            "--ignore",
+            "!**/vendor/keep/**",
+        ])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("shared/config"))
+            .expect("ambient gitignored target should be readable"),
+        "copy\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("shared/vendor/keep/config"))
+            .expect("re-included target should be readable"),
+        "keep\n"
+    );
+    assert!(!repo.worktree_path().join("shared/vendor/drop").exists());
+}
+
+#[test]
 fn copy_should_place_multiple_sources_under_target_prefix() {
     let repo = git_worktree();
     write_file(&repo.root_path().join("a"), "a\n");
@@ -253,6 +292,48 @@ fn sync_delete_should_remove_target_only_files() {
 }
 
 #[test]
+fn sync_delete_should_preserve_ignored_target_only_files() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("source directory should be created");
+    std::fs::create_dir_all(repo.worktree_path().join("shared/vendor/keep"))
+        .expect("target directory should be created");
+    write_file(&repo.worktree_path().join("shared/stale"), "remove\n");
+    write_file(&repo.worktree_path().join("shared/vendor/drop"), "keep\n");
+    write_file(
+        &repo.worktree_path().join("shared/vendor/keep/remove"),
+        "remove\n",
+    );
+
+    treeboot()
+        .args([
+            "sync",
+            "shared",
+            "--delete",
+            "--ignore",
+            "**/vendor/**",
+            "--ignore",
+            "!**/vendor/keep/**",
+        ])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert!(!repo.worktree_path().join("shared/stale").exists());
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("shared/vendor/drop"))
+            .expect("ignored target should be readable"),
+        "keep\n"
+    );
+    assert!(
+        !repo
+            .worktree_path()
+            .join("shared/vendor/keep/remove")
+            .exists()
+    );
+}
+
+#[test]
 fn sync_no_delete_should_preserve_target_only_files() {
     let repo = git_worktree();
     std::fs::create_dir_all(repo.root_path().join("shared"))
@@ -377,6 +458,12 @@ fn invalid_operation_specific_flags_should_be_usage_errors() {
 
     treeboot()
         .args(["symlink", ".env", "--ignore-metadata", "permissions"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("unexpected argument"));
+
+    treeboot()
+        .args(["symlink", ".env", "--ignore", "**/vendor/**"])
         .assert()
         .code(2)
         .stderr(predicate::str::contains("unexpected argument"));

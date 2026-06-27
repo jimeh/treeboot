@@ -99,6 +99,24 @@ fn check_should_fail_when_run_validation_fails() {
 }
 
 #[test]
+fn check_should_fail_for_invalid_ignore_patterns() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("source directory should be created");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "shared", ignore = ["{a,b"] }]"#,
+    );
+
+    treeboot()
+        .arg("check")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid ignore pattern"));
+}
+
+#[test]
 fn check_should_succeed_for_missing_config_unless_strict() {
     let repo = git_worktree();
 

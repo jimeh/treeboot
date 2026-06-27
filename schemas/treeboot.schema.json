@@ -39,6 +39,13 @@
     "CopyObject": {
       "additionalProperties": false,
       "properties": {
+        "ignore": {
+          "description": "Source-relative path patterns that copy should skip.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "ignore_metadata": {
           "description": "Metadata fields that copy should not compare or apply.",
           "items": {
@@ -122,6 +129,13 @@
           "additionalProperties": false,
           "description": "Copy object entry for mixed `files` and `[[file]]` declarations.",
           "properties": {
+            "ignore": {
+              "description": "Source-relative path patterns that copy should skip.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "ignore_metadata": {
               "description": "Metadata fields that copy should not compare or apply.",
               "items": {
@@ -194,6 +208,13 @@
             "delete": {
               "description": "Whether target-only files are deleted for directory sync.",
               "type": "boolean"
+            },
+            "ignore": {
+              "description": "Source-relative path patterns that sync should skip.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             },
             "ignore_metadata": {
               "description": "Metadata fields that sync should not compare or apply.",
@@ -331,6 +352,13 @@
         "delete": {
           "description": "Whether target-only files are deleted for directory sync.",
           "type": "boolean"
+        },
+        "ignore": {
+          "description": "Source-relative path patterns that sync should skip.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "ignore_metadata": {
           "description": "Metadata fields that sync should not compare or apply.",

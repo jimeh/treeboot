@@ -143,6 +143,8 @@ pub struct FileOperation {
     pub delete: Option<bool>,
     /// How copy and sync should treat source symlinks.
     pub symlinks: Option<SymlinkMode>,
+    /// Source-relative path patterns ignored by copy and sync.
+    pub ignore: Vec<String>,
     /// Metadata fields ignored by copy and sync.
     pub ignore_metadata: Vec<MetadataField>,
     /// Source location for the operation declaration.
@@ -367,6 +369,7 @@ pub(crate) struct FileOperationSettingsInput {
     pub(crate) compare: Option<SyncCompare>,
     pub(crate) delete: Option<bool>,
     pub(crate) symlinks: Option<SymlinkMode>,
+    pub(crate) ignore: Vec<String>,
     pub(crate) ignore_metadata: Vec<RawMetadataField>,
 }
 
@@ -375,6 +378,7 @@ pub(crate) struct FileOperationSettings {
     pub(crate) compare: Option<SyncCompare>,
     pub(crate) delete: Option<bool>,
     pub(crate) symlinks: Option<SymlinkMode>,
+    pub(crate) ignore: Vec<String>,
     pub(crate) ignore_metadata: Vec<MetadataField>,
 }
 
@@ -383,6 +387,7 @@ pub(crate) enum InvalidFileOperationField {
     Compare,
     Delete,
     Symlinks,
+    Ignore,
     IgnoreMetadata,
 }
 
@@ -392,6 +397,7 @@ impl InvalidFileOperationField {
             Self::Compare => "compare",
             Self::Delete => "delete",
             Self::Symlinks => "symlinks",
+            Self::Ignore => "ignore",
             Self::IgnoreMetadata => "ignore_metadata",
         }
     }
@@ -399,7 +405,7 @@ impl InvalidFileOperationField {
     pub(crate) const fn allowed_operations(self) -> &'static str {
         match self {
             Self::Compare | Self::Delete => "sync",
-            Self::Symlinks | Self::IgnoreMetadata => "copy and sync",
+            Self::Symlinks | Self::Ignore | Self::IgnoreMetadata => "copy and sync",
         }
     }
 }
@@ -437,6 +443,15 @@ pub(crate) fn normalize_file_operation_settings(
             None
         }
     };
+    let ignore = match operation {
+        FileOperationKind::Copy | FileOperationKind::Sync => input.ignore,
+        FileOperationKind::Symlink => {
+            if !input.ignore.is_empty() {
+                return Err(InvalidFileOperationField::Ignore);
+            }
+            Vec::new()
+        }
+    };
     let ignore_metadata = match operation {
         FileOperationKind::Copy | FileOperationKind::Sync => {
             normalize_ignored_metadata(input.ignore_metadata)
@@ -453,6 +468,7 @@ pub(crate) fn normalize_file_operation_settings(
         compare,
         delete,
         symlinks,
+        ignore,
         ignore_metadata,
     })
 }
@@ -560,6 +576,7 @@ fn normalize_file_group(
                 compare: None,
                 delete: None,
                 symlinks: None,
+                ignore: Vec::new(),
                 ignore_metadata: Vec::new(),
             },
             RawFileEntry::Object(object) => object,
@@ -634,6 +651,7 @@ fn normalize_file_object(
             compare: object.compare,
             delete: object.delete,
             symlinks: object.symlinks,
+            ignore: object.ignore,
             ignore_metadata: object.ignore_metadata,
         },
     )
@@ -660,6 +678,7 @@ fn normalize_file_object(
         compare: settings.compare,
         delete: settings.delete,
         symlinks: settings.symlinks,
+        ignore: settings.ignore,
         ignore_metadata: settings.ignore_metadata,
         declaration: span,
     })
@@ -931,6 +950,7 @@ struct RawFileObject {
     compare: Option<SyncCompare>,
     delete: Option<bool>,
     symlinks: Option<SymlinkMode>,
+    ignore: Vec<String>,
     ignore_metadata: Vec<RawMetadataField>,
 }
 
@@ -1107,9 +1127,11 @@ sync = ["shared/config"]
         assert_eq!(copy.target, PathBuf::from(".env.local"));
         assert!(!copy.required);
         assert_eq!(copy.symlinks, Some(SymlinkMode::Preserve));
+        assert!(copy.ignore.is_empty());
         assert!(copy.ignore_metadata.is_empty());
         assert_eq!(sync.compare, Some(SyncCompare::Metadata));
         assert_eq!(sync.delete, Some(false));
+        assert!(sync.ignore.is_empty());
         assert!(sync.ignore_metadata.is_empty());
     }
 
@@ -1151,6 +1173,32 @@ sync = [{ source = "shared", ignore_metadata = ["group"] }]
             ]
         );
         assert_eq!(config.files[1].ignore_metadata, vec![MetadataField::Group]);
+    }
+
+    #[test]
+    fn parse_config_should_preserve_explicit_ignore_patterns() {
+        let config = parse(
+            r#"
+copy = [{ source = ".env", ignore = ["**/vendor/**", "!**/vendor/keep/**"] }]
+sync = [{ source = "shared", ignore = ["cache/", "!cache/keep"] }]
+"#,
+        );
+
+        assert_eq!(
+            config.files[0].ignore,
+            vec!["**/vendor/**", "!**/vendor/keep/**"]
+        );
+        assert_eq!(config.files[1].ignore, vec!["cache/", "!cache/keep"]);
+    }
+
+    #[test]
+    fn parse_config_should_reject_ignore_on_symlink_file_operations() {
+        assert_parse_error_contains(
+            r#"
+symlink = [{ source = "link", ignore = ["**/tmp/**"] }]
+"#,
+            "`ignore` is only valid for copy and sync",
+        );
     }
 
     #[test]

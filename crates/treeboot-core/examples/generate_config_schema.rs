@@ -94,6 +94,9 @@ struct CopyObject {
     /// How safe source symlinks are handled.
     #[serde(skip_serializing_if = "Option::is_none")]
     symlinks: Option<SymlinkMode>,
+    /// Source-relative path patterns that copy should skip.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ignore: Option<Vec<String>>,
     /// Metadata fields that copy should not compare or apply.
     #[serde(skip_serializing_if = "Option::is_none")]
     ignore_metadata: Option<Vec<MetadataField>>,
@@ -132,6 +135,9 @@ struct SyncObject {
     /// How safe source symlinks are handled.
     #[serde(skip_serializing_if = "Option::is_none")]
     symlinks: Option<SymlinkMode>,
+    /// Source-relative path patterns that sync should skip.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ignore: Option<Vec<String>>,
     /// Metadata fields that sync should not compare or apply.
     #[serde(skip_serializing_if = "Option::is_none")]
     ignore_metadata: Option<Vec<MetadataField>>,
@@ -153,6 +159,9 @@ enum MixedFileObject {
         /// How safe source symlinks are handled.
         #[serde(skip_serializing_if = "Option::is_none")]
         symlinks: Option<SymlinkMode>,
+        /// Source-relative path patterns that copy should skip.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        ignore: Option<Vec<String>>,
         /// Metadata fields that copy should not compare or apply.
         #[serde(skip_serializing_if = "Option::is_none")]
         ignore_metadata: Option<Vec<MetadataField>>,
@@ -187,6 +196,9 @@ enum MixedFileObject {
         /// How safe source symlinks are handled.
         #[serde(skip_serializing_if = "Option::is_none")]
         symlinks: Option<SymlinkMode>,
+        /// Source-relative path patterns that sync should skip.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        ignore: Option<Vec<String>>,
         /// Metadata fields that sync should not compare or apply.
         #[serde(skip_serializing_if = "Option::is_none")]
         ignore_metadata: Option<Vec<MetadataField>>,

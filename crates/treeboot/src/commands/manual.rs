@@ -59,6 +59,10 @@ pub(crate) struct CopyArgs {
     #[arg(long, value_enum)]
     symlinks: Option<CliSymlinkMode>,
 
+    /// Source-relative path pattern to ignore. Repeat to add rules.
+    #[arg(long = "ignore")]
+    ignore: Vec<String>,
+
     /// Metadata field to ignore. Repeat to ignore multiple fields.
     #[arg(long = "ignore-metadata", value_enum)]
     ignore_metadata: Vec<CliMetadataField>,
@@ -78,6 +82,10 @@ pub(crate) struct SyncArgs {
     /// How to handle source symlinks.
     #[arg(long, value_enum)]
     symlinks: Option<CliSymlinkMode>,
+
+    /// Source-relative path pattern to ignore. Repeat to add rules.
+    #[arg(long = "ignore")]
+    ignore: Vec<String>,
 
     /// Metadata field to ignore. Repeat to ignore multiple fields.
     #[arg(long = "ignore-metadata", value_enum)]
@@ -152,6 +160,7 @@ impl CopyArgs {
     pub(crate) fn into_options(self) -> FileOperationOptions {
         FileOperationOptions {
             symlinks: self.symlinks.map(Into::into),
+            ignore: self.ignore,
             ignore_metadata: normalize_ignored_metadata(self.ignore_metadata),
             ..self.manual.into_options(FileOperationKind::Copy)
         }
@@ -168,6 +177,7 @@ impl SyncArgs {
     pub(crate) fn into_options(self) -> FileOperationOptions {
         FileOperationOptions {
             symlinks: self.symlinks.map(Into::into),
+            ignore: self.ignore,
             ignore_metadata: normalize_ignored_metadata(self.ignore_metadata),
             compare: self.compare.map(Into::into),
             delete: sync_delete_option(self.delete, self.no_delete),
@@ -279,6 +289,7 @@ mod tests {
                 ..manual_args()
             },
             symlinks: Some(CliSymlinkMode::Preserve),
+            ignore: vec!["**/vendor/**".to_owned()],
             ignore_metadata: vec![CliMetadataField::Ownership],
         };
 
@@ -292,6 +303,7 @@ mod tests {
         assert!(options.dry_run);
         assert!(options.verbose);
         assert_eq!(options.symlinks, Some(SymlinkMode::Preserve));
+        assert_eq!(options.ignore, vec!["**/vendor/**"]);
         assert_eq!(
             options.ignore_metadata,
             vec![MetadataField::Owner, MetadataField::Group]
@@ -313,6 +325,7 @@ mod tests {
         let options = SyncArgs {
             manual: manual_args(),
             symlinks: Some(CliSymlinkMode::Preserve),
+            ignore: vec!["cache/".to_owned()],
             ignore_metadata: vec![CliMetadataField::Permissions],
             compare: Some(CliSyncCompare::Checksum),
             delete: true,
@@ -322,6 +335,7 @@ mod tests {
 
         assert_eq!(options.operation, FileOperationKind::Sync);
         assert_eq!(options.symlinks, Some(SymlinkMode::Preserve));
+        assert_eq!(options.ignore, vec!["cache/"]);
         assert_eq!(options.ignore_metadata, vec![MetadataField::Permissions]);
         assert_eq!(options.compare, Some(SyncCompare::Checksum));
         assert_eq!(options.delete, Some(true));

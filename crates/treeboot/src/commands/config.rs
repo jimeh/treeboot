@@ -98,6 +98,15 @@ fn file_operation_summary(operation: &FileOperation) -> String {
     if let Some(symlinks) = operation.symlinks {
         summary.push_str(&format!(" symlinks={symlinks:?}").to_lowercase());
     }
+    if !operation.ignore.is_empty() {
+        let ignored = operation
+            .ignore
+            .iter()
+            .map(|pattern| format!("{pattern:?}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        summary.push_str(&format!(" ignore=[{ignored}]"));
+    }
     if !operation.ignore_metadata.is_empty() {
         let ignored = operation
             .ignore_metadata

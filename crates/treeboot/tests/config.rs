@@ -12,7 +12,7 @@ fn config_command_should_print_normalized_config() {
     write_file(
         &config,
         r#"
-copy = [{ source = ".env.local" }]
+copy = [{ source = ".env.local", ignore = ["**/vendor/**"] }]
 sync = ["shared/config"]
 commands = ["mise install"]
 "#,
@@ -25,7 +25,7 @@ commands = ["mise install"]
         .success()
         .stdout(predicate::str::contains("treeboot: config"))
         .stdout(predicate::str::contains(
-            "copy .env.local -> .env.local symlinks=preserve",
+            "copy .env.local -> .env.local symlinks=preserve ignore=[\"**/vendor/**\"]",
         ))
         .stdout(predicate::str::contains(concat!(
             "sync shared/config -> shared/config ",
@@ -44,8 +44,8 @@ fn config_command_json_should_print_normalized_config() {
     write_file(
         &config,
         r#"
-copy = [{ source = ".env", target = ".env", required = true }]
-sync = [{ source = "shared", target = ".config/shared", compare = "checksum", delete = true }]
+copy = [{ source = ".env", target = ".env", required = true, ignore = ["**/vendor/**"] }]
+sync = [{ source = "shared", target = ".config/shared", compare = "checksum", delete = true, ignore = ["cache/", "!cache/keep"] }]
 commands = [
   { name = "Install packages", run = "mise install", cwd = ".", env = { FOO = "bar" }, allow_failure = true },
   { program = "npm", args = ["install"] },
@@ -92,6 +92,7 @@ commands = [
                 "compare",
                 "declaration",
                 "delete",
+                "ignore",
                 "ignore_metadata",
                 "operation",
                 "required",
@@ -111,6 +112,7 @@ commands = [
     assert_eq!(files[0]["compare"], serde_json::Value::Null);
     assert_eq!(files[0]["delete"], serde_json::Value::Null);
     assert_eq!(files[0]["symlinks"], "preserve");
+    assert_eq!(files[0]["ignore"], serde_json::json!(["**/vendor/**"]));
     assert_eq!(files[0]["ignore_metadata"], serde_json::json!([]));
     assert!(files[0]["source_path"].is_string());
     assert!(files[0]["target_path"].is_string());
@@ -122,6 +124,10 @@ commands = [
     assert_eq!(files[1]["compare"], "checksum");
     assert_eq!(files[1]["delete"], true);
     assert_eq!(files[1]["symlinks"], "preserve");
+    assert_eq!(
+        files[1]["ignore"],
+        serde_json::json!(["cache/", "!cache/keep"])
+    );
     assert_eq!(files[1]["ignore_metadata"], serde_json::json!([]));
 
     let commands = config["commands"]

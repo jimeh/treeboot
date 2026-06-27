@@ -16,6 +16,7 @@ mod error;
 mod executor;
 mod files;
 mod git;
+mod ignore_rules;
 mod init;
 mod manual;
 mod metadata;

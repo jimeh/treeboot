@@ -337,14 +337,13 @@ or `treeboot schema --output <path>` to write it to a file.
 ## Project Status
 
 `treeboot` is feature-complete for the core worktree bootstrap workflow in
-[spec v1.12.0](./docs/SPEC.md), except for path ignore rules planned in that
-spec version. It supports:
+[spec v1.12.0](./docs/SPEC.md). It supports:
 
 - `run`, `status`, `config`, `check`, `doctor`, `env`, `schema`, `version`,
   `init`, `copy`, `symlink`, `sync`, and `completions`
 - Git worktree, root checkout, and default-branch discovery
 - declarative TOML config parsing, inspection, validation, and execution
-- copy, symlink, and sync file operations
+- copy, symlink, and sync file operations with copy/sync path ignore rules
 - command execution with treeboot environment variables
 - executable init-script discovery and execution
 - check/doctor/env introspection and embedded version/schema metadata
