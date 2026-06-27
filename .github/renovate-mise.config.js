@@ -1,3 +1,7 @@
+const monthlySchedule = ["* 0-5 1 * *"];
+const updateSchedule =
+  process.env.RENOVATE_BYPASS_SCHEDULE === "true" ? null : monthlySchedule;
+
 module.exports = {
   allowedUnsafeExecutions: ["mise"],
   branchPrefix: "renovate-mise/",
@@ -7,7 +11,7 @@ module.exports = {
   lockFileMaintenance: {
     enabled: true,
     groupName: "mise lockfile",
-    schedule: ["* 0-5 1 * *"],
+    schedule: updateSchedule,
   },
   minimumReleaseAge: "7 days",
   onboarding: false,
@@ -19,7 +23,7 @@ module.exports = {
     },
   ],
   requireConfig: "optional",
-  schedule: ["* 0-5 1 * *"],
+  schedule: updateSchedule,
   semanticCommitScope: "deps",
   semanticCommitType: "chore",
   semanticCommits: "enabled",

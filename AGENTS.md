@@ -178,6 +178,8 @@ and CI mapping.
   from `.github/workflows/renovate-mise.yml` with the release bot GitHub App
   token and uses `.github/renovate-mise.config.js` as self-hosted/global config
   so `allowedUnsafeExecutions = ["mise"]` can permit `mise lock` refreshes.
+  Manual dispatch sets `RENOVATE_BYPASS_SCHEDULE` so emergency runs bypass the
+  internal Renovate schedule as well as the GitHub Actions cron gate.
 - Mise-managed tools use a 7-day release-age cooldown and checked-in
   `mise.lock`; use a narrow override only for urgent security or
   CI-maintenance updates.
