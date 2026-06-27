@@ -174,7 +174,11 @@ and CI mapping.
   expressed without heavyweight tooling.
 - Dependabot version updates use a 7-day cooldown. Security updates are not
   affected by Dependabot cooldown and should stay alert-driven.
-- Mise-managed tools use a 3-day release-age cooldown and checked-in
+- Renovate is scoped to monthly mise tool and lockfile maintenance only. It runs
+  from `.github/workflows/renovate-mise.yml` with the release bot GitHub App
+  token and uses `.github/renovate-mise.config.js` as self-hosted/global config
+  so `allowedUnsafeExecutions = ["mise"]` can permit `mise lock` refreshes.
+- Mise-managed tools use a 7-day release-age cooldown and checked-in
   `mise.lock`; use a narrow override only for urgent security or
   CI-maintenance updates.
 - `mise run treeboot` is the repo-local bootstrap entrypoint. It keeps the
@@ -199,9 +203,9 @@ and CI mapping.
 - CI test jobs install the configured Rust toolchain in one serial step before
   `mise run test`; the task fans out core/CLI/release-helper tests in parallel,
   and fresh rustup homes can race while downloading shared components.
-- Release-please must use the repo's `RELEASE_BOT_CLIENT_ID` variable and
-  `RELEASE_BOT_PRIVATE_KEY` secret so tags created by release automation trigger
-  the tag-based release workflow.
+- Release-please and Renovate must use the repo's `RELEASE_BOT_CLIENT_ID`
+  variable and `RELEASE_BOT_PRIVATE_KEY` secret so automation-created commits
+  and PRs trigger the expected follow-up workflows.
 - Android release targets use the hosted runner's Android NDK clang linkers
   instead of `cross`; the cross Android images fail with Rust 1.96 due to
   missing `libunwind` during binary linking.
