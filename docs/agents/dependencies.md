@@ -34,7 +34,7 @@ dependencies for small wrappers around the standard library.
   depend on Python or platform-specific zip tools in CI.
 - `cargo-llvm-cov` is a task-scoped mise development tool, not a Cargo
   dependency.
-- Mise-managed tools use a 3-day `minimum_release_age` cooldown and checked-in
+- Mise-managed tools use a 7-day `minimum_release_age` cooldown and checked-in
   `mise.lock` to avoid adopting freshly published binaries by default.
 
 ## Guidelines
