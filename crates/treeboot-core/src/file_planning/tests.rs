@@ -6,13 +6,15 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::*;
+use crate::file_operations::{FileApplyOptions, apply_file_operations};
 use crate::file_system::{
     ContentInput, copy_file_with_metadata, preserved_source_link, read_full_chunk,
     reader_contents_changed, remove_any,
 };
 use crate::validation::PlannedFileOperationParts;
 use crate::{
-    ActionPlanOptions, FileOperation, MetadataField, PlanOrigin, SourceSpan, SyncCompare, Worktree,
+    ActionPlanOptions, Error, FileOperation, MetadataField, OutputEvent, PlanOrigin, Reporter,
+    SourceSpan, SyncCompare, Worktree,
 };
 
 #[derive(Default)]

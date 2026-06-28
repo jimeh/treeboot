@@ -6,13 +6,18 @@ use crate::file_system::{
     create_target_dir, ensure_preserved_source_symlink_safe, remove_any, remove_file_checked,
     with_writable_parent,
 };
-use crate::files::FileApplyOptions;
 use crate::{ActionPlan, Error, FileOperationKind, OutputEvent, Reporter, Result};
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct FileExecutionOptions {
+    pub(crate) dry_run: bool,
+    pub(crate) verbose: bool,
+}
 
 pub(crate) fn execute_file_operation_group(
     plan: &ActionPlan,
     group: &PlannedFileOperationActions,
-    options: FileApplyOptions,
+    options: FileExecutionOptions,
     reporter: &mut dyn Reporter,
 ) -> Result<usize> {
     if group.actions.is_empty() {

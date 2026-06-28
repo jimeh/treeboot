@@ -2,30 +2,21 @@ use std::fs::{self, Metadata};
 use std::path::{Path, PathBuf};
 
 use crate::file_actions::{
-    FileAction, MetadataPolicy, MetadataTarget, PlannedFileOperationActions, add_symlink_warnings,
+    FileAction, MetadataPolicy, MetadataTarget, PlannedFileOperationActions,
 };
-use crate::file_execution::execute_file_operation_group;
 use crate::file_system::{
     conflict, file_sync_changed, maybe_metadata, metadata, metadata_drifted, preserved_source_link,
     raw_source_path, relative_path,
 };
 use crate::ignore_rules::PathIgnoreRules;
 use crate::{
-    ActionPlan, Error, FileOperationKind, OutputEvent, PlannedFileOperation, PlannedFileStatus,
-    Reporter, Result,
+    ActionPlan, Error, FileOperationKind, PlannedFileOperation, PlannedFileStatus, Result,
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct FileApplyOptions {
+pub(crate) struct FilePlanningOptions {
     pub(crate) strict: bool,
     pub(crate) force: bool,
-    pub(crate) dry_run: bool,
-    pub(crate) verbose: bool,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct FileApplyReport {
-    pub(crate) action_count: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -72,58 +63,14 @@ impl SymlinkActionPlan {
 
 #[derive(Debug, Clone, Copy)]
 enum TreePlanMode {
-    Copy { options: FileApplyOptions },
+    Copy { options: FilePlanningOptions },
     Sync,
 }
 
-pub(crate) fn apply_file_operations(
-    plan: &ActionPlan,
-    options: FileApplyOptions,
-    reporter: &mut dyn Reporter,
-) -> Result<FileApplyReport> {
-    let mut groups = Vec::new();
-    for operation in plan.files() {
-        if !options.verbose {
-            report(
-                reporter,
-                OutputEvent::FileOperationPlanningStarted {
-                    operation: operation.operation(),
-                    source: operation.source().to_path_buf(),
-                    target: operation.target().to_path_buf(),
-                },
-            )?;
-        }
-
-        let group = plan_file_operation_group(plan, operation, options)?;
-
-        if !options.verbose {
-            report(
-                reporter,
-                OutputEvent::FileOperationPlanningFinished {
-                    operation: group.operation,
-                    source: group.source.clone(),
-                    target: group.target.clone(),
-                    action_count: group.progress_action_count(),
-                },
-            )?;
-        }
-
-        groups.push(group);
-    }
-    add_symlink_warnings(&mut groups);
-
-    let mut action_count = 0;
-    for group in &groups {
-        action_count += execute_file_operation_group(plan, group, options, reporter)?;
-    }
-
-    Ok(FileApplyReport { action_count })
-}
-
-fn plan_file_operation_group(
+pub(crate) fn plan_file_operation_group(
     plan: &ActionPlan,
     operation: &PlannedFileOperation,
-    options: FileApplyOptions,
+    options: FilePlanningOptions,
 ) -> Result<PlannedFileOperationActions> {
     let mut actions = Vec::new();
     plan_operation(plan, operation, options, &mut actions)?;
@@ -151,7 +98,7 @@ fn operation_source_is_directory(plan: &ActionPlan, operation: &PlannedFileOpera
 fn plan_operation(
     plan: &ActionPlan,
     operation: &PlannedFileOperation,
-    options: FileApplyOptions,
+    options: FilePlanningOptions,
     actions: &mut Vec<FileAction>,
 ) -> Result<()> {
     if operation.status() == PlannedFileStatus::SkippedMissingSource {
@@ -627,7 +574,7 @@ fn plan_sync_symlink_action(plan: SymlinkActionPlan, actions: &mut Vec<FileActio
 
 fn plan_symlink(
     operation: &PlannedFileOperation,
-    options: FileApplyOptions,
+    options: FilePlanningOptions,
     actions: &mut Vec<FileAction>,
 ) -> Result<()> {
     let target_parent = operation
@@ -655,7 +602,7 @@ fn plan_symlink(
 
 fn plan_symlink_action(
     plan: SymlinkActionPlan,
-    options: FileApplyOptions,
+    options: FilePlanningOptions,
     actions: &mut Vec<FileAction>,
 ) -> Result<()> {
     match maybe_metadata(&plan.target_path, plan.operation)? {
@@ -776,12 +723,6 @@ fn ignored_target_entry(
     ignore_rules
         .zip(target_path.strip_prefix(operation.target_path()).ok())
         .is_some_and(|(rules, relative)| rules.is_ignored(relative, metadata.is_dir()))
-}
-
-fn report(reporter: &mut dyn Reporter, event: OutputEvent) -> Result<()> {
-    reporter
-        .report(event)
-        .map_err(|source| Error::Output { source })
 }
 
 #[cfg(test)]
