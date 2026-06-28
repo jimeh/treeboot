@@ -9,7 +9,7 @@ reviews:
   in_progress_fortune: false
   poem: false
   auto_review:
-    enabled: true
+    enabled: false
   finishing_touches:
     unit_tests:
       enabled: false
