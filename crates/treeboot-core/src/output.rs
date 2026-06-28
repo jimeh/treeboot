@@ -107,6 +107,64 @@ pub enum OutputEvent {
         path: PathBuf,
     },
 
+    /// Planning started for a top-level file operation.
+    FileOperationPlanningStarted {
+        /// File operation kind.
+        operation: FileOperationKind,
+        /// Display source path.
+        source: PathBuf,
+        /// Display target path.
+        target: PathBuf,
+    },
+
+    /// Planning finished for a top-level file operation.
+    FileOperationPlanningFinished {
+        /// File operation kind.
+        operation: FileOperationKind,
+        /// Display source path.
+        source: PathBuf,
+        /// Display target path.
+        target: PathBuf,
+        /// Number of progress-visible actions in the operation.
+        action_count: usize,
+    },
+
+    /// Execution started for a top-level file operation.
+    FileOperationExecutionStarted {
+        /// File operation kind.
+        operation: FileOperationKind,
+        /// Display source path.
+        source: PathBuf,
+        /// Display target path.
+        target: PathBuf,
+        /// Number of progress-visible actions in the operation.
+        action_count: usize,
+    },
+
+    /// One concrete file-operation action completed.
+    FileOperationActionAdvanced {
+        /// File operation kind.
+        operation: FileOperationKind,
+        /// Display source path.
+        source: PathBuf,
+        /// Display target path.
+        target: PathBuf,
+    },
+
+    /// A top-level file operation finished.
+    FileOperationFinished {
+        /// File operation kind.
+        operation: FileOperationKind,
+        /// Display source path.
+        source: PathBuf,
+        /// Display target path.
+        target: PathBuf,
+        /// Compact counts for the operation.
+        summary: FileOperationSummary,
+        /// Whether the operation was a dry run.
+        dry_run: bool,
+    },
+
     /// A file operation was applied.
     FileApplied {
         /// File operation kind.
@@ -239,6 +297,17 @@ impl OutputEvent {
             Self::ConfigDetected { path } => {
                 format!("treeboot: config detected {}", path.display())
             }
+            Self::FileOperationPlanningStarted { .. }
+            | Self::FileOperationPlanningFinished { .. }
+            | Self::FileOperationExecutionStarted { .. }
+            | Self::FileOperationActionAdvanced { .. } => String::new(),
+            Self::FileOperationFinished {
+                operation,
+                source,
+                target,
+                summary,
+                dry_run,
+            } => summary.message(*operation, source, target, *dry_run),
             Self::FileApplied {
                 operation,
                 source,
@@ -410,65 +479,6 @@ fn format_file_operation_summary(
 pub trait Reporter {
     /// Handles one output event.
     fn report(&mut self, event: OutputEvent) -> std::io::Result<()>;
-
-    /// Handles the start of planning for one top-level file operation.
-    fn file_operation_planning_started(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target);
-        Ok(())
-    }
-
-    /// Handles completion of planning for one top-level file operation.
-    fn file_operation_planning_finished(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-        action_count: usize,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target, action_count);
-        Ok(())
-    }
-
-    /// Handles the start of execution for one top-level file operation.
-    fn file_operation_execution_started(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-        action_count: usize,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target, action_count);
-        Ok(())
-    }
-
-    /// Handles completion of one concrete file-operation action.
-    fn file_operation_action_advanced(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target);
-        Ok(())
-    }
-
-    /// Handles completion of one top-level compact file operation.
-    fn file_operation_finished(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-        summary: &FileOperationSummary,
-        dry_run: bool,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target, summary, dry_run);
-        Ok(())
-    }
 }
 
 #[cfg(test)]

@@ -302,9 +302,9 @@ ActionPlan::files()
   -> plan_operation
   -> FileAction::{CreateDirectory, CopyFile, CreateSymlink, Delete, Skip, Warning}
   -> grouped PlannedFileOperationActions
-  -> report planning/execution lifecycle callbacks
+  -> report OutputEvent file-operation lifecycle events
   -> report_dry_run(action) or apply_action(action)
-  -> compact file-operation summary callback
+  -> compact OutputEvent::FileOperationFinished summary
      or verbose OutputEvent::{FileWouldApply, FileApplied, FileWarning, ...}
 ```
 
@@ -395,12 +395,13 @@ existing modules.
 
 ### Current refactor pressure
 
-The most visible remaining architecture debt is that file-operation presentation
-is spread across several layers. Runtime policy precedence is centralized in
-`runtime.rs`, but `files.rs` still builds action summaries, `output.rs` formats
-summary text, and the CLI reporter owns compact summary/progress presentation.
-Further consolidation should improve the model without changing the pipeline
-described in this document.
+Runtime policy precedence is centralized in `runtime.rs`, and file-operation
+lifecycle reporting now flows through `OutputEvent` instead of a second reporter
+callback surface. The most visible remaining architecture debt is the size of
+`files.rs`: it still owns action planning, mutation execution, summary
+construction, and low-level filesystem helpers. Future extraction should split
+those responsibilities without changing the validated-plan pipeline described
+in this document.
 
 This document describes the current implementation architecture. It is not a
 replacement for [docs/SPEC.md](SPEC.md), which remains the user-visible

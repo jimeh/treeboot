@@ -212,22 +212,28 @@ pub(crate) fn apply_file_operations(
     let mut groups = Vec::new();
     for operation in plan.files() {
         if !options.verbose {
-            report_callback(reporter.file_operation_planning_started(
-                operation.operation(),
-                operation.source(),
-                operation.target(),
-            ))?;
+            report(
+                reporter,
+                OutputEvent::FileOperationPlanningStarted {
+                    operation: operation.operation(),
+                    source: operation.source().to_path_buf(),
+                    target: operation.target().to_path_buf(),
+                },
+            )?;
         }
 
         let group = plan_file_operation_group(plan, operation, options)?;
 
         if !options.verbose {
-            report_callback(reporter.file_operation_planning_finished(
-                group.operation,
-                &group.source,
-                &group.target,
-                group.progress_action_count(),
-            ))?;
+            report(
+                reporter,
+                OutputEvent::FileOperationPlanningFinished {
+                    operation: group.operation,
+                    source: group.source.clone(),
+                    target: group.target.clone(),
+                    action_count: group.progress_action_count(),
+                },
+            )?;
         }
 
         groups.push(group);
@@ -271,12 +277,15 @@ fn execute_file_operation_group(
 
     let progress_action_count = group.progress_action_count();
     if !options.verbose {
-        report_callback(reporter.file_operation_execution_started(
-            group.operation,
-            &group.source,
-            &group.target,
-            progress_action_count,
-        ))?;
+        report(
+            reporter,
+            OutputEvent::FileOperationExecutionStarted {
+                operation: group.operation,
+                source: group.source.clone(),
+                target: group.target.clone(),
+                action_count: progress_action_count,
+            },
+        )?;
     }
 
     for action in &group.actions {
@@ -288,24 +297,30 @@ fn execute_file_operation_group(
         }
 
         if !options.verbose && progress_action {
-            report_callback(reporter.file_operation_action_advanced(
-                group.operation,
-                &group.source,
-                &group.target,
-            ))?;
+            report(
+                reporter,
+                OutputEvent::FileOperationActionAdvanced {
+                    operation: group.operation,
+                    source: group.source.clone(),
+                    target: group.target.clone(),
+                },
+            )?;
         }
     }
 
     if !options.verbose {
         let summary = group.summary();
         if summary.decision_count() > 0 {
-            report_callback(reporter.file_operation_finished(
-                group.operation,
-                &group.source,
-                &group.target,
-                &summary,
-                options.dry_run,
-            ))?;
+            report(
+                reporter,
+                OutputEvent::FileOperationFinished {
+                    operation: group.operation,
+                    source: group.source.clone(),
+                    target: group.target.clone(),
+                    summary,
+                    dry_run: options.dry_run,
+                },
+            )?;
         }
     }
 
@@ -2196,10 +2211,6 @@ fn report(reporter: &mut dyn Reporter, event: OutputEvent) -> Result<()> {
     reporter
         .report(event)
         .map_err(|source| Error::Output { source })
-}
-
-fn report_callback(result: std::io::Result<()>) -> Result<()> {
-    result.map_err(|source| Error::Output { source })
 }
 
 fn relative_path(from: &Path, to: &Path) -> Option<PathBuf> {

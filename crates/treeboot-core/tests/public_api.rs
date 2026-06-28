@@ -22,25 +22,20 @@ struct VecReporter {
 
 impl Reporter for VecReporter {
     fn report(&mut self, event: OutputEvent) -> std::io::Result<()> {
-        self.events.push(event);
-        Ok(())
-    }
-
-    fn file_operation_finished(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-        summary: &FileOperationSummary,
-        dry_run: bool,
-    ) -> std::io::Result<()> {
-        assert!(!dry_run);
-        self.summaries.push((
+        if let OutputEvent::FileOperationFinished {
             operation,
-            source.to_path_buf(),
-            target.to_path_buf(),
-            summary.clone(),
-        ));
+            source,
+            target,
+            summary,
+            dry_run,
+        } = &event
+        {
+            assert!(!dry_run);
+            self.summaries
+                .push((*operation, source.clone(), target.clone(), summary.clone()));
+        }
+
+        self.events.push(event);
         Ok(())
     }
 }

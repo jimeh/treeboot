@@ -22,56 +22,24 @@ impl Reporter for VecReporter {
         if !message.is_empty() {
             self.messages.push(message);
         }
+
+        match &event {
+            OutputEvent::FileOperationPlanningFinished { action_count, .. } => {
+                self.planning_finished_counts.push(*action_count);
+            }
+            OutputEvent::FileOperationExecutionStarted { action_count, .. } => {
+                self.execution_started_counts.push(*action_count);
+            }
+            OutputEvent::FileOperationActionAdvanced { .. } => {
+                self.action_advanced_count += 1;
+            }
+            OutputEvent::FileOperationFinished { .. } => {
+                self.summary_count += 1;
+            }
+            _ => {}
+        }
+
         self.events.push(event);
-        Ok(())
-    }
-
-    fn file_operation_planning_finished(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-        action_count: usize,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target);
-        self.planning_finished_counts.push(action_count);
-        Ok(())
-    }
-
-    fn file_operation_execution_started(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-        action_count: usize,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target);
-        self.execution_started_counts.push(action_count);
-        Ok(())
-    }
-
-    fn file_operation_action_advanced(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target);
-        self.action_advanced_count += 1;
-        Ok(())
-    }
-
-    fn file_operation_finished(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-        summary: &FileOperationSummary,
-        dry_run: bool,
-    ) -> std::io::Result<()> {
-        self.summary_count += 1;
-        self.messages
-            .push(summary.message(operation, source, target, dry_run));
         Ok(())
     }
 }
@@ -83,7 +51,7 @@ impl VecReporter {
 }
 
 #[derive(Debug, Clone, Copy)]
-enum FailingCallback {
+enum FailingEvent {
     PlanningStarted,
     PlanningFinished,
     ExecutionStarted,
@@ -91,86 +59,24 @@ enum FailingCallback {
     Finished,
 }
 
-struct FailingCallbackReporter {
-    fail_on: FailingCallback,
+struct FailingEventReporter {
+    fail_on: FailingEvent,
 }
 
-impl FailingCallbackReporter {
+impl FailingEventReporter {
     fn fail() -> std::io::Result<()> {
-        Err(std::io::Error::other("reporter callback failed"))
+        Err(std::io::Error::other("reporter event failed"))
     }
 }
 
-impl Reporter for FailingCallbackReporter {
-    fn report(&mut self, _event: OutputEvent) -> std::io::Result<()> {
-        Ok(())
-    }
-
-    fn file_operation_planning_started(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target);
-        match self.fail_on {
-            FailingCallback::PlanningStarted => Self::fail(),
-            _ => Ok(()),
-        }
-    }
-
-    fn file_operation_planning_finished(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-        action_count: usize,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target, action_count);
-        match self.fail_on {
-            FailingCallback::PlanningFinished => Self::fail(),
-            _ => Ok(()),
-        }
-    }
-
-    fn file_operation_execution_started(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-        action_count: usize,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target, action_count);
-        match self.fail_on {
-            FailingCallback::ExecutionStarted => Self::fail(),
-            _ => Ok(()),
-        }
-    }
-
-    fn file_operation_action_advanced(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target);
-        match self.fail_on {
-            FailingCallback::ActionAdvanced => Self::fail(),
-            _ => Ok(()),
-        }
-    }
-
-    fn file_operation_finished(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-        summary: &FileOperationSummary,
-        dry_run: bool,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target, summary, dry_run);
-        match self.fail_on {
-            FailingCallback::Finished => Self::fail(),
+impl Reporter for FailingEventReporter {
+    fn report(&mut self, event: OutputEvent) -> std::io::Result<()> {
+        match (&self.fail_on, event) {
+            (FailingEvent::PlanningStarted, OutputEvent::FileOperationPlanningStarted { .. })
+            | (FailingEvent::PlanningFinished, OutputEvent::FileOperationPlanningFinished { .. })
+            | (FailingEvent::ExecutionStarted, OutputEvent::FileOperationExecutionStarted { .. })
+            | (FailingEvent::ActionAdvanced, OutputEvent::FileOperationActionAdvanced { .. })
+            | (FailingEvent::Finished, OutputEvent::FileOperationFinished { .. }) => Self::fail(),
             _ => Ok(()),
         }
     }
@@ -228,18 +134,10 @@ impl SourceSymlinkMutationReporter {
 
 #[cfg(unix)]
 impl Reporter for SourceSymlinkMutationReporter {
-    fn report(&mut self, _event: OutputEvent) -> std::io::Result<()> {
-        Ok(())
-    }
-
-    fn file_operation_execution_started(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-        action_count: usize,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target, action_count);
+    fn report(&mut self, event: OutputEvent) -> std::io::Result<()> {
+        if !matches!(event, OutputEvent::FileOperationExecutionStarted { .. }) {
+            return Ok(());
+        }
         if self.mutated {
             return Ok(());
         }
@@ -520,15 +418,15 @@ fn apply_file_operations_should_not_force_copy_ignored_targets() {
 }
 
 #[test]
-fn apply_file_operations_should_map_callback_failures_to_output_errors() {
+fn apply_file_operations_should_map_lifecycle_event_failures_to_output_errors() {
     for fail_on in [
-        FailingCallback::PlanningStarted,
-        FailingCallback::PlanningFinished,
-        FailingCallback::ExecutionStarted,
-        FailingCallback::ActionAdvanced,
-        FailingCallback::Finished,
+        FailingEvent::PlanningStarted,
+        FailingEvent::PlanningFinished,
+        FailingEvent::ExecutionStarted,
+        FailingEvent::ActionAdvanced,
+        FailingEvent::Finished,
     ] {
-        let (root, worktree) = temp_workspace(&format!("callback-failure-{fail_on:?}"));
+        let (root, worktree) = temp_workspace(&format!("lifecycle-failure-{fail_on:?}"));
         fs::write(root.join(".env"), "TOKEN=1\n").expect("source should be written");
         let plan = run_plan(
             &root,
@@ -541,7 +439,7 @@ fn apply_file_operations_should_map_callback_failures_to_output_errors() {
                 ".env",
             )],
         );
-        let mut reporter = FailingCallbackReporter { fail_on };
+        let mut reporter = FailingEventReporter { fail_on };
 
         let error = apply_file_operations(
             &plan,
@@ -551,7 +449,7 @@ fn apply_file_operations_should_map_callback_failures_to_output_errors() {
             },
             &mut reporter,
         )
-        .expect_err("callback failure should fail apply");
+        .expect_err("lifecycle event failure should fail apply");
 
         assert!(
             matches!(error, Error::Output { .. }),
