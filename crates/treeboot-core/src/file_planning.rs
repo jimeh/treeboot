@@ -217,22 +217,14 @@ fn plan_tree_directory(
             );
         }
         Some(metadata) if metadata.is_dir() => {
-            if let TreePlanMode::Copy { options } = mode {
-                if options.strict {
-                    return conflict(
-                        operation.operation(),
-                        entry.target_path.to_path_buf(),
-                        "target directory exists",
-                    );
-                }
-
-                if !options.force {
-                    actions.push(FileAction::Skip {
-                        operation: operation.operation(),
-                        target: entry.target.to_path_buf(),
-                        reason: "target directory exists".to_owned(),
-                    });
-                }
+            if let TreePlanMode::Copy { options } = mode
+                && options.strict
+            {
+                return conflict(
+                    operation.operation(),
+                    entry.target_path.to_path_buf(),
+                    "target directory exists",
+                );
             }
             if matches!(mode, TreePlanMode::Sync)
                 && metadata_drifted(

@@ -232,20 +232,31 @@ pub(crate) fn with_writable_parent<F>(
 where
     F: FnOnce() -> Result<()>,
 {
+    if target_path.starts_with(worktree_path) {
+        ensure_target_ancestors(
+            operation,
+            target_parent(target_path, worktree_path),
+            worktree_path,
+            false,
+        )?;
+    }
     let restore = prepare_parent_for_writes(operation, target_path, worktree_path)?;
     let result = action();
-    if let Some((path, permissions)) = restore {
-        let restore_result =
-            fs::set_permissions(&path, permissions).map_err(|source| Error::FileOperationIo {
-                operation: operation.as_str(),
-                path,
-                source,
-            });
-        if result.is_ok() {
-            restore_result?;
-        }
+    let restore_result = if let Some((path, permissions)) = restore {
+        fs::set_permissions(&path, permissions).map_err(|source| Error::FileOperationIo {
+            operation: operation.as_str(),
+            path,
+            source,
+        })
+    } else {
+        Ok(())
+    };
+
+    match (result, restore_result) {
+        (Err(error), _) => Err(error),
+        (Ok(()), Ok(())) => Ok(()),
+        (Ok(()), Err(error)) => Err(error),
     }
-    result
 }
 
 fn prepare_parent_for_writes(
@@ -864,7 +875,7 @@ pub(crate) fn preserved_source_link(
 
     let source_parent = source_path.parent().unwrap_or_else(|| Path::new("."));
     let resolved_target = if raw_target.is_absolute() {
-        raw_target.clone()
+        normalize_lexical(&raw_target)
     } else {
         normalize_lexical(&source_parent.join(&raw_target))
     };

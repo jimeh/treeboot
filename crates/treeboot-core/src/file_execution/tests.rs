@@ -313,3 +313,47 @@ fn execute_file_operation_group_should_report_verbose_metadata_delete_skip_and_w
         OutputEvent::FileWarning { .. }
     ));
 }
+
+#[cfg(unix)]
+#[test]
+fn execute_file_operation_group_should_reject_metadata_repair_through_symlink_parent() {
+    let (root, worktree) = temp_workspace("metadata-symlink-parent");
+    let outside = worktree
+        .parent()
+        .expect("worktree should have parent")
+        .join("outside-metadata-repair");
+    fs::create_dir_all(&outside).expect("outside dir should be created");
+    fs::write(root.join("source"), "source\n").expect("source should be written");
+    fs::write(outside.join("target"), "outside\n").expect("outside target should be written");
+    std::os::unix::fs::symlink(&outside, worktree.join("linked"))
+        .expect("target parent symlink should be created");
+    let plan = plan(&root, &worktree);
+    let actions = group(vec![FileAction::RepairMetadata {
+        operation: FileOperationKind::Sync,
+        source: PathBuf::from("source"),
+        target: PathBuf::from("linked/target"),
+        source_path: root.join("source"),
+        target_path: worktree.join("linked/target"),
+        metadata_policy: MetadataPolicy::default(),
+        target_kind: MetadataTarget::File,
+        report: true,
+    }]);
+    let mut reporter = VecReporter::default();
+
+    let error = execute_file_operation_group(
+        &plan,
+        &actions,
+        FileExecutionOptions {
+            dry_run: false,
+            verbose: true,
+        },
+        &mut reporter,
+    )
+    .expect_err("metadata repair through a symlink parent should fail");
+
+    assert!(error.to_string().contains("target parent is a symlink"));
+    assert_eq!(
+        fs::read_to_string(outside.join("target")).expect("outside target should remain readable"),
+        "outside\n"
+    );
+}

@@ -29,8 +29,8 @@ impl Reporter for VecReporter {
             summary,
             dry_run,
         } = &event
+            && !dry_run
         {
-            assert!(!dry_run);
             self.summaries
                 .push((*operation, source.clone(), target.clone(), summary.clone()));
         }

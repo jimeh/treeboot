@@ -326,13 +326,13 @@ ActionPlan::files()
   -> file_operations::apply_file_operations
   -> file_planning::plan_file_operation_group
   -> plan_operation
-  -> FileAction::{CreateDirectory, CopyFile, CreateSymlink, Delete, Skip, Warning}
+  -> FileAction::{CreateDirectory, CopyFile, CreateSymlink, RepairMetadata, Delete, Skip, Warning}
   -> grouped PlannedFileOperationActions
   -> file_execution::execute_file_operation_group
   -> report OutputEvent file-operation lifecycle events
   -> report_dry_run(action) or apply_action(action)
   -> compact OutputEvent::FileOperationFinished summary
-     or verbose OutputEvent::{FileWouldApply, FileApplied, FileWarning, ...}
+     or verbose OutputEvent::{FileWouldApply, FileApplied, FileMetadataApplied, FileWarning, ...}
 ```
 
 ## Process effects: Command Runtime

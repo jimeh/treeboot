@@ -632,7 +632,7 @@ fn apply_file_operations_should_copy_missing_directory_files_only() {
     );
     let mut reporter = VecReporter::default();
 
-    apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+    let report = apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
         .expect("directory copy should apply");
 
     let existing = fs::read_to_string(target_dir.join("existing"))
@@ -641,6 +641,7 @@ fn apply_file_operations_should_copy_missing_directory_files_only() {
         fs::read_to_string(target_dir.join("missing")).expect("missing target should be copied");
     assert_eq!(existing, "old\n");
     assert_eq!(missing, "value\n");
+    assert_eq!(report.action_count, 2);
 }
 
 #[test]

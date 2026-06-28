@@ -220,13 +220,20 @@ fn apply_action(
             target_kind,
             report: should_report,
         } => {
-            apply_metadata(
+            with_writable_parent(
                 *operation,
-                source_path,
                 target_path,
-                *metadata_policy,
-                *target_kind,
-                Some(reporter),
+                &plan.context().worktree_path,
+                || {
+                    apply_metadata(
+                        *operation,
+                        source_path,
+                        target_path,
+                        *metadata_policy,
+                        *target_kind,
+                        Some(reporter),
+                    )
+                },
             )?;
             if detailed && *should_report {
                 report(

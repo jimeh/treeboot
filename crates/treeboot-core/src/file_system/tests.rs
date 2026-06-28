@@ -5,6 +5,9 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 use super::*;
 use crate::{ActionPlan, FileOperationKind, PlanOrigin, Worktree};
 
@@ -236,6 +239,40 @@ fn remove_any_should_reject_symlink_target_parent_before_delete() {
 
 #[cfg(unix)]
 #[test]
+fn with_writable_parent_should_restore_parent_permissions_when_action_fails() {
+    let (_root, worktree) = temp_workspace("restore-parent-on-error");
+    let parent = worktree.join("shared");
+    fs::create_dir_all(&parent).expect("parent dir should be created");
+    fs::set_permissions(&parent, fs::Permissions::from_mode(0o555))
+        .expect("parent should become read-only");
+
+    let error = with_writable_parent(
+        FileOperationKind::Copy,
+        &parent.join("target"),
+        &worktree,
+        || {
+            Err(Error::FileOperationConflict {
+                operation: "copy",
+                path: parent.join("target"),
+                message: "simulated failure".to_owned(),
+            })
+        },
+    )
+    .expect_err("action error should propagate");
+
+    let mode = fs::metadata(&parent)
+        .expect("parent metadata should be readable")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert!(error.to_string().contains("simulated failure"));
+    assert_eq!(mode, 0o555);
+    fs::set_permissions(&parent, fs::Permissions::from_mode(0o755))
+        .expect("parent permissions should be restored for cleanup");
+}
+
+#[cfg(unix)]
+#[test]
 fn preserved_source_link_should_track_directory_target_type() {
     let (root, worktree) = temp_workspace("preserved-directory-symlink");
     let source_dir = root.join("shared");
@@ -252,6 +289,29 @@ fn preserved_source_link_should_track_directory_target_type() {
     )
     .expect("preserved symlink should plan");
 
+    assert_eq!(final_target, worktree.join("shared/dir"));
+    assert!(target_is_dir);
+}
+
+#[cfg(unix)]
+#[test]
+fn preserved_source_link_should_normalize_absolute_root_local_targets() {
+    let (root, worktree) = temp_workspace("preserved-absolute-normalized-symlink");
+    let source_dir = root.join("shared");
+    fs::create_dir_all(source_dir.join("dir")).expect("source dir should be created");
+    std::os::unix::fs::symlink(root.join("shared/../shared/dir"), source_dir.join("link"))
+        .expect("source symlink should be created");
+    let plan = empty_plan(&root, &worktree);
+
+    let (link_target, final_target, target_is_dir) = preserved_source_link(
+        &plan,
+        FileOperationKind::Copy,
+        &source_dir.join("link"),
+        &worktree.join("shared/link"),
+    )
+    .expect("preserved symlink should plan");
+
+    assert_eq!(link_target, PathBuf::from("dir"));
     assert_eq!(final_target, worktree.join("shared/dir"));
     assert!(target_is_dir);
 }

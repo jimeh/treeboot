@@ -241,6 +241,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+    use treeboot_core::FileOperationSummary;
 
     fn source() -> PathBuf {
         PathBuf::from("shared")
@@ -489,13 +490,18 @@ mod tests {
         assert_eq!(active(&reporter).bar.position(), 1);
 
         reporter
-            .report(OutputEvent::FileOperationPlanningFinished {
+            .report(OutputEvent::FileOperationFinished {
                 operation: FileOperationKind::Sync,
                 source,
                 target,
-                action_count: 3,
+                summary: FileOperationSummary {
+                    changed: 1,
+                    expanded: true,
+                    ..FileOperationSummary::default()
+                },
+                dry_run: false,
             })
-            .expect("planning finished should report");
+            .expect("execution finished should report");
         assert!(reporter.active_progress.is_none());
     }
 

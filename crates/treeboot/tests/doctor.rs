@@ -217,7 +217,7 @@ fn doctor_strict_should_validate_config_with_strict_policy() {
         &json,
         "config_validation",
         "error",
-        "`--strict` cannot be used with sync"
+        "strict mode cannot be used with sync"
     ));
 }
 
@@ -278,7 +278,7 @@ fn doctor_should_apply_environment_strict_to_config_validation() {
         &json,
         "config_validation",
         "error",
-        "`--strict` cannot be used with sync"
+        "strict mode cannot be used with sync"
     ));
 }
 
@@ -470,6 +470,34 @@ fn doctor_should_report_init_script_without_running_it() {
         .stdout(predicate::str::contains("ok: init_script: executable"));
 
     assert!(!marker.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn doctor_strict_should_skip_config_when_init_script_takes_precedence() {
+    let repo = git_worktree();
+    let script = repo.worktree_path().join(".treeboot.sh");
+    write_executable_script(&script, "#!/bin/sh\n");
+
+    let json = treeboot()
+        .args(["doctor", "--strict", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+
+    let json = parse_json(json, "doctor");
+    assert_doctor_report_shape(&json);
+    assert_eq!(json["fatal"], false);
+    assert!(has_diagnostic(
+        &json,
+        "config",
+        "ok",
+        "config discovery skipped because an init script takes precedence"
+    ));
 }
 
 #[cfg(unix)]
