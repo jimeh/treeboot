@@ -194,6 +194,16 @@ struct PlannedFileOperationActions {
     actions: Vec<FileAction>,
 }
 
+impl PlannedFileOperationActions {
+    fn progress_action_count(&self) -> usize {
+        self.actions.iter().filter(|action| action.counts()).count()
+    }
+
+    fn summary(&self) -> FileOperationSummary {
+        summarize_actions(&self.actions, self.expanded)
+    }
+}
+
 pub(crate) fn apply_file_operations(
     plan: &ActionPlan,
     options: FileApplyOptions,
@@ -209,22 +219,14 @@ pub(crate) fn apply_file_operations(
             ))?;
         }
 
-        let mut actions = Vec::new();
-        plan_operation(plan, operation, options, &mut actions)?;
-        let group = PlannedFileOperationActions {
-            operation: operation.operation(),
-            source: operation.source().to_path_buf(),
-            target: operation.target().to_path_buf(),
-            expanded: operation_source_is_directory(plan, operation),
-            actions,
-        };
+        let group = plan_file_operation_group(plan, operation, options)?;
 
         if !options.verbose {
             report_callback(reporter.file_operation_planning_finished(
                 group.operation,
                 &group.source,
                 &group.target,
-                count_progress_actions(&group.actions),
+                group.progress_action_count(),
             ))?;
         }
 
@@ -234,53 +236,80 @@ pub(crate) fn apply_file_operations(
 
     let mut action_count = 0;
     for group in &groups {
-        if group.actions.is_empty() {
-            continue;
-        }
-
-        let progress_action_count = count_progress_actions(&group.actions);
-        action_count += progress_action_count;
-        if !options.verbose {
-            report_callback(reporter.file_operation_execution_started(
-                group.operation,
-                &group.source,
-                &group.target,
-                progress_action_count,
-            ))?;
-        }
-
-        for action in &group.actions {
-            let progress_action = action.counts();
-            if options.dry_run {
-                report_dry_run(action, reporter, options.verbose)?;
-            } else {
-                apply_action(plan, action, reporter, options.verbose)?;
-            }
-
-            if !options.verbose && progress_action {
-                report_callback(reporter.file_operation_action_advanced(
-                    group.operation,
-                    &group.source,
-                    &group.target,
-                ))?;
-            }
-        }
-
-        if !options.verbose {
-            let summary = summarize_actions(&group.actions, group.expanded);
-            if summary.decision_count() > 0 {
-                report_callback(reporter.file_operation_finished(
-                    group.operation,
-                    &group.source,
-                    &group.target,
-                    &summary,
-                    options.dry_run,
-                ))?;
-            }
-        }
+        action_count += execute_file_operation_group(plan, group, options, reporter)?;
     }
 
     Ok(FileApplyReport { action_count })
+}
+
+fn plan_file_operation_group(
+    plan: &ActionPlan,
+    operation: &PlannedFileOperation,
+    options: FileApplyOptions,
+) -> Result<PlannedFileOperationActions> {
+    let mut actions = Vec::new();
+    plan_operation(plan, operation, options, &mut actions)?;
+
+    Ok(PlannedFileOperationActions {
+        operation: operation.operation(),
+        source: operation.source().to_path_buf(),
+        target: operation.target().to_path_buf(),
+        expanded: operation_source_is_directory(plan, operation),
+        actions,
+    })
+}
+
+fn execute_file_operation_group(
+    plan: &ActionPlan,
+    group: &PlannedFileOperationActions,
+    options: FileApplyOptions,
+    reporter: &mut dyn Reporter,
+) -> Result<usize> {
+    if group.actions.is_empty() {
+        return Ok(0);
+    }
+
+    let progress_action_count = group.progress_action_count();
+    if !options.verbose {
+        report_callback(reporter.file_operation_execution_started(
+            group.operation,
+            &group.source,
+            &group.target,
+            progress_action_count,
+        ))?;
+    }
+
+    for action in &group.actions {
+        let progress_action = action.counts();
+        if options.dry_run {
+            report_dry_run(action, reporter, options.verbose)?;
+        } else {
+            apply_action(plan, action, reporter, options.verbose)?;
+        }
+
+        if !options.verbose && progress_action {
+            report_callback(reporter.file_operation_action_advanced(
+                group.operation,
+                &group.source,
+                &group.target,
+            ))?;
+        }
+    }
+
+    if !options.verbose {
+        let summary = group.summary();
+        if summary.decision_count() > 0 {
+            report_callback(reporter.file_operation_finished(
+                group.operation,
+                &group.source,
+                &group.target,
+                &summary,
+                options.dry_run,
+            ))?;
+        }
+    }
+
+    Ok(progress_action_count)
 }
 
 fn operation_source_is_directory(plan: &ActionPlan, operation: &PlannedFileOperation) -> bool {
@@ -292,10 +321,6 @@ fn operation_source_is_directory(plan: &ActionPlan, operation: &PlannedFileOpera
         .symlink_metadata()
         .map(|metadata| metadata.is_dir())
         .unwrap_or(false)
-}
-
-fn count_progress_actions(actions: &[FileAction]) -> usize {
-    actions.iter().filter(|action| action.counts()).count()
 }
 
 fn plan_operation(
