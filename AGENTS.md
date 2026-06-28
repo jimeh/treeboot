@@ -161,7 +161,7 @@ Markdown files are formatted with oxfmt and linted with markdownlint-cli2.
 `mise run format` and `mise run format:check` include Markdown alongside Rust.
 Use `mise run format:markdown` and `mise run lint:markdown` for targeted docs
 work. Lefthook checks staged Markdown files through
-`scripts/lint-markdown-files.sh`.
+`mise run lint:markdown:files {staged_files}`.
 
 ## Rust Conventions
 

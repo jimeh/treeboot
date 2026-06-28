@@ -83,11 +83,11 @@ run = "cargo fmt --all -- --check"
 
 [tasks."format:markdown"]
 description = "Format Markdown files"
-run = "oxfmt '**/*.md'"
+run = "oxfmt \"**/*.md\""
 
 [tasks."format:markdown:check"]
 description = "Check Markdown formatting without writing changes"
-run = "oxfmt --check '**/*.md'"
+run = "oxfmt --check \"**/*.md\""
 
 [tasks.lint]
 depends = ["lint:rust", "lint:markdown"]
@@ -103,7 +103,7 @@ run = "cargo clippy --fix --workspace --all-features --locked"
 
 [tasks."lint:markdown"]
 description = "Lint Markdown files"
-run = "markdownlint-cli2 '**/*.md'"
+run = "markdownlint-cli2 \"**/*.md\""
 
 [tasks."lint:markdown:files"]
 description = "Lint selected Markdown files"
