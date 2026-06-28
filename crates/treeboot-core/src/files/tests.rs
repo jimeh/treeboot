@@ -4,7 +4,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::*;
 use crate::validation::PlannedFileOperationParts;
-use crate::{ActionPlanOptions, FileOperation, PlanOrigin, SourceSpan, Worktree};
+use crate::{ActionPlanOptions, FileOperation, MetadataField, PlanOrigin, SourceSpan, Worktree};
 
 #[derive(Default)]
 struct VecReporter {

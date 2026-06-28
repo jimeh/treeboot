@@ -14,6 +14,7 @@ mod doctor;
 mod env;
 mod error;
 mod executor;
+mod file_actions;
 mod files;
 mod git;
 mod ignore_rules;

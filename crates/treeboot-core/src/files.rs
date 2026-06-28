@@ -1,12 +1,14 @@
-use std::collections::BTreeSet;
 use std::fs::{self, File, FileTimes, Metadata};
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
 
+use crate::file_actions::{
+    FileAction, MetadataPolicy, MetadataTarget, PlannedFileOperationActions, add_symlink_warnings,
+};
 use crate::ignore_rules::PathIgnoreRules;
 use crate::{
-    ActionPlan, Error, FileOperationKind, FileOperationSummary, MetadataField, OutputEvent,
-    PlannedFileOperation, PlannedFileStatus, Reporter, Result, SyncCompare,
+    ActionPlan, Error, FileOperationKind, OutputEvent, PlannedFileOperation, PlannedFileStatus,
+    Reporter, Result, SyncCompare,
 };
 
 #[cfg(unix)]
@@ -23,68 +25,6 @@ pub(crate) struct FileApplyOptions {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct FileApplyReport {
     pub(crate) action_count: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum FileAction {
-    CreateDirectory {
-        operation: FileOperationKind,
-        source: PathBuf,
-        target: PathBuf,
-        target_path: PathBuf,
-    },
-    CopyFile {
-        operation: FileOperationKind,
-        source: PathBuf,
-        target: PathBuf,
-        source_path: PathBuf,
-        target_path: PathBuf,
-        metadata_policy: MetadataPolicy,
-        replace: bool,
-    },
-    RepairMetadata {
-        operation: FileOperationKind,
-        source: PathBuf,
-        target: PathBuf,
-        source_path: PathBuf,
-        target_path: PathBuf,
-        metadata_policy: MetadataPolicy,
-        target_kind: MetadataTarget,
-        report: bool,
-    },
-    CreateSymlink {
-        operation: FileOperationKind,
-        source: PathBuf,
-        target: PathBuf,
-        target_path: PathBuf,
-        preserved_source_path: Option<PathBuf>,
-        link_target: PathBuf,
-        final_target: PathBuf,
-        target_is_dir: bool,
-        replace: bool,
-    },
-    Delete {
-        target: PathBuf,
-        target_path: PathBuf,
-    },
-    Skip {
-        operation: FileOperationKind,
-        target: PathBuf,
-        reason: String,
-    },
-    Warning {
-        path: PathBuf,
-        reason: String,
-    },
-}
-
-impl FileAction {
-    fn counts(&self) -> bool {
-        !matches!(
-            self,
-            Self::RepairMetadata { report: false, .. } | Self::Warning { .. }
-        )
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -135,39 +75,6 @@ enum TreePlanMode {
     Sync,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct MetadataPolicy {
-    permissions: bool,
-    owner: bool,
-    group: bool,
-}
-
-impl MetadataPolicy {
-    fn from_ignored(fields: &[MetadataField]) -> Self {
-        Self {
-            permissions: !fields.contains(&MetadataField::Permissions),
-            owner: !fields.contains(&MetadataField::Owner),
-            group: !fields.contains(&MetadataField::Group),
-        }
-    }
-}
-
-impl Default for MetadataPolicy {
-    fn default() -> Self {
-        Self {
-            permissions: true,
-            owner: true,
-            group: true,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum MetadataTarget {
-    File,
-    Directory,
-}
-
 /// Identifies which side of a checksum comparison produced a read error so the
 /// caller can attribute it to the right path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -183,25 +90,6 @@ enum ContentInput {
 struct ContentReadError {
     input: ContentInput,
     source: io::Error,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct PlannedFileOperationActions {
-    operation: FileOperationKind,
-    source: PathBuf,
-    target: PathBuf,
-    expanded: bool,
-    actions: Vec<FileAction>,
-}
-
-impl PlannedFileOperationActions {
-    fn progress_action_count(&self) -> usize {
-        self.actions.iter().filter(|action| action.counts()).count()
-    }
-
-    fn summary(&self) -> FileOperationSummary {
-        summarize_actions(&self.actions, self.expanded)
-    }
 }
 
 pub(crate) fn apply_file_operations(
@@ -1161,73 +1049,6 @@ fn ownership_drifted(source: &Metadata, target: &Metadata, policy: MetadataPolic
 #[cfg(not(unix))]
 fn ownership_drifted(_source: &Metadata, _target: &Metadata, _policy: MetadataPolicy) -> bool {
     false
-}
-
-fn add_symlink_warnings(groups: &mut [PlannedFileOperationActions]) {
-    let created_paths = groups
-        .iter()
-        .flat_map(|group| group.actions.iter())
-        .filter_map(|action| match action {
-            FileAction::CreateDirectory { target_path, .. }
-            | FileAction::CopyFile { target_path, .. }
-            | FileAction::CreateSymlink { target_path, .. } => Some(target_path.clone()),
-            FileAction::RepairMetadata { .. }
-            | FileAction::Delete { .. }
-            | FileAction::Skip { .. }
-            | FileAction::Warning { .. } => None,
-        })
-        .collect::<BTreeSet<_>>();
-    for group in groups {
-        let warnings = group
-            .actions
-            .iter()
-            .filter_map(|action| match action {
-                FileAction::CreateSymlink {
-                    target,
-                    final_target,
-                    ..
-                } if !final_target.exists() && !created_paths.contains(final_target) => {
-                    Some(FileAction::Warning {
-                        path: target.clone(),
-                        reason: "symlink target does not exist".to_owned(),
-                    })
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-
-        group.actions.extend(warnings);
-    }
-}
-
-fn summarize_actions(actions: &[FileAction], expanded: bool) -> FileOperationSummary {
-    let mut summary = FileOperationSummary {
-        expanded,
-        ..FileOperationSummary::default()
-    };
-
-    for action in actions {
-        match action {
-            FileAction::CreateDirectory { .. }
-            | FileAction::CopyFile { .. }
-            | FileAction::CreateSymlink { .. } => summary.changed += 1,
-            FileAction::RepairMetadata { report: true, .. } => {
-                summary.changed += 1;
-                summary.metadata_changed += 1;
-            }
-            FileAction::RepairMetadata { report: false, .. } => {}
-            FileAction::Delete { .. } => summary.deleted += 1,
-            FileAction::Skip { reason, .. } => {
-                summary.skipped += 1;
-                if summary.skip_reason.is_none() {
-                    summary.skip_reason = Some(reason.clone());
-                }
-            }
-            FileAction::Warning { .. } => summary.warnings += 1,
-        }
-    }
-
-    summary
 }
 
 fn report_dry_run(action: &FileAction, reporter: &mut dyn Reporter, detailed: bool) -> Result<()> {

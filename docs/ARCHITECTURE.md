@@ -219,7 +219,8 @@ flowchart LR
   IGNORE["ignore_rules.rs<br/>copy/sync path ignores"]
   EXEC["executor.rs<br/>plan execution"]
   VALID["validation.rs<br/>ActionPlan<br/>boundary checks"]
-  FILES["files.rs<br/>FileAction"]
+  FILE_ACTIONS["file_actions.rs<br/>FileAction groups"]
+  FILES["files.rs<br/>file planning + mutation"]
   CMDS["commands.rs<br/>processes"]
   OUT["output.rs<br/>events"]
 
@@ -245,6 +246,7 @@ flowchart LR
   CONFIG --> VALID
   MANUAL --> VALID
   VALID --> IGNORE
+  FILES --> FILE_ACTIONS
   FILES --> IGNORE
   VALID --> EXEC
   EXEC --> FILES
@@ -265,19 +267,21 @@ policy when present, skip configured commands, and reuse validation and files._
 | `doctor.rs`       | Diagnostic aggregation across discovery and validation.                                                       | Fixing problems or applying effects.                       |
 | `env.rs`          | Child environment inspection.                                                                                 | Script/config discovery beyond context resolution.         |
 | `executor.rs`     | Sequencing validated file and command execution.                                                              | Validation or CLI policy.                                  |
+| `file_actions.rs` | Concrete file action model, grouped operation actions, summary construction, and cross-action symlink warnings. | Filesystem traversal or mutation.                          |
 | `ignore_rules.rs` | Compiling and matching copy/sync path ignore rules.                                                           | Config parsing, validation policy, or filesystem mutation. |
 | `runtime.rs`      | Environment/config/CLI runtime policy precedence and conversion to validation options.                        | Config parsing, Git discovery, or side effects.            |
 | `validation.rs`   | Pre-side-effect checks, path normalization, duplicate targets, strict sync rejection, command cwd/env checks. | Parsing or filesystem mutation.                            |
-| `files.rs`        | Planning concrete filesystem actions and applying copy, symlink, sync, delete, skip, warning events.          | Config semantics or CLI argument validation.               |
+| `files.rs`        | Planning concrete filesystem actions and applying copy, symlink, sync, delete, skip, warning events.          | Config semantics, CLI argument validation, or action summary modeling. |
 | `commands.rs`     | Sequential configured command spawning and dry-run output.                                                    | Parsing command config or deciding command order.          |
 | `metadata.rs`     | Embedded config schema, spec version, and version metadata helpers.                                           | Generating source files or reading runtime files.          |
 | `output.rs`       | Structured output events and message formatting.                                                              | Choosing when events happen.                               |
 
 ## Filesystem effects: File Operation Engine
 
-File execution is grouped by top-level validated file operation. Each group is
-planned into concrete `FileAction`s, optional cross-action symlink warnings are
-attached, and then the group is reported or applied depending on dry-run mode.
+File execution is grouped by top-level validated file operation. `files.rs`
+plans each group into concrete `FileAction`s. `file_actions.rs` owns the group
+model, optional cross-action symlink warnings, and summary construction. The
+group is then reported or applied depending on dry-run mode.
 Compact mode reports lifecycle events and one summary per group; verbose mode
 reports the concrete action stream.
 
@@ -287,7 +291,8 @@ reports the concrete action stream.
 - Plans copy and sync through shared tree traversal.
 - Plans symlink creation and replacement separately.
 - Plans sync delete actions for target-only paths.
-- Adds warnings for preserved symlinks to uncopied targets.
+- Delegates grouped action summaries and cross-action warning aggregation to
+  `file_actions.rs`.
 
 ### Applying actions
 
@@ -397,11 +402,12 @@ existing modules.
 
 Runtime policy precedence is centralized in `runtime.rs`, and file-operation
 lifecycle reporting now flows through `OutputEvent` instead of a second reporter
-callback surface. The most visible remaining architecture debt is the size of
-`files.rs`: it still owns action planning, mutation execution, summary
-construction, and low-level filesystem helpers. Future extraction should split
-those responsibilities without changing the validated-plan pipeline described
-in this document.
+callback surface. File action grouping, summary construction, and cross-action
+warning aggregation are separated into `file_actions.rs`. The most visible
+remaining architecture debt is the size of `files.rs`: it still owns action
+planning, mutation execution, and low-level filesystem helpers. Future
+extraction should split those responsibilities without changing the
+validated-plan pipeline described in this document.
 
 This document describes the current implementation architecture. It is not a
 replacement for [docs/SPEC.md](SPEC.md), which remains the user-visible
