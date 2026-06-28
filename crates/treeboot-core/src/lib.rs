@@ -16,6 +16,7 @@ mod error;
 mod executor;
 mod file_actions;
 mod file_execution;
+mod file_system;
 mod files;
 mod git;
 mod ignore_rules;

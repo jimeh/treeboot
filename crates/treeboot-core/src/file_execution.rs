@@ -1,11 +1,12 @@
 use std::path::Path;
 
 use crate::file_actions::{FileAction, PlannedFileOperationActions};
-use crate::files::{
-    FileApplyOptions, apply_metadata, copy_file_with_metadata_with_policy, create_parent_dir,
-    create_symlink, create_target_dir, ensure_preserved_source_symlink_safe, remove_any,
-    remove_file_checked, with_writable_parent,
+use crate::file_system::{
+    apply_metadata, copy_file_with_metadata_with_policy, create_parent_dir, create_symlink,
+    create_target_dir, ensure_preserved_source_symlink_safe, remove_any, remove_file_checked,
+    with_writable_parent,
 };
+use crate::files::FileApplyOptions;
 use crate::{ActionPlan, Error, FileOperationKind, OutputEvent, Reporter, Result};
 
 pub(crate) fn execute_file_operation_group(

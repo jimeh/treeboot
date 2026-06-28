@@ -1,10 +1,19 @@
 use std::collections::BTreeMap;
 use std::ffi::OsString;
+use std::fs::{self, File, FileTimes};
+use std::io::{self, Read};
+use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::*;
+use crate::file_system::{
+    ContentInput, copy_file_with_metadata, preserved_source_link, read_full_chunk,
+    reader_contents_changed, remove_any,
+};
 use crate::validation::PlannedFileOperationParts;
-use crate::{ActionPlanOptions, FileOperation, MetadataField, PlanOrigin, SourceSpan, Worktree};
+use crate::{
+    ActionPlanOptions, FileOperation, MetadataField, PlanOrigin, SourceSpan, SyncCompare, Worktree,
+};
 
 #[derive(Default)]
 struct VecReporter {

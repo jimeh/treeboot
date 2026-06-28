@@ -221,7 +221,8 @@ flowchart LR
   VALID["validation.rs<br/>ActionPlan<br/>boundary checks"]
   FILE_ACTIONS["file_actions.rs<br/>FileAction groups"]
   FILE_EXECUTION["file_execution.rs<br/>file action execution"]
-  FILES["files.rs<br/>file planning + fs helpers"]
+  FILE_SYSTEM["file_system.rs<br/>filesystem helpers"]
+  FILES["files.rs<br/>file planning"]
   CMDS["commands.rs<br/>processes"]
   OUT["output.rs<br/>events"]
 
@@ -250,6 +251,8 @@ flowchart LR
   FILES --> FILE_ACTIONS
   FILE_EXECUTION --> FILE_ACTIONS
   FILE_EXECUTION --> FILES
+  FILE_EXECUTION --> FILE_SYSTEM
+  FILES --> FILE_SYSTEM
   FILES --> IGNORE
   VALID --> EXEC
   EXEC --> FILES
@@ -272,10 +275,11 @@ policy when present, skip configured commands, and reuse validation and files._
 | `executor.rs`     | Sequencing validated file and command execution.                                                              | Validation or CLI policy.                                  |
 | `file_actions.rs` | Concrete file action model, grouped operation actions, summary construction, and cross-action symlink warnings. | Filesystem traversal or mutation.                          |
 | `file_execution.rs` | Executing planned file-action groups and emitting compact/verbose file-operation output events.              | Planning filesystem actions or low-level filesystem helper implementation. |
+| `file_system.rs` | Low-level filesystem inspection, comparison, metadata, writable-parent, copy, symlink, and delete helpers for file planning and execution. | File-operation policy, action grouping, or output lifecycle. |
 | `ignore_rules.rs` | Compiling and matching copy/sync path ignore rules.                                                           | Config parsing, validation policy, or filesystem mutation. |
 | `runtime.rs`      | Environment/config/CLI runtime policy precedence and conversion to validation options.                        | Config parsing, Git discovery, or side effects.            |
 | `validation.rs`   | Pre-side-effect checks, path normalization, duplicate targets, strict sync rejection, command cwd/env checks. | Parsing or filesystem mutation.                            |
-| `files.rs`        | Planning concrete filesystem actions and providing low-level filesystem helpers for file execution.           | Config semantics, CLI argument validation, action summary modeling, or action execution flow. |
+| `files.rs`        | Planning concrete filesystem actions and coordinating grouped file-operation execution.                       | Config semantics, CLI argument validation, action summary modeling, low-level filesystem helper implementation, or action execution flow. |
 | `commands.rs`     | Sequential configured command spawning and dry-run output.                                                    | Parsing command config or deciding command order.          |
 | `metadata.rs`     | Embedded config schema, spec version, and version metadata helpers.                                           | Generating source files or reading runtime files.          |
 | `output.rs`       | Structured output events and message formatting.                                                              | Choosing when events happen.                               |
@@ -283,10 +287,11 @@ policy when present, skip configured commands, and reuse validation and files._
 ## Filesystem effects: File Operation Engine
 
 File execution is grouped by top-level validated file operation. `files.rs`
-plans each group into concrete `FileAction`s. `file_actions.rs` owns the group
-model, optional cross-action symlink warnings, and summary construction.
+plans each group into concrete `FileAction`s, using `file_system.rs` for
+filesystem inspection and comparison. `file_actions.rs` owns the group model,
+optional cross-action symlink warnings, and summary construction.
 `file_execution.rs` then reports or applies each group depending on dry-run
-mode.
+mode, delegating low-level mutation helpers to `file_system.rs`.
 Compact mode reports lifecycle events and one summary per group; verbose mode
 reports the concrete action stream.
 
@@ -298,6 +303,7 @@ reports the concrete action stream.
 - Plans sync delete actions for target-only paths.
 - Delegates grouped action summaries and cross-action warning aggregation to
   `file_actions.rs`.
+- Delegates filesystem inspection and comparison helpers to `file_system.rs`.
 
 ### Applying actions
 
@@ -305,7 +311,7 @@ reports the concrete action stream.
 - `force` controls supported replacements.
 - `strict` converts some default skips into conflicts.
 - Actual filesystem mutations happen through `file_execution.rs` after all
-  actions plan.
+  actions plan, with low-level operations delegated to `file_system.rs`.
 - Reporter failures become typed output errors.
 
 ```text
@@ -411,11 +417,14 @@ Runtime policy precedence is centralized in `runtime.rs`, and file-operation
 lifecycle reporting now flows through `OutputEvent` instead of a second reporter
 callback surface. File action grouping, summary construction, and cross-action
 warning aggregation are separated into `file_actions.rs`, and planned action
-execution is separated into `file_execution.rs`. The most visible remaining
-architecture debt is the size of `files.rs`: it still owns action planning and
-low-level filesystem helpers. Future extraction should split those
-responsibilities without changing the validated-plan pipeline described in this
-document.
+execution is separated into `file_execution.rs`. Low-level filesystem
+inspection, comparison, metadata, and mutation helpers are separated into
+`file_system.rs`. The most visible remaining architecture debt is now naming
+and facade shape around the file-operation modules: `files.rs` is primarily the
+planner, but it still exposes the operation-level entry point and option/report
+types consumed by `executor.rs` and `file_execution.rs`. Future extraction
+should make that facade explicit or rename `files.rs` to its planning role
+without changing the validated-plan pipeline described in this document.
 
 This document describes the current implementation architecture. It is not a
 replacement for [docs/SPEC.md](SPEC.md), which remains the user-visible
