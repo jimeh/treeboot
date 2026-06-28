@@ -147,35 +147,42 @@ fn execute_file_operation_group_should_report_verbose_dry_run_actions() {
     .expect("dry-run execution should report");
 
     assert_eq!(action_count, 6);
-    assert_eq!(reporter.events.len(), 7);
-    assert!(matches!(
-        reporter.events[0],
-        OutputEvent::FileWouldApply { .. }
-    ));
-    assert!(matches!(
-        reporter.events[1],
-        OutputEvent::FileWouldApply { .. }
-    ));
-    assert!(matches!(
-        reporter.events[2],
-        OutputEvent::FileWouldApply { .. }
-    ));
-    assert!(matches!(
-        reporter.events[3],
-        OutputEvent::FileMetadataWouldApply { .. }
-    ));
-    assert!(matches!(
-        reporter.events[4],
-        OutputEvent::FileWouldDelete { .. }
-    ));
-    assert!(matches!(
-        reporter.events[5],
-        OutputEvent::FileWouldSkip { .. }
-    ));
-    assert!(matches!(
-        reporter.events[6],
-        OutputEvent::FileWarning { .. }
-    ));
+    assert_eq!(
+        reporter.events,
+        vec![
+            OutputEvent::FileWouldApply {
+                operation: FileOperationKind::Copy,
+                source: PathBuf::from("shared"),
+                target: PathBuf::from("shared"),
+            },
+            OutputEvent::FileWouldApply {
+                operation: FileOperationKind::Copy,
+                source: PathBuf::from(".env"),
+                target: PathBuf::from(".env"),
+            },
+            OutputEvent::FileWouldApply {
+                operation: FileOperationKind::Symlink,
+                source: PathBuf::from("tool"),
+                target: PathBuf::from(".tool"),
+            },
+            OutputEvent::FileMetadataWouldApply {
+                source: PathBuf::from("source"),
+                target: PathBuf::from("target"),
+            },
+            OutputEvent::FileWouldDelete {
+                path: PathBuf::from("old"),
+            },
+            OutputEvent::FileWouldSkip {
+                operation: FileOperationKind::Copy,
+                target: PathBuf::from("existing"),
+                reason: "target exists".to_owned(),
+            },
+            OutputEvent::FileWarning {
+                path: PathBuf::from("link"),
+                reason: "symlink target does not exist".to_owned(),
+            },
+        ]
+    );
 }
 
 #[test]
@@ -229,12 +236,36 @@ fn execute_file_operation_group_should_apply_verbose_file_actions() {
         fs::read_to_string(worktree.join(".env")).unwrap(),
         "TOKEN=1\n"
     );
-    assert_eq!(reporter.events.len(), 3);
+    let link_path = worktree.join(".env.link");
     assert!(
-        reporter
-            .events
-            .iter()
-            .all(|event| matches!(event, OutputEvent::FileApplied { .. }))
+        fs::symlink_metadata(&link_path)
+            .expect("link metadata should be readable")
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(
+        fs::read_link(&link_path).expect("link target should be readable"),
+        PathBuf::from(".env")
+    );
+    assert_eq!(
+        reporter.events,
+        vec![
+            OutputEvent::FileApplied {
+                operation: FileOperationKind::Copy,
+                source: PathBuf::from("shared"),
+                target: PathBuf::from("shared"),
+            },
+            OutputEvent::FileApplied {
+                operation: FileOperationKind::Copy,
+                source: PathBuf::from(".env"),
+                target: PathBuf::from(".env"),
+            },
+            OutputEvent::FileApplied {
+                operation: FileOperationKind::Symlink,
+                source: PathBuf::from(".env"),
+                target: PathBuf::from(".env.link"),
+            },
+        ]
     );
 }
 
@@ -295,23 +326,27 @@ fn execute_file_operation_group_should_report_verbose_metadata_delete_skip_and_w
 
     assert_eq!(action_count, 3);
     assert!(!worktree.join("old").exists());
-    assert_eq!(reporter.events.len(), 4);
-    assert!(matches!(
-        reporter.events[0],
-        OutputEvent::FileMetadataApplied { .. }
-    ));
-    assert!(matches!(
-        reporter.events[1],
-        OutputEvent::FileDeleted { .. }
-    ));
-    assert!(matches!(
-        reporter.events[2],
-        OutputEvent::FileSkipped { .. }
-    ));
-    assert!(matches!(
-        reporter.events[3],
-        OutputEvent::FileWarning { .. }
-    ));
+    assert_eq!(
+        reporter.events,
+        vec![
+            OutputEvent::FileMetadataApplied {
+                source: PathBuf::from("source"),
+                target: PathBuf::from("target"),
+            },
+            OutputEvent::FileDeleted {
+                path: PathBuf::from("old"),
+            },
+            OutputEvent::FileSkipped {
+                operation: FileOperationKind::Copy,
+                target: PathBuf::from("existing"),
+                reason: "target exists".to_owned(),
+            },
+            OutputEvent::FileWarning {
+                path: PathBuf::from("link"),
+                reason: "symlink target does not exist".to_owned(),
+            },
+        ]
+    );
 }
 
 #[cfg(unix)]

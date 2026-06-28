@@ -21,7 +21,8 @@ pub struct DoctorOptions {
     pub config: Option<PathBuf>,
     /// Skips init script discovery and uses declarative config discovery.
     pub no_init_script: bool,
-    /// Fails diagnostics on missing config and stricter file-operation conflicts.
+    /// Fails diagnostics for root checkouts, missing config, and stricter
+    /// file-operation conflicts.
     pub strict: bool,
 }
 

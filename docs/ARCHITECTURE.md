@@ -199,8 +199,8 @@ The public API is re-exported from `lib.rs`; most implementation modules remain
 private or crate-private.
 
 The `treeboot-core` module graph shows public modules calling context and
-discovery. Config feeds validation, and validation feeds file operations and
-commands.
+discovery. Config feeds validation, and validated plans flow through the
+executor before file operations and commands run.
 
 ```mermaid
 flowchart LR
@@ -239,6 +239,7 @@ flowchart LR
   DOCTOR --> RUNTIME
   DOCTOR --> CONTEXT
   DOCTOR --> DISC
+  DOCTOR --> CHECK
   ENV --> CONTEXT
   MANUAL --> CONTEXT
   MANUAL --> RUNTIME
