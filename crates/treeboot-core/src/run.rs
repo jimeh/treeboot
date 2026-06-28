@@ -128,7 +128,7 @@ pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport
                 &path,
                 &config,
                 &context,
-                plan_options.action_plan_options(),
+                plan_options.into_action_plan_options(),
             )?;
             Executor::new(ExecuteOptions {
                 strict,

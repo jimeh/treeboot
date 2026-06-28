@@ -394,6 +394,7 @@ fn plan_tree_directory_children(
     }
 
     if matches!(mode, TreePlanMode::Sync) && operation.delete().unwrap_or(false) {
+        // Only recursive delete planning needs the ignored-preserved flag.
         let _ = plan_sync_deletes(operation, entry, ignore_rules, actions)?;
     }
 

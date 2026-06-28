@@ -180,8 +180,13 @@ fn check_config(
     let config =
         Config::load(&path, context).map_err(|error| error_diag("config", error.to_string()))?;
     let plan_options = runtime_policy.resolve(&config.options);
-    ActionPlan::from_manifest(&path, &config, context, plan_options.action_plan_options())
-        .map_err(|error| error_diag("config_validation", error.to_string()))?;
+    ActionPlan::from_manifest(
+        &path,
+        &config,
+        context,
+        plan_options.into_action_plan_options(),
+    )
+    .map_err(|error| error_diag("config_validation", error.to_string()))?;
 
     Ok(ok("config", format!("config is valid: {}", path.display())))
 }

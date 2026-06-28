@@ -222,6 +222,37 @@ fn doctor_strict_should_validate_config_with_strict_policy() {
 }
 
 #[test]
+fn doctor_strict_should_report_missing_requested_config() {
+    let repo = git_worktree();
+
+    let json = treeboot()
+        .args([
+            "doctor",
+            "--strict",
+            "--config",
+            "missing.treeboot.toml",
+            "--json",
+        ])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("doctor found fatal issues"))
+        .get_output()
+        .stdout
+        .clone();
+
+    let json = parse_json(json, "doctor");
+    assert_doctor_report_shape(&json);
+    assert_eq!(json["fatal"], true);
+    assert!(has_diagnostic(
+        &json,
+        "config",
+        "error",
+        "config file not found"
+    ));
+}
+
+#[test]
 fn doctor_should_apply_environment_strict_to_config_validation() {
     let repo = git_worktree();
     write_file(

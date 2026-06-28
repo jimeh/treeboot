@@ -628,6 +628,27 @@ mod tests {
     }
 
     #[test]
+    fn message_should_format_finished_file_operation_summary() {
+        let event = OutputEvent::FileOperationFinished {
+            operation: FileOperationKind::Sync,
+            source: PathBuf::from("shared"),
+            target: PathBuf::from("shared"),
+            summary: FileOperationSummary {
+                changed: 2,
+                deleted: 1,
+                expanded: true,
+                ..FileOperationSummary::default()
+            },
+            dry_run: false,
+        };
+
+        assert_eq!(
+            event.message(),
+            "treeboot: sync shared -> shared (2 changed, 1 deleted)"
+        );
+    }
+
+    #[test]
     fn message_should_format_file_deleted() {
         let event = OutputEvent::FileDeleted {
             path: PathBuf::from(".config/old.toml"),

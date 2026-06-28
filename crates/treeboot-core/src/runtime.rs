@@ -150,6 +150,12 @@ impl ResolvedRuntimePolicy {
     pub fn action_plan_options(&self) -> ActionPlanOptions {
         ActionPlanOptions::from(self.options.clone())
     }
+
+    /// Consumes the policy and returns action-plan validation options.
+    #[must_use]
+    pub fn into_action_plan_options(self) -> ActionPlanOptions {
+        ActionPlanOptions::from(self.options)
+    }
 }
 
 fn env_bool(name: &'static str, value: Option<&std::ffi::OsStr>) -> Result<Option<bool>> {
@@ -301,6 +307,34 @@ mod tests {
         let resolved = policy.resolve(&ConfigRuntimeOptions::default());
 
         assert!(resolved.strict());
+    }
+
+    #[test]
+    fn resolved_runtime_policy_should_convert_into_action_plan_options() {
+        let policy = RuntimePolicy::from_overrides(
+            RuntimeOptionOverrides {
+                strict: Some(true),
+                dangerously_allow_sources_outside_root: Some(true),
+                dangerously_allow_targets_outside_worktree: Some(true),
+            },
+            false,
+        );
+
+        let options = policy
+            .resolve(&ConfigRuntimeOptions {
+                default_ignore: vec!["target".to_owned()],
+                ..ConfigRuntimeOptions::default()
+            })
+            .into_action_plan_options();
+
+        assert_eq!(
+            options,
+            ActionPlanOptions {
+                strict: true,
+                dangerously_allow_sources_outside_root: true,
+                dangerously_allow_targets_outside_worktree: true,
+            }
+        );
     }
 
     #[test]

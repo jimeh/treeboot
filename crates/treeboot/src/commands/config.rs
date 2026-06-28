@@ -25,6 +25,8 @@ pub(crate) struct ConfigArgs {
 pub(crate) fn run_config_command(args: ConfigArgs) -> treeboot_core::Result<()> {
     let format = args.output.format();
     let options: ConfigOptions = args.into();
+    // `treeboot config` has no CLI strict flag; it only uses config/env policy
+    // to warn whether run validation would fail.
     let runtime_policy = RuntimePolicy::from_environment(&options.environment, false)?;
     let report = treeboot_core::inspect_config(options)?;
 
@@ -45,7 +47,7 @@ pub(crate) fn run_config_command(args: ConfigArgs) -> treeboot_core::Result<()> 
         &report.path,
         &report.config,
         &report.context,
-        plan_options.action_plan_options(),
+        plan_options.into_action_plan_options(),
     ) {
         eprintln!("treeboot: warning: run validation would fail: {error}");
     }

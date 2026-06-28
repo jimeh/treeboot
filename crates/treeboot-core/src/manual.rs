@@ -309,7 +309,7 @@ pub fn run_file_operation(
         &context,
         PlanOrigin::Manual { operation },
         &operations,
-        plan_options.action_plan_options(),
+        plan_options.into_action_plan_options(),
     )?;
     let report = Executor::new(ExecuteOptions {
         strict,

@@ -59,6 +59,8 @@ pub(crate) fn apply_file_operations(
     }
     add_symlink_warnings(&mut groups);
 
+    // Plan every group before mutating so planning failures happen before
+    // side effects and cross-operation symlink warnings can see all targets.
     let mut action_count = 0;
     for group in &groups {
         action_count += execute_file_operation_group(

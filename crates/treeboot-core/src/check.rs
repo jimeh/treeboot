@@ -121,7 +121,7 @@ pub fn check(options: CheckOptions) -> Result<CheckReport> {
                 &path,
                 &config,
                 &context,
-                plan_options.action_plan_options(),
+                plan_options.into_action_plan_options(),
             )?;
 
             Ok(CheckReport {
