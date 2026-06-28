@@ -6,7 +6,7 @@ pre-commit:
       run: mise run actions:lint
     markdown:
       glob: "**/*.md"
-      run: bash scripts/lint-markdown-files.sh {staged_files}
+      run: mise run lint:markdown:files {staged_files}
     rustfmt:
       glob: "*.rs"
       run: rustfmt --edition 2024 --check {staged_files}

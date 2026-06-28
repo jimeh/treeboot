@@ -105,6 +105,18 @@ run = "cargo clippy --fix --workspace --all-features --locked"
 description = "Lint Markdown files"
 run = "markdownlint-cli2 '**/*.md'"
 
+[tasks."lint:markdown:files"]
+description = "Lint selected Markdown files"
+usage = 'arg "<files>" var=#true'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+eval "files=(${usage_files?})"
+oxfmt --check "${files[@]}"
+markdownlint-cli2 "${files[@]}"
+'''
+
 # Builds
 
 [tasks.build]
