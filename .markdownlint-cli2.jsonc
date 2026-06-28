@@ -1,0 +1,33 @@
+{
+  "config": {
+    // Allow hard tabs in code blocks for languages that use them.
+    "no-hard-tabs": {
+      "ignore_code_languages": ["makefile"]
+    },
+    // Don't force blank lines around code blocks inside lists.
+    "blanks-around-fences": {
+      "list_items": false
+    },
+    // No auto-formatter for line length; disable checking.
+    "line-length": false,
+    // Some crate-local READMEs intentionally start below an h1.
+    "first-line-heading": false,
+    // Allow inline HTML for badges, generated release notes, or README layout.
+    "no-inline-html": false,
+    // Allow fenced code blocks without a language tag.
+    "fenced-code-language": false,
+    // Allow repeated headings when they live under different parent sections,
+    // such as changelog release entries or spec mode subsections.
+    "no-duplicate-heading": {
+      "siblings_only": true
+    }
+  },
+  "ignores": [
+    "target/",
+    "**/target/**",
+    "CHANGELOG.md",
+    "plan.md",
+    "research.md",
+    "review.md"
+  ]
+}

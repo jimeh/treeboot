@@ -5,8 +5,8 @@
 `treeboot` is a Rust CLI and public core library for bootstrapping Git worktrees
 from one repo-local setup contract.
 
-The implementation target is the behavior in [docs/SPEC.md](docs/SPEC.md).
-The README is the user-facing summary; the spec is the contract when they differ.
+The implementation target is the behavior in [docs/SPEC.md](docs/SPEC.md). The
+README is the user-facing summary; the spec is the contract when they differ.
 
 ## Spec Discipline
 
@@ -23,9 +23,9 @@ requirements, update the spec instead of leaving those details only in
 implementation plans or roadmap notes. Keep implementation tactics in
 `docs/agents/` planning docs.
 
-When changing the observable contract in [docs/SPEC.md](docs/SPEC.md),
-bump the visible spec version in that file and keep the README's referenced
-spec version in sync.
+When changing the observable contract in [docs/SPEC.md](docs/SPEC.md), bump the
+visible spec version in that file and keep the README's referenced spec version
+in sync.
 
 Before handoff on behavior changes, verify the implementation behavior matches
 [docs/SPEC.md](docs/SPEC.md). For changes that affect CLI behavior, config
@@ -75,14 +75,14 @@ Useful deeper docs:
 ## Current Implementation State
 
 The current code implements the milestone 1 foundation, milestone 2 config
-parsing, milestone 3 declarative validation/planning, milestone 4 config
-runtime options, milestone 5 file operations, milestone 6 command runtime,
-milestone 7 shell completions, milestone 8 manual file operations, and the
-first pass of milestone 9 release packaging, plus milestone 10 inspection and
-metadata commands:
+parsing, milestone 3 declarative validation/planning, milestone 4 config runtime
+options, milestone 5 file operations, milestone 6 command runtime, milestone 7
+shell completions, milestone 8 manual file operations, and the first pass of
+milestone 9 release packaging, plus milestone 10 inspection and metadata
+commands:
 
-- CLI parsing for `run`, `status`, `config`, `check`, `doctor`, `env`,
-  `schema`, `version`, `init`, `copy`, `symlink`, `sync`, and `completions`
+- CLI parsing for `run`, `status`, `config`, `check`, `doctor`, `env`, `schema`,
+  `version`, `init`, `copy`, `symlink`, `sync`, and `completions`
 - Git worktree/root/default-branch discovery
 - treeboot environment aliases
 - init script discovery and execution
@@ -108,8 +108,8 @@ metadata commands:
 
 Declarative TOML config execution currently applies `copy`, `symlink`, and
 `sync` file operations, then runs configured commands unless `--skip-commands`
-is set. Use `treeboot config` to inspect normalized config without execution;
-it warns when run validation would fail.
+is set. Use `treeboot config` to inspect normalized config without execution; it
+warns when run validation would fail.
 
 ## Commands
 
@@ -129,12 +129,18 @@ Targeted commands:
 ```sh
 mise run format
 mise run format:check
+mise run format:rust
+mise run format:rust:check
+mise run format:markdown
+mise run format:markdown:check
 mise run generate
 mise run generate:check
 mise run generate:schema:check
 mise run harness:check
 mise run lint
 mise run lint:fix
+mise run lint:rust
+mise run lint:markdown
 mise run test
 mise run test:core
 mise run test:cli
@@ -149,14 +155,22 @@ mise run coverage:missing
 See [docs/agents/validation.md](docs/agents/validation.md) for validation tiers
 and CI mapping.
 
+## Markdown Conventions
+
+Markdown files are formatted with oxfmt and linted with markdownlint-cli2.
+`mise run format` and `mise run format:check` include Markdown alongside Rust.
+Use `mise run format:markdown` and `mise run lint:markdown` for targeted docs
+work. Lefthook checks staged Markdown files through
+`mise run lint:markdown:files {staged_files}`.
+
 ## Rust Conventions
 
 - Keep public `treeboot-core` APIs documented; the crate denies missing docs.
 - Use typed errors in `treeboot-core`; keep `anyhow` out of the public library.
 - When a fallible helper spans several inputs (e.g. source vs target file), keep
   it context-agnostic: return a typed error tagged with which input failed, then
-  resolve that tag to the path and public `Error` at the caller boundary. If
-  you are tempted to thread caller context into a helper only to preserve error
+  resolve that tag to the path and public `Error` at the caller boundary. If you
+  are tempted to thread caller context into a helper only to preserve error
   attribution, treat that as the cue to reach for a tagged error instead.
 - Keep `crates/treeboot/src/main.rs` focused on argument parsing, reporting, and
   exit-code mapping.
@@ -171,8 +185,8 @@ and CI mapping.
   feature work until the new behavior has focused coverage at the right layer.
 - For behavior changes, cover the happy path plus edge cases: missing optional
   and required inputs, strict/force/dry-run behavior, conflict handling,
-  non-mutation on failure, user-visible output, and platform-specific paths
-  when relevant.
+  non-mutation on failure, user-visible output, and platform-specific paths when
+  relevant.
 - For bug fixes, add a regression test that fails without the fix unless the
   scenario cannot be reproduced in the local harness.
 - Use CLI integration tests for user-visible command behavior.
@@ -183,8 +197,8 @@ and CI mapping.
   (short or staggered reads, `Interrupted`), not just real temp files, and size
   inputs past the internal buffer (8 KiB here) so multi-chunk refill paths run.
 - For non-trivial features, run `mise run coverage:missing`, inspect uncovered
-  lines in touched modules, and add high-value tests for reachable branches.
-  Do not chase brittle coverage for OS permission quirks, platform-only code, or
+  lines in touched modules, and add high-value tests for reachable branches. Do
+  not chase brittle coverage for OS permission quirks, platform-only code, or
   defensive I/O error arms unless the behavior is important and testable.
 - Put reusable CLI integration helpers in `crates/treeboot/tests/common/`.
 - Run `mise run check` before handoff for ordinary code changes.
@@ -204,14 +218,14 @@ and CI mapping.
   token and uses `.github/renovate-mise.config.js` as self-hosted/global config
   so `allowedUnsafeExecutions = ["mise"]` can permit `mise lock` refreshes.
   Manual dispatch sets `RENOVATE_BYPASS_SCHEDULE` so emergency runs bypass the
-  internal Renovate schedule as well as the GitHub Actions cron gate.
-  Keep `:disableDependencyDashboard` in the Renovate preset list; with
+  internal Renovate schedule as well as the GitHub Actions cron gate. Keep
+  `:disableDependencyDashboard` in the Renovate preset list; with
   `config:recommended`, `dependencyDashboard: false` alone can still produce a
   Dependency Dashboard issue in this self-hosted flow. Renovate PR creation is
   intentionally `immediate` so mise updates behave like Dependabot updates.
 - Mise-managed tools use a 7-day release-age cooldown and checked-in
-  `mise.lock`; use a narrow override only for urgent security or
-  CI-maintenance updates.
+  `mise.lock`; use a narrow override only for urgent security or CI-maintenance
+  updates.
 - `mise run treeboot` is the repo-local bootstrap entrypoint. It keeps the
   released `treeboot` binary task-scoped so CI does not install it as a
   top-level tool, then runs the declarative `.treeboot.toml` setup contract.
@@ -244,17 +258,17 @@ and CI mapping.
   `linux` segment (`x86_64-android`, not `x86_64-linux-android`) so desktop
   Linux GitHub release installers such as mise do not pick Android archives.
 - Release-please intentionally uses one root Rust release unit without the
-  `cargo-workspace` plugin. The root `treeboot-workspace` package exists only
-  so release-please can update the root manifest and all workspace member
-  versions together while creating the single `vX.Y.Z` product tag. Keep
+  `cargo-workspace` plugin. The root `treeboot-workspace` package exists only so
+  release-please can update the root manifest and all workspace member versions
+  together while creating the single `vX.Y.Z` product tag. Keep
   `workspace.default-members` aligned with the real build/test packages so the
   inert root package does not replace the normal default Cargo task surface.
 - For crates.io publishing, keep `treeboot`'s dependency on `treeboot-core` as
   both `path = "../treeboot-core"` and the matching registry `version`; Cargo
   rejects publishable packages with path-only normal dependencies. Member crates
   need crate-local READMEs or explicit readme metadata, otherwise Cargo packages
-  them with `readme = false`. Keep the crate-local `LICENSE` copies in sync
-  with the root `LICENSE` so published crate tarballs include the license text.
+  them with `readme = false`. Keep the crate-local `LICENSE` copies in sync with
+  the root `LICENSE` so published crate tarballs include the license text.
 - crates.io Trusted Publishing is bound to `.github/workflows/release.yml` and
   the GitHub Actions `release` environment for both published crates. Keep the
   crates.io Trusted Publisher settings in sync if either name changes.

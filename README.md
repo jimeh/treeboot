@@ -30,8 +30,8 @@ treeboot
 
 ## Why
 
-Git worktrees are cheap to create, but project-local state usually is not.
-Most real projects have files and commands that are intentionally not committed:
+Git worktrees are cheap to create, but project-local state usually is not. Most
+real projects have files and commands that are intentionally not committed:
 
 - `.env.local`, `.env.development.local`, and `.env.test.local`
 - `mise.local.toml`
@@ -118,8 +118,8 @@ treeboot --version
 ```
 
 Prebuilt binaries are available from
-[GitHub Releases](https://github.com/jimeh/treeboot/releases), and Cargo
-users can install from crates.io:
+[GitHub Releases](https://github.com/jimeh/treeboot/releases), and Cargo users
+can install from crates.io:
 
 ```sh
 cargo install treeboot
@@ -332,8 +332,8 @@ The same schema is checked into the repository at:
 schemas/treeboot.schema.json
 ```
 
-Use `treeboot schema` to print the embedded schema from the installed binary,
-or `treeboot schema --output <path>` to write it to a file.
+Use `treeboot schema` to print the embedded schema from the installed binary, or
+`treeboot schema --output <path>` to write it to a file.
 
 ## Project Status
 
@@ -384,6 +384,10 @@ mise run deps
 mise run doctor
 mise run format
 mise run format:check
+mise run format:markdown
+mise run format:markdown:check
+mise run format:rust
+mise run format:rust:check
 mise run generate
 mise run generate:check
 mise run generate:schema:check
@@ -391,6 +395,8 @@ mise run harness:check
 mise run hooks:install
 mise run lint
 mise run lint:fix
+mise run lint:markdown
+mise run lint:rust
 mise run msrv
 mise run release:check
 mise run test

@@ -4,6 +4,9 @@ pre-commit:
     actions-lint:
       glob: ".github/workflows/*.{yml,yaml}"
       run: mise run actions:lint
+    markdown:
+      glob: "**/*.md"
+      run: mise run lint:markdown:files {staged_files}
     rustfmt:
       glob: "*.rs"
       run: rustfmt --edition 2024 --check {staged_files}

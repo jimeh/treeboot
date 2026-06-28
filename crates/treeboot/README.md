@@ -99,9 +99,9 @@ can safely list several local-only files.
 Commands always run, so they should be idempotent or otherwise safe and fast to
 run repeatedly.
 
-`treeboot` and `treeboot run` are equivalent. The CLI also includes
-`status`, `config`, `check`, `doctor`, `env`, `schema`, `version`, `init`,
-`copy`, `symlink`, `sync`, and `completions` subcommands.
+`treeboot` and `treeboot run` are equivalent. The CLI also includes `status`,
+`config`, `check`, `doctor`, `env`, `schema`, `version`, `init`, `copy`,
+`symlink`, `sync`, and `completions` subcommands.
 
 See the [repository](https://github.com/jimeh/treeboot) for project details.
 

@@ -128,6 +128,14 @@ checksum = "sha256:1f29681dfbc36b9bdde52139cca6c4668ea4d51fd81e9127a3b78f49369db
 url = "https://github.com/evilmartians/lefthook/releases/download/v2.1.9/lefthook_2.1.9_Windows_x86_64.gz"
 provenance = "github-attestations"
 
+[[tools.markdownlint-cli2]]
+version = "0.22.1"
+backend = "npm:markdownlint-cli2"
+
+[[tools.oxfmt]]
+version = "0.55.0"
+backend = "npm:oxfmt"
+
 [[tools.pinact]]
 version = "4.1.0"
 backend = "aqua:suzuki-shunsuke/pinact"

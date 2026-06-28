@@ -1,8 +1,8 @@
 # Implementation Roadmap
 
 This roadmap keeps future implementation work aligned with
-[docs/SPEC.md](../SPEC.md). Update it when a milestone is completed or the
-spec changes.
+[docs/SPEC.md](../SPEC.md). Update it when a milestone is completed or the spec
+changes.
 
 ## Milestone 1: Run Context And Discovery
 
@@ -66,9 +66,8 @@ Scope:
 - move `dangerously_allow_sources_outside_root` and
   `dangerously_allow_targets_outside_worktree` to the config top level
 - remove the nested `[validation]` config table from the spec model
-- support `TREEBOOT_STRICT`,
-  `TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT`, and
-  `TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE`
+- support `TREEBOOT_STRICT`, `TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT`,
+  and `TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE`
 - apply precedence: defaults, then config, then environment, then CLI flags
 - reject invalid boolean environment values before side effects
 - update generated JSON Schema and starter config output
@@ -198,5 +197,5 @@ Validation focus:
 - JSON and YAML outputs are parseable and stable enough for automation
 - check and doctor perform no file, init script, or configured command side
   effects
-- generated schema and metadata freshness is enforced by `mise run
-  generate:check`
+- generated schema and metadata freshness is enforced by
+  `mise run generate:check`

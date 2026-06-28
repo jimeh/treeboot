@@ -18,8 +18,8 @@ worktree discovery, init script discovery, declarative config parsing,
 validation, action planning, file operation execution, command execution, and
 structured output events.
 
-This crate exposes the same workflow as typed Rust APIs for callers that want
-to embed treeboot behavior directly.
+This crate exposes the same workflow as typed Rust APIs for callers that want to
+embed treeboot behavior directly.
 
 ## API Shape
 
@@ -43,8 +43,8 @@ fn bootstrap(reporter: &mut dyn Reporter) -> treeboot_core::Result<()> {
 ```
 
 `RunOptions::default()` and the other command-shaped option defaults are
-environment-pure. Pass `EnvironmentInput::from_process_env()` when embedding
-the CLI's process-environment compatibility behavior.
+environment-pure. Pass `EnvironmentInput::from_process_env()` when embedding the
+CLI's process-environment compatibility behavior.
 
 Use lower-level types when embedding pieces of the workflow. Action plans are
 validated values: build them through constructors, then inspect them through

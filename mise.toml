@@ -26,6 +26,8 @@ run_auto_install = true
 [tools]
 actionlint = "1"
 lefthook = "2"
+markdownlint-cli2 = "0"
+oxfmt = "0.55.0"
 pinact = "4"
 sccache = "0"
 "github:jimeh/treeboot" = "latest"
@@ -64,20 +66,56 @@ run = "treeboot"
 # Development
 
 [tasks.format]
+depends = ["format:rust", "format:markdown"]
+description = "Format Rust and Markdown files"
+
+[tasks."format:rust"]
 description = "Format Rust code"
 run = "cargo fmt --all"
 
 [tasks."format:check"]
+depends = ["format:rust:check", "format:markdown:check"]
+description = "Check formatting without writing changes"
+
+[tasks."format:rust:check"]
 description = "Check Rust formatting without writing changes"
 run = "cargo fmt --all -- --check"
 
+[tasks."format:markdown"]
+description = "Format Markdown files"
+run = "oxfmt \"**/*.md\""
+
+[tasks."format:markdown:check"]
+description = "Check Markdown formatting without writing changes"
+run = "oxfmt --check \"**/*.md\""
+
 [tasks.lint]
+depends = ["lint:rust", "lint:markdown"]
+description = "Run Rust and Markdown lints"
+
+[tasks."lint:rust"]
 description = "Run Rust lints"
 run = "cargo clippy --all-targets --all-features --locked -- -D warnings"
 
 [tasks."lint:fix"]
 description = "Apply machine-applicable Clippy suggestions"
 run = "cargo clippy --fix --workspace --all-features --locked"
+
+[tasks."lint:markdown"]
+description = "Lint Markdown files"
+run = "markdownlint-cli2 \"**/*.md\""
+
+[tasks."lint:markdown:files"]
+description = "Lint selected Markdown files"
+usage = 'arg "<files>" var=#true'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+eval "files=(${usage_files?})"
+oxfmt --check "${files[@]}"
+markdownlint-cli2 "${files[@]}"
+'''
 
 # Builds
 
