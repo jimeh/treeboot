@@ -80,3 +80,6 @@ fn report(reporter: &mut dyn Reporter, event: OutputEvent) -> Result<()> {
         .report(event)
         .map_err(|source| Error::Output { source })
 }
+
+#[cfg(test)]
+mod tests;
