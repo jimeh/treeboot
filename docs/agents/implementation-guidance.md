@@ -5,8 +5,8 @@ canonical architecture overview. For the current system map, module graph, and
 refactor pressure, use [docs/ARCHITECTURE.md](../ARCHITECTURE.md). For
 observable behavior, use [docs/SPEC.md](../SPEC.md).
 
-If this file and `docs/ARCHITECTURE.md` disagree about architecture, update
-this file or the architecture document so the split is clear. If either file
+If this file and `docs/ARCHITECTURE.md` disagree about architecture, update this
+file or the architecture document so the split is clear. If either file
 disagrees with `docs/SPEC.md` about behavior, the spec wins unless the task is
 explicitly changing the behavior contract.
 

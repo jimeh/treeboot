@@ -6,9 +6,9 @@ dependencies for small wrappers around the standard library.
 ## Current Choices
 
 - `clap` belongs in the `treeboot` CLI crate for argument parsing.
-- `indicatif` belongs in the `treeboot` CLI crate for interactive file
-  operation progress. Keep progress rendering out of `treeboot-core`; core
-  should emit structured output events instead.
+- `indicatif` belongs in the `treeboot` CLI crate for interactive file operation
+  progress. Keep progress rendering out of `treeboot-core`; core should emit
+  structured output events instead.
 - `console` belongs in the `treeboot` CLI crate when progress rendering needs
   terminal width or Unicode-aware text measurement. Keep terminal-specific
   formatting helpers out of `treeboot-core`.
@@ -16,15 +16,13 @@ dependencies for small wrappers around the standard library.
 - `serde` and `toml` belong in `treeboot-core` for declarative config parsing
   and normalized model serialization.
 - `ignore` belongs in `treeboot-core` for operation-local gitignore-style path
-  matching. Use `ignore::gitignore::GitignoreBuilder` with explicit
-  `add_line` patterns only; do not load ambient `.gitignore`, `.ignore`,
-  `.rgignore`, Git exclude, or global ignore files for treeboot file
-  operations.
-- `serde_json` belongs in the `treeboot` CLI crate for `treeboot config
-  --format json` and other JSON report rendering.
-- `yaml_serde` belongs in the `treeboot` CLI crate for YAML report rendering.
-  It is the maintained YAML organization fork of the deprecated `serde_yaml`
-  crate.
+  matching. Use `ignore::gitignore::GitignoreBuilder` with explicit `add_line`
+  patterns only; do not load ambient `.gitignore`, `.ignore`, `.rgignore`, Git
+  exclude, or global ignore files for treeboot file operations.
+- `serde_json` belongs in the `treeboot` CLI crate for
+  `treeboot config --format json` and other JSON report rendering.
+- `yaml_serde` belongs in the `treeboot` CLI crate for YAML report rendering. It
+  is the maintained YAML organization fork of the deprecated `serde_yaml` crate.
 - `schemars` and `serde_json` are dev-dependencies in `treeboot-core` for the
   JSON Schema generator example.
 - `assert_cmd`, `predicates`, and `tempfile` support CLI integration tests.

@@ -11,6 +11,8 @@ Use while iterating on a narrow change:
 ```sh
 mise run format
 mise run format:check
+mise run format:markdown
+mise run lint:markdown
 mise run test:core
 mise run test:cli
 mise run test:release-helper
@@ -19,7 +21,8 @@ mise run test:release-helper
 Use `test:core` for library behavior and `test:cli` for user-visible command
 behavior. Use `test:release-helper` for release workflow helper logic. Running
 `mise run test` executes the same packages through one Cargo invocation.
-`format` applies Rust formatting, while `format:check` is non-mutating.
+`format` applies Rust and Markdown formatting, while `format:check` is
+non-mutating.
 
 ### Check
 
@@ -29,8 +32,8 @@ Use before handoff for most code changes:
 mise run check
 ```
 
-This runs formatting checks, generated-artifact freshness checks, clippy, and
-repo harness invariants, then tests.
+This runs formatting checks, generated-artifact freshness checks, clippy,
+Markdown linting, and repo harness invariants, then tests.
 
 ### Verify
 
@@ -57,8 +60,8 @@ GitHub Actions runs these mise tasks:
 - `mise run test`
 
 The full test suite runs once on each supported GitHub Actions host platform:
-Linux x64/ARM64, macOS x64/ARM64, and Windows x64/ARM64. The local
-`mise run ci` task mirrors the task set, but only on the current host platform.
+Linux x64/ARM64, macOS x64/ARM64, and Windows x64/ARM64. The local `mise run ci`
+task mirrors the task set, but only on the current host platform.
 
 ## Coverage
 
@@ -71,8 +74,8 @@ mise run coverage
 The coverage tasks install `cargo-llvm-cov` through task-scoped mise tooling
 instead of the top-level tool set used by every CI job.
 
-The current suite is intentionally strongest around milestone 1 behavior:
-script discovery/execution, config detection, init output creation, environment
+The current suite is intentionally strongest around milestone 1 behavior: script
+discovery/execution, config detection, init output creation, environment
 propagation, and output formatting.
 
 Useful follow-up coverage areas:
