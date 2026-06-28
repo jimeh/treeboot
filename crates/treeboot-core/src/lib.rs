@@ -15,6 +15,7 @@ mod env;
 mod error;
 mod executor;
 mod file_actions;
+mod file_execution;
 mod files;
 mod git;
 mod ignore_rules;

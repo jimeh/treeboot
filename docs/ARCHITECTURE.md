@@ -220,7 +220,8 @@ flowchart LR
   EXEC["executor.rs<br/>plan execution"]
   VALID["validation.rs<br/>ActionPlan<br/>boundary checks"]
   FILE_ACTIONS["file_actions.rs<br/>FileAction groups"]
-  FILES["files.rs<br/>file planning + mutation"]
+  FILE_EXECUTION["file_execution.rs<br/>file action execution"]
+  FILES["files.rs<br/>file planning + fs helpers"]
   CMDS["commands.rs<br/>processes"]
   OUT["output.rs<br/>events"]
 
@@ -247,6 +248,8 @@ flowchart LR
   MANUAL --> VALID
   VALID --> IGNORE
   FILES --> FILE_ACTIONS
+  FILE_EXECUTION --> FILE_ACTIONS
+  FILE_EXECUTION --> FILES
   FILES --> IGNORE
   VALID --> EXEC
   EXEC --> FILES
@@ -268,10 +271,11 @@ policy when present, skip configured commands, and reuse validation and files._
 | `env.rs`          | Child environment inspection.                                                                                 | Script/config discovery beyond context resolution.         |
 | `executor.rs`     | Sequencing validated file and command execution.                                                              | Validation or CLI policy.                                  |
 | `file_actions.rs` | Concrete file action model, grouped operation actions, summary construction, and cross-action symlink warnings. | Filesystem traversal or mutation.                          |
+| `file_execution.rs` | Executing planned file-action groups and emitting compact/verbose file-operation output events.              | Planning filesystem actions or low-level filesystem helper implementation. |
 | `ignore_rules.rs` | Compiling and matching copy/sync path ignore rules.                                                           | Config parsing, validation policy, or filesystem mutation. |
 | `runtime.rs`      | Environment/config/CLI runtime policy precedence and conversion to validation options.                        | Config parsing, Git discovery, or side effects.            |
 | `validation.rs`   | Pre-side-effect checks, path normalization, duplicate targets, strict sync rejection, command cwd/env checks. | Parsing or filesystem mutation.                            |
-| `files.rs`        | Planning concrete filesystem actions and applying copy, symlink, sync, delete, skip, warning events.          | Config semantics, CLI argument validation, or action summary modeling. |
+| `files.rs`        | Planning concrete filesystem actions and providing low-level filesystem helpers for file execution.           | Config semantics, CLI argument validation, action summary modeling, or action execution flow. |
 | `commands.rs`     | Sequential configured command spawning and dry-run output.                                                    | Parsing command config or deciding command order.          |
 | `metadata.rs`     | Embedded config schema, spec version, and version metadata helpers.                                           | Generating source files or reading runtime files.          |
 | `output.rs`       | Structured output events and message formatting.                                                              | Choosing when events happen.                               |
@@ -280,8 +284,9 @@ policy when present, skip configured commands, and reuse validation and files._
 
 File execution is grouped by top-level validated file operation. `files.rs`
 plans each group into concrete `FileAction`s. `file_actions.rs` owns the group
-model, optional cross-action symlink warnings, and summary construction. The
-group is then reported or applied depending on dry-run mode.
+model, optional cross-action symlink warnings, and summary construction.
+`file_execution.rs` then reports or applies each group depending on dry-run
+mode.
 Compact mode reports lifecycle events and one summary per group; verbose mode
 reports the concrete action stream.
 
@@ -299,7 +304,8 @@ reports the concrete action stream.
 - `dry_run` emits would-apply events only.
 - `force` controls supported replacements.
 - `strict` converts some default skips into conflicts.
-- Actual filesystem mutations happen after all actions plan.
+- Actual filesystem mutations happen through `file_execution.rs` after all
+  actions plan.
 - Reporter failures become typed output errors.
 
 ```text
@@ -307,6 +313,7 @@ ActionPlan::files()
   -> plan_operation
   -> FileAction::{CreateDirectory, CopyFile, CreateSymlink, Delete, Skip, Warning}
   -> grouped PlannedFileOperationActions
+  -> file_execution::execute_file_operation_group
   -> report OutputEvent file-operation lifecycle events
   -> report_dry_run(action) or apply_action(action)
   -> compact OutputEvent::FileOperationFinished summary
@@ -403,11 +410,12 @@ existing modules.
 Runtime policy precedence is centralized in `runtime.rs`, and file-operation
 lifecycle reporting now flows through `OutputEvent` instead of a second reporter
 callback surface. File action grouping, summary construction, and cross-action
-warning aggregation are separated into `file_actions.rs`. The most visible
-remaining architecture debt is the size of `files.rs`: it still owns action
-planning, mutation execution, and low-level filesystem helpers. Future
-extraction should split those responsibilities without changing the
-validated-plan pipeline described in this document.
+warning aggregation are separated into `file_actions.rs`, and planned action
+execution is separated into `file_execution.rs`. The most visible remaining
+architecture debt is the size of `files.rs`: it still owns action planning and
+low-level filesystem helpers. Future extraction should split those
+responsibilities without changing the validated-plan pipeline described in this
+document.
 
 This document describes the current implementation architecture. It is not a
 replacement for [docs/SPEC.md](SPEC.md), which remains the user-visible

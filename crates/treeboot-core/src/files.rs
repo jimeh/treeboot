@@ -5,6 +5,7 @@ use std::path::{Component, Path, PathBuf};
 use crate::file_actions::{
     FileAction, MetadataPolicy, MetadataTarget, PlannedFileOperationActions, add_symlink_warnings,
 };
+use crate::file_execution::execute_file_operation_group;
 use crate::ignore_rules::PathIgnoreRules;
 use crate::{
     ActionPlan, Error, FileOperationKind, OutputEvent, PlannedFileOperation, PlannedFileStatus,
@@ -151,68 +152,6 @@ fn plan_file_operation_group(
         expanded: operation_source_is_directory(plan, operation),
         actions,
     })
-}
-
-fn execute_file_operation_group(
-    plan: &ActionPlan,
-    group: &PlannedFileOperationActions,
-    options: FileApplyOptions,
-    reporter: &mut dyn Reporter,
-) -> Result<usize> {
-    if group.actions.is_empty() {
-        return Ok(0);
-    }
-
-    let progress_action_count = group.progress_action_count();
-    if !options.verbose {
-        report(
-            reporter,
-            OutputEvent::FileOperationExecutionStarted {
-                operation: group.operation,
-                source: group.source.clone(),
-                target: group.target.clone(),
-                action_count: progress_action_count,
-            },
-        )?;
-    }
-
-    for action in &group.actions {
-        let progress_action = action.counts();
-        if options.dry_run {
-            report_dry_run(action, reporter, options.verbose)?;
-        } else {
-            apply_action(plan, action, reporter, options.verbose)?;
-        }
-
-        if !options.verbose && progress_action {
-            report(
-                reporter,
-                OutputEvent::FileOperationActionAdvanced {
-                    operation: group.operation,
-                    source: group.source.clone(),
-                    target: group.target.clone(),
-                },
-            )?;
-        }
-    }
-
-    if !options.verbose {
-        let summary = group.summary();
-        if summary.decision_count() > 0 {
-            report(
-                reporter,
-                OutputEvent::FileOperationFinished {
-                    operation: group.operation,
-                    source: group.source.clone(),
-                    target: group.target.clone(),
-                    summary,
-                    dry_run: options.dry_run,
-                },
-            )?;
-        }
-    }
-
-    Ok(progress_action_count)
 }
 
 fn operation_source_is_directory(plan: &ActionPlan, operation: &PlannedFileOperation) -> bool {
@@ -1051,288 +990,7 @@ fn ownership_drifted(_source: &Metadata, _target: &Metadata, _policy: MetadataPo
     false
 }
 
-fn report_dry_run(action: &FileAction, reporter: &mut dyn Reporter, detailed: bool) -> Result<()> {
-    if !detailed && !matches!(action, FileAction::Warning { .. }) {
-        return Ok(());
-    }
-
-    match action {
-        FileAction::CreateDirectory {
-            operation,
-            source,
-            target,
-            ..
-        }
-        | FileAction::CopyFile {
-            operation,
-            source,
-            target,
-            ..
-        }
-        | FileAction::CreateSymlink {
-            operation,
-            source,
-            target,
-            ..
-        } => report(
-            reporter,
-            OutputEvent::FileWouldApply {
-                operation: *operation,
-                source: source.clone(),
-                target: target.clone(),
-            },
-        ),
-        FileAction::RepairMetadata {
-            source,
-            target,
-            report: true,
-            ..
-        } => report(
-            reporter,
-            OutputEvent::FileMetadataWouldApply {
-                source: source.clone(),
-                target: target.clone(),
-            },
-        ),
-        FileAction::RepairMetadata { report: false, .. } => Ok(()),
-        FileAction::Delete { target, .. } => report(
-            reporter,
-            OutputEvent::FileWouldDelete {
-                path: target.clone(),
-            },
-        ),
-        FileAction::Skip {
-            operation,
-            target,
-            reason,
-        } => report(
-            reporter,
-            OutputEvent::FileWouldSkip {
-                operation: *operation,
-                target: target.clone(),
-                reason: reason.clone(),
-            },
-        ),
-        FileAction::Warning { path, reason } => report(
-            reporter,
-            OutputEvent::FileWarning {
-                path: path.clone(),
-                reason: reason.clone(),
-            },
-        ),
-    }
-}
-
-fn apply_action(
-    plan: &ActionPlan,
-    action: &FileAction,
-    reporter: &mut dyn Reporter,
-    detailed: bool,
-) -> Result<()> {
-    match action {
-        FileAction::CreateDirectory {
-            operation,
-            source,
-            target,
-            target_path,
-        } => {
-            with_writable_parent(
-                *operation,
-                target_path,
-                &plan.context().worktree_path,
-                || create_target_dir(*operation, target_path, &plan.context().worktree_path),
-            )?;
-            if detailed {
-                report_applied(reporter, *operation, source, target)?;
-            }
-            Ok(())
-        }
-        FileAction::CopyFile {
-            operation,
-            source,
-            target,
-            source_path,
-            target_path,
-            metadata_policy,
-            replace,
-        } => {
-            with_writable_parent(
-                *operation,
-                target_path,
-                &plan.context().worktree_path,
-                || {
-                    create_parent_dir(*operation, target_path, &plan.context().worktree_path)?;
-                    if *replace {
-                        remove_file_checked(
-                            *operation,
-                            target_path,
-                            &plan.context().worktree_path,
-                        )?;
-                    }
-                    copy_file_with_metadata_with_policy(
-                        *operation,
-                        source_path,
-                        target_path,
-                        &plan.context().root_path,
-                        &plan.context().worktree_path,
-                        *metadata_policy,
-                        Some(reporter),
-                    )
-                },
-            )?;
-            if detailed {
-                report_applied(reporter, *operation, source, target)?;
-            }
-            Ok(())
-        }
-        FileAction::RepairMetadata {
-            operation,
-            source,
-            target,
-            source_path,
-            target_path,
-            metadata_policy,
-            target_kind,
-            report: should_report,
-        } => {
-            apply_metadata(
-                *operation,
-                source_path,
-                target_path,
-                *metadata_policy,
-                *target_kind,
-                Some(reporter),
-            )?;
-            if detailed && *should_report {
-                report(
-                    reporter,
-                    OutputEvent::FileMetadataApplied {
-                        source: source.clone(),
-                        target: target.clone(),
-                    },
-                )?;
-            }
-            Ok(())
-        }
-        FileAction::CreateSymlink {
-            operation,
-            source,
-            target,
-            target_path,
-            preserved_source_path,
-            link_target,
-            final_target,
-            target_is_dir,
-            replace,
-        } => {
-            if let Some(source_path) = preserved_source_path {
-                ensure_preserved_source_symlink_safe(
-                    plan,
-                    *operation,
-                    source_path,
-                    target_path,
-                    link_target,
-                    final_target,
-                    *target_is_dir,
-                )?;
-            }
-            with_writable_parent(
-                *operation,
-                target_path,
-                &plan.context().worktree_path,
-                || {
-                    create_parent_dir(*operation, target_path, &plan.context().worktree_path)?;
-                    if *replace {
-                        remove_file_checked(
-                            *operation,
-                            target_path,
-                            &plan.context().worktree_path,
-                        )?;
-                    }
-                    create_symlink(
-                        *operation,
-                        link_target,
-                        *target_is_dir,
-                        target_path,
-                        &plan.context().worktree_path,
-                    )
-                },
-            )?;
-            if detailed {
-                report_applied(reporter, *operation, source, target)?;
-            }
-            Ok(())
-        }
-        FileAction::Delete {
-            target,
-            target_path,
-        } => {
-            with_writable_parent(
-                FileOperationKind::Sync,
-                target_path,
-                &plan.context().worktree_path,
-                || {
-                    remove_any(
-                        FileOperationKind::Sync,
-                        target_path,
-                        &plan.context().worktree_path,
-                    )
-                },
-            )?;
-            if detailed {
-                report(
-                    reporter,
-                    OutputEvent::FileDeleted {
-                        path: target.clone(),
-                    },
-                )?;
-            }
-            Ok(())
-        }
-        FileAction::Skip {
-            operation,
-            target,
-            reason,
-        } => {
-            if detailed {
-                report(
-                    reporter,
-                    OutputEvent::FileSkipped {
-                        operation: *operation,
-                        target: target.clone(),
-                        reason: reason.clone(),
-                    },
-                )?;
-            }
-            Ok(())
-        }
-        FileAction::Warning { path, reason } => report(
-            reporter,
-            OutputEvent::FileWarning {
-                path: path.clone(),
-                reason: reason.clone(),
-            },
-        ),
-    }
-}
-
-fn report_applied(
-    reporter: &mut dyn Reporter,
-    operation: FileOperationKind,
-    source: &Path,
-    target: &Path,
-) -> Result<()> {
-    report(
-        reporter,
-        OutputEvent::FileApplied {
-            operation,
-            source: source.to_path_buf(),
-            target: target.to_path_buf(),
-        },
-    )
-}
-
-fn with_writable_parent<F>(
+pub(crate) fn with_writable_parent<F>(
     operation: FileOperationKind,
     target_path: &Path,
     worktree_path: &Path,
@@ -1446,7 +1104,7 @@ fn make_directory_permissions_writable(permissions: &mut fs::Permissions) {
     permissions.set_readonly(false);
 }
 
-fn create_parent_dir(
+pub(crate) fn create_parent_dir(
     operation: FileOperationKind,
     target_path: &Path,
     worktree_path: &Path,
@@ -1469,7 +1127,7 @@ fn create_parent_dir(
     Ok(())
 }
 
-fn create_target_dir(
+pub(crate) fn create_target_dir(
     operation: FileOperationKind,
     target_path: &Path,
     worktree_path: &Path,
@@ -1568,7 +1226,7 @@ fn copy_file_with_metadata(
     )
 }
 
-fn copy_file_with_metadata_with_policy(
+pub(crate) fn copy_file_with_metadata_with_policy(
     operation: FileOperationKind,
     source_path: &Path,
     target_path: &Path,
@@ -1611,7 +1269,7 @@ fn copy_file_with_metadata_with_policy(
     )
 }
 
-fn apply_metadata(
+pub(crate) fn apply_metadata(
     operation: FileOperationKind,
     source_path: &Path,
     target_path: &Path,
@@ -1786,7 +1444,7 @@ fn ensure_source_file_safe(
     Ok(metadata)
 }
 
-fn ensure_preserved_source_symlink_safe(
+pub(crate) fn ensure_preserved_source_symlink_safe(
     plan: &ActionPlan,
     operation: FileOperationKind,
     source_path: &Path,
@@ -1848,7 +1506,7 @@ fn ensure_preserved_source_symlink_safe(
     Ok(())
 }
 
-fn remove_file_checked(
+pub(crate) fn remove_file_checked(
     operation: FileOperationKind,
     path: &Path,
     worktree_path: &Path,
@@ -1889,7 +1547,11 @@ fn remove_file(operation: FileOperationKind, path: &Path) -> Result<()> {
     })
 }
 
-fn remove_any(operation: FileOperationKind, path: &Path, worktree_path: &Path) -> Result<()> {
+pub(crate) fn remove_any(
+    operation: FileOperationKind,
+    path: &Path,
+    worktree_path: &Path,
+) -> Result<()> {
     if path.starts_with(worktree_path) {
         ensure_target_ancestors(
             operation,
@@ -1919,7 +1581,7 @@ fn target_parent<'a>(path: &'a Path, worktree_path: &'a Path) -> &'a Path {
     path.parent().unwrap_or(worktree_path)
 }
 
-fn create_symlink(
+pub(crate) fn create_symlink(
     operation: FileOperationKind,
     source: &Path,
     target_is_dir: bool,
