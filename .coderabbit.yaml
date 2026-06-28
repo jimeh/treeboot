@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+early_access: true
+inheritance: false
+language: "en-US"
+
+reviews:
+  request_changes_workflow: true
+  high_level_summary_in_walkthrough: true
+  in_progress_fortune: false
+  poem: false
+  auto_review:
+    enabled: true
+  finishing_touches:
+    unit_tests:
+      enabled: false
+  tools:
+    presidio:
+      enabled: false
+
+  path_instructions:
+    - path: "crates/**"
+      instructions: |
+        - Treat docs/SPEC.md as the source of truth for observable behavior.
+        - Flag implementation behavior that contradicts docs/SPEC.md unless
+          the PR intentionally updates the spec.
+        - When behavior, CLI output, validation semantics, config format, or
+          compatibility changes, verify docs/SPEC.md is updated in the same PR.
+        - When crate boundaries, public core APIs, command flow, execution
+          pipeline, or reporting architecture changes, verify
+          docs/ARCHITECTURE.md is updated in the same PR.
+    - path: "docs/SPEC.md"
+      instructions: |
+        - Verify the spec remains the authoritative behavior contract.
+        - Check that described behavior is implementable and matches the Rust
+          implementation and CLI tests.
+        - For observable contract changes, verify the visible spec version is
+          bumped and README references stay in sync.
+    - path: "docs/ARCHITECTURE.md"
+      instructions: |
+        - Verify this document matches the current crate/module boundaries,
+          public core APIs, command flow, execution pipeline, output/reporting
+          model, and known refactor pressure.
+        - Flag stale architecture claims, missing modules, outdated API names,
+          or sections that describe past plans rather than current code.
+    - path: "AGENTS.md"
+      instructions: |
+        - Verify agent instructions continue to state that docs/SPEC.md is the
+          behavior source of truth and docs/ARCHITECTURE.md must stay current
+          with implementation architecture.
+    - path: "docs/agents/**"
+      instructions: |
+        - Verify agent guidance does not duplicate the canonical architecture
+          map from docs/ARCHITECTURE.md or behavior contract from docs/SPEC.md.
+        - Agent docs should explain implementation workflow, validation, or
+          placement guidance and link to the canonical docs when needed.
+
+  pre_merge_checks:
+    custom_checks:
+      - name: "Spec conformance"
+        mode: "warning"
+        instructions: |
+          Pass only when implementation and documentation agree on observable
+          behavior. If a PR changes CLI behavior, config semantics, validation,
+          filesystem effects, command execution, output, compatibility, or
+          public behavior, docs/SPEC.md must describe the final behavior. If
+          the code contradicts docs/SPEC.md and the spec is not intentionally
+          updated, flag the implementation as wrong.
+      - name: "Architecture freshness"
+        mode: "warning"
+        instructions: |
+          Pass only when docs/ARCHITECTURE.md remains accurate. If a PR changes
+          crate responsibilities, public core APIs, major modules, command
+          orchestration, validation/planning/execution flow, output/reporting,
+          or current refactor pressure, the architecture document must be
+          updated or the PR must explain why no architecture doc update is
+          needed.
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "AGENTS.md"
+      - "docs/agents/*.md"
+      - "docs/SPEC.md"
+      - "docs/ARCHITECTURE.md"
+
+chat:
+  allow_non_org_members: false

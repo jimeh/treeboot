@@ -57,7 +57,7 @@ Most commands map to a small public core API. The default `treeboot` invocation 
 | CLI command | Core API | Primary modules | Side effects |
 | --- | --- | --- | --- |
 | `treeboot`, `treeboot run` | `run(RunOptions, Reporter)` | `run`, `context`, `discovery`, `config`, `validation`, `executor`, `files`, `commands` | May execute init scripts, apply file operations, and run configured commands. |
-| `treeboot status`, `info` | `inspect_status(StatusOptions)` | `status`, `context`, `discovery`, `config` | View-only. Reports worktree, root, config, and init-script discovery without parsing config. |
+| `treeboot status`, `info` | `inspect_status(StatusOptions)`; `inspect_status_snapshot(StatusOptions)` for serializable callers | `status`, `context`, `discovery`, `config` | View-only. Reports worktree, root, config, and init-script discovery without parsing config. |
 | `treeboot version` | `treeboot_version_info()`, `version_info(...)` | `metadata` | View-only. Reports package and implemented spec versions. |
 | `treeboot copy`, `symlink`, `sync` | `run_file_operation(FileOperationOptions, Reporter)` | `manual`, `context`, `config`, `validation`, `executor`, `files` | Applies one manual file-operation batch. Skips init scripts and configured actions, but loads config policy when present. |
 | `treeboot config` | `inspect_config(ConfigOptions)` | `config`, `context`, `validation` | View-only. Prints normalized config and warns when run validation would fail. |
@@ -152,9 +152,9 @@ _The normalized model is intentionally separate from the validated plan. Parsing
 
 1. `Config::discover_path` finds or validates a config path.
 2. `Config::load_discovered` returns a `LoadedConfig`.
-3. `Config::parse` builds `RawConfig`.
-4. Normalization emits `Config` plus source spans.
-5. `ActionPlan::from_manifest` validates files and commands.
+3. `Config::parse` parses raw TOML internally and returns normalized `Config`
+   plus source spans.
+4. `ActionPlan::from_manifest` validates files and commands.
 
 `ActionPlan` and its planned operation entries keep their fields private.
 External callers inspect validated plans through accessors instead of
@@ -189,6 +189,7 @@ flowchart LR
   CONTEXT["context.rs<br/>Worktree"]
   DISC["discovery.rs<br/>scripts + config"]
   GIT["git.rs<br/>Git wrapper"]
+  IGNORE["ignore_rules.rs<br/>copy/sync path ignores"]
   EXEC["executor.rs<br/>plan execution"]
   VALID["validation.rs<br/>ActionPlan<br/>boundary checks"]
   FILES["files.rs<br/>FileAction"]
@@ -212,6 +213,8 @@ flowchart LR
   GIT -.-> VALID
   CONFIG --> VALID
   MANUAL --> VALID
+  VALID --> IGNORE
+  FILES --> IGNORE
   VALID --> EXEC
   EXEC --> FILES
   EXEC --> CMDS
@@ -230,6 +233,7 @@ _`run.rs` is the broad orchestrator. Manual file commands load top-level config 
 | `doctor.rs` | Diagnostic aggregation across discovery and validation. | Fixing problems or applying effects. |
 | `env.rs` | Child environment inspection. | Script/config discovery beyond context resolution. |
 | `executor.rs` | Sequencing validated file and command execution. | Validation or CLI policy. |
+| `ignore_rules.rs` | Compiling and matching copy/sync path ignore rules. | Config parsing, validation policy, or filesystem mutation. |
 | `validation.rs` | Pre-side-effect checks, path normalization, duplicate targets, strict sync rejection, command cwd/env checks. | Parsing or filesystem mutation. |
 | `files.rs` | Planning concrete filesystem actions and applying copy, symlink, sync, delete, skip, warning events. | Config semantics or CLI argument validation. |
 | `commands.rs` | Sequential configured command spawning and dry-run output. | Parsing command config or deciding command order. |
@@ -350,6 +354,12 @@ These are the boundaries to preserve when adding new behavior or refactoring exi
 
 ### Current refactor pressure
 
-The most visible architecture debt is duplicate file-operation display and defaulting logic across config, manual operations, validation, files, output, and CLI text summaries. Consolidating those rules should improve the model without changing the pipeline described in this document.
+The most visible architecture debt is that file-operation presentation and
+runtime policy are spread across several layers. Operation-specific option
+defaulting is mostly centralized in config helpers, but manual commands still
+merge config/env/CLI policy before validation, `files.rs` builds action
+summaries, `output.rs` formats summary text, and the CLI reporter owns compact
+summary/progress presentation. Further consolidation should improve the model
+without changing the pipeline described in this document.
 
 This document describes the current implementation architecture. It is not a replacement for [docs/SPEC.md](SPEC.md), which remains the user-visible compatibility contract.

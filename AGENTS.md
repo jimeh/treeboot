@@ -10,6 +10,11 @@ The README is the user-facing summary; the spec is the contract when they differ
 
 ## Spec Discipline
 
+Treat [docs/SPEC.md](docs/SPEC.md) as the source of truth for observable
+behavior. If implementation behavior and the spec disagree, fix the
+implementation to match the spec unless the task is explicitly changing the
+contract. Do not leave drift between code, tests, CLI output, and the spec.
+
 Keep [docs/SPEC.md](docs/SPEC.md) complete enough that a separate
 implementation, in another language or runtime, could build a compatible
 `treeboot` from the spec alone. When planning uncovers observable behavior,
@@ -21,6 +26,25 @@ implementation plans or roadmap notes. Keep implementation tactics in
 When changing the observable contract in [docs/SPEC.md](docs/SPEC.md),
 bump the visible spec version in that file and keep the README's referenced
 spec version in sync.
+
+Before handoff on behavior changes, verify the implementation behavior matches
+[docs/SPEC.md](docs/SPEC.md). For changes that affect CLI behavior, config
+semantics, validation, filesystem effects, command execution, output, or
+compatibility, update the spec in the same change unless it already describes
+the final behavior.
+
+## Architecture Discipline
+
+Keep [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) accurate as the current
+implementation architecture. Update it when crate/module responsibilities,
+public core APIs, command flow, validation/planning/execution flow,
+output/reporting architecture, or the documented "Current refactor pressure"
+changes.
+
+Use [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the current system map and
+[docs/SPEC.md](docs/SPEC.md) for behavioral truth. If those documents appear to
+conflict, preserve the spec as the behavior contract and update architecture
+wording to describe how the implementation currently satisfies it.
 
 ## Pull Request Titles
 
@@ -41,7 +65,8 @@ in a release note.
 
 Useful deeper docs:
 
-- [docs/agents/architecture.md](docs/agents/architecture.md)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/agents/implementation-guidance.md](docs/agents/implementation-guidance.md)
 - [docs/agents/validation.md](docs/agents/validation.md)
 - [docs/agents/roadmap.md](docs/agents/roadmap.md)
 - [docs/agents/dependencies.md](docs/agents/dependencies.md)
