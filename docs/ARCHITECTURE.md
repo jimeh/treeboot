@@ -280,15 +280,15 @@ file-operation execution._
 | `executor.rs`     | Sequencing validated file and command execution.                                                              | Validation or CLI policy.                                  |
 | `file_actions.rs` | Concrete file action model, grouped operation actions, summary construction, and cross-action symlink warnings. | Filesystem traversal or mutation.                          |
 | `file_operations.rs` | Operation-level file application facade, apply options/report types, planning lifecycle events, and planning/execution sequencing. | Concrete planning decisions, action mutation details, or low-level filesystem helper implementation. |
-| `file_planning.rs` | Planning concrete filesystem actions from validated file operations.                                         | Config semantics, CLI argument validation, action summary modeling, output lifecycle, or mutation execution. |
-| `file_execution.rs` | Executing planned file-action groups and emitting compact/verbose file-operation output events.              | Planning filesystem actions or low-level filesystem helper implementation. |
-| `file_system.rs` | Low-level filesystem inspection, comparison, metadata, writable-parent, copy, symlink, and delete helpers for file planning and execution. | File-operation policy, action grouping, or output lifecycle. |
-| `ignore_rules.rs` | Compiling and matching copy/sync path ignore rules.                                                           | Config parsing, validation policy, or filesystem mutation. |
-| `runtime.rs`      | Environment/config/CLI runtime policy precedence and conversion to validation options.                        | Config parsing, Git discovery, or side effects.            |
-| `validation.rs`   | Pre-side-effect checks, path normalization, duplicate targets, strict sync rejection, command cwd/env checks. | Parsing or filesystem mutation.                            |
-| `commands.rs`     | Sequential configured command spawning and dry-run output.                                                    | Parsing command config or deciding command order.          |
-| `metadata.rs`     | Embedded config schema, spec version, and version metadata helpers.                                           | Generating source files or reading runtime files.          |
-| `output.rs`       | Structured output events and message formatting.                                                              | Choosing when events happen.                               |
+| `file_planning.rs` | Planning concrete filesystem actions from validated file operations. | Config semantics, CLI argument validation, action summary modeling, output lifecycle, or mutation execution. |
+| `file_execution.rs` | Executing planned file-action groups and emitting compact/verbose file-operation output events. | Planning filesystem actions or low-level filesystem helper implementation. |
+| `file_system.rs` | Low-level filesystem inspection, comparison, metadata, writable-parent, copy, symlink, delete helpers, and permission-denied ownership warnings for file planning and execution. | File-operation policy, action grouping, or output lifecycle. |
+| `ignore_rules.rs` | Compiling and matching copy/sync path ignore rules. | Config parsing, validation policy, or filesystem mutation. |
+| `runtime.rs` | Environment/config/CLI runtime policy precedence and conversion to validation options. | Config parsing, Git discovery, or side effects. |
+| `validation.rs` | Pre-side-effect checks, path normalization, duplicate targets, strict sync rejection, command cwd/env checks. | Parsing or filesystem mutation. |
+| `commands.rs` | Sequential configured command spawning and dry-run output. | Parsing command config or deciding command order. |
+| `metadata.rs` | Embedded config schema, spec version, and version metadata helpers. | Generating source files or reading runtime files. |
+| `output.rs` | Structured output events and message formatting. | Choosing when events happen. |
 
 ## Filesystem effects: File Operation Engine
 
@@ -298,7 +298,8 @@ events, asks `file_planning.rs` to plan each operation group, asks
 `file_actions.rs` to add cross-action warnings, then asks `file_execution.rs`
 to report or apply each group. `file_planning.rs` uses `file_system.rs` for
 filesystem inspection and comparison. `file_execution.rs` delegates low-level
-mutation helpers to `file_system.rs`.
+mutation helpers, including ownership-preservation warnings, to
+`file_system.rs`.
 Compact mode reports lifecycle events and one summary per group; verbose mode
 reports the concrete action stream.
 
@@ -410,27 +411,16 @@ integration tests for user-visible command behavior.
 These are the boundaries to preserve when adding new behavior or refactoring
 existing modules.
 
-| If changing                   | Touch                                                                                         | Keep invariant                                                                                |
-| ----------------------------- | --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Config file format            | `docs/SPEC.md`, `config.rs`, schema generator, schema file, parser tests.                     | The spec is the contract; generated schema must be fresh.                                     |
-| File operation behavior       | `config.rs`, `manual.rs`, `validation.rs`, `file_operations.rs`, `file_planning.rs`, CLI tests. | Declarative config and manual commands must share planning and file execution semantics.      |
-| Command runtime               | `config.rs`, `validation.rs`, `commands.rs`, run tests, spec.                                 | Commands run after file operations and inherit treeboot-owned environment variables.          |
-| Inspection/reporting commands | core command facade module, CLI command adapter, output-format tests, spec.                   | Core owns report data; CLI owns text/JSON/YAML rendering.                                     |
+| If changing | Touch | Keep invariant |
+| --- | --- | --- |
+| Config file format | `docs/SPEC.md`, `config.rs`, schema generator, schema file, parser tests. | The spec is the contract; generated schema must be fresh. |
+| Runtime policy semantics | `runtime.rs`, command facade modules, config/check/doctor/run/manual tests, spec when observable. | Config/env/CLI precedence must stay centralized and consistent across run-like commands. |
+| File operation behavior | `config.rs`, `manual.rs`, `validation.rs`, `file_actions.rs`, `file_operations.rs`, `file_planning.rs`, `file_execution.rs`, `file_system.rs`, CLI tests. | Declarative config and manual commands must share planning and file execution semantics; keep policy, planning, action modeling, execution, and low-level filesystem helpers separated by module role. |
+| Command runtime | `config.rs`, `validation.rs`, `commands.rs`, run tests, spec. | Commands run after file operations and inherit treeboot-owned environment variables. |
+| Inspection/reporting commands | core command facade module, CLI command adapter, output-format tests, spec. | Core owns report data; CLI owns text/JSON/YAML rendering. |
 | Metadata and generated assets | `docs/SPEC.md`, `metadata.rs`, `scripts/generate-metadata.sh`, schema generator, asset files. | Generated assets must stay crate-local so installed binaries and published crates embed them. |
 | CLI-only surface              | `crates/treeboot/src/main.rs`, `crates/treeboot/src/commands/`, and CLI tests.                | CLI stays an adapter. Core owns reusable behavior and typed semantics.                        |
 | Output wording                | `output.rs`, CLI integration tests, spec if contractual.                                      | Structured events stay separate from command-line formatting decisions where practical.       |
-
-### Current refactor pressure
-
-The runtime policy and file-operation boundaries that previously carried the
-most maintenance pressure are now separated by role: `runtime.rs` owns
-config/env/CLI precedence, `file_operations.rs` owns operation-level file
-application sequencing, `file_planning.rs` owns concrete action planning,
-`file_actions.rs` owns action grouping and summaries, `file_execution.rs` owns
-planned action execution, and `file_system.rs` owns low-level filesystem
-helpers. New file-operation behavior should preserve those boundaries instead
-of reintroducing policy, planning, execution, and filesystem mutation into one
-module.
 
 This document describes the current implementation architecture. It is not a
 replacement for [docs/SPEC.md](SPEC.md), which remains the user-visible
