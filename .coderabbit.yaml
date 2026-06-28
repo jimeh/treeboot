@@ -1,7 +1,22 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+early_access: true
+inheritance: false
 language: "en-US"
 
 reviews:
+  request_changes_workflow: true
+  high_level_summary_in_walkthrough: true
+  in_progress_fortune: false
+  poem: false
+  auto_review:
+    enabled: true
+  finishing_touches:
+    unit_tests:
+      enabled: false
+  tools:
+    presidio:
+      enabled: false
+
   path_instructions:
     - path: "crates/**"
       instructions: |
@@ -68,3 +83,6 @@ knowledge_base:
       - "docs/agents/*.md"
       - "docs/SPEC.md"
       - "docs/ARCHITECTURE.md"
+
+chat:
+  allow_non_org_members: false
