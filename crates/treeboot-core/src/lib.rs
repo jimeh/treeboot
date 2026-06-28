@@ -22,6 +22,7 @@ mod manual;
 mod metadata;
 mod output;
 mod run;
+mod runtime;
 mod status;
 mod validation;
 
@@ -43,6 +44,7 @@ pub use metadata::{
 };
 pub use output::{FileOperationSummary, OutputEvent, Reporter};
 pub use run::{RunAction, RunOptions, RunReport, run};
+pub use runtime::{ResolvedRuntimePolicy, RuntimeOptionOverrides, RuntimePolicy};
 pub use status::{
     InitScriptStatus, StatusOptions, StatusReport, StatusSnapshotReport, inspect_status,
     inspect_status_snapshot,
@@ -56,8 +58,8 @@ pub use validation::{
 pub type Result<T> = std::result::Result<T, Error>;
 pub use config::{
     CommandKind, CommandOperation, Config, ConfigOptions, ConfigReport, ConfigRuntimeOptions,
-    FileOperation, FileOperationKind, LoadedConfig, MetadataField, RuntimeOptionOverrides,
-    SourceSpan, SymlinkMode, SyncCompare, inspect_config,
+    FileOperation, FileOperationKind, LoadedConfig, MetadataField, SourceSpan, SymlinkMode,
+    SyncCompare, inspect_config,
 };
 
 /// Parsed treeboot manifest.
@@ -74,6 +76,3 @@ pub type FileOperationSpec = FileOperation;
 
 /// Raw command intent used to build an action plan.
 pub type CommandSpec = CommandOperation;
-
-/// Resolved runtime policy from defaults, config, environment, and CLI flags.
-pub type RuntimePolicy = ConfigRuntimeOptions;

@@ -2,11 +2,10 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use crate::config::RuntimeOptionOverrides;
 use crate::context;
 use crate::{
-    ActionPlan, Config, EnvironmentInput, Error, InitScriptDiscovery, Result, Worktree,
-    WorktreeOptions,
+    ActionPlan, Config, EnvironmentInput, Error, InitScriptDiscovery, Result, RuntimePolicy,
+    Worktree, WorktreeOptions,
 };
 
 /// Options for checking treeboot bootstrap behavior.
@@ -84,8 +83,8 @@ impl From<&Worktree> for WorktreeSnapshot {
 /// current state as invalid, config loading fails, or declarative validation
 /// fails.
 pub fn check(options: CheckOptions) -> Result<CheckReport> {
-    let env_options = RuntimeOptionOverrides::from_environment(&options.environment)?;
-    let pre_config_strict = env_options.pre_config_strict(options.strict);
+    let runtime_policy = RuntimePolicy::from_environment(&options.environment, options.strict)?;
+    let pre_config_strict = runtime_policy.pre_config_strict();
     let context = context::resolve(&WorktreeOptions {
         cwd: options.cwd.clone(),
         root: options.root.clone(),
@@ -117,8 +116,13 @@ pub fn check(options: CheckOptions) -> Result<CheckReport> {
     match Config::discover_path(&context, options.config.as_deref())? {
         Some(path) => {
             let config = Config::load(&path, &context)?;
-            let plan_options = env_options.resolve(&config.options, options.strict);
-            ActionPlan::from_manifest(&path, &config, &context, plan_options.into())?;
+            let plan_options = runtime_policy.resolve(&config.options);
+            ActionPlan::from_manifest(
+                &path,
+                &config,
+                &context,
+                plan_options.action_plan_options(),
+            )?;
 
             Ok(CheckReport {
                 context: WorktreeSnapshot::from(&context),

@@ -68,15 +68,15 @@ callers that want to discover a `Worktree`, load a `LoadedConfig`, build an
 
 | CLI command                        | Core API                                                                                                 | Primary modules                                                                        | Side effects                                                                                                              |
 | ---------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `treeboot`, `treeboot run`         | `run(RunOptions, Reporter)`                                                                              | `run`, `context`, `discovery`, `config`, `validation`, `executor`, `files`, `commands` | May execute init scripts, apply file operations, and run configured commands.                                             |
+| `treeboot`, `treeboot run`         | `run(RunOptions, Reporter)`                                                                              | `run`, `runtime`, `context`, `discovery`, `config`, `validation`, `executor`, `files`, `commands` | May execute init scripts, apply file operations, and run configured commands.                                             |
 | `treeboot status`, `info`          | `inspect_status(StatusOptions)`; `inspect_status_snapshot(StatusOptions)` for serializable callers       | `status`, `context`, `discovery`, `config`                                             | View-only. Reports worktree, root, config, and init-script discovery without parsing config.                              |
 | `treeboot version`                 | `treeboot_version_info()`, `version_info(...)`                                                           | `metadata`                                                                             | View-only. Reports package and implemented spec versions.                                                                 |
-| `treeboot copy`, `symlink`, `sync` | `run_file_operation(FileOperationOptions, Reporter)`                                                     | `manual`, `context`, `config`, `validation`, `executor`, `files`                       | Applies one manual file-operation batch. Skips init scripts and configured actions, but loads config policy when present. |
-| `treeboot config`                  | `inspect_config(ConfigOptions)`                                                                          | `config`, `context`, `validation`                                                      | View-only. Prints normalized config and warns when run validation would fail.                                             |
-| `treeboot check`                   | `check(CheckOptions)`                                                                                    | `check`, `context`, `discovery`, `config`, `validation`                                | View-only. Validates selected bootstrap behavior without running scripts or applying effects.                             |
+| `treeboot copy`, `symlink`, `sync` | `run_file_operation(FileOperationOptions, Reporter)`                                                     | `manual`, `runtime`, `context`, `config`, `validation`, `executor`, `files`            | Applies one manual file-operation batch. Skips init scripts and configured actions, but loads config policy when present. |
+| `treeboot config`                  | `inspect_config(ConfigOptions)`                                                                          | `config`, `runtime`, `context`, `validation`                                           | View-only. Prints normalized config and warns when run validation would fail.                                             |
+| `treeboot check`                   | `check(CheckOptions)`                                                                                    | `check`, `runtime`, `context`, `discovery`, `config`, `validation`                     | View-only. Validates selected bootstrap behavior without running scripts or applying effects.                             |
 | `treeboot init`                    | `init(InitOptions, Reporter)`                                                                            | `init`, `context`, `output`                                                            | Writes a starter config or executable init script.                                                                        |
 | `treeboot schema`                  | `config_schema_json()`                                                                                   | `metadata`                                                                             | View-only unless `--output` is used. Prints or writes the bundled config schema.                                          |
-| `treeboot doctor`                  | `diagnose(DoctorOptions)`                                                                                | `doctor`, `check`, `context`, `discovery`, `config`, `validation`                      | View-only. Reports diagnostic statuses for discovery and validation.                                                      |
+| `treeboot doctor`                  | `diagnose(DoctorOptions)`                                                                                | `doctor`, `runtime`, `context`, `discovery`, `config`, `validation`                    | View-only. Reports diagnostic statuses for discovery and validation, including strict diagnostics when requested.         |
 | `treeboot env`                     | `inspect_env(EnvOptions)`                                                                                | `env`, `context`                                                                       | View-only. Reports child environment variables passed to scripts and commands.                                            |
 | `treeboot completions`             | CLI-owned completion registration; `file_operation_source_candidates(...)` for dynamic source completion | `main.rs`, `commands/completions.rs`, `manual`                                         | Prints shell registration. Dynamic source candidates delegate to core.                                                    |
 
@@ -210,6 +210,7 @@ flowchart LR
   ENV["env.rs<br/>child environment"]
   MANUAL["manual.rs<br/>manual files"]
   CONFIG["config.rs<br/>parse + normalize"]
+  RUNTIME["runtime.rs<br/>policy precedence"]
   INIT["init.rs<br/>starter files"]
   META["metadata.rs<br/>version + schema"]
   CONTEXT["context.rs<br/>Worktree"]
@@ -223,17 +224,21 @@ flowchart LR
   OUT["output.rs<br/>events"]
 
   RUN --> CONTEXT
+  RUN --> RUNTIME
   RUN --> DISC
   STATUS --> CONTEXT
   STATUS --> DISC
   CHECK --> CONTEXT
+  CHECK --> RUNTIME
   CHECK --> DISC
-  DOCTOR --> CHECK
+  DOCTOR --> RUNTIME
   DOCTOR --> CONTEXT
   DOCTOR --> DISC
   ENV --> CONTEXT
   MANUAL --> CONTEXT
+  MANUAL --> RUNTIME
   CONFIG --> CONTEXT
+  CONFIG -.-> RUNTIME
   CONTEXT -.-> VALID
   DISC -.-> VALID
   GIT -.-> VALID
@@ -261,6 +266,7 @@ policy when present, skip configured commands, and reuse validation and files._
 | `env.rs`          | Child environment inspection.                                                                                 | Script/config discovery beyond context resolution.         |
 | `executor.rs`     | Sequencing validated file and command execution.                                                              | Validation or CLI policy.                                  |
 | `ignore_rules.rs` | Compiling and matching copy/sync path ignore rules.                                                           | Config parsing, validation policy, or filesystem mutation. |
+| `runtime.rs`      | Environment/config/CLI runtime policy precedence and conversion to validation options.                        | Config parsing, Git discovery, or side effects.            |
 | `validation.rs`   | Pre-side-effect checks, path normalization, duplicate targets, strict sync rejection, command cwd/env checks. | Parsing or filesystem mutation.                            |
 | `files.rs`        | Planning concrete filesystem actions and applying copy, symlink, sync, delete, skip, warning events.          | Config semantics or CLI argument validation.               |
 | `commands.rs`     | Sequential configured command spawning and dry-run output.                                                    | Parsing command config or deciding command order.          |
@@ -389,13 +395,12 @@ existing modules.
 
 ### Current refactor pressure
 
-The most visible architecture debt is that file-operation presentation and
-runtime policy are spread across several layers. Operation-specific option
-defaulting is mostly centralized in config helpers, but manual commands still
-merge config/env/CLI policy before validation, `files.rs` builds action
-summaries, `output.rs` formats summary text, and the CLI reporter owns compact
-summary/progress presentation. Further consolidation should improve the model
-without changing the pipeline described in this document.
+The most visible remaining architecture debt is that file-operation presentation
+is spread across several layers. Runtime policy precedence is centralized in
+`runtime.rs`, but `files.rs` still builds action summaries, `output.rs` formats
+summary text, and the CLI reporter owns compact summary/progress presentation.
+Further consolidation should improve the model without changing the pipeline
+described in this document.
 
 This document describes the current implementation architecture. It is not a
 replacement for [docs/SPEC.md](SPEC.md), which remains the user-visible

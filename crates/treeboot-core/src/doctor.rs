@@ -3,9 +3,10 @@ use std::path::PathBuf;
 use serde::Serialize;
 
 use crate::check::WorktreeSnapshot;
-use crate::config::RuntimeOptionOverrides;
 use crate::context;
-use crate::{ActionPlan, Config, EnvironmentInput, InitScriptDiscovery, WorktreeOptions};
+use crate::{
+    ActionPlan, Config, EnvironmentInput, InitScriptDiscovery, RuntimePolicy, WorktreeOptions,
+};
 
 /// Options for diagnosing treeboot discovery and validation.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -20,6 +21,8 @@ pub struct DoctorOptions {
     pub config: Option<PathBuf>,
     /// Skips init script discovery and uses declarative config discovery.
     pub no_init_script: bool,
+    /// Fails diagnostics on missing config and stricter file-operation conflicts.
+    pub strict: bool,
 }
 
 /// Diagnostic status.
@@ -70,10 +73,11 @@ pub fn diagnose(options: DoctorOptions) -> DoctorReport {
     let mut diagnostics = Vec::new();
     let mut fatal = false;
 
-    let env_options = match RuntimeOptionOverrides::from_environment(&options.environment) {
-        Ok(options) => {
+    let runtime_policy = match RuntimePolicy::from_environment(&options.environment, options.strict)
+    {
+        Ok(policy) => {
             diagnostics.push(ok("environment_options", "environment options are valid"));
-            options
+            policy
         }
         Err(error) => {
             diagnostics.push(error_diag("environment_options", error.to_string()));
@@ -112,6 +116,14 @@ pub fn diagnose(options: DoctorOptions) -> DoctorReport {
     };
     let context_snapshot = WorktreeSnapshot::from(&context);
 
+    if context.root_path == context.worktree_path && runtime_policy.pre_config_strict() {
+        fatal = true;
+        diagnostics.push(error_diag(
+            "root_worktree",
+            "root checkout is not a worktree under strict mode",
+        ));
+    }
+
     if !options.no_init_script && options.config.is_none() {
         let scripts = InitScriptDiscovery::discover(&context);
         if let Some(path) = scripts.executable {
@@ -134,7 +146,7 @@ pub fn diagnose(options: DoctorOptions) -> DoctorReport {
         diagnostics.push(ok("init_script", "init script discovery skipped"));
     }
 
-    match check_config(&options, &context, env_options) {
+    match check_config(&options, &context, &runtime_policy) {
         Ok(diagnostic) => diagnostics.push(diagnostic),
         Err(diagnostic) => {
             fatal = true;
@@ -152,19 +164,23 @@ pub fn diagnose(options: DoctorOptions) -> DoctorReport {
 fn check_config(
     options: &DoctorOptions,
     context: &crate::Worktree,
-    env_options: RuntimeOptionOverrides,
+    runtime_policy: &RuntimePolicy,
 ) -> std::result::Result<Diagnostic, Diagnostic> {
     let path = Config::discover_path(context, options.config.as_deref())
         .map_err(|error| error_diag("config", error.to_string()))?;
 
     let Some(path) = path else {
+        if runtime_policy.pre_config_strict() {
+            return Err(error_diag("config", "no config detected under strict mode"));
+        }
+
         return Ok(warning("config", "no config detected"));
     };
 
     let config =
         Config::load(&path, context).map_err(|error| error_diag("config", error.to_string()))?;
-    let plan_options = env_options.resolve(&config.options, false);
-    ActionPlan::from_manifest(&path, &config, context, plan_options.into())
+    let plan_options = runtime_policy.resolve(&config.options);
+    ActionPlan::from_manifest(&path, &config, context, plan_options.action_plan_options())
         .map_err(|error| error_diag("config_validation", error.to_string()))?;
 
     Ok(ok("config", format!("config is valid: {}", path.display())))

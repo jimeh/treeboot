@@ -362,6 +362,7 @@ fn public_api_should_expose_metadata_env_check_and_doctor() {
         environment: EnvironmentInput::empty(),
         config: None,
         no_init_script: false,
+        strict: false,
     });
     assert!(!doctor.has_fatal());
 }
