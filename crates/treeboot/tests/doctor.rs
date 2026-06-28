@@ -116,11 +116,63 @@ fn doctor_strict_should_treat_missing_config_as_fatal() {
 }
 
 #[test]
+fn doctor_should_apply_environment_strict_to_missing_config() {
+    let repo = git_worktree();
+
+    let json = treeboot()
+        .args(["doctor", "--json"])
+        .env("TREEBOOT_STRICT", "true")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("doctor found fatal issues"))
+        .get_output()
+        .stdout
+        .clone();
+
+    let json = parse_json(json, "doctor");
+    assert_doctor_report_shape(&json);
+    assert_eq!(json["fatal"], true);
+    assert!(has_diagnostic(
+        &json,
+        "config",
+        "error",
+        "no config detected under strict mode"
+    ));
+}
+
+#[test]
 fn doctor_strict_should_report_root_checkout_as_fatal_diagnostic() {
     let repo = git_repo();
 
     let json = treeboot()
         .args(["doctor", "--strict", "--json"])
+        .current_dir(repo.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("doctor found fatal issues"))
+        .get_output()
+        .stdout
+        .clone();
+
+    let json = parse_json(json, "doctor");
+    assert_doctor_report_shape(&json);
+    assert_eq!(json["fatal"], true);
+    assert!(has_diagnostic(
+        &json,
+        "root_worktree",
+        "error",
+        "root checkout is not a worktree under strict mode"
+    ));
+}
+
+#[test]
+fn doctor_should_apply_environment_strict_to_root_checkout() {
+    let repo = git_repo();
+
+    let json = treeboot()
+        .args(["doctor", "--json"])
+        .env("TREEBOOT_STRICT", "true")
         .current_dir(repo.path())
         .assert()
         .failure()

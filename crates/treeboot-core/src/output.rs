@@ -278,6 +278,9 @@ pub enum OutputEvent {
 
 impl OutputEvent {
     /// Formats the event as a user-facing line.
+    ///
+    /// Structured lifecycle events used only to drive presentation state return
+    /// an empty string because they do not have a durable text-line form.
     #[must_use]
     pub fn message(&self) -> String {
         match self {
@@ -590,6 +593,38 @@ mod tests {
             event.message(),
             "treeboot: would skip sync shared; missing source"
         );
+    }
+
+    #[test]
+    fn message_should_omit_file_operation_lifecycle_events() {
+        let events = [
+            OutputEvent::FileOperationPlanningStarted {
+                operation: FileOperationKind::Copy,
+                source: PathBuf::from(".env"),
+                target: PathBuf::from(".env"),
+            },
+            OutputEvent::FileOperationPlanningFinished {
+                operation: FileOperationKind::Copy,
+                source: PathBuf::from(".env"),
+                target: PathBuf::from(".env"),
+                action_count: 1,
+            },
+            OutputEvent::FileOperationExecutionStarted {
+                operation: FileOperationKind::Copy,
+                source: PathBuf::from(".env"),
+                target: PathBuf::from(".env"),
+                action_count: 1,
+            },
+            OutputEvent::FileOperationActionAdvanced {
+                operation: FileOperationKind::Copy,
+                source: PathBuf::from(".env"),
+                target: PathBuf::from(".env"),
+            },
+        ];
+
+        for event in events {
+            assert_eq!(event.message(), "");
+        }
     }
 
     #[test]
