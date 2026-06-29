@@ -4,7 +4,7 @@ mod common;
 
 use common::{
     assert_context_shape, assert_json_object_keys, git_repo, git_worktree, parse_json,
-    toml_string_path, treeboot, write_file,
+    skip_without_symlinks, symlink_file, toml_string_path, treeboot, write_file,
 };
 
 #[cfg(unix)]
@@ -311,16 +311,21 @@ fn check_should_honor_source_boundary_environment_override() {
     assert!(!repo.worktree_path().join("secret").exists());
 }
 
-#[cfg(unix)]
 #[test]
 fn check_should_validate_existing_symlink_to_root_source_in_subdirectory() {
+    if skip_without_symlinks(
+        "check_should_validate_existing_symlink_to_root_source_in_subdirectory",
+    ) {
+        return;
+    }
+
     let repo = git_worktree();
     let source = repo.root_path().join("config/master.key");
     let target = repo.worktree_path().join("config/master.key");
     std::fs::create_dir_all(source.parent().unwrap()).expect("source dir should be created");
     std::fs::create_dir_all(target.parent().unwrap()).expect("target dir should be created");
     write_file(&source, "secret\n");
-    std::os::unix::fs::symlink(&source, &target).expect("existing symlink should be created");
+    symlink_file(&source, &target).expect("existing symlink should be created");
     write_file(
         &repo.worktree_path().join(".treeboot.toml"),
         r#"symlink = ["config/master.key"]"#,
@@ -335,12 +340,11 @@ fn check_should_validate_existing_symlink_to_root_source_in_subdirectory() {
         .stdout("treeboot: check ok\n");
 
     assert_eq!(
-        std::fs::canonicalize(&target).expect("target symlink should resolve"),
-        std::fs::canonicalize(&source).expect("source should resolve")
+        dunce::canonicalize(&target).expect("target symlink should resolve"),
+        dunce::canonicalize(&source).expect("source should resolve")
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn check_should_honor_source_boundary_environment_override_for_symlink() {
     let repo = git_worktree();
@@ -373,7 +377,6 @@ fn check_should_honor_source_boundary_environment_override_for_symlink() {
     assert!(!repo.worktree_path().join("secret").exists());
 }
 
-#[cfg(unix)]
 #[test]
 fn check_should_honor_target_boundary_environment_override_for_symlink() {
     let repo = git_worktree();

@@ -137,7 +137,10 @@ pub fn write_executable_script(path: &Path, content: &str) {
 
 /// Creates a file symlink at `link` pointing to `target`, using the
 /// platform-appropriate API so symlink tests share one body across platforms.
-pub fn symlink_file(target: &Path, link: &Path) -> std::io::Result<()> {
+/// Accepts the same argument shapes as `std::os::unix::fs::symlink` so call
+/// sites convert as a plain rename.
+pub fn symlink_file(target: impl AsRef<Path>, link: impl AsRef<Path>) -> std::io::Result<()> {
+    let (target, link) = (target.as_ref(), link.as_ref());
     #[cfg(unix)]
     {
         std::os::unix::fs::symlink(target, link)
@@ -149,8 +152,11 @@ pub fn symlink_file(target: &Path, link: &Path) -> std::io::Result<()> {
 }
 
 /// Creates a directory symlink at `link` pointing to `target`, using the
-/// platform-appropriate API.
-pub fn symlink_dir(target: &Path, link: &Path) -> std::io::Result<()> {
+/// platform-appropriate API. On Windows a directory symlink must be created
+/// with the directory-specific call, so pick this when the target is a
+/// directory.
+pub fn symlink_dir(target: impl AsRef<Path>, link: impl AsRef<Path>) -> std::io::Result<()> {
+    let (target, link) = (target.as_ref(), link.as_ref());
     #[cfg(unix)]
     {
         std::os::unix::fs::symlink(target, link)
@@ -174,7 +180,7 @@ pub fn symlinks_supported() -> bool {
         if std::fs::write(&target, b"probe").is_err() {
             return false;
         }
-        symlink_file(&target, &dir.path().join("probe-link")).is_ok()
+        symlink_file(&target, dir.path().join("probe-link")).is_ok()
     })
 }
 

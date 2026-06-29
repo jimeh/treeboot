@@ -30,6 +30,9 @@ mod runtime;
 mod status;
 mod validation;
 
+#[cfg(test)]
+mod test_support;
+
 pub use check::{CheckAction, CheckOptions, CheckReport, WorktreeSnapshot, check};
 pub use context::{Environment, EnvironmentInput, Worktree, WorktreeOptions};
 pub use discovery::{IgnoredInitScript, InitScriptDiscovery};

@@ -3,7 +3,7 @@ use tempfile::TempDir;
 
 mod common;
 
-use common::{treeboot, write_file};
+use common::{skip_without_symlinks, symlink_file, treeboot, write_file};
 
 #[test]
 fn init_config_should_create_starter_config() {
@@ -75,16 +75,19 @@ fn init_force_should_be_usage_error() {
         .stderr(predicate::str::contains("unexpected argument"));
 }
 
-#[cfg(unix)]
 #[test]
 fn init_config_should_fail_when_target_is_symlink_without_writing_through_it() {
-    use std::os::unix::fs::symlink;
+    if skip_without_symlinks(
+        "init_config_should_fail_when_target_is_symlink_without_writing_through_it",
+    ) {
+        return;
+    }
 
     let dir = TempDir::new().expect("tempdir should be created");
     let target = dir.path().join("target.toml");
     let link = dir.path().join(".treeboot.toml");
     write_file(&target, "old\n");
-    symlink(&target, &link).expect("symlink should be created");
+    symlink_file(&target, &link).expect("symlink should be created");
 
     treeboot()
         .args(["init", "--config"])

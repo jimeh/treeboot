@@ -5,7 +5,9 @@ use predicates::prelude::*;
 
 mod common;
 
-use common::{display_path, git_repo, git_worktree, treeboot, write_file};
+use common::{
+    display_path, git_repo, git_worktree, skip_without_symlinks, symlink_file, treeboot, write_file,
+};
 
 #[cfg(unix)]
 use common::write_executable_script;
@@ -621,9 +623,12 @@ fn overlapping_manual_sync_delete_targets_should_fail_before_side_effects() {
     assert!(!repo.worktree_path().join("shared").exists());
 }
 
-#[cfg(unix)]
 #[test]
 fn unsafe_source_symlink_should_fail_before_side_effects() {
+    if skip_without_symlinks("unsafe_source_symlink_should_fail_before_side_effects") {
+        return;
+    }
+
     let repo = git_worktree();
     let outside = repo
         .root_path()
@@ -633,7 +638,7 @@ fn unsafe_source_symlink_should_fail_before_side_effects() {
     write_file(&outside, "secret\n");
     std::fs::create_dir_all(repo.root_path().join("unsafe"))
         .expect("source directory should be created");
-    std::os::unix::fs::symlink(&outside, repo.root_path().join("unsafe/link"))
+    symlink_file(&outside, repo.root_path().join("unsafe/link"))
         .expect("unsafe symlink should be created");
 
     treeboot()
