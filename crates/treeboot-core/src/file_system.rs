@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fs::{self, File, FileTimes, Metadata};
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
@@ -240,11 +241,11 @@ pub(crate) fn with_writable_parent<F>(
 where
     F: FnOnce() -> Result<()>,
 {
-    if target_path.starts_with(worktree_path) {
+    if let Some(anchor) = matching_target_anchor(target_path, worktree_path) {
         ensure_target_ancestors(
             operation,
-            target_parent(target_path, worktree_path),
-            worktree_path,
+            target_parent(target_path, anchor.as_ref()),
+            anchor.as_ref(),
             false,
         )?;
     }
@@ -272,14 +273,14 @@ fn prepare_parent_for_writes(
     target_path: &Path,
     worktree_path: &Path,
 ) -> Result<Option<(PathBuf, fs::Permissions)>> {
-    if !target_path.starts_with(worktree_path) {
+    let Some(anchor) = matching_target_anchor(target_path, worktree_path) else {
         return Ok(None);
-    }
+    };
 
     let Some(parent) = nearest_existing_parent(
         operation,
-        target_parent(target_path, worktree_path),
-        worktree_path,
+        target_parent(target_path, anchor.as_ref()),
+        anchor.as_ref(),
     )?
     else {
         return Ok(None);
@@ -361,19 +362,22 @@ pub(crate) fn create_parent_dir(
     target_path: &Path,
     worktree_path: &Path,
 ) -> Result<()> {
-    let parent = target_parent(target_path, worktree_path);
+    let anchor = matching_target_anchor(target_path, worktree_path);
+    let parent = anchor.as_ref().map_or_else(
+        || target_parent(target_path, worktree_path),
+        |anchor| target_parent(target_path, anchor.as_ref()),
+    );
 
-    if target_path.starts_with(worktree_path) {
-        ensure_target_ancestors(operation, parent, worktree_path, false)?;
+    if let Some(anchor) = anchor.as_ref() {
+        ensure_target_ancestors(operation, parent, anchor.as_ref(), false)?;
     }
-
     fs::create_dir_all(parent).map_err(|source| Error::FileOperationIo {
         operation: operation.as_str(),
         path: parent.to_path_buf(),
         source,
     })?;
-    if target_path.starts_with(worktree_path) {
-        ensure_target_ancestors(operation, parent, worktree_path, true)?;
+    if let Some(anchor) = anchor.as_ref() {
+        ensure_target_ancestors(operation, parent, anchor.as_ref(), true)?;
     }
 
     Ok(())
@@ -384,16 +388,17 @@ pub(crate) fn create_target_dir(
     target_path: &Path,
     worktree_path: &Path,
 ) -> Result<()> {
-    if target_path.starts_with(worktree_path) {
-        ensure_target_ancestors(operation, target_path, worktree_path, false)?;
+    let anchor = matching_target_anchor(target_path, worktree_path);
+    if let Some(anchor) = anchor.as_ref() {
+        ensure_target_ancestors(operation, target_path, anchor.as_ref(), false)?;
     }
     fs::create_dir_all(target_path).map_err(|source| Error::FileOperationIo {
         operation: operation.as_str(),
         path: target_path.to_path_buf(),
         source,
     })?;
-    if target_path.starts_with(worktree_path) {
-        ensure_target_ancestors(operation, target_path, worktree_path, true)?;
+    if let Some(anchor) = anchor.as_ref() {
+        ensure_target_ancestors(operation, target_path, anchor.as_ref(), true)?;
     }
 
     Ok(())
@@ -478,6 +483,22 @@ pub(crate) fn inspect_target_ancestors(
     }
 
     Ok(())
+}
+
+pub(crate) fn matching_target_anchor<'a>(
+    path: &Path,
+    worktree_path: &'a Path,
+) -> Option<Cow<'a, Path>> {
+    if path.starts_with(worktree_path) {
+        return Some(Cow::Borrowed(worktree_path));
+    }
+
+    let Ok(canonical_worktree_path) = fs::canonicalize(worktree_path) else {
+        return None;
+    };
+
+    path.starts_with(&canonical_worktree_path)
+        .then_some(Cow::Owned(canonical_worktree_path))
 }
 
 #[cfg(test)]
@@ -784,11 +805,11 @@ pub(crate) fn remove_file_checked(
     path: &Path,
     worktree_path: &Path,
 ) -> Result<()> {
-    if path.starts_with(worktree_path) {
+    if let Some(anchor) = matching_target_anchor(path, worktree_path) {
         ensure_target_ancestors(
             operation,
-            target_parent(path, worktree_path),
-            worktree_path,
+            target_parent(path, anchor.as_ref()),
+            anchor.as_ref(),
             true,
         )?;
     }
@@ -800,11 +821,11 @@ fn ensure_target_parent_exists(
     path: &Path,
     worktree_path: &Path,
 ) -> Result<()> {
-    if path.starts_with(worktree_path) {
+    if let Some(anchor) = matching_target_anchor(path, worktree_path) {
         ensure_target_ancestors(
             operation,
-            target_parent(path, worktree_path),
-            worktree_path,
+            target_parent(path, anchor.as_ref()),
+            anchor.as_ref(),
             true,
         )?;
     }
@@ -825,11 +846,11 @@ pub(crate) fn remove_any(
     path: &Path,
     worktree_path: &Path,
 ) -> Result<()> {
-    if path.starts_with(worktree_path) {
+    if let Some(anchor) = matching_target_anchor(path, worktree_path) {
         ensure_target_ancestors(
             operation,
-            target_parent(path, worktree_path),
-            worktree_path,
+            target_parent(path, anchor.as_ref()),
+            anchor.as_ref(),
             true,
         )?;
     }

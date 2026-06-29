@@ -37,6 +37,19 @@ fn temp_workspace(name: &str) -> (PathBuf, PathBuf) {
     (root, worktree)
 }
 
+#[cfg(unix)]
+fn aliased_workspace(name: &str) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
+    let (root, worktree) = temp_workspace(name);
+    let base = root.parent().expect("root should have parent");
+    let alias = base.join("alias");
+    std::os::unix::fs::symlink(base, &alias).expect("workspace alias should be created");
+
+    let alias_root = alias.join("root");
+    let alias_worktree = alias.join("worktree");
+
+    (root, worktree, alias_root, alias_worktree)
+}
+
 fn context(root_path: &Path, worktree_path: &Path) -> Worktree {
     Worktree {
         root_path: root_path.to_path_buf(),
@@ -391,4 +404,47 @@ fn execute_file_operation_group_should_reject_metadata_repair_through_symlink_pa
         fs::read_to_string(outside.join("target")).expect("outside target should remain readable"),
         "outside\n"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn execute_file_operation_group_should_reject_canonical_target_with_context_alias() {
+    let (root, worktree, alias_root, alias_worktree) =
+        aliased_workspace("canonical-target-context-alias");
+    let outside = worktree
+        .parent()
+        .expect("worktree should have parent")
+        .join("outside-context-alias");
+    fs::create_dir_all(&outside).expect("outside dir should be created");
+    fs::write(root.join("source"), "source\n").expect("source should be written");
+    std::os::unix::fs::symlink(&outside, worktree.join("linked"))
+        .expect("target parent symlink should be created");
+    let target_path = fs::canonicalize(&worktree)
+        .expect("worktree should canonicalize")
+        .join("linked/target");
+    let plan = plan(&alias_root, &alias_worktree);
+    let actions = group(vec![FileAction::CopyFile {
+        operation: FileOperationKind::Copy,
+        source: PathBuf::from("source"),
+        target: PathBuf::from("linked/target"),
+        source_path: alias_root.join("source"),
+        target_path,
+        metadata_policy: MetadataPolicy::default(),
+        replace: false,
+    }]);
+    let mut reporter = VecReporter::default();
+
+    let error = execute_file_operation_group(
+        &plan,
+        &actions,
+        FileExecutionOptions {
+            dry_run: false,
+            verbose: true,
+        },
+        &mut reporter,
+    )
+    .expect_err("canonical target through an aliased context should fail");
+
+    assert!(error.to_string().contains("target parent is a symlink"));
+    assert!(!outside.join("target").exists());
 }
