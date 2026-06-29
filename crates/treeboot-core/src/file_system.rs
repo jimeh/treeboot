@@ -4,6 +4,7 @@ use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
 
 use crate::file_actions::{MetadataPolicy, MetadataTarget};
+use crate::paths;
 use crate::{
     ActionPlan, Error, FileOperationKind, OutputEvent, PlannedFileOperation, Reporter, Result,
     SyncCompare,
@@ -493,7 +494,7 @@ pub(crate) fn matching_target_anchor<'a>(
         return Some(Cow::Borrowed(worktree_path));
     }
 
-    let Ok(canonical_worktree_path) = fs::canonicalize(worktree_path) else {
+    let Ok(canonical_worktree_path) = paths::canonicalize(worktree_path) else {
         return None;
     };
 
@@ -503,7 +504,7 @@ pub(crate) fn matching_target_anchor<'a>(
 
     let mut current = path;
     loop {
-        if fs::canonicalize(current).is_ok_and(|path| path == canonical_worktree_path) {
+        if paths::canonicalize(current).is_ok_and(|path| path == canonical_worktree_path) {
             return Some(Cow::Owned(current.to_path_buf()));
         }
 
@@ -731,12 +732,13 @@ fn ensure_source_file_safe(
     }
 
     let source_should_stay_in_root = source_path.starts_with(root_path);
-    let source_path = fs::canonicalize(source_path).map_err(|source| Error::FileOperationIo {
-        operation: operation.as_str(),
-        path: source_path.to_path_buf(),
-        source,
-    })?;
-    let root_path = fs::canonicalize(root_path).map_err(|source| Error::FileOperationIo {
+    let source_path =
+        paths::canonicalize(source_path).map_err(|source| Error::FileOperationIo {
+            operation: operation.as_str(),
+            path: source_path.to_path_buf(),
+            source,
+        })?;
+    let root_path = paths::canonicalize(root_path).map_err(|source| Error::FileOperationIo {
         operation: operation.as_str(),
         path: root_path.to_path_buf(),
         source,
@@ -770,7 +772,7 @@ pub(crate) fn ensure_preserved_source_symlink_safe(
         );
     }
 
-    let source_target = fs::canonicalize(source_path).map_err(|source| {
+    let source_target = paths::canonicalize(source_path).map_err(|source| {
         if source.kind() == std::io::ErrorKind::NotFound {
             return Error::FileOperationConflict {
                 operation: operation.as_str(),
@@ -784,12 +786,13 @@ pub(crate) fn ensure_preserved_source_symlink_safe(
             source,
         }
     })?;
-    let root_path =
-        fs::canonicalize(&plan.context().root_path).map_err(|source| Error::FileOperationIo {
+    let root_path = paths::canonicalize(&plan.context().root_path).map_err(|source| {
+        Error::FileOperationIo {
             operation: operation.as_str(),
             path: plan.context().root_path.clone(),
             source,
-        })?;
+        }
+    })?;
     if !source_target.starts_with(&root_path) {
         return conflict(
             operation,

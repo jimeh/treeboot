@@ -13,6 +13,11 @@ dependencies for small wrappers around the standard library.
   terminal width or Unicode-aware text measurement. Keep terminal-specific
   formatting helpers out of `treeboot-core`.
 - `thiserror` belongs in `treeboot-core` for public typed errors.
+- `dunce` belongs in `treeboot-core` for path canonicalization. It wraps
+  `std::fs::canonicalize` but strips Windows `\\?\` verbatim prefixes when the
+  path can be represented safely in conventional form. Use the repo-local path
+  helpers rather than calling it directly so output, environment variables, and
+  boundary checks compare paths consistently across platforms.
 - `serde` and `toml` belong in `treeboot-core` for declarative config parsing
   and normalized model serialization.
 - `ignore` belongs in `treeboot-core` for operation-local gitignore-style path

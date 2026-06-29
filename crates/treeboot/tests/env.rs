@@ -2,7 +2,7 @@ use predicates::prelude::*;
 
 mod common;
 
-use common::{assert_json_object_keys, git_worktree, parse_json, treeboot};
+use common::{assert_json_object_keys, canonical_path, git_worktree, parse_json, treeboot};
 
 const ENV_KEYS: &[&str] = &[
     "CODEX_SOURCE_TREE_PATH",
@@ -21,8 +21,7 @@ const ENV_KEYS: &[&str] = &[
 #[test]
 fn env_should_print_child_environment_as_text_json_and_yaml() {
     let repo = git_worktree();
-    let expected_worktree =
-        std::fs::canonicalize(repo.worktree_path()).expect("worktree should canonicalize");
+    let expected_worktree = canonical_path(repo.worktree_path());
 
     treeboot()
         .arg("env")
@@ -66,6 +65,40 @@ fn env_should_print_child_environment_as_text_json_and_yaml() {
 }
 
 #[test]
+fn env_paths_should_not_use_windows_verbatim_prefix() {
+    let repo = git_worktree();
+    let expected_root = canonical_path(repo.root_path());
+    let expected_worktree = canonical_path(repo.worktree_path());
+
+    let json = treeboot()
+        .args(["env", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    let json = parse_json(json, "env");
+
+    for key in ["TREEBOOT_ROOT_PATH", "TREEBOOT_WORKTREE_PATH"] {
+        let value = json[key].as_str().expect("path value should be a string");
+        assert!(
+            !value.starts_with(r"\\?\"),
+            "{key} should not expose a Windows verbatim prefix: {value}"
+        );
+    }
+    assert_eq!(
+        json["TREEBOOT_ROOT_PATH"],
+        expected_root.display().to_string()
+    );
+    assert_eq!(
+        json["TREEBOOT_WORKTREE_PATH"],
+        expected_worktree.display().to_string()
+    );
+}
+
+#[test]
 fn env_should_support_text_format_and_yaml_shortcut() {
     let repo = git_worktree();
 
@@ -89,7 +122,7 @@ fn env_should_support_text_format_and_yaml_shortcut() {
 #[test]
 fn env_root_option_should_override_source_checkout() {
     let repo = git_worktree();
-    let expected_root = std::fs::canonicalize(repo.root_path()).expect("root should canonicalize");
+    let expected_root = canonical_path(repo.root_path());
 
     let json = treeboot()
         .args(["env", "--root"])
@@ -112,7 +145,7 @@ fn env_root_option_should_override_source_checkout() {
 #[test]
 fn env_root_environment_alias_should_override_source_checkout() {
     let repo = git_worktree();
-    let expected_root = std::fs::canonicalize(repo.root_path()).expect("root should canonicalize");
+    let expected_root = canonical_path(repo.root_path());
 
     let json = treeboot()
         .args(["env", "--json"])
@@ -138,7 +171,7 @@ fn env_root_environment_alias_should_override_source_checkout() {
 #[test]
 fn env_root_environment_alias_should_resolve_relative_to_cwd() {
     let repo = git_worktree();
-    let expected_root = std::fs::canonicalize(repo.root_path()).expect("root should canonicalize");
+    let expected_root = canonical_path(repo.root_path());
 
     let json = treeboot()
         .args(["env", "--json"])

@@ -25,9 +25,12 @@ mod init;
 mod manual;
 mod metadata;
 mod output;
+mod paths;
 mod run;
 mod runtime;
 mod status;
+#[cfg(test)]
+mod test_support;
 mod validation;
 
 pub use check::{CheckAction, CheckOptions, CheckReport, WorktreeSnapshot, check};

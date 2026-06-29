@@ -8,6 +8,7 @@ use super::*;
 use crate::file_actions::{
     FileAction, MetadataPolicy, MetadataTarget, PlannedFileOperationActions,
 };
+use crate::test_support::symlink_dir;
 use crate::{ActionPlan, FileOperationKind, OutputEvent, PlanOrigin, Reporter, Worktree};
 
 #[derive(Default)]
@@ -37,12 +38,11 @@ fn temp_workspace(name: &str) -> (PathBuf, PathBuf) {
     (root, worktree)
 }
 
-#[cfg(unix)]
 fn aliased_workspace(name: &str) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     let (root, worktree) = temp_workspace(name);
     let base = root.parent().expect("root should have parent");
     let alias = base.join("alias");
-    std::os::unix::fs::symlink(base, &alias).expect("workspace alias should be created");
+    symlink_dir(base, &alias).expect("workspace alias should be created");
 
     let alias_root = alias.join("root");
     let alias_worktree = alias.join("worktree");
@@ -362,7 +362,6 @@ fn execute_file_operation_group_should_report_verbose_metadata_delete_skip_and_w
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn execute_file_operation_group_should_reject_metadata_repair_through_symlink_parent() {
     let (root, worktree) = temp_workspace("metadata-symlink-parent");
@@ -373,7 +372,7 @@ fn execute_file_operation_group_should_reject_metadata_repair_through_symlink_pa
     fs::create_dir_all(&outside).expect("outside dir should be created");
     fs::write(root.join("source"), "source\n").expect("source should be written");
     fs::write(outside.join("target"), "outside\n").expect("outside target should be written");
-    std::os::unix::fs::symlink(&outside, worktree.join("linked"))
+    symlink_dir(&outside, worktree.join("linked"))
         .expect("target parent symlink should be created");
     let plan = plan(&root, &worktree);
     let actions = group(vec![FileAction::RepairMetadata {
@@ -406,7 +405,6 @@ fn execute_file_operation_group_should_reject_metadata_repair_through_symlink_pa
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn execute_file_operation_group_should_reject_canonical_target_with_context_alias() {
     let (root, worktree, alias_root, alias_worktree) =
@@ -417,7 +415,7 @@ fn execute_file_operation_group_should_reject_canonical_target_with_context_alia
         .join("outside-context-alias");
     fs::create_dir_all(&outside).expect("outside dir should be created");
     fs::write(root.join("source"), "source\n").expect("source should be written");
-    std::os::unix::fs::symlink(&outside, worktree.join("linked"))
+    symlink_dir(&outside, worktree.join("linked"))
         .expect("target parent symlink should be created");
     let target_path = fs::canonicalize(&worktree)
         .expect("worktree should canonicalize")

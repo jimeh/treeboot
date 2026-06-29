@@ -3,8 +3,8 @@ use predicates::prelude::*;
 mod common;
 
 use common::{
-    assert_context_shape, assert_json_object_keys, git_repo, git_worktree, parse_json,
-    toml_string_path, treeboot, write_file,
+    assert_context_shape, assert_json_object_keys, canonical_path, git_repo, git_worktree,
+    parse_json, symlink_file, toml_string_path, treeboot, write_file,
 };
 
 #[cfg(unix)]
@@ -311,7 +311,6 @@ fn check_should_honor_source_boundary_environment_override() {
     assert!(!repo.worktree_path().join("secret").exists());
 }
 
-#[cfg(unix)]
 #[test]
 fn check_should_validate_existing_symlink_to_root_source_in_subdirectory() {
     let repo = git_worktree();
@@ -320,7 +319,7 @@ fn check_should_validate_existing_symlink_to_root_source_in_subdirectory() {
     std::fs::create_dir_all(source.parent().unwrap()).expect("source dir should be created");
     std::fs::create_dir_all(target.parent().unwrap()).expect("target dir should be created");
     write_file(&source, "secret\n");
-    std::os::unix::fs::symlink(&source, &target).expect("existing symlink should be created");
+    symlink_file(&source, &target);
     write_file(
         &repo.worktree_path().join(".treeboot.toml"),
         r#"symlink = ["config/master.key"]"#,
@@ -334,13 +333,9 @@ fn check_should_validate_existing_symlink_to_root_source_in_subdirectory() {
         .stderr(predicate::str::is_empty())
         .stdout("treeboot: check ok\n");
 
-    assert_eq!(
-        std::fs::canonicalize(&target).expect("target symlink should resolve"),
-        std::fs::canonicalize(&source).expect("source should resolve")
-    );
+    assert_eq!(canonical_path(&target), canonical_path(&source));
 }
 
-#[cfg(unix)]
 #[test]
 fn check_should_honor_source_boundary_environment_override_for_symlink() {
     let repo = git_worktree();
@@ -373,7 +368,6 @@ fn check_should_honor_source_boundary_environment_override_for_symlink() {
     assert!(!repo.worktree_path().join("secret").exists());
 }
 
-#[cfg(unix)]
 #[test]
 fn check_should_honor_target_boundary_environment_override_for_symlink() {
     let repo = git_worktree();
@@ -408,6 +402,39 @@ fn check_should_honor_target_boundary_environment_override_for_symlink() {
         .stdout("treeboot: check ok\n");
 
     assert!(!outside_target.exists());
+}
+
+#[test]
+fn check_should_accept_absolute_paths_inside_root_and_worktree() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    let source = repo.root_path().join("shared/.env");
+    let target = repo.worktree_path().join("local/.env");
+    let app = repo.worktree_path().join("app");
+    std::fs::create_dir_all(source.parent().expect("source should have parent"))
+        .expect("source parent should be created");
+    std::fs::create_dir_all(&app).expect("app dir should be created");
+    write_file(&source, "TOKEN=1\n");
+    write_file(
+        &config,
+        &format!(
+            r#"
+copy = [{{ source = "{}", target = "{}" }}]
+commands = [{{ program = "git", args = ["--version"], cwd = "{}" }}]
+"#,
+            toml_string_path(&source),
+            toml_string_path(&target),
+            toml_string_path(&app),
+        ),
+    );
+
+    treeboot()
+        .arg("check")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .stdout("treeboot: check ok\n");
 }
 
 #[test]

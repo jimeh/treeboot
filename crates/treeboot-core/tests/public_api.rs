@@ -123,6 +123,10 @@ fn write_file(path: &Path, content: &str) {
     std::fs::write(path, content).expect("file should be written");
 }
 
+fn canonical_path(path: &Path) -> PathBuf {
+    dunce::canonicalize(path).expect("path should canonicalize")
+}
+
 #[cfg(unix)]
 fn make_executable(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
@@ -219,8 +223,7 @@ fn public_api_should_discover_load_plan_and_execute_manifest() {
 fn public_api_worktree_discover_should_use_explicit_environment_input() {
     let repo = git_worktree();
     let alternate_root = TempDir::new().expect("alternate root should be created");
-    let expected_root =
-        std::fs::canonicalize(alternate_root.path()).expect("root should canonicalize");
+    let expected_root = canonical_path(alternate_root.path());
 
     let worktree = Worktree::discover(WorktreeOptions {
         cwd: Some(repo.worktree_path().to_path_buf()),
@@ -245,8 +248,7 @@ fn public_api_worktree_discover_should_use_explicit_environment_input() {
 fn public_api_worktree_discover_should_use_next_non_empty_environment_alias() {
     let repo = git_worktree();
     let alternate_root = TempDir::new().expect("alternate root should be created");
-    let expected_root =
-        std::fs::canonicalize(alternate_root.path()).expect("root should canonicalize");
+    let expected_root = canonical_path(alternate_root.path());
 
     let worktree = Worktree::discover(WorktreeOptions {
         cwd: Some(repo.worktree_path().to_path_buf()),
@@ -439,7 +441,7 @@ fn public_api_run_should_report_init_script_in_dry_run() {
     let script = repo.worktree_path().join(".treeboot.sh");
     write_file(&script, "#!/usr/bin/env sh\nexit 0\n");
     make_executable(&script);
-    let expected_script = std::fs::canonicalize(&script).expect("script path should canonicalize");
+    let expected_script = canonical_path(&script);
 
     let mut reporter = VecReporter::default();
     let report = run(
@@ -497,10 +499,9 @@ fn public_api_inspect_status_should_report_context_and_config_without_parsing() 
     let repo = git_worktree();
     let config_path = repo.worktree_path().join(".treeboot.toml");
     write_file(&config_path, "invalid toml = [\n");
-    let expected_worktree =
-        std::fs::canonicalize(repo.worktree_path()).expect("worktree should canonicalize");
-    let expected_root = std::fs::canonicalize(repo.root_path()).expect("root should canonicalize");
-    let expected_config = std::fs::canonicalize(&config_path).expect("config should canonicalize");
+    let expected_worktree = canonical_path(repo.worktree_path());
+    let expected_root = canonical_path(repo.root_path());
+    let expected_config = canonical_path(&config_path);
 
     let report = inspect_status(StatusOptions {
         cwd: Some(repo.worktree_path().to_path_buf()),
@@ -532,7 +533,7 @@ fn public_api_inspect_status_should_report_ignored_init_script_details() {
     let repo = git_worktree();
     let script = repo.worktree_path().join(".treeboot.sh");
     write_file(&script, "#!/bin/sh\n");
-    let expected_script = std::fs::canonicalize(&script).expect("script should canonicalize");
+    let expected_script = canonical_path(&script);
 
     let report = inspect_status(StatusOptions {
         cwd: Some(repo.worktree_path().to_path_buf()),
@@ -576,7 +577,7 @@ fn public_api_inspect_status_should_report_executable_init_script() {
     let script = repo.worktree_path().join(".treeboot.sh");
     write_file(&script, "#!/bin/sh\n");
     make_executable(&script);
-    let expected_script = std::fs::canonicalize(&script).expect("script should canonicalize");
+    let expected_script = canonical_path(&script);
 
     let report = inspect_status(StatusOptions {
         cwd: Some(repo.worktree_path().to_path_buf()),
@@ -594,8 +595,7 @@ fn public_api_inspect_status_should_report_executable_init_script() {
 fn public_api_inspect_status_should_use_explicit_environment_input() {
     let repo = git_worktree();
     let alternate_root = TempDir::new().expect("alternate root should be created");
-    let expected_root =
-        std::fs::canonicalize(alternate_root.path()).expect("root should canonicalize");
+    let expected_root = canonical_path(alternate_root.path());
 
     let report = inspect_status(StatusOptions {
         cwd: Some(repo.worktree_path().to_path_buf()),

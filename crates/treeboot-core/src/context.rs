@@ -3,6 +3,7 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 use crate::git::Git;
+use crate::paths;
 use crate::{Error, Result};
 
 const TREEBOOT_ROOT_PATH: &str = "TREEBOOT_ROOT_PATH";
@@ -234,7 +235,7 @@ fn resolve_input_path(cwd: &Path, path: &Path) -> PathBuf {
 }
 
 fn normalize_existing_path(path: &Path) -> Result<PathBuf> {
-    std::fs::canonicalize(path).map_err(|source| Error::NormalizePath {
+    paths::canonicalize(path).map_err(|source| Error::NormalizePath {
         path: path.to_path_buf(),
         source,
     })

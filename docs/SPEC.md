@@ -1,4 +1,4 @@
-# treeboot Specification v1.13.1
+# treeboot Specification v1.14.0
 
 A portable worktree bootstrapper that lets every coding agent, editor, and
 orchestration tool run the same repo-local setup command.
@@ -1088,6 +1088,22 @@ Config parsing should normalize `copy`, `symlink`, `sync`, `files`, and
 target paths. Manual `copy`, `symlink`, and `sync` commands should produce the
 same normalized operation shape.
 
+Relative file-operation source paths resolve from `TREEBOOT_ROOT_PATH`. Relative
+file-operation target paths and command `cwd` paths resolve from
+`TREEBOOT_WORKTREE_PATH`. Absolute paths are preserved and then normalized
+against the filesystem where possible. Missing final path components are
+normalized by canonicalizing the nearest existing ancestor and applying lexical
+`.` / `..` cleanup to the missing tail.
+
+On Windows, normalized paths must be emitted in ordinary tool-friendly form when
+the platform returns an extended-length path during canonicalization. Fully
+qualified drive paths such as `C:\repo\file`, UNC paths such as
+`\\server\share\repo\file`, and relative paths without a drive or root prefix
+are supported. Drive-relative paths such as `C:repo\file` and root-relative
+paths without a drive or share such as `\repo\file` are rejected for declarative
+file-operation paths, manual file-operation paths, and command `cwd` values
+because they depend on process-local current-drive state.
+
 ### Conflicting targets
 
 If multiple file operations target the same normalized absolute path, or one
@@ -1565,8 +1581,8 @@ and do not make the run fail by themselves.
 ### Cross-platform contract
 
 Windows support is part of the design contract. Implementation and tests must
-account for platform differences in shell execution, path handling, and symlink
-creation.
+account for platform differences in shell execution, path handling, symlink
+creation, and canonical path presentation.
 
 ## Operator experience: Output and exit codes
 

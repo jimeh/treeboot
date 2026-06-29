@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use crate::file_system::{TargetAncestorIssue, inspect_target_ancestors, matching_target_anchor};
 use crate::ignore_rules::PathIgnoreRules;
+use crate::paths;
 use crate::{
     CommandKind, CommandOperation, Config, ConfigRuntimeOptions, Error, FileOperation,
     FileOperationKind, MetadataField, Result, SourceSpan, SymlinkMode, SyncCompare, Worktree,
@@ -1197,43 +1198,11 @@ fn file_plan_error(
 }
 
 fn normalize_existing(path: &Path) -> std::io::Result<PathBuf> {
-    std::fs::canonicalize(path)
+    paths::canonicalize(path)
 }
 
 fn normalize_maybe_existing(path: &Path) -> std::io::Result<PathBuf> {
-    match normalize_existing(path) {
-        Ok(path) => return Ok(path),
-        Err(source) if source.kind() != std::io::ErrorKind::NotFound => {
-            return Err(source);
-        }
-        Err(_) => {}
-    }
-
-    let mut missing = Vec::new();
-    let mut ancestor = path;
-
-    while !ancestor.exists() {
-        if let Some(name) = ancestor.file_name() {
-            missing.push(name.to_owned());
-        }
-
-        let Some(parent) = ancestor.parent() else {
-            break;
-        };
-        ancestor = parent;
-    }
-
-    let mut normalized = if ancestor.exists() {
-        normalize_existing(ancestor)?
-    } else {
-        PathBuf::new()
-    };
-
-    for component in missing.iter().rev() {
-        normalized.push(component);
-    }
-
-    Ok(normalize_lexical(&normalized))
+    paths::normalize_maybe_existing(path)
 }
 
 fn normalize_target_path(path: &Path) -> std::io::Result<PathBuf> {
@@ -1245,27 +1214,7 @@ fn normalize_target_path(path: &Path) -> std::io::Result<PathBuf> {
     let mut normalized = normalize_maybe_existing(parent)?;
     normalized.push(name);
 
-    Ok(normalize_lexical(&normalized))
-}
-
-fn normalize_lexical(path: &Path) -> PathBuf {
-    let mut normalized = PathBuf::new();
-
-    for component in path.components() {
-        match component {
-            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
-            Component::RootDir => normalized.push(component.as_os_str()),
-            Component::CurDir => {}
-            Component::ParentDir => {
-                if !normalized.pop() && !normalized.has_root() {
-                    normalized.push(component.as_os_str());
-                }
-            }
-            Component::Normal(part) => normalized.push(part),
-        }
-    }
-
-    normalized
+    Ok(paths::normalize_lexical(&normalized))
 }
 
 fn is_within(path: &Path, boundary: &Path) -> bool {
@@ -1279,6 +1228,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
+    use crate::test_support::{symlink_dir, symlink_file};
 
     fn span() -> SourceSpan {
         SourceSpan {
@@ -1304,12 +1254,11 @@ mod tests {
         (root, worktree)
     }
 
-    #[cfg(unix)]
     fn aliased_workspace(name: &str) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
         let (root, worktree) = temp_workspace(name);
         let base = root.parent().expect("root should have parent");
         let alias = base.join("alias");
-        std::os::unix::fs::symlink(base, &alias).expect("workspace alias should be created");
+        symlink_dir(base, &alias).expect("workspace alias should be created");
 
         let alias_root = alias.join("root");
         let alias_worktree = alias.join("worktree");
@@ -1376,14 +1325,6 @@ mod tests {
             &context(root, worktree),
             ActionPlanOptions::default(),
         )
-    }
-
-    #[test]
-    fn normalize_lexical_should_resolve_parent_components() {
-        assert_eq!(
-            normalize_lexical(Path::new("/repo/worktree/../outside")),
-            PathBuf::from("/repo/outside")
-        );
     }
 
     #[test]
@@ -1546,7 +1487,7 @@ mod tests {
 
         assert_eq!(
             plan.commands[0].cwd_path,
-            std::fs::canonicalize(app_dir).expect("app dir should canonicalize")
+            paths::canonicalize(&app_dir).expect("app dir should canonicalize")
         );
         assert!(plan.commands[0].allow_failure);
     }
@@ -1625,7 +1566,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn action_plan_from_manifest_should_allow_final_symlink_target_to_root_source() {
         let (root, worktree) = temp_workspace("final-symlink-target-to-root");
@@ -1634,7 +1574,7 @@ mod tests {
         std::fs::create_dir_all(source.parent().unwrap()).expect("source parent should exist");
         std::fs::create_dir_all(target.parent().unwrap()).expect("target parent should exist");
         std::fs::write(&source, "secret\n").expect("source should be written");
-        std::os::unix::fs::symlink(&source, &target).expect("target symlink should be created");
+        symlink_file(&source, &target).expect("target symlink should be created");
         let config = Config {
             options: Default::default(),
             files: vec![file_operation(
@@ -1657,7 +1597,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn action_plan_from_manifest_should_reject_target_parent_symlink_for_all_file_operations() {
         for operation in [
@@ -1669,7 +1608,7 @@ mod tests {
             let linked = root.join("config");
             std::fs::create_dir_all(&linked).expect("linked directory should be created");
             std::fs::write(root.join("source"), "value\n").expect("source should be written");
-            std::os::unix::fs::symlink(&linked, worktree.join("config"))
+            symlink_dir(&linked, worktree.join("config"))
                 .expect("target parent symlink should be created");
             let config = Config {
                 options: Default::default(),
@@ -1738,7 +1677,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn action_plan_from_manifest_should_reject_target_parent_file_with_worktree_alias() {
         let (_root, _worktree, alias_root, alias_worktree) =
@@ -1765,7 +1703,6 @@ mod tests {
         assert!(error.to_string().contains("is not a directory"));
     }
 
-    #[cfg(unix)]
     #[test]
     fn action_plan_from_manifest_should_reject_target_parent_symlink_with_worktree_alias() {
         let (root, _worktree, alias_root, alias_worktree) =
@@ -1773,7 +1710,7 @@ mod tests {
         let linked = root.join("config");
         std::fs::create_dir_all(&linked).expect("linked directory should be created");
         std::fs::write(alias_root.join("source"), "value\n").expect("source should be written");
-        std::os::unix::fs::symlink(&linked, alias_worktree.join("config"))
+        symlink_dir(&linked, alias_worktree.join("config"))
             .expect("target parent symlink should be created");
         let config = Config {
             options: Default::default(),
@@ -1794,7 +1731,6 @@ mod tests {
         assert!(error.to_string().contains("is a symlink"));
     }
 
-    #[cfg(unix)]
     #[test]
     fn action_plan_from_manifest_should_reject_canonical_absolute_target_parent_symlink() {
         let (root, worktree, alias_root, alias_worktree) =
@@ -1802,9 +1738,9 @@ mod tests {
         let linked = root.join("config");
         std::fs::create_dir_all(&linked).expect("linked directory should be created");
         std::fs::write(alias_root.join("source"), "value\n").expect("source should be written");
-        std::os::unix::fs::symlink(&linked, worktree.join("config"))
+        symlink_dir(&linked, worktree.join("config"))
             .expect("target parent symlink should be created");
-        let target_path = std::fs::canonicalize(&worktree)
+        let target_path = paths::canonicalize(&worktree)
             .expect("worktree should canonicalize")
             .join("config/source");
         let mut operation = file_operation(
@@ -1829,7 +1765,6 @@ mod tests {
         assert!(error.to_string().contains("is a symlink"));
     }
 
-    #[cfg(unix)]
     #[test]
     fn action_plan_from_manifest_should_reject_absolute_alias_target_parent_symlink() {
         let (root, worktree, _alias_root, alias_worktree) =
@@ -1837,7 +1772,7 @@ mod tests {
         let linked = worktree.join("real-config");
         std::fs::create_dir_all(&linked).expect("linked directory should be created");
         std::fs::write(root.join("source"), "value\n").expect("source should be written");
-        std::os::unix::fs::symlink(&linked, worktree.join("config"))
+        symlink_dir(&linked, worktree.join("config"))
             .expect("target parent symlink should be created");
         let target_path = alias_worktree.join("config/source");
         let mut operation = file_operation(
@@ -1862,7 +1797,6 @@ mod tests {
         assert!(error.to_string().contains("is a symlink"));
     }
 
-    #[cfg(unix)]
     #[test]
     fn action_plan_from_manifest_should_keep_input_context_for_worktree_alias() {
         let (_root, _worktree, alias_root, alias_worktree) = aliased_workspace("context-alias");
@@ -1980,12 +1914,11 @@ mod tests {
         assert_eq!(plan.files[0].symlinks, Some(SymlinkMode::Preserve));
     }
 
-    #[cfg(unix)]
     #[test]
     fn action_plan_from_manifest_should_allow_safe_source_symlink() {
         let (root, worktree) = temp_workspace("safe-symlink");
         std::fs::write(root.join("source"), "value\n").expect("source should be written");
-        std::os::unix::fs::symlink(root.join("source"), root.join("link"))
+        symlink_file(root.join("source"), root.join("link"))
             .expect("safe source symlink should be created");
         let config = Config {
             options: Default::default(),
@@ -2004,11 +1937,10 @@ mod tests {
         assert_eq!(plan.files[0].status, PlannedFileStatus::Ready);
     }
 
-    #[cfg(unix)]
     #[test]
     fn action_plan_from_manifest_should_reject_broken_source_symlink() {
         let (root, worktree) = temp_workspace("broken-symlink");
-        std::os::unix::fs::symlink(root.join("missing"), root.join("link"))
+        symlink_file(root.join("missing"), root.join("link"))
             .expect("broken source symlink should be created");
         let config = Config {
             options: Default::default(),
@@ -2060,7 +1992,7 @@ mod tests {
 
         assert_eq!(
             plan.commands[0].cwd_path,
-            std::fs::canonicalize(worktree).expect("worktree should canonicalize")
+            paths::canonicalize(&worktree).expect("worktree should canonicalize")
         );
     }
 }

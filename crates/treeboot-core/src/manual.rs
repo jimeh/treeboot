@@ -6,6 +6,7 @@ use crate::config::{
     effective_ignore_patterns, normalize_file_operation_settings,
 };
 use crate::context;
+use crate::paths::{self, UnsupportedPath};
 use crate::{
     ActionPlan, EnvironmentInput, Error, ExecuteOptions, Executor, FileOperation,
     FileOperationKind, MetadataField, OutputEvent, PlanOrigin, Reporter, Result, RuntimePolicy,
@@ -402,10 +403,26 @@ fn manual_operations(
         .into_iter()
         .map(|source| {
             let target = manual_target(operation, &source, target.as_deref(), multiple_sources)?;
+            let source_path = resolve_path(
+                operation,
+                &context.root_path,
+                &source,
+                &source,
+                &target,
+                ManualPathRole::Source,
+            )?;
+            let target_path = resolve_path(
+                operation,
+                &context.worktree_path,
+                &target,
+                &source,
+                &target,
+                ManualPathRole::Target,
+            )?;
             Ok(FileOperation {
                 operation,
-                source_path: resolve_path(&context.root_path, &source),
-                target_path: resolve_path(&context.worktree_path, &target),
+                source_path,
+                target_path,
                 source,
                 target,
                 required,
@@ -515,12 +532,50 @@ impl From<MetadataField> for RawMetadataField {
     }
 }
 
-fn resolve_path(base: &Path, path: &Path) -> PathBuf {
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        base.join(path)
+#[derive(Debug, Clone, Copy)]
+enum ManualPathRole {
+    Source,
+    Target,
+}
+
+impl ManualPathRole {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Source => "source",
+            Self::Target => "target",
+        }
     }
+}
+
+fn resolve_path(
+    operation: FileOperationKind,
+    base: &Path,
+    path: &Path,
+    source_path: &Path,
+    target_path: &Path,
+    role: ManualPathRole,
+) -> Result<PathBuf> {
+    paths::resolve_path(base, path).map_err(|source| Error::FileOperationInvalid {
+        operation: operation.as_str(),
+        message: unsupported_path_message(path, source_path, target_path, role, source),
+    })
+}
+
+fn unsupported_path_message(
+    path: &Path,
+    source_path: &Path,
+    target_path: &Path,
+    role: ManualPathRole,
+    source: UnsupportedPath,
+) -> String {
+    format!(
+        "unsupported {} path `{}` for source `{}` target `{}`: {}",
+        role.label(),
+        path.display(),
+        source_path.display(),
+        target_path.display(),
+        source.reason()
+    )
 }
 
 const fn manual_span() -> SourceSpan {
@@ -676,6 +731,42 @@ mod tests {
         assert_eq!(operations[0].source_path, source);
         assert_eq!(operations[0].target_path, worktree.join("local/a"));
         assert_eq!(operations[1].target_path, worktree.join("local/b"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn manual_operations_should_reject_drive_relative_windows_sources() {
+        let (root, worktree) = temp_workspace("drive-relative-source");
+        let context = context(&root, &worktree);
+        let options = options(FileOperationKind::Copy, &[r"C:shared\.env"]);
+
+        let error = FileOperation::from_manual_options(&context, options)
+            .expect_err("drive-relative source should fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("drive-relative paths are not supported")
+        );
+        assert!(error.to_string().contains("source `C:shared\\.env`"));
+        assert!(error.to_string().contains("target `C:shared\\.env`"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn manual_operations_should_reject_drive_relative_windows_targets_with_context() {
+        let (root, worktree) = temp_workspace("drive-relative-target");
+        let context = context(&root, &worktree);
+        let mut options = options(FileOperationKind::Copy, &[".env"]);
+        options.target = Some(PathBuf::from(r"C:local\.env"));
+
+        let error = FileOperation::from_manual_options(&context, options)
+            .expect_err("drive-relative target should fail");
+
+        let message = error.to_string();
+        assert!(message.contains("drive-relative paths are not supported"));
+        assert!(message.contains("source `.env`"));
+        assert!(message.contains("target `C:local\\.env`"));
     }
 
     #[test]
