@@ -1,4 +1,4 @@
-# treeboot Specification v1.13.0
+# treeboot Specification v1.13.1
 
 A portable worktree bootstrapper that lets every coding agent, editor, and
 orchestration tool run the same repo-local setup command.
@@ -113,7 +113,7 @@ treeboot -V
 Human-readable output is a compact, flag-like summary:
 
 ```text
-treeboot 0.4.1 (spec 1.12.0)
+treeboot 0.8.0 (spec 1.13.1)
 ```
 
 JSON and YAML output are defined in
@@ -454,8 +454,8 @@ string. The initial reason is `not_executable`.
 ```json
 {
   "package": "treeboot",
-  "version": "0.4.1",
-  "spec_version": "1.12.0"
+  "version": "0.8.0",
+  "spec_version": "1.13.1"
 }
 ```
 
@@ -1097,11 +1097,22 @@ with its operation, source, target, and declaration location when available.
 ### Target boundary
 
 Every file operation target must resolve inside `TREEBOOT_WORKTREE_PATH`.
-Targets outside the current worktree are validation errors by default.
+Targets outside the current worktree are validation errors by default. For
+symlink operations, the target is the path of the symlink created in the
+worktree; the symlink destination is the source and may point back into
+`TREEBOOT_ROOT_PATH`.
+
+Existing target parent components under `TREEBOOT_WORKTREE_PATH` must be real
+directories. If a target parent component is a symlink or another non-directory
+file type, validation fails before any file operation or command runs. Missing
+parent components are allowed and created as directories when the operation is
+applied. The final target path itself is not treated as a parent component:
+force and sync may still replace the final target path when the conflict matrix
+allows replacing an existing file or symlink.
+
 Immediately before a file operation mutates a target, treeboot must re-check the
-live target ancestor chain. Existing target ancestors must be directories, not
-symlinks. Force and sync may still replace the final target path itself when the
-conflict matrix allows replacing an existing file or symlink.
+live target ancestor chain. If a target ancestor became a symlink or
+non-directory after validation, that operation fails before mutating the target.
 
 ### Source boundary
 
@@ -1113,20 +1124,21 @@ outside the root path are validation errors by default.
 Command `cwd` values are normalized relative to `TREEBOOT_WORKTREE_PATH`. Paths
 may contain `..`, but the final resolved path must stay inside the worktree.
 
-| Rule                                                       | Behavior                                                        |
-| ---------------------------------------------------------- | --------------------------------------------------------------- |
-| Any duplicate operation target                             | Fail before any file operation or command runs.                 |
-| Target resolves outside the worktree                       | Fail before any file operation or command runs.                 |
-| Target ancestor is a symlink at apply time                 | Fail that operation before mutating the target.                 |
-| Source resolves outside the root path                      | Fail before any file operation or command runs.                 |
-| Required file operation source does not exist              | Fail before any file operation or command runs.                 |
-| Optional file operation source does not exist              | Skip that operation, make no target changes, and continue.      |
-| Command `cwd` resolves outside the worktree                | Fail before any file operation or command runs.                 |
-| Command `env` overrides treeboot-owned variables           | Fail before any file operation or command runs.                 |
-| Copy or sync encounters an unsafe source symlink           | Fail before any file operation or command runs.                 |
-| Preserved copy or sync source symlink changes before apply | Fail that operation before mutating the target.                 |
-| Strict mode with any sync operation                        | Fail before any file operation or command runs.                 |
-| `--dry-run`                                                | Print the validation error, change no files, and exit non-zero. |
+| Rule                                                        | Behavior                                                        |
+| ----------------------------------------------------------- | --------------------------------------------------------------- |
+| Any duplicate operation target                              | Fail before any file operation or command runs.                 |
+| Target resolves outside the worktree                        | Fail before any file operation or command runs.                 |
+| Target parent is a symlink or non-directory at validation   | Fail before any file operation or command runs.                 |
+| Target ancestor becomes a symlink or non-directory at apply | Fail that operation before mutating the target.                 |
+| Source resolves outside the root path                       | Fail before any file operation or command runs.                 |
+| Required file operation source does not exist               | Fail before any file operation or command runs.                 |
+| Optional file operation source does not exist               | Skip that operation, make no target changes, and continue.      |
+| Command `cwd` resolves outside the worktree                 | Fail before any file operation or command runs.                 |
+| Command `env` overrides treeboot-owned variables            | Fail before any file operation or command runs.                 |
+| Copy or sync encounters an unsafe source symlink            | Fail before any file operation or command runs.                 |
+| Preserved copy or sync source symlink changes before apply  | Fail that operation before mutating the target.                 |
+| Strict mode with any sync operation                         | Fail before any file operation or command runs.                 |
+| `--dry-run`                                                 | Print the validation error, change no files, and exit non-zero. |
 
 ### Conflicting targets are invalid config
 

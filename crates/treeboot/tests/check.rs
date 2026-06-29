@@ -311,6 +311,105 @@ fn check_should_honor_source_boundary_environment_override() {
     assert!(!repo.worktree_path().join("secret").exists());
 }
 
+#[cfg(unix)]
+#[test]
+fn check_should_validate_existing_symlink_to_root_source_in_subdirectory() {
+    let repo = git_worktree();
+    let source = repo.root_path().join("config/master.key");
+    let target = repo.worktree_path().join("config/master.key");
+    std::fs::create_dir_all(source.parent().unwrap()).expect("source dir should be created");
+    std::fs::create_dir_all(target.parent().unwrap()).expect("target dir should be created");
+    write_file(&source, "secret\n");
+    std::os::unix::fs::symlink(&source, &target).expect("existing symlink should be created");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"symlink = ["config/master.key"]"#,
+    );
+
+    treeboot()
+        .arg("check")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .stdout("treeboot: check ok\n");
+
+    assert_eq!(
+        std::fs::canonicalize(&target).expect("target symlink should resolve"),
+        std::fs::canonicalize(&source).expect("source should resolve")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn check_should_honor_source_boundary_environment_override_for_symlink() {
+    let repo = git_worktree();
+    let outside = tempfile::NamedTempFile::new().expect("outside source should be created");
+    write_file(outside.path(), "TOKEN=1\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        &format!(
+            "symlink = [{{ source = \"{}\", target = \"secret\" }}]\n",
+            toml_string_path(outside.path())
+        ),
+    );
+
+    treeboot()
+        .arg("check")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("outside root"));
+
+    treeboot()
+        .arg("check")
+        .env("TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT", "true")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .stdout("treeboot: check ok\n");
+
+    assert!(!repo.worktree_path().join("secret").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn check_should_honor_target_boundary_environment_override_for_symlink() {
+    let repo = git_worktree();
+    let outside = tempfile::TempDir::new().expect("outside target dir should be created");
+    let outside_target = outside.path().join("target");
+    write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        &format!(
+            "symlink = [{{ source = \".env\", target = \"{}\" }}]\n",
+            toml_string_path(&outside_target)
+        ),
+    );
+
+    treeboot()
+        .arg("check")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("outside worktree"));
+
+    treeboot()
+        .arg("check")
+        .env(
+            "TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE",
+            "true",
+        )
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .stdout("treeboot: check ok\n");
+
+    assert!(!outside_target.exists());
+}
+
 #[test]
 fn check_env_target_override_should_beat_config_target_override() {
     let repo = git_worktree();

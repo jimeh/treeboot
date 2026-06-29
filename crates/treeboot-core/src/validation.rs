@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
+use crate::file_system::{TargetAncestorIssue, inspect_target_ancestors, matching_target_anchor};
 use crate::ignore_rules::PathIgnoreRules;
 use crate::{
     CommandKind, CommandOperation, Config, ConfigRuntimeOptions, Error, FileOperation,
@@ -517,7 +518,12 @@ pub(super) fn plan_file_operations(
         )
     })?;
 
-    let target_paths = normalize_target_paths(origin, files)?;
+    let target_paths = normalize_target_paths(
+        origin,
+        files,
+        context.worktree_path.as_path(),
+        worktree_path.as_path(),
+    )?;
     validate_target_conflicts(origin, files, &target_paths)?;
     validate_strict_sync(origin, files, options.strict)?;
 
@@ -534,11 +540,15 @@ pub(super) fn plan_file_operations(
 fn normalize_target_paths(
     origin: FilePlanOrigin<'_>,
     files: &[FileOperation],
+    worktree_path: &Path,
+    normalized_worktree_path: &Path,
 ) -> Result<Vec<PathBuf>> {
     files
         .iter()
         .map(|operation| {
-            normalize_maybe_existing(&operation.target_path).map_err(|source| {
+            let inspected_parent =
+                validate_target_parent_components(origin, operation, worktree_path)?;
+            let target_path = normalize_target_path(&operation.target_path).map_err(|source| {
                 file_plan_error(
                     origin,
                     Some(operation.declaration),
@@ -547,9 +557,63 @@ fn normalize_target_paths(
                         operation.target.display()
                     ),
                 )
-            })
+            })?;
+
+            if !inspected_parent && is_within(&target_path, normalized_worktree_path) {
+                return invalid_file_plan(
+                    origin,
+                    Some(operation.declaration),
+                    format!(
+                        "cannot create target for {}; target parent could not be inspected",
+                        operation_label(operation),
+                    ),
+                );
+            }
+
+            Ok(target_path)
         })
         .collect()
+}
+
+fn validate_target_parent_components(
+    origin: FilePlanOrigin<'_>,
+    operation: &FileOperation,
+    worktree_path: &Path,
+) -> Result<bool> {
+    let parent = operation.target_path.parent().unwrap_or(worktree_path);
+    let Some(anchor) = matching_target_anchor(parent, worktree_path) else {
+        return Ok(false);
+    };
+
+    match inspect_target_ancestors(parent, anchor.as_ref(), false) {
+        Ok(()) | Err(TargetAncestorIssue::OutsideWorktree { .. }) => Ok(true),
+        Err(TargetAncestorIssue::Symlink { path }) => invalid_file_plan(
+            origin,
+            Some(operation.declaration),
+            format!(
+                "cannot create target for {}; target parent {} is a symlink",
+                operation_label(operation),
+                path.display()
+            ),
+        ),
+        Err(TargetAncestorIssue::NotDirectory { path }) => invalid_file_plan(
+            origin,
+            Some(operation.declaration),
+            format!(
+                "cannot create target for {}; target parent {} is not a directory",
+                operation_label(operation),
+                path.display()
+            ),
+        ),
+        Err(TargetAncestorIssue::Io { path, source }) => Err(file_plan_error(
+            origin,
+            Some(operation.declaration),
+            format!(
+                "failed to inspect target parent {}: {source}",
+                path.display()
+            ),
+        )),
+    }
 }
 
 fn validate_target_conflicts(
@@ -1061,12 +1125,7 @@ fn source_exists(
 }
 
 fn operation_summary(origin: FilePlanOrigin<'_>, operation: &FileOperation) -> String {
-    let summary = format!(
-        "{} {} -> {}",
-        operation.operation,
-        operation.source.display(),
-        operation.target.display()
-    );
+    let summary = operation_label(operation);
 
     match origin {
         FilePlanOrigin::Config(_) => format!(
@@ -1075,6 +1134,15 @@ fn operation_summary(origin: FilePlanOrigin<'_>, operation: &FileOperation) -> S
         ),
         FilePlanOrigin::Manual { .. } => summary,
     }
+}
+
+fn operation_label(operation: &FileOperation) -> String {
+    format!(
+        "{} {} -> {}",
+        operation.operation,
+        operation.source.display(),
+        operation.target.display()
+    )
 }
 
 fn invalid_config<T>(
@@ -1168,6 +1236,18 @@ fn normalize_maybe_existing(path: &Path) -> std::io::Result<PathBuf> {
     Ok(normalize_lexical(&normalized))
 }
 
+fn normalize_target_path(path: &Path) -> std::io::Result<PathBuf> {
+    let Some(name) = path.file_name() else {
+        return normalize_maybe_existing(path);
+    };
+
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut normalized = normalize_maybe_existing(parent)?;
+    normalized.push(name);
+
+    Ok(normalize_lexical(&normalized))
+}
+
 fn normalize_lexical(path: &Path) -> PathBuf {
     let mut normalized = PathBuf::new();
 
@@ -1222,6 +1302,19 @@ mod tests {
         std::fs::create_dir_all(&worktree).expect("worktree should be created");
 
         (root, worktree)
+    }
+
+    #[cfg(unix)]
+    fn aliased_workspace(name: &str) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
+        let (root, worktree) = temp_workspace(name);
+        let base = root.parent().expect("root should have parent");
+        let alias = base.join("alias");
+        std::os::unix::fs::symlink(base, &alias).expect("workspace alias should be created");
+
+        let alias_root = alias.join("root");
+        let alias_worktree = alias.join("worktree");
+
+        (root, worktree, alias_root, alias_worktree)
     }
 
     fn context(root_path: &Path, worktree_path: &Path) -> Worktree {
@@ -1502,6 +1595,287 @@ mod tests {
         .expect("escaped paths should plan");
 
         assert_eq!(plan.files[0].status, PlannedFileStatus::Ready);
+    }
+
+    #[test]
+    fn action_plan_from_manifest_should_allow_missing_target_parents_for_all_file_operations() {
+        for operation in [
+            FileOperationKind::Copy,
+            FileOperationKind::Symlink,
+            FileOperationKind::Sync,
+        ] {
+            let (root, worktree) = temp_workspace(&format!("missing-target-parent-{operation}"));
+            std::fs::write(root.join("source"), "value\n").expect("source should be written");
+            let config = Config {
+                options: Default::default(),
+                files: vec![file_operation(
+                    operation,
+                    &root,
+                    &worktree,
+                    "source",
+                    "nested/config/source",
+                )],
+                commands: Vec::new(),
+            };
+
+            let plan = plan(&config, &root, &worktree)
+                .unwrap_or_else(|error| panic!("{operation} should plan: {error}"));
+
+            assert_eq!(plan.files[0].status, PlannedFileStatus::Ready);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn action_plan_from_manifest_should_allow_final_symlink_target_to_root_source() {
+        let (root, worktree) = temp_workspace("final-symlink-target-to-root");
+        let source = root.join("config/master.key");
+        let target = worktree.join("config/master.key");
+        std::fs::create_dir_all(source.parent().unwrap()).expect("source parent should exist");
+        std::fs::create_dir_all(target.parent().unwrap()).expect("target parent should exist");
+        std::fs::write(&source, "secret\n").expect("source should be written");
+        std::os::unix::fs::symlink(&source, &target).expect("target symlink should be created");
+        let config = Config {
+            options: Default::default(),
+            files: vec![file_operation(
+                FileOperationKind::Symlink,
+                &root,
+                &worktree,
+                "config/master.key",
+                "config/master.key",
+            )],
+            commands: Vec::new(),
+        };
+
+        let plan = plan(&config, &root, &worktree)
+            .expect("final target symlink to root source should plan");
+
+        assert_eq!(plan.files[0].status, PlannedFileStatus::Ready);
+        assert_eq!(
+            plan.files[0].target_path,
+            normalize_target_path(&target).expect("target should normalize")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn action_plan_from_manifest_should_reject_target_parent_symlink_for_all_file_operations() {
+        for operation in [
+            FileOperationKind::Copy,
+            FileOperationKind::Symlink,
+            FileOperationKind::Sync,
+        ] {
+            let (root, worktree) = temp_workspace(&format!("target-parent-symlink-{operation}"));
+            let linked = root.join("config");
+            std::fs::create_dir_all(&linked).expect("linked directory should be created");
+            std::fs::write(root.join("source"), "value\n").expect("source should be written");
+            std::os::unix::fs::symlink(&linked, worktree.join("config"))
+                .expect("target parent symlink should be created");
+            let config = Config {
+                options: Default::default(),
+                files: vec![file_operation(
+                    operation,
+                    &root,
+                    &worktree,
+                    "source",
+                    "config/source",
+                )],
+                commands: Vec::new(),
+            };
+
+            let error = match plan(&config, &root, &worktree) {
+                Ok(_) => panic!("{operation} should reject symlink parent"),
+                Err(error) => error,
+            };
+            let message = error.to_string();
+            assert!(
+                message.contains(&format!("cannot create target for {operation}")),
+                "{operation} error should name operation: {message}"
+            );
+            assert!(
+                message.contains("target parent") && message.contains("is a symlink"),
+                "{operation} error should describe symlink parent: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn action_plan_from_manifest_should_reject_target_parent_file_for_all_file_operations() {
+        for operation in [
+            FileOperationKind::Copy,
+            FileOperationKind::Symlink,
+            FileOperationKind::Sync,
+        ] {
+            let (root, worktree) = temp_workspace(&format!("target-parent-file-{operation}"));
+            std::fs::write(root.join("source"), "value\n").expect("source should be written");
+            std::fs::write(worktree.join("config"), "not a directory\n")
+                .expect("target parent file should be written");
+            let config = Config {
+                options: Default::default(),
+                files: vec![file_operation(
+                    operation,
+                    &root,
+                    &worktree,
+                    "source",
+                    "config/source",
+                )],
+                commands: Vec::new(),
+            };
+
+            let error = match plan(&config, &root, &worktree) {
+                Ok(_) => panic!("{operation} should reject file parent"),
+                Err(error) => error,
+            };
+            let message = error.to_string();
+            assert!(
+                message.contains(&format!("cannot create target for {operation}")),
+                "{operation} error should name operation: {message}"
+            );
+            assert!(
+                message.contains("target parent") && message.contains("is not a directory"),
+                "{operation} error should describe file parent: {message}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn action_plan_from_manifest_should_reject_target_parent_file_with_worktree_alias() {
+        let (_root, _worktree, alias_root, alias_worktree) =
+            aliased_workspace("target-parent-file-alias");
+        std::fs::write(alias_root.join("source"), "value\n").expect("source should be written");
+        std::fs::write(alias_worktree.join("config"), "not a directory\n")
+            .expect("target parent file should be written");
+        let config = Config {
+            options: Default::default(),
+            files: vec![file_operation(
+                FileOperationKind::Copy,
+                &alias_root,
+                &alias_worktree,
+                "source",
+                "config/source",
+            )],
+            commands: Vec::new(),
+        };
+
+        let error = plan(&config, &alias_root, &alias_worktree)
+            .expect_err("aliased worktree should still reject file parent");
+
+        assert!(error.to_string().contains("target parent"));
+        assert!(error.to_string().contains("is not a directory"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn action_plan_from_manifest_should_reject_target_parent_symlink_with_worktree_alias() {
+        let (root, _worktree, alias_root, alias_worktree) =
+            aliased_workspace("target-parent-symlink-alias");
+        let linked = root.join("config");
+        std::fs::create_dir_all(&linked).expect("linked directory should be created");
+        std::fs::write(alias_root.join("source"), "value\n").expect("source should be written");
+        std::os::unix::fs::symlink(&linked, alias_worktree.join("config"))
+            .expect("target parent symlink should be created");
+        let config = Config {
+            options: Default::default(),
+            files: vec![file_operation(
+                FileOperationKind::Copy,
+                &alias_root,
+                &alias_worktree,
+                "source",
+                "config/source",
+            )],
+            commands: Vec::new(),
+        };
+
+        let error = plan(&config, &alias_root, &alias_worktree)
+            .expect_err("aliased worktree should still reject symlink parent");
+
+        assert!(error.to_string().contains("target parent"));
+        assert!(error.to_string().contains("is a symlink"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn action_plan_from_manifest_should_reject_canonical_absolute_target_parent_symlink() {
+        let (root, worktree, alias_root, alias_worktree) =
+            aliased_workspace("absolute-target-parent-symlink");
+        let linked = root.join("config");
+        std::fs::create_dir_all(&linked).expect("linked directory should be created");
+        std::fs::write(alias_root.join("source"), "value\n").expect("source should be written");
+        std::os::unix::fs::symlink(&linked, worktree.join("config"))
+            .expect("target parent symlink should be created");
+        let target_path = std::fs::canonicalize(&worktree)
+            .expect("worktree should canonicalize")
+            .join("config/source");
+        let mut operation = file_operation(
+            FileOperationKind::Copy,
+            &alias_root,
+            &alias_worktree,
+            "source",
+            "config/source",
+        );
+        operation.target = target_path.clone();
+        operation.target_path = target_path;
+        let config = Config {
+            options: Default::default(),
+            files: vec![operation],
+            commands: Vec::new(),
+        };
+
+        let error = plan(&config, &alias_root, &alias_worktree)
+            .expect_err("canonical absolute target should reject symlink parent");
+
+        assert!(error.to_string().contains("target parent"));
+        assert!(error.to_string().contains("is a symlink"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn action_plan_from_manifest_should_reject_absolute_alias_target_parent_symlink() {
+        let (root, worktree, _alias_root, alias_worktree) =
+            aliased_workspace("absolute-alias-target-parent-symlink");
+        let linked = worktree.join("real-config");
+        std::fs::create_dir_all(&linked).expect("linked directory should be created");
+        std::fs::write(root.join("source"), "value\n").expect("source should be written");
+        std::os::unix::fs::symlink(&linked, worktree.join("config"))
+            .expect("target parent symlink should be created");
+        let target_path = alias_worktree.join("config/source");
+        let mut operation = file_operation(
+            FileOperationKind::Copy,
+            &root,
+            &worktree,
+            "source",
+            "config/source",
+        );
+        operation.target = target_path.clone();
+        operation.target_path = target_path;
+        let config = Config {
+            options: Default::default(),
+            files: vec![operation],
+            commands: Vec::new(),
+        };
+
+        let error = plan(&config, &root, &worktree)
+            .expect_err("absolute alias target should reject symlink parent");
+
+        assert!(error.to_string().contains("target parent"));
+        assert!(error.to_string().contains("is a symlink"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn action_plan_from_manifest_should_keep_input_context_for_worktree_alias() {
+        let (_root, _worktree, alias_root, alias_worktree) = aliased_workspace("context-alias");
+        let plan = ActionPlan::from_manifest(
+            Path::new(".treeboot.toml"),
+            &empty_config(),
+            &context(&alias_root, &alias_worktree),
+            ActionPlanOptions::default(),
+        )
+        .expect("empty plan should build");
+
+        assert_eq!(plan.context().root_path, alias_root);
+        assert_eq!(plan.context().worktree_path, alias_worktree);
     }
 
     #[test]
