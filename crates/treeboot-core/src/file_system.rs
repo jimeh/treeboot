@@ -28,6 +28,14 @@ pub(crate) struct ContentReadError {
     pub(crate) source: io::Error,
 }
 
+#[derive(Debug)]
+pub(crate) enum TargetAncestorIssue {
+    OutsideWorktree { path: PathBuf },
+    Symlink { path: PathBuf },
+    NotDirectory { path: PathBuf },
+    Io { path: PathBuf, source: io::Error },
+}
+
 pub(crate) fn file_sync_changed(
     operation: &PlannedFileOperation,
     source_path: &Path,
@@ -397,12 +405,36 @@ fn ensure_target_ancestors(
     worktree_path: &Path,
     require_exists: bool,
 ) -> Result<()> {
-    if !path.starts_with(worktree_path) {
-        return conflict(
+    match inspect_target_ancestors(path, worktree_path, require_exists) {
+        Ok(()) => Ok(()),
+        Err(TargetAncestorIssue::OutsideWorktree { path }) => conflict(
             operation,
-            path.to_path_buf(),
+            path,
             "target resolves outside worktree during apply",
-        );
+        ),
+        Err(TargetAncestorIssue::Symlink { path }) => {
+            conflict(operation, path, "target parent is a symlink")
+        }
+        Err(TargetAncestorIssue::NotDirectory { path }) => {
+            conflict(operation, path, "target parent is not a directory")
+        }
+        Err(TargetAncestorIssue::Io { path, source }) => Err(Error::FileOperationIo {
+            operation: operation.as_str(),
+            path,
+            source,
+        }),
+    }
+}
+
+pub(crate) fn inspect_target_ancestors(
+    path: &Path,
+    worktree_path: &Path,
+    require_exists: bool,
+) -> std::result::Result<(), TargetAncestorIssue> {
+    if !path.starts_with(worktree_path) {
+        return Err(TargetAncestorIssue::OutsideWorktree {
+            path: path.to_path_buf(),
+        });
     }
 
     let mut chain = Vec::new();
@@ -413,11 +445,9 @@ fn ensure_target_ancestors(
             break;
         }
         let Some(parent) = current.parent() else {
-            return conflict(
-                operation,
-                path.to_path_buf(),
-                "target resolves outside worktree during apply",
-            );
+            return Err(TargetAncestorIssue::OutsideWorktree {
+                path: path.to_path_buf(),
+            });
         };
         current = parent;
     }
@@ -425,22 +455,21 @@ fn ensure_target_ancestors(
     for ancestor in chain.iter().rev() {
         match fs::symlink_metadata(ancestor) {
             Ok(metadata) if metadata.file_type().is_symlink() => {
-                return conflict(operation, ancestor.clone(), "target parent is a symlink");
+                return Err(TargetAncestorIssue::Symlink {
+                    path: ancestor.clone(),
+                });
             }
             Ok(metadata) if !metadata.is_dir() => {
-                return conflict(
-                    operation,
-                    ancestor.clone(),
-                    "target parent is not a directory",
-                );
+                return Err(TargetAncestorIssue::NotDirectory {
+                    path: ancestor.clone(),
+                });
             }
             Ok(_) => {}
             Err(source) if source.kind() == std::io::ErrorKind::NotFound && !require_exists => {
                 return Ok(());
             }
             Err(source) => {
-                return Err(Error::FileOperationIo {
-                    operation: operation.as_str(),
+                return Err(TargetAncestorIssue::Io {
                     path: ancestor.clone(),
                     source,
                 });

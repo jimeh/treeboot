@@ -210,6 +210,109 @@ fn read_full_chunk_should_tag_errors_with_input_side() {
     assert_eq!(error.input, ContentInput::Target);
 }
 
+#[test]
+fn inspect_target_ancestors_should_accept_existing_directory_chain() {
+    let (_root, worktree) = temp_workspace("inspect-existing-dirs");
+    let parent = worktree.join("nested/config");
+    fs::create_dir_all(&parent).expect("target parent should be created");
+
+    inspect_target_ancestors(&parent, &worktree, true)
+        .expect("existing directory ancestors should be accepted");
+}
+
+#[test]
+fn inspect_target_ancestors_should_accept_missing_parent_when_not_required() {
+    let (_root, worktree) = temp_workspace("inspect-missing-optional");
+    let parent = worktree.join("nested/config");
+
+    inspect_target_ancestors(&parent, &worktree, false)
+        .expect("missing directory ancestors should be accepted before create");
+}
+
+#[test]
+fn inspect_target_ancestors_should_reject_missing_parent_when_required() {
+    let (_root, worktree) = temp_workspace("inspect-missing-required");
+    let parent = worktree.join("nested/config");
+
+    let issue = inspect_target_ancestors(&parent, &worktree, true)
+        .expect_err("missing required ancestor should be rejected");
+
+    match issue {
+        TargetAncestorIssue::Io { path, source } => {
+            assert_eq!(path, worktree.join("nested"));
+            assert_eq!(source.kind(), io::ErrorKind::NotFound);
+        }
+        other => panic!("expected missing ancestor I/O issue, got {other:?}"),
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn inspect_target_ancestors_should_reject_symlink_parent() {
+    let (_root, worktree) = temp_workspace("inspect-symlink-parent");
+    let outside = worktree
+        .parent()
+        .expect("worktree should have parent")
+        .join("outside-inspect");
+    fs::create_dir_all(&outside).expect("outside dir should be created");
+    std::os::unix::fs::symlink(&outside, worktree.join("linked"))
+        .expect("target parent symlink should be created");
+
+    let issue = inspect_target_ancestors(&worktree.join("linked/config"), &worktree, false)
+        .expect_err("symlink ancestor should be rejected");
+
+    match issue {
+        TargetAncestorIssue::Symlink { path } => assert_eq!(path, worktree.join("linked")),
+        other => panic!("expected symlink ancestor issue, got {other:?}"),
+    }
+}
+
+#[test]
+fn inspect_target_ancestors_should_reject_file_parent() {
+    let (_root, worktree) = temp_workspace("inspect-file-parent");
+    fs::write(worktree.join("config"), "not a directory\n").expect("file parent should be written");
+
+    let issue = inspect_target_ancestors(&worktree.join("config/master.key"), &worktree, false)
+        .expect_err("file ancestor should be rejected");
+
+    match issue {
+        TargetAncestorIssue::NotDirectory { path } => assert_eq!(path, worktree.join("config")),
+        other => panic!("expected non-directory ancestor issue, got {other:?}"),
+    }
+}
+
+#[test]
+fn inspect_target_ancestors_should_reject_outside_worktree_path() {
+    let (_root, worktree) = temp_workspace("inspect-outside-worktree");
+    let outside = worktree
+        .parent()
+        .expect("worktree should have parent")
+        .join("outside-target");
+
+    let issue = inspect_target_ancestors(&outside, &worktree, false)
+        .expect_err("outside path should be rejected");
+
+    match issue {
+        TargetAncestorIssue::OutsideWorktree { path } => assert_eq!(path, outside),
+        other => panic!("expected outside-worktree issue, got {other:?}"),
+    }
+}
+
+#[test]
+fn inspect_target_ancestors_should_reject_worktree_root_file() {
+    let (root, _worktree) = temp_workspace("inspect-root-file");
+    let file_worktree = root.join("file-worktree");
+    fs::write(&file_worktree, "not a directory\n").expect("file worktree should be written");
+
+    let issue = inspect_target_ancestors(&file_worktree, &file_worktree, true)
+        .expect_err("file worktree root should be rejected");
+
+    match issue {
+        TargetAncestorIssue::NotDirectory { path } => assert_eq!(path, file_worktree),
+        other => panic!("expected non-directory worktree root issue, got {other:?}"),
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn remove_any_should_reject_symlink_target_parent_before_delete() {

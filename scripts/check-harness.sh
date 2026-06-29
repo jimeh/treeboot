@@ -18,6 +18,11 @@ extract_spec_version() {
     head -n 1
 }
 
+extract_package_version() {
+  sed -nE 's/^version = "([0-9]+\.[0-9]+\.[0-9]+)"/\1/p' "$@" |
+    head -n 1
+}
+
 git_path_exists() {
   git cat-file -e "$1:$2" 2>/dev/null
 }
@@ -69,6 +74,9 @@ readme_spec="$(
 spec_version="$(
   extract_spec_version docs/SPEC.md
 )"
+package_version="$(
+  extract_package_version crates/treeboot/Cargo.toml
+)"
 
 if [[ -z "${readme_spec}" ]]; then
   fail "README.md must mention the current spec version as 'spec vX.Y.Z'"
@@ -80,6 +88,24 @@ fi
 
 if [[ -n "${readme_spec}" && -n "${spec_version}" && "${readme_spec}" != "${spec_version}" ]]; then
   fail "README.md spec v${readme_spec} does not match docs/SPEC.md v${spec_version}"
+fi
+
+if [[ -z "${package_version}" ]]; then
+  fail "crates/treeboot/Cargo.toml must expose package version X.Y.Z"
+fi
+
+if [[ -n "${package_version}" && -n "${spec_version}" ]]; then
+  if ! grep -Fqx "treeboot ${package_version} (spec ${spec_version})" docs/SPEC.md; then
+    fail "docs/SPEC.md treeboot version text example must match package v${package_version} and spec v${spec_version}"
+  fi
+
+  if ! grep -Fq "\"version\": \"${package_version}\"" docs/SPEC.md; then
+    fail "docs/SPEC.md version JSON example must match package v${package_version}"
+  fi
+
+  if ! grep -Fq "\"spec_version\": \"${spec_version}\"" docs/SPEC.md; then
+    fail "docs/SPEC.md version JSON example must match spec v${spec_version}"
+  fi
 fi
 
 for crate_license in crates/treeboot/LICENSE crates/treeboot-core/LICENSE; do
