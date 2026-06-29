@@ -1,10 +1,17 @@
 use std::collections::BTreeMap;
 use std::ffi::OsString;
+use std::fs::{self, File, FileTimes};
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::*;
+use crate::file_system::copy_file_with_metadata;
 use crate::validation::PlannedFileOperationParts;
-use crate::{ActionPlanOptions, FileOperation, PlanOrigin, SourceSpan, Worktree};
+use crate::{
+    ActionPlanOptions, Error, FileOperation, FileOperationKind, MetadataField, OutputEvent,
+    PlanOrigin, PlannedFileOperation, PlannedFileStatus, Reporter, SourceSpan, SyncCompare,
+    Worktree,
+};
 
 #[derive(Default)]
 struct VecReporter {
@@ -22,56 +29,24 @@ impl Reporter for VecReporter {
         if !message.is_empty() {
             self.messages.push(message);
         }
+
+        match &event {
+            OutputEvent::FileOperationPlanningFinished { action_count, .. } => {
+                self.planning_finished_counts.push(*action_count);
+            }
+            OutputEvent::FileOperationExecutionStarted { action_count, .. } => {
+                self.execution_started_counts.push(*action_count);
+            }
+            OutputEvent::FileOperationActionAdvanced { .. } => {
+                self.action_advanced_count += 1;
+            }
+            OutputEvent::FileOperationFinished { .. } => {
+                self.summary_count += 1;
+            }
+            _ => {}
+        }
+
         self.events.push(event);
-        Ok(())
-    }
-
-    fn file_operation_planning_finished(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-        action_count: usize,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target);
-        self.planning_finished_counts.push(action_count);
-        Ok(())
-    }
-
-    fn file_operation_execution_started(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-        action_count: usize,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target);
-        self.execution_started_counts.push(action_count);
-        Ok(())
-    }
-
-    fn file_operation_action_advanced(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target);
-        self.action_advanced_count += 1;
-        Ok(())
-    }
-
-    fn file_operation_finished(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-        summary: &FileOperationSummary,
-        dry_run: bool,
-    ) -> std::io::Result<()> {
-        self.summary_count += 1;
-        self.messages
-            .push(summary.message(operation, source, target, dry_run));
         Ok(())
     }
 }
@@ -83,7 +58,7 @@ impl VecReporter {
 }
 
 #[derive(Debug, Clone, Copy)]
-enum FailingCallback {
+enum FailingEvent {
     PlanningStarted,
     PlanningFinished,
     ExecutionStarted,
@@ -91,86 +66,24 @@ enum FailingCallback {
     Finished,
 }
 
-struct FailingCallbackReporter {
-    fail_on: FailingCallback,
+struct FailingEventReporter {
+    fail_on: FailingEvent,
 }
 
-impl FailingCallbackReporter {
+impl FailingEventReporter {
     fn fail() -> std::io::Result<()> {
-        Err(std::io::Error::other("reporter callback failed"))
+        Err(std::io::Error::other("reporter event failed"))
     }
 }
 
-impl Reporter for FailingCallbackReporter {
-    fn report(&mut self, _event: OutputEvent) -> std::io::Result<()> {
-        Ok(())
-    }
-
-    fn file_operation_planning_started(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target);
-        match self.fail_on {
-            FailingCallback::PlanningStarted => Self::fail(),
-            _ => Ok(()),
-        }
-    }
-
-    fn file_operation_planning_finished(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-        action_count: usize,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target, action_count);
-        match self.fail_on {
-            FailingCallback::PlanningFinished => Self::fail(),
-            _ => Ok(()),
-        }
-    }
-
-    fn file_operation_execution_started(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-        action_count: usize,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target, action_count);
-        match self.fail_on {
-            FailingCallback::ExecutionStarted => Self::fail(),
-            _ => Ok(()),
-        }
-    }
-
-    fn file_operation_action_advanced(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target);
-        match self.fail_on {
-            FailingCallback::ActionAdvanced => Self::fail(),
-            _ => Ok(()),
-        }
-    }
-
-    fn file_operation_finished(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-        summary: &FileOperationSummary,
-        dry_run: bool,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target, summary, dry_run);
-        match self.fail_on {
-            FailingCallback::Finished => Self::fail(),
+impl Reporter for FailingEventReporter {
+    fn report(&mut self, event: OutputEvent) -> std::io::Result<()> {
+        match (&self.fail_on, event) {
+            (FailingEvent::PlanningStarted, OutputEvent::FileOperationPlanningStarted { .. })
+            | (FailingEvent::PlanningFinished, OutputEvent::FileOperationPlanningFinished { .. })
+            | (FailingEvent::ExecutionStarted, OutputEvent::FileOperationExecutionStarted { .. })
+            | (FailingEvent::ActionAdvanced, OutputEvent::FileOperationActionAdvanced { .. })
+            | (FailingEvent::Finished, OutputEvent::FileOperationFinished { .. }) => Self::fail(),
             _ => Ok(()),
         }
     }
@@ -228,18 +141,10 @@ impl SourceSymlinkMutationReporter {
 
 #[cfg(unix)]
 impl Reporter for SourceSymlinkMutationReporter {
-    fn report(&mut self, _event: OutputEvent) -> std::io::Result<()> {
-        Ok(())
-    }
-
-    fn file_operation_execution_started(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-        action_count: usize,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target, action_count);
+    fn report(&mut self, event: OutputEvent) -> std::io::Result<()> {
+        if !matches!(event, OutputEvent::FileOperationExecutionStarted { .. }) {
+            return Ok(());
+        }
         if self.mutated {
             return Ok(());
         }
@@ -520,15 +425,15 @@ fn apply_file_operations_should_not_force_copy_ignored_targets() {
 }
 
 #[test]
-fn apply_file_operations_should_map_callback_failures_to_output_errors() {
+fn apply_file_operations_should_map_lifecycle_event_failures_to_output_errors() {
     for fail_on in [
-        FailingCallback::PlanningStarted,
-        FailingCallback::PlanningFinished,
-        FailingCallback::ExecutionStarted,
-        FailingCallback::ActionAdvanced,
-        FailingCallback::Finished,
+        FailingEvent::PlanningStarted,
+        FailingEvent::PlanningFinished,
+        FailingEvent::ExecutionStarted,
+        FailingEvent::ActionAdvanced,
+        FailingEvent::Finished,
     ] {
-        let (root, worktree) = temp_workspace(&format!("callback-failure-{fail_on:?}"));
+        let (root, worktree) = temp_workspace(&format!("lifecycle-failure-{fail_on:?}"));
         fs::write(root.join(".env"), "TOKEN=1\n").expect("source should be written");
         let plan = run_plan(
             &root,
@@ -541,7 +446,7 @@ fn apply_file_operations_should_map_callback_failures_to_output_errors() {
                 ".env",
             )],
         );
-        let mut reporter = FailingCallbackReporter { fail_on };
+        let mut reporter = FailingEventReporter { fail_on };
 
         let error = apply_file_operations(
             &plan,
@@ -551,7 +456,7 @@ fn apply_file_operations_should_map_callback_failures_to_output_errors() {
             },
             &mut reporter,
         )
-        .expect_err("callback failure should fail apply");
+        .expect_err("lifecycle event failure should fail apply");
 
         assert!(
             matches!(error, Error::Output { .. }),
@@ -727,7 +632,7 @@ fn apply_file_operations_should_copy_missing_directory_files_only() {
     );
     let mut reporter = VecReporter::default();
 
-    apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
+    let report = apply_file_operations(&plan, FileApplyOptions::default(), &mut reporter)
         .expect("directory copy should apply");
 
     let existing = fs::read_to_string(target_dir.join("existing"))
@@ -736,6 +641,7 @@ fn apply_file_operations_should_copy_missing_directory_files_only() {
         fs::read_to_string(target_dir.join("missing")).expect("missing target should be copied");
     assert_eq!(existing, "old\n");
     assert_eq!(missing, "value\n");
+    assert_eq!(report.action_count, 2);
 }
 
 #[test]
@@ -2401,33 +2307,6 @@ fn apply_file_operations_should_reject_source_that_resolves_outside_root_at_appl
 
 #[cfg(unix)]
 #[test]
-fn remove_any_should_reject_symlink_target_parent_before_delete() {
-    let (_root, worktree) = temp_workspace("delete-symlink-parent");
-    let outside = worktree
-        .parent()
-        .expect("worktree should have parent")
-        .join("outside-delete");
-    fs::create_dir_all(&outside).expect("outside dir should be created");
-    fs::write(outside.join("extra"), "keep\n").expect("outside file should be written");
-    std::os::unix::fs::symlink(&outside, worktree.join("linked"))
-        .expect("target parent symlink should be created");
-
-    let error = remove_any(
-        FileOperationKind::Sync,
-        &worktree.join("linked/extra"),
-        &worktree,
-    )
-    .expect_err("delete through symlink parent should fail");
-
-    assert!(error.to_string().contains("target parent is a symlink"));
-    assert_eq!(
-        fs::read_to_string(outside.join("extra")).expect("outside file should remain readable"),
-        "keep\n"
-    );
-}
-
-#[cfg(unix)]
-#[test]
 fn apply_file_operations_should_copy_read_only_file() {
     use std::os::unix::fs::PermissionsExt;
 
@@ -3094,189 +2973,4 @@ fn apply_file_operations_should_update_changed_sync_symlink_target() {
 
     let link = fs::read_link(worktree.join("link")).expect("synced symlink should exist");
     assert_eq!(link, PathBuf::from("config"));
-}
-
-#[cfg(unix)]
-#[test]
-fn preserved_source_link_should_track_directory_target_type() {
-    let (root, worktree) = temp_workspace("preserved-directory-symlink");
-    let source_dir = root.join("shared");
-    fs::create_dir_all(source_dir.join("dir")).expect("source dir should be created");
-    std::os::unix::fs::symlink("dir", source_dir.join("link"))
-        .expect("source symlink should be created");
-    let plan = run_plan(&root, &worktree, Vec::new());
-
-    let (_, final_target, target_is_dir) = preserved_source_link(
-        &plan,
-        FileOperationKind::Copy,
-        &source_dir.join("link"),
-        &worktree.join("shared/link"),
-    )
-    .expect("preserved symlink should plan");
-
-    assert_eq!(final_target, worktree.join("shared/dir"));
-    assert!(target_is_dir);
-}
-
-/// A [`Read`] adapter that hands back bytes in a scripted sequence of short
-/// reads, simulating filesystems that return fewer bytes than requested even
-/// when more data remains. Once the `chunks` script is exhausted it fills
-/// whatever the caller's buffer allows.
-struct ChunkedRead {
-    data: Vec<u8>,
-    chunks: Vec<usize>,
-    pos: usize,
-    chunk_index: usize,
-}
-
-impl ChunkedRead {
-    fn new(data: Vec<u8>, chunks: Vec<usize>) -> Self {
-        Self {
-            data,
-            chunks,
-            pos: 0,
-            chunk_index: 0,
-        }
-    }
-}
-
-impl Read for ChunkedRead {
-    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        if self.pos == self.data.len() {
-            return Ok(0);
-        }
-
-        let chunk = self
-            .chunks
-            .get(self.chunk_index)
-            .copied()
-            .unwrap_or(buffer.len())
-            .max(1);
-        self.chunk_index += 1;
-
-        let read = chunk.min(buffer.len()).min(self.data.len() - self.pos);
-        buffer[..read].copy_from_slice(&self.data[self.pos..self.pos + read]);
-        self.pos += read;
-        Ok(read)
-    }
-}
-
-/// A [`Read`] adapter that returns [`io::ErrorKind::Interrupted`] a fixed number
-/// of times before yielding its data, used to confirm interrupted reads are
-/// retried rather than surfaced as failures.
-struct InterruptingReader {
-    data: Vec<u8>,
-    pos: usize,
-    pending_interrupts: usize,
-}
-
-impl InterruptingReader {
-    fn new(data: Vec<u8>, pending_interrupts: usize) -> Self {
-        Self {
-            data,
-            pos: 0,
-            pending_interrupts,
-        }
-    }
-}
-
-impl Read for InterruptingReader {
-    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        if self.pending_interrupts > 0 {
-            self.pending_interrupts -= 1;
-            return Err(io::Error::from(io::ErrorKind::Interrupted));
-        }
-
-        let read = buffer.len().min(self.data.len() - self.pos);
-        buffer[..read].copy_from_slice(&self.data[self.pos..self.pos + read]);
-        self.pos += read;
-        Ok(read)
-    }
-}
-
-/// A [`Read`] adapter that always fails, used to check error attribution.
-struct FailingReader;
-
-impl Read for FailingReader {
-    fn read(&mut self, _buffer: &mut [u8]) -> io::Result<usize> {
-        Err(io::Error::other("read failed"))
-    }
-}
-
-#[test]
-fn reader_contents_changed_should_ignore_short_read_boundaries() {
-    // Span more than one 8 KiB read buffer with mismatched short-read scripts so
-    // the two handles desync per call; identical content must still compare
-    // unchanged. Fails if the comparison loop reads with raw `Read::read`.
-    let data: Vec<u8> = (0..(8192 + 137)).map(|i| (i % 251) as u8).collect();
-    let mut source = ChunkedRead::new(data.clone(), vec![1, 8, 3, 2, 13]);
-    let mut target = ChunkedRead::new(data, vec![5, 1, 1, 16, 4]);
-
-    let changed = reader_contents_changed(&mut source, &mut target)
-        .expect("identical readers should compare cleanly");
-
-    assert!(!changed);
-}
-
-#[test]
-fn reader_contents_changed_should_detect_equal_size_differences() {
-    let source_data: Vec<u8> = (0..4096).map(|i| (i % 251) as u8).collect();
-    let mut target_data = source_data.clone();
-    *target_data.last_mut().expect("data is non-empty") ^= 0xFF;
-    let mut source = ChunkedRead::new(source_data, vec![1, 8, 3]);
-    let mut target = ChunkedRead::new(target_data, vec![5, 1, 1]);
-
-    let changed = reader_contents_changed(&mut source, &mut target)
-        .expect("equal-length readers should compare cleanly");
-
-    assert!(changed);
-}
-
-#[test]
-fn read_full_chunk_should_fill_buffer_across_short_reads() {
-    let data: Vec<u8> = (0..100).map(|i| i as u8).collect();
-    let mut reader = ChunkedRead::new(data.clone(), vec![3, 7, 11]);
-    let mut buffer = [0u8; 100];
-
-    let read = read_full_chunk(&mut reader, &mut buffer, ContentInput::Source)
-        .expect("read_full_chunk should fill the buffer");
-
-    assert_eq!(read, 100);
-    assert_eq!(buffer, data.as_slice());
-}
-
-#[test]
-fn read_full_chunk_should_return_short_count_at_eof() {
-    let data: Vec<u8> = (0..10).map(|i| i as u8).collect();
-    let mut reader = ChunkedRead::new(data, vec![3]);
-    let mut buffer = [0u8; 64];
-
-    let read = read_full_chunk(&mut reader, &mut buffer, ContentInput::Source)
-        .expect("read_full_chunk should stop at EOF");
-
-    assert_eq!(read, 10);
-}
-
-#[test]
-fn read_full_chunk_should_retry_interrupted_reads() {
-    let data: Vec<u8> = (0..32).map(|i| i as u8).collect();
-    let mut reader = InterruptingReader::new(data.clone(), 2);
-    let mut buffer = [0u8; 32];
-
-    let read = read_full_chunk(&mut reader, &mut buffer, ContentInput::Source)
-        .expect("interrupted reads should be retried");
-
-    assert_eq!(read, 32);
-    assert_eq!(buffer, data.as_slice());
-}
-
-#[test]
-fn read_full_chunk_should_tag_errors_with_input_side() {
-    let mut reader = FailingReader;
-    let mut buffer = [0u8; 8];
-
-    let error = read_full_chunk(&mut reader, &mut buffer, ContentInput::Target)
-        .expect_err("hard read error should propagate");
-
-    assert_eq!(error.input, ContentInput::Target);
 }

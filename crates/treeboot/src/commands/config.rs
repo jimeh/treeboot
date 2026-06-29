@@ -2,8 +2,7 @@ use std::path::PathBuf;
 
 use clap::Args;
 use treeboot_core::{
-    CommandKind, CommandOperation, ConfigOptions, ConfigReport, Error, FileOperation,
-    RuntimeOptionOverrides,
+    CommandKind, CommandOperation, ConfigOptions, ConfigReport, Error, FileOperation, RuntimePolicy,
 };
 
 use super::environment_input;
@@ -26,7 +25,9 @@ pub(crate) struct ConfigArgs {
 pub(crate) fn run_config_command(args: ConfigArgs) -> treeboot_core::Result<()> {
     let format = args.output.format();
     let options: ConfigOptions = args.into();
-    let env_options = RuntimeOptionOverrides::from_environment(&options.environment)?;
+    // `treeboot config` has no CLI strict flag; it only uses config/env policy
+    // to warn whether run validation would fail.
+    let runtime_policy = RuntimePolicy::from_environment(&options.environment, false)?;
     let report = treeboot_core::inspect_config(options)?;
 
     match format {
@@ -40,13 +41,13 @@ pub(crate) fn run_config_command(args: ConfigArgs) -> treeboot_core::Result<()> 
         }
     }?;
 
-    let plan_options = env_options.resolve(&report.config.options, false);
+    let plan_options = runtime_policy.resolve(&report.config.options);
 
     if let Err(error) = treeboot_core::ActionPlan::from_manifest(
         &report.path,
         &report.config,
         &report.context,
-        plan_options.into(),
+        plan_options.into_action_plan_options(),
     ) {
         eprintln!("treeboot: warning: run validation would fail: {error}");
     }

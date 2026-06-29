@@ -3,12 +3,12 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::config::{
     Config, FileOperationSettings, FileOperationSettingsInput, RawMetadataField,
-    RuntimeOptionOverrides, effective_ignore_patterns, normalize_file_operation_settings,
+    effective_ignore_patterns, normalize_file_operation_settings,
 };
 use crate::context;
 use crate::{
-    ActionPlan, ActionPlanOptions, EnvironmentInput, Error, ExecuteOptions, Executor,
-    FileOperation, FileOperationKind, MetadataField, OutputEvent, PlanOrigin, Reporter, Result,
+    ActionPlan, EnvironmentInput, Error, ExecuteOptions, Executor, FileOperation,
+    FileOperationKind, MetadataField, OutputEvent, PlanOrigin, Reporter, Result, RuntimePolicy,
     SourceSpan, SymlinkMode, SyncCompare, Worktree, WorktreeOptions,
 };
 
@@ -271,8 +271,8 @@ pub fn run_file_operation(
         ignore_metadata,
     };
 
-    let env_options = RuntimeOptionOverrides::from_environment(&environment)?;
-    let pre_config_strict = env_options.pre_config_strict(strict);
+    let runtime_policy = RuntimePolicy::from_environment(&environment, strict)?;
+    let pre_config_strict = runtime_policy.pre_config_strict();
     let context = context::resolve(&WorktreeOptions {
         cwd,
         root,
@@ -297,19 +297,19 @@ pub fn run_file_operation(
     let config_options = Config::load_discovered(&context, None)?
         .map(|loaded| loaded.config.options)
         .unwrap_or_default();
-    let plan_options = env_options.resolve(&config_options, strict);
+    let plan_options = runtime_policy.resolve(&config_options);
     manual_options.ignore = effective_ignore_patterns(
         operation,
-        &plan_options.default_ignore,
+        plan_options.default_ignore(),
         manual_options.ignore,
     );
-    let strict = plan_options.strict;
+    let strict = plan_options.strict();
     let operations = FileOperation::from_manual_options(&context, manual_options)?;
     let plan = ActionPlan::from_file_operations(
         &context,
         PlanOrigin::Manual { operation },
         &operations,
-        ActionPlanOptions::from(plan_options),
+        plan_options.into_action_plan_options(),
     )?;
     let report = Executor::new(ExecuteOptions {
         strict,
@@ -552,6 +552,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
+    use crate::ActionPlanOptions;
 
     fn temp_workspace(name: &str) -> (PathBuf, PathBuf) {
         let id = SystemTime::now()

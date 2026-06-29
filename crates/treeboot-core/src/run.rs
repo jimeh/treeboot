@@ -1,11 +1,10 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use crate::config::RuntimeOptionOverrides;
 use crate::context;
 use crate::{
     ActionPlan, Config, EnvironmentInput, Error, ExecuteOptions, Executor, InitScriptDiscovery,
-    OutputEvent, Reporter, Result, Worktree, WorktreeOptions,
+    OutputEvent, Reporter, Result, RuntimePolicy, Worktree, WorktreeOptions,
 };
 
 /// Options for running worktree bootstrap.
@@ -83,8 +82,8 @@ pub struct RunReport {
 /// script cannot be started or exits unsuccessfully, a configured file cannot
 /// be read, or strict mode treats a missing config as a failure.
 pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport> {
-    let env_options = RuntimeOptionOverrides::from_environment(&options.environment)?;
-    let pre_config_strict = env_options.pre_config_strict(options.strict);
+    let runtime_policy = RuntimePolicy::from_environment(&options.environment, options.strict)?;
+    let pre_config_strict = runtime_policy.pre_config_strict();
     let context = context::resolve(&WorktreeOptions {
         cwd: options.cwd.clone(),
         root: options.root.clone(),
@@ -123,9 +122,14 @@ pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport
         Some(path) => {
             report(reporter, OutputEvent::ConfigDetected { path: path.clone() })?;
             let config = Config::load(&path, &context)?;
-            let plan_options = env_options.resolve(&config.options, options.strict);
-            let strict = plan_options.strict;
-            let plan = ActionPlan::from_manifest(&path, &config, &context, plan_options.into())?;
+            let plan_options = runtime_policy.resolve(&config.options);
+            let strict = plan_options.strict();
+            let plan = ActionPlan::from_manifest(
+                &path,
+                &config,
+                &context,
+                plan_options.into_action_plan_options(),
+            )?;
             Executor::new(ExecuteOptions {
                 strict,
                 force: options.force,

@@ -1,4 +1,4 @@
-# treeboot Specification v1.12.0
+# treeboot Specification v1.13.0
 
 A portable worktree bootstrapper that lets every coding agent, editor, and
 orchestration tool run the same repo-local setup command.
@@ -276,6 +276,7 @@ treeboot doctor
 treeboot doctor --root /path/to/root-checkout
 treeboot doctor --config .treeboot.toml
 treeboot doctor --no-init-script
+treeboot doctor --strict
 treeboot doctor --format json
 treeboot doctor --format yaml
 treeboot doctor --json
@@ -287,6 +288,13 @@ default branch discovery, child environment construction, init script discovery,
 config discovery, and config validation when config is selected. It is intended
 for human troubleshooting. Warnings do not fail the command, but fatal discovery
 or config errors exit non-zero.
+
+`--strict` makes doctor report missing config, root-checkout execution context,
+and strict file-operation validation failures as fatal diagnostics while still
+printing the diagnostics report when possible. `TREEBOOT_STRICT=true` applies
+the same strict pre-config diagnostics and config validation. Config-level
+`strict = true` applies to config validation only, because config-level options
+are not loaded before root-checkout or missing-config checks.
 
 JSON and YAML output are defined in
 [Structured output formats](#structured-output-formats).
@@ -347,31 +355,31 @@ Operation-specific flags are valid only on the commands listed in the option
 table. For example, using `--compare` on `copy` or `--symlinks` on `symlink` is
 a CLI usage error and exits with code `2`.
 
-| Option                                                     | Scope                                                | Behavior                                                                                                                                                                                       |
-| ---------------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `-r`, `--root <path>`                                      | run/status/config/check/copy/symlink/sync/doctor/env | Overrides the root checkout used for discovery and file-operation context.                                                                                                                     |
-| `-c`, `--config <path>`                                    | run/status/config/check/doctor                       | Uses one specific config file, skips config discovery, and bypasses init script discovery.                                                                                                     |
-| `--no-init-script`                                         | run/status/check/doctor                              | Skips init script discovery while preserving normal config discovery.                                                                                                                          |
-| `-o`, `--format <text\|json\|yaml>`                        | status/version/config/check/doctor/env               | Selects human-readable, JSON, or YAML output. Defaults to `text`.                                                                                                                              |
-| `-J`, `--json`                                             | status/version/config/check/doctor/env               | Shortcut for `--format json`. Conflicts with `--format` and `--yaml`.                                                                                                                          |
-| `-Y`, `--yaml`                                             | status/version/config/check/doctor/env               | Shortcut for `--format yaml`. Conflicts with `--format` and `--json`.                                                                                                                          |
-| `-V`, `--version`                                          | global                                               | Prints package and spec version details and exits before command validation.                                                                                                                   |
-| `-o`, `--output <path>`                                    | schema                                               | Writes the bundled config schema to a file instead of stdout.                                                                                                                                  |
-| `-S`, `--strict`                                           | run/check/copy/symlink/sync                          | Fails if a copy/symlink target exists; rejects sync operations; exits non-zero when run from the root checkout. Declarative config can also enable strict mode with top-level `strict = true`. |
-| `-f`, `--force`                                            | run/copy/symlink/sync                                | Replaces existing file-operation targets where supported.                                                                                                                                      |
-| `-n`, `--dry-run`                                          | run/copy/symlink/sync                                | Prints planned work without writing files or running commands.                                                                                                                                 |
-| `-v`, `--verbose`                                          | run/copy/symlink/sync                                | Prints detailed file-operation actions instead of compact summaries. Interactive progress is disabled in verbose mode.                                                                         |
-| `--skip-commands`                                          | run                                                  | Runs file operations only.                                                                                                                                                                     |
-| `-t`, `--target <path>`                                    | copy/symlink/sync                                    | Overrides the target. With multiple sources, acts as the target path prefix for each source.                                                                                                   |
-| `--required`                                               | copy/symlink/sync                                    | Fails when any requested source does not exist.                                                                                                                                                |
-| `--symlinks <preserve>`                                    | copy/sync                                            | Selects how source symlinks are handled. The initial supported value is `preserve`.                                                                                                            |
-| `--ignore <pattern>`                                       | copy/sync                                            | Repeats to skip source paths matching operation-local ignore patterns. Patterns use gitignore-style syntax and are not read from `.gitignore` files.                                           |
-| `--ignore-metadata <permissions\|owner\|group\|ownership>` | copy/sync                                            | Repeats to opt out of metadata comparison and preservation. `ownership` means owner and group.                                                                                                 |
-| `--compare <metadata\|checksum>`                           | sync                                                 | Selects sync comparison behavior.                                                                                                                                                              |
-| `-D`, `--delete` / `--no-delete`                           | sync                                                 | Controls whether sync deletes target-only files. Defaults to `--no-delete`.                                                                                                                    |
-| `--config`                                                 | init                                                 | Creates a starter TOML config. This intentionally has no short alias so `-c` can consistently mean config path for run/config.                                                                 |
-| `-s`, `--script`                                           | init                                                 | Creates an executable init script.                                                                                                                                                             |
-| `-p`, `--path <path>`                                      | init                                                 | Writes the generated init output to a custom path.                                                                                                                                             |
+| Option                                                     | Scope                                                | Behavior                                                                                                                                                                                                                                                                    |
+| ---------------------------------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-r`, `--root <path>`                                      | run/status/config/check/copy/symlink/sync/doctor/env | Overrides the root checkout used for discovery and file-operation context.                                                                                                                                                                                                  |
+| `-c`, `--config <path>`                                    | run/status/config/check/doctor                       | Uses one specific config file, skips config discovery, and bypasses init script discovery.                                                                                                                                                                                  |
+| `--no-init-script`                                         | run/status/check/doctor                              | Skips init script discovery while preserving normal config discovery.                                                                                                                                                                                                       |
+| `-o`, `--format <text\|json\|yaml>`                        | status/version/config/check/doctor/env               | Selects human-readable, JSON, or YAML output. Defaults to `text`.                                                                                                                                                                                                           |
+| `-J`, `--json`                                             | status/version/config/check/doctor/env               | Shortcut for `--format json`. Conflicts with `--format` and `--yaml`.                                                                                                                                                                                                       |
+| `-Y`, `--yaml`                                             | status/version/config/check/doctor/env               | Shortcut for `--format yaml`. Conflicts with `--format` and `--json`.                                                                                                                                                                                                       |
+| `-V`, `--version`                                          | global                                               | Prints package and spec version details and exits before command validation.                                                                                                                                                                                                |
+| `-o`, `--output <path>`                                    | schema                                               | Writes the bundled config schema to a file instead of stdout.                                                                                                                                                                                                               |
+| `-S`, `--strict`                                           | run/check/copy/symlink/sync/doctor                   | Fails if a copy/symlink target exists; rejects sync operations; exits non-zero when run from the root checkout. Declarative config can also enable strict mode with top-level `strict = true`. For doctor, strict failures are reported as fatal diagnostics when possible. |
+| `-f`, `--force`                                            | run/copy/symlink/sync                                | Replaces existing file-operation targets where supported.                                                                                                                                                                                                                   |
+| `-n`, `--dry-run`                                          | run/copy/symlink/sync                                | Prints planned work without writing files or running commands.                                                                                                                                                                                                              |
+| `-v`, `--verbose`                                          | run/copy/symlink/sync                                | Prints detailed file-operation actions instead of compact summaries. Interactive progress is disabled in verbose mode.                                                                                                                                                      |
+| `--skip-commands`                                          | run                                                  | Runs file operations only.                                                                                                                                                                                                                                                  |
+| `-t`, `--target <path>`                                    | copy/symlink/sync                                    | Overrides the target. With multiple sources, acts as the target path prefix for each source.                                                                                                                                                                                |
+| `--required`                                               | copy/symlink/sync                                    | Fails when any requested source does not exist.                                                                                                                                                                                                                             |
+| `--symlinks <preserve>`                                    | copy/sync                                            | Selects how source symlinks are handled. The initial supported value is `preserve`.                                                                                                                                                                                         |
+| `--ignore <pattern>`                                       | copy/sync                                            | Repeats to skip source paths matching operation-local ignore patterns. Patterns use gitignore-style syntax and are not read from `.gitignore` files.                                                                                                                        |
+| `--ignore-metadata <permissions\|owner\|group\|ownership>` | copy/sync                                            | Repeats to opt out of metadata comparison and preservation. `ownership` means owner and group.                                                                                                                                                                              |
+| `--compare <metadata\|checksum>`                           | sync                                                 | Selects sync comparison behavior.                                                                                                                                                                                                                                           |
+| `-D`, `--delete` / `--no-delete`                           | sync                                                 | Controls whether sync deletes target-only files. Defaults to `--no-delete`.                                                                                                                                                                                                 |
+| `--config`                                                 | init                                                 | Creates a starter TOML config. This intentionally has no short alias so `-c` can consistently mean config path for run/config.                                                                                                                                              |
+| `-s`, `--script`                                           | init                                                 | Creates an executable init script.                                                                                                                                                                                                                                          |
+| `-p`, `--path <path>`                                      | init                                                 | Writes the generated init output to a custom path.                                                                                                                                                                                                                          |
 
 ## Structured output formats
 
@@ -625,8 +633,8 @@ object or `null` when context discovery fails. Each diagnostic has a stable
 `message`.
 
 The diagnostic names defined by this spec are `environment_options`, `worktree`,
-`root`, `default_branch`, `environment`, `init_script`, `config`, and
-`config_validation`.
+`root`, `root_worktree`, `default_branch`, `environment`, `init_script`,
+`config`, and `config_validation`.
 
 The `default_branch` diagnostic is `ok` when a non-empty default branch was
 resolved and `warning` when default branch discovery falls back to the
@@ -716,6 +724,8 @@ exits non-zero. Config-level `strict` is not loaded before this check.
 The same root-checkout behavior applies to manual `copy`, `symlink`, and `sync`
 commands. In default mode they exit successfully without applying file
 operations. In strict mode they exit non-zero before applying file operations.
+`treeboot doctor` reports root-checkout strictness as a fatal `root_worktree`
+diagnostic instead of exiting before printing the diagnostics report.
 
 ### Default Branch Discovery
 

@@ -66,19 +66,19 @@ facade functions for full treeboot behavior, and composable primitives for
 callers that want to discover a `Worktree`, load a `LoadedConfig`, build an
 `ActionPlan`, and execute it themselves.
 
-| CLI command                        | Core API                                                                                                 | Primary modules                                                                        | Side effects                                                                                                              |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `treeboot`, `treeboot run`         | `run(RunOptions, Reporter)`                                                                              | `run`, `context`, `discovery`, `config`, `validation`, `executor`, `files`, `commands` | May execute init scripts, apply file operations, and run configured commands.                                             |
-| `treeboot status`, `info`          | `inspect_status(StatusOptions)`; `inspect_status_snapshot(StatusOptions)` for serializable callers       | `status`, `context`, `discovery`, `config`                                             | View-only. Reports worktree, root, config, and init-script discovery without parsing config.                              |
-| `treeboot version`                 | `treeboot_version_info()`, `version_info(...)`                                                           | `metadata`                                                                             | View-only. Reports package and implemented spec versions.                                                                 |
-| `treeboot copy`, `symlink`, `sync` | `run_file_operation(FileOperationOptions, Reporter)`                                                     | `manual`, `context`, `config`, `validation`, `executor`, `files`                       | Applies one manual file-operation batch. Skips init scripts and configured actions, but loads config policy when present. |
-| `treeboot config`                  | `inspect_config(ConfigOptions)`                                                                          | `config`, `context`, `validation`                                                      | View-only. Prints normalized config and warns when run validation would fail.                                             |
-| `treeboot check`                   | `check(CheckOptions)`                                                                                    | `check`, `context`, `discovery`, `config`, `validation`                                | View-only. Validates selected bootstrap behavior without running scripts or applying effects.                             |
-| `treeboot init`                    | `init(InitOptions, Reporter)`                                                                            | `init`, `context`, `output`                                                            | Writes a starter config or executable init script.                                                                        |
-| `treeboot schema`                  | `config_schema_json()`                                                                                   | `metadata`                                                                             | View-only unless `--output` is used. Prints or writes the bundled config schema.                                          |
-| `treeboot doctor`                  | `diagnose(DoctorOptions)`                                                                                | `doctor`, `check`, `context`, `discovery`, `config`, `validation`                      | View-only. Reports diagnostic statuses for discovery and validation.                                                      |
-| `treeboot env`                     | `inspect_env(EnvOptions)`                                                                                | `env`, `context`                                                                       | View-only. Reports child environment variables passed to scripts and commands.                                            |
-| `treeboot completions`             | CLI-owned completion registration; `file_operation_source_candidates(...)` for dynamic source completion | `main.rs`, `commands/completions.rs`, `manual`                                         | Prints shell registration. Dynamic source candidates delegate to core.                                                    |
+| CLI command                        | Core API                                                                                                 | Primary modules                                                                                             | Side effects                                                                                                              |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `treeboot`, `treeboot run`         | `run(RunOptions, Reporter)`                                                                              | `run`, `runtime`, `context`, `discovery`, `config`, `validation`, `executor`, `file_operations`, `commands` | May execute init scripts, apply file operations, and run configured commands.                                             |
+| `treeboot status`, `info`          | `inspect_status(StatusOptions)`; `inspect_status_snapshot(StatusOptions)` for serializable callers       | `status`, `context`, `discovery`, `config`                                                                  | View-only. Reports worktree, root, config, and init-script discovery without parsing config.                              |
+| `treeboot version`                 | `treeboot_version_info()`, `version_info(...)`                                                           | `metadata`                                                                                                  | View-only. Reports package and implemented spec versions.                                                                 |
+| `treeboot copy`, `symlink`, `sync` | `run_file_operation(FileOperationOptions, Reporter)`                                                     | `manual`, `runtime`, `context`, `config`, `validation`, `executor`, `file_operations`                       | Applies one manual file-operation batch. Skips init scripts and configured actions, but loads config policy when present. |
+| `treeboot config`                  | `inspect_config(ConfigOptions)`                                                                          | `config`, `runtime`, `context`, `validation`                                                                | View-only. Prints normalized config and warns when run validation would fail.                                             |
+| `treeboot check`                   | `check(CheckOptions)`                                                                                    | `check`, `runtime`, `context`, `discovery`, `config`, `validation`                                          | View-only. Validates selected bootstrap behavior without running scripts or applying effects.                             |
+| `treeboot init`                    | `init(InitOptions, Reporter)`                                                                            | `init`, `context`, `output`                                                                                 | Writes a starter config or executable init script.                                                                        |
+| `treeboot schema`                  | `config_schema_json()`                                                                                   | `metadata`                                                                                                  | View-only unless `--output` is used. Prints or writes the bundled config schema.                                          |
+| `treeboot doctor`                  | `diagnose(DoctorOptions)`                                                                                | `doctor`, `runtime`, `context`, `discovery`, `config`, `validation`                                         | View-only. Reports diagnostic statuses for discovery and validation, including strict diagnostics when requested.         |
+| `treeboot env`                     | `inspect_env(EnvOptions)`                                                                                | `env`, `context`                                                                                            | View-only. Reports child environment variables passed to scripts and commands.                                            |
+| `treeboot completions`             | CLI-owned completion registration; `file_operation_source_candidates(...)` for dynamic source completion | `main.rs`, `commands/completions.rs`, `manual`                                                              | Prints shell registration. Dynamic source candidates delegate to core.                                                    |
 
 ## Anchors: Runtime Context
 
@@ -199,7 +199,8 @@ The public API is re-exported from `lib.rs`; most implementation modules remain
 private or crate-private.
 
 The `treeboot-core` module graph shows public modules calling context and
-discovery. Config feeds validation, and validation feeds files and commands.
+discovery. Config feeds validation, and validated plans flow through the
+executor before file operations and commands run.
 
 ```mermaid
 flowchart LR
@@ -210,6 +211,7 @@ flowchart LR
   ENV["env.rs<br/>child environment"]
   MANUAL["manual.rs<br/>manual files"]
   CONFIG["config.rs<br/>parse + normalize"]
+  RUNTIME["runtime.rs<br/>policy precedence"]
   INIT["init.rs<br/>starter files"]
   META["metadata.rs<br/>version + schema"]
   CONTEXT["context.rs<br/>Worktree"]
@@ -218,88 +220,120 @@ flowchart LR
   IGNORE["ignore_rules.rs<br/>copy/sync path ignores"]
   EXEC["executor.rs<br/>plan execution"]
   VALID["validation.rs<br/>ActionPlan<br/>boundary checks"]
-  FILES["files.rs<br/>FileAction"]
+  FILE_ACTIONS["file_actions.rs<br/>FileAction groups"]
+  FILE_OPS["file_operations.rs<br/>file operation facade"]
+  FILE_PLANNING["file_planning.rs<br/>file planning"]
+  FILE_EXECUTION["file_execution.rs<br/>file action execution"]
+  FILE_SYSTEM["file_system.rs<br/>filesystem helpers"]
   CMDS["commands.rs<br/>processes"]
   OUT["output.rs<br/>events"]
 
   RUN --> CONTEXT
+  RUN --> RUNTIME
   RUN --> DISC
   STATUS --> CONTEXT
   STATUS --> DISC
   CHECK --> CONTEXT
+  CHECK --> RUNTIME
   CHECK --> DISC
-  DOCTOR --> CHECK
+  DOCTOR --> RUNTIME
   DOCTOR --> CONTEXT
   DOCTOR --> DISC
+  DOCTOR --> CHECK
   ENV --> CONTEXT
   MANUAL --> CONTEXT
+  MANUAL --> RUNTIME
   CONFIG --> CONTEXT
+  CONFIG -.-> RUNTIME
   CONTEXT -.-> VALID
   DISC -.-> VALID
   GIT -.-> VALID
   CONFIG --> VALID
   MANUAL --> VALID
   VALID --> IGNORE
-  FILES --> IGNORE
+  FILE_OPS --> FILE_ACTIONS
+  FILE_OPS --> FILE_PLANNING
+  FILE_OPS --> FILE_EXECUTION
+  FILE_PLANNING --> FILE_ACTIONS
+  FILE_PLANNING --> FILE_SYSTEM
+  FILE_PLANNING --> IGNORE
+  FILE_EXECUTION --> FILE_ACTIONS
+  FILE_EXECUTION --> FILE_SYSTEM
   VALID --> EXEC
-  EXEC --> FILES
+  EXEC --> FILE_OPS
   EXEC --> CMDS
   INIT -.-> OUT
-  FILES -.-> OUT
+  FILE_OPS -.-> OUT
   CMDS -.-> OUT
 ```
 
 _`run.rs` is the broad orchestrator. Manual file commands load top-level config
-policy when present, skip configured commands, and reuse validation and files._
+policy when present, skip configured commands, and reuse validation and
+file-operation execution._
 
-| Module            | Owns                                                                                                          | Does not own                                               |
-| ----------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `check.rs`        | Side-effect-free validation for run-like behavior.                                                            | User-facing output formatting or execution.                |
-| `context.rs`      | Git-derived root/worktree/default branch and env aliases.                                                     | Config parsing, script discovery, or side effects.         |
-| `config.rs`       | TOML parsing, defaulting, normalized config data.                                                             | Boundary validation or execution.                          |
-| `doctor.rs`       | Diagnostic aggregation across discovery and validation.                                                       | Fixing problems or applying effects.                       |
-| `env.rs`          | Child environment inspection.                                                                                 | Script/config discovery beyond context resolution.         |
-| `executor.rs`     | Sequencing validated file and command execution.                                                              | Validation or CLI policy.                                  |
-| `ignore_rules.rs` | Compiling and matching copy/sync path ignore rules.                                                           | Config parsing, validation policy, or filesystem mutation. |
-| `validation.rs`   | Pre-side-effect checks, path normalization, duplicate targets, strict sync rejection, command cwd/env checks. | Parsing or filesystem mutation.                            |
-| `files.rs`        | Planning concrete filesystem actions and applying copy, symlink, sync, delete, skip, warning events.          | Config semantics or CLI argument validation.               |
-| `commands.rs`     | Sequential configured command spawning and dry-run output.                                                    | Parsing command config or deciding command order.          |
-| `metadata.rs`     | Embedded config schema, spec version, and version metadata helpers.                                           | Generating source files or reading runtime files.          |
-| `output.rs`       | Structured output events and message formatting.                                                              | Choosing when events happen.                               |
+| Module               | Owns                                                                                                                                                                             | Does not own                                                                                                 |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `check.rs`           | Side-effect-free validation for run-like behavior.                                                                                                                               | User-facing output formatting or execution.                                                                  |
+| `context.rs`         | Git-derived root/worktree/default branch and env aliases.                                                                                                                        | Config parsing, script discovery, or side effects.                                                           |
+| `config.rs`          | TOML parsing, defaulting, normalized config data.                                                                                                                                | Boundary validation or execution.                                                                            |
+| `doctor.rs`          | Diagnostic aggregation across discovery and validation.                                                                                                                          | Fixing problems or applying effects.                                                                         |
+| `env.rs`             | Child environment inspection.                                                                                                                                                    | Script/config discovery beyond context resolution.                                                           |
+| `executor.rs`        | Sequencing validated file and command execution.                                                                                                                                 | Validation or CLI policy.                                                                                    |
+| `file_actions.rs`    | Concrete file action model, grouped operation actions, summary construction, and cross-action symlink warnings.                                                                  | Filesystem traversal or mutation.                                                                            |
+| `file_operations.rs` | Operation-level file application facade, apply options/report types, planning lifecycle events, and planning/execution sequencing.                                               | Concrete planning decisions, action mutation details, or low-level filesystem helper implementation.         |
+| `file_planning.rs`   | Planning concrete filesystem actions from validated file operations.                                                                                                             | Config semantics, CLI argument validation, action summary modeling, output lifecycle, or mutation execution. |
+| `file_execution.rs`  | Executing planned file-action groups and emitting compact/verbose file-operation output events.                                                                                  | Planning filesystem actions or low-level filesystem helper implementation.                                   |
+| `file_system.rs`     | Low-level filesystem inspection, comparison, metadata, writable-parent, copy, symlink, delete helpers, and permission-denied ownership warnings for file planning and execution. | File-operation policy, action grouping, or output lifecycle.                                                 |
+| `ignore_rules.rs`    | Compiling and matching copy/sync path ignore rules.                                                                                                                              | Config parsing, validation policy, or filesystem mutation.                                                   |
+| `runtime.rs`         | Environment/config/CLI runtime policy precedence and conversion to validation options.                                                                                           | Config parsing, Git discovery, or side effects.                                                              |
+| `validation.rs`      | Pre-side-effect checks, path normalization, duplicate targets, strict sync rejection, command cwd/env checks.                                                                    | Parsing or filesystem mutation.                                                                              |
+| `commands.rs`        | Sequential configured command spawning and dry-run output.                                                                                                                       | Parsing command config or deciding command order.                                                            |
+| `metadata.rs`        | Embedded config schema, spec version, and version metadata helpers.                                                                                                              | Generating source files or reading runtime files.                                                            |
+| `output.rs`          | Structured output events and message formatting.                                                                                                                                 | Choosing when events happen.                                                                                 |
 
 ## Filesystem effects: File Operation Engine
 
-File execution is grouped by top-level validated file operation. Each group is
-planned into concrete `FileAction`s, optional cross-action symlink warnings are
-attached, and then the group is reported or applied depending on dry-run mode.
-Compact mode reports lifecycle events and one summary per group; verbose mode
-reports the concrete action stream.
+File execution is grouped by top-level validated file operation.
+`file_operations.rs` is the operation-level facade: it emits planning lifecycle
+events, asks `file_planning.rs` to plan each operation group, asks
+`file_actions.rs` to add cross-action warnings, then asks `file_execution.rs` to
+report or apply each group. `file_planning.rs` uses `file_system.rs` for
+filesystem inspection and comparison. `file_execution.rs` delegates low-level
+mutation helpers, including ownership-preservation warnings, to
+`file_system.rs`. Compact mode reports lifecycle events and one summary per
+group; verbose mode reports the concrete action stream.
 
-### Planning inside `files.rs`
+### Planning inside `file_planning.rs`
 
 - Skips optional missing sources before filesystem traversal.
 - Plans copy and sync through shared tree traversal.
 - Plans symlink creation and replacement separately.
 - Plans sync delete actions for target-only paths.
-- Adds warnings for preserved symlinks to uncopied targets.
+- Delegates grouped action summaries and cross-action warning aggregation to
+  `file_actions.rs`.
+- Delegates filesystem inspection and comparison helpers to `file_system.rs`.
 
 ### Applying actions
 
 - `dry_run` emits would-apply events only.
 - `force` controls supported replacements.
 - `strict` converts some default skips into conflicts.
-- Actual filesystem mutations happen after all actions plan.
+- Actual filesystem mutations happen through `file_execution.rs` after all
+  actions plan, with low-level operations delegated to `file_system.rs`.
 - Reporter failures become typed output errors.
 
 ```text
 ActionPlan::files()
+  -> file_operations::apply_file_operations
+  -> file_planning::plan_file_operation_group
   -> plan_operation
-  -> FileAction::{CreateDirectory, CopyFile, CreateSymlink, Delete, Skip, Warning}
+  -> FileAction::{CreateDirectory, CopyFile, CreateSymlink, RepairMetadata, Delete, Skip, Warning}
   -> grouped PlannedFileOperationActions
-  -> report planning/execution lifecycle callbacks
+  -> file_execution::execute_file_operation_group
+  -> report OutputEvent file-operation lifecycle events
   -> report_dry_run(action) or apply_action(action)
-  -> compact file-operation summary callback
-     or verbose OutputEvent::{FileWouldApply, FileApplied, FileWarning, ...}
+  -> compact OutputEvent::FileOperationFinished summary
+     or verbose OutputEvent::{FileWouldApply, FileApplied, FileMetadataApplied, FileWarning, ...}
 ```
 
 ## Process effects: Command Runtime
@@ -377,25 +411,16 @@ integration tests for user-visible command behavior.
 These are the boundaries to preserve when adding new behavior or refactoring
 existing modules.
 
-| If changing                   | Touch                                                                                         | Keep invariant                                                                                |
-| ----------------------------- | --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Config file format            | `docs/SPEC.md`, `config.rs`, schema generator, schema file, parser tests.                     | The spec is the contract; generated schema must be fresh.                                     |
-| File operation behavior       | `config.rs`, `manual.rs`, `validation.rs`, `files.rs`, CLI tests.                             | Declarative config and manual commands must share planning and file execution semantics.      |
-| Command runtime               | `config.rs`, `validation.rs`, `commands.rs`, run tests, spec.                                 | Commands run after file operations and inherit treeboot-owned environment variables.          |
-| Inspection/reporting commands | core command facade module, CLI command adapter, output-format tests, spec.                   | Core owns report data; CLI owns text/JSON/YAML rendering.                                     |
-| Metadata and generated assets | `docs/SPEC.md`, `metadata.rs`, `scripts/generate-metadata.sh`, schema generator, asset files. | Generated assets must stay crate-local so installed binaries and published crates embed them. |
-| CLI-only surface              | `crates/treeboot/src/main.rs`, `crates/treeboot/src/commands/`, and CLI tests.                | CLI stays an adapter. Core owns reusable behavior and typed semantics.                        |
-| Output wording                | `output.rs`, CLI integration tests, spec if contractual.                                      | Structured events stay separate from command-line formatting decisions where practical.       |
-
-### Current refactor pressure
-
-The most visible architecture debt is that file-operation presentation and
-runtime policy are spread across several layers. Operation-specific option
-defaulting is mostly centralized in config helpers, but manual commands still
-merge config/env/CLI policy before validation, `files.rs` builds action
-summaries, `output.rs` formats summary text, and the CLI reporter owns compact
-summary/progress presentation. Further consolidation should improve the model
-without changing the pipeline described in this document.
+| If changing                   | Touch                                                                                                                                                     | Keep invariant                                                                                                                                                                                         |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Config file format            | `docs/SPEC.md`, `config.rs`, schema generator, schema file, parser tests.                                                                                 | The spec is the contract; generated schema must be fresh.                                                                                                                                              |
+| Runtime policy semantics      | `runtime.rs`, command facade modules, config/check/doctor/run/manual tests, spec when observable.                                                         | Config/env/CLI precedence must stay centralized and consistent across run-like commands.                                                                                                               |
+| File operation behavior       | `config.rs`, `manual.rs`, `validation.rs`, `file_actions.rs`, `file_operations.rs`, `file_planning.rs`, `file_execution.rs`, `file_system.rs`, CLI tests. | Declarative config and manual commands must share planning and file execution semantics; keep policy, planning, action modeling, execution, and low-level filesystem helpers separated by module role. |
+| Command runtime               | `config.rs`, `validation.rs`, `commands.rs`, run tests, spec.                                                                                             | Commands run after file operations and inherit treeboot-owned environment variables.                                                                                                                   |
+| Inspection/reporting commands | core command facade module, CLI command adapter, output-format tests, spec.                                                                               | Core owns report data; CLI owns text/JSON/YAML rendering.                                                                                                                                              |
+| Metadata and generated assets | `docs/SPEC.md`, `metadata.rs`, `scripts/generate-metadata.sh`, schema generator, asset files.                                                             | Generated assets must stay crate-local so installed binaries and published crates embed them.                                                                                                          |
+| CLI-only surface              | `crates/treeboot/src/main.rs`, `crates/treeboot/src/commands/`, and CLI tests.                                                                            | CLI stays an adapter. Core owns reusable behavior and typed semantics.                                                                                                                                 |
+| Output wording                | `output.rs`, CLI integration tests, spec if contractual.                                                                                                  | Structured events stay separate from command-line formatting decisions where practical.                                                                                                                |
 
 This document describes the current implementation architecture. It is not a
 replacement for [docs/SPEC.md](SPEC.md), which remains the user-visible

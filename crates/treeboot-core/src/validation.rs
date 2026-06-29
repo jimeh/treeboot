@@ -683,7 +683,7 @@ fn validate_strict_sync(
             origin,
             Some(operation.declaration),
             format!(
-                "`--strict` cannot be used with sync file operation {}",
+                "strict mode cannot be used with sync file operation {}",
                 operation_summary(origin, operation)
             ),
         );

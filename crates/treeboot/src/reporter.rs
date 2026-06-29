@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use console::{Term, truncate_str};
 use indicatif::{ProgressBar, ProgressStyle};
-use treeboot_core::{FileOperationKind, FileOperationSummary, OutputEvent, Reporter};
+use treeboot_core::{FileOperationKind, OutputEvent, Reporter};
 
 const DEFAULT_TERMINAL_WIDTH: usize = 80;
 const PROGRESS_BAR_TEMPLATE: &str = "{msg}\n          {bar:24.cyan/dim} {pos}/{len}";
@@ -172,65 +172,44 @@ impl Drop for StdoutReporter {
 
 impl Reporter for StdoutReporter {
     fn report(&mut self, event: OutputEvent) -> std::io::Result<()> {
-        self.print_line(event.message())?;
-
-        Ok(())
-    }
-
-    fn file_operation_planning_started(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-    ) -> std::io::Result<()> {
-        self.start_spinner(operation, source, target);
-        Ok(())
-    }
-
-    fn file_operation_planning_finished(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-        action_count: usize,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target, action_count);
-        self.finish_progress();
-        Ok(())
-    }
-
-    fn file_operation_execution_started(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-        action_count: usize,
-    ) -> std::io::Result<()> {
-        self.start_progress(operation, source, target, action_count);
-        Ok(())
-    }
-
-    fn file_operation_action_advanced(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-    ) -> std::io::Result<()> {
-        let _ = (operation, source, target);
-        self.advance_progress();
-        Ok(())
-    }
-
-    fn file_operation_finished(
-        &mut self,
-        operation: FileOperationKind,
-        source: &Path,
-        target: &Path,
-        summary: &FileOperationSummary,
-        dry_run: bool,
-    ) -> std::io::Result<()> {
-        self.finish_progress();
-        self.print_line(summary.message(operation, source, target, dry_run))
+        match event {
+            OutputEvent::FileOperationPlanningStarted {
+                operation,
+                source,
+                target,
+            } => {
+                self.start_spinner(operation, &source, &target);
+                Ok(())
+            }
+            OutputEvent::FileOperationPlanningFinished { .. } => {
+                self.finish_progress();
+                Ok(())
+            }
+            OutputEvent::FileOperationExecutionStarted {
+                operation,
+                source,
+                target,
+                action_count,
+            } => {
+                self.start_progress(operation, &source, &target, action_count);
+                Ok(())
+            }
+            OutputEvent::FileOperationActionAdvanced { .. } => {
+                self.advance_progress();
+                Ok(())
+            }
+            OutputEvent::FileOperationFinished {
+                operation,
+                source,
+                target,
+                summary,
+                dry_run,
+            } => {
+                self.finish_progress();
+                self.print_line(summary.message(operation, &source, &target, dry_run))
+            }
+            other => self.print_line(other.message()),
+        }
     }
 }
 
@@ -262,6 +241,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+    use treeboot_core::FileOperationSummary;
 
     fn source() -> PathBuf {
         PathBuf::from("shared")
@@ -491,18 +471,37 @@ mod tests {
         let target = target();
 
         reporter
-            .file_operation_execution_started(FileOperationKind::Sync, &source, &target, 3)
+            .report(OutputEvent::FileOperationExecutionStarted {
+                operation: FileOperationKind::Sync,
+                source: source.clone(),
+                target: target.clone(),
+                action_count: 3,
+            })
             .expect("execution start should report");
         assert_eq!(active(&reporter).bar.position(), 0);
 
         reporter
-            .file_operation_action_advanced(FileOperationKind::Sync, &source, &target)
+            .report(OutputEvent::FileOperationActionAdvanced {
+                operation: FileOperationKind::Sync,
+                source: source.clone(),
+                target: target.clone(),
+            })
             .expect("action advanced should report");
         assert_eq!(active(&reporter).bar.position(), 1);
 
         reporter
-            .file_operation_planning_finished(FileOperationKind::Sync, &source, &target, 3)
-            .expect("planning finished should report");
+            .report(OutputEvent::FileOperationFinished {
+                operation: FileOperationKind::Sync,
+                source,
+                target,
+                summary: FileOperationSummary {
+                    changed: 1,
+                    expanded: true,
+                    ..FileOperationSummary::default()
+                },
+                dry_run: false,
+            })
+            .expect("execution finished should report");
         assert!(reporter.active_progress.is_none());
     }
 
@@ -513,17 +512,30 @@ mod tests {
         let target = target();
 
         reporter
-            .file_operation_planning_started(FileOperationKind::Copy, &source, &target)
+            .report(OutputEvent::FileOperationPlanningStarted {
+                operation: FileOperationKind::Copy,
+                source: source.clone(),
+                target: target.clone(),
+            })
             .expect("planning start should report");
         assert!(reporter.active_progress.is_none());
 
         reporter
-            .file_operation_execution_started(FileOperationKind::Sync, &source, &target, 3)
+            .report(OutputEvent::FileOperationExecutionStarted {
+                operation: FileOperationKind::Sync,
+                source: source.clone(),
+                target: target.clone(),
+                action_count: 3,
+            })
             .expect("execution start should report");
         assert!(reporter.active_progress.is_none());
 
         reporter
-            .file_operation_action_advanced(FileOperationKind::Sync, &source, &target)
+            .report(OutputEvent::FileOperationActionAdvanced {
+                operation: FileOperationKind::Sync,
+                source,
+                target,
+            })
             .expect("action advanced should report");
         assert!(reporter.active_progress.is_none());
     }

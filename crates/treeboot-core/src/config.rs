@@ -281,78 +281,6 @@ pub struct ConfigRuntimeOptions {
     pub dangerously_allow_targets_outside_worktree: bool,
 }
 
-/// Environment overrides for config runtime options.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct RuntimeOptionOverrides {
-    /// Strict mode environment override.
-    pub strict: Option<bool>,
-    /// Source-boundary environment override.
-    pub dangerously_allow_sources_outside_root: Option<bool>,
-    /// Target-boundary environment override.
-    pub dangerously_allow_targets_outside_worktree: Option<bool>,
-}
-
-impl RuntimeOptionOverrides {
-    /// Parses treeboot runtime option overrides from explicit environment input.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when an environment value is not a supported boolean.
-    pub fn from_environment(environment: &EnvironmentInput) -> Result<Self> {
-        Ok(Self {
-            strict: env_bool("TREEBOOT_STRICT", environment.treeboot_strict.as_deref())?,
-            dangerously_allow_sources_outside_root: env_bool(
-                "TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT",
-                environment
-                    .treeboot_dangerously_allow_sources_outside_root
-                    .as_deref(),
-            )?,
-            dangerously_allow_targets_outside_worktree: env_bool(
-                "TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE",
-                environment
-                    .treeboot_dangerously_allow_targets_outside_worktree
-                    .as_deref(),
-            )?,
-        })
-    }
-
-    /// Reads treeboot runtime option overrides from the process environment.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when an environment value is not a supported boolean.
-    pub fn from_process_env() -> Result<Self> {
-        Self::from_environment(&EnvironmentInput::from_process_env())
-    }
-
-    /// Returns strict mode before config discovery.
-    #[must_use]
-    pub const fn pre_config_strict(self, cli_strict: bool) -> bool {
-        cli_strict || matches!(self.strict, Some(true))
-    }
-
-    /// Resolves runtime options using defaults, config, environment, then CLI.
-    #[must_use]
-    pub fn resolve(self, config: &ConfigRuntimeOptions, cli_strict: bool) -> ConfigRuntimeOptions {
-        let mut resolved = config.clone();
-
-        if let Some(strict) = self.strict {
-            resolved.strict = strict;
-        }
-        if let Some(allow) = self.dangerously_allow_sources_outside_root {
-            resolved.dangerously_allow_sources_outside_root = allow;
-        }
-        if let Some(allow) = self.dangerously_allow_targets_outside_worktree {
-            resolved.dangerously_allow_targets_outside_worktree = allow;
-        }
-        if cli_strict {
-            resolved.strict = true;
-        }
-
-        resolved
-    }
-}
-
 /// Byte and line location for a declaration in a config file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct SourceSpan {
@@ -1067,34 +995,6 @@ struct RawCommandObject {
     allow_failure: bool,
 }
 
-fn env_bool(name: &'static str, value: Option<&std::ffi::OsStr>) -> Result<Option<bool>> {
-    let Some(value) = value else {
-        return Ok(None);
-    };
-
-    let Some(value) = value.to_str() else {
-        return Err(Error::InvalidBooleanEnv {
-            name,
-            value: value.to_string_lossy().into_owned(),
-        });
-    };
-
-    parse_bool(value)
-        .ok_or_else(|| Error::InvalidBooleanEnv {
-            name,
-            value: value.to_owned(),
-        })
-        .map(Some)
-}
-
-fn parse_bool(value: &str) -> Option<bool> {
-    match value.to_ascii_lowercase().as_str() {
-        "1" | "true" | "yes" | "on" => Some(true),
-        "0" | "false" | "no" | "off" => Some(false),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::ffi::OsString;
@@ -1349,82 +1249,6 @@ dangerously_allow_sources_outside_root = true
 "#,
             "unknown field",
         );
-    }
-
-    #[test]
-    fn runtime_option_overrides_should_parse_explicit_environment_input() {
-        let overrides = RuntimeOptionOverrides::from_environment(&EnvironmentInput {
-            treeboot_strict: Some(OsString::from("yes")),
-            treeboot_dangerously_allow_sources_outside_root: Some(OsString::from("true")),
-            treeboot_dangerously_allow_targets_outside_worktree: Some(OsString::from("0")),
-            ..EnvironmentInput::empty()
-        })
-        .expect("environment should parse");
-
-        assert_eq!(
-            overrides,
-            RuntimeOptionOverrides {
-                strict: Some(true),
-                dangerously_allow_sources_outside_root: Some(true),
-                dangerously_allow_targets_outside_worktree: Some(false),
-            }
-        );
-    }
-
-    #[test]
-    fn runtime_option_overrides_should_reject_invalid_explicit_environment_input() {
-        let error = RuntimeOptionOverrides::from_environment(&EnvironmentInput {
-            treeboot_strict: Some(OsString::from("sometimes")),
-            ..EnvironmentInput::empty()
-        })
-        .expect_err("environment should fail");
-
-        assert!(matches!(
-            error,
-            Error::InvalidBooleanEnv {
-                name: "TREEBOOT_STRICT",
-                ..
-            }
-        ));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn runtime_option_overrides_should_reject_non_utf8_explicit_environment_input() {
-        use std::os::unix::ffi::OsStringExt;
-
-        let error = RuntimeOptionOverrides::from_environment(&EnvironmentInput {
-            treeboot_strict: Some(OsString::from_vec(vec![0xFF])),
-            ..EnvironmentInput::empty()
-        })
-        .expect_err("environment should fail");
-
-        assert!(matches!(
-            error,
-            Error::InvalidBooleanEnv {
-                name: "TREEBOOT_STRICT",
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn parse_bool_should_accept_supported_true_values() {
-        for value in ["1", "true", "TRUE", "yes", "on"] {
-            assert_eq!(parse_bool(value), Some(true), "value {value:?}");
-        }
-    }
-
-    #[test]
-    fn parse_bool_should_accept_supported_false_values() {
-        for value in ["0", "false", "FALSE", "no", "off"] {
-            assert_eq!(parse_bool(value), Some(false), "value {value:?}");
-        }
-    }
-
-    #[test]
-    fn parse_bool_should_reject_unsupported_values() {
-        assert_eq!(parse_bool("sometimes"), None);
     }
 
     #[test]

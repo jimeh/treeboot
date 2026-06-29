@@ -1,5 +1,5 @@
 use crate::commands::{CommandExecutionOptions, execute_commands};
-use crate::files::{FileApplyOptions, apply_file_operations};
+use crate::file_operations::{FileApplyOptions, apply_file_operations};
 use crate::{ActionPlan, Reporter, Result};
 
 /// Options that control action plan execution.

@@ -20,6 +20,10 @@ pub(crate) struct DoctorArgs {
     #[arg(long)]
     no_init_script: bool,
 
+    /// Fail diagnostics on missing config and stricter file-operation conflicts.
+    #[arg(short = 'S', long)]
+    strict: bool,
+
     #[command(flatten)]
     output: OutputArgs,
 }
@@ -60,6 +64,7 @@ impl From<DoctorArgs> for DoctorOptions {
             environment: environment_input(),
             config: args.config,
             no_init_script: args.no_init_script,
+            strict: args.strict,
         }
     }
 }

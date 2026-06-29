@@ -37,6 +37,20 @@ fn assert_doctor_report_shape(json: &serde_json::Value) {
     }
 }
 
+fn has_diagnostic(json: &serde_json::Value, name: &str, status: &str, message: &str) -> bool {
+    json["diagnostics"]
+        .as_array()
+        .expect("diagnostics should be an array")
+        .iter()
+        .any(|diagnostic| {
+            diagnostic["name"] == name
+                && diagnostic["status"] == status
+                && diagnostic["message"]
+                    .as_str()
+                    .is_some_and(|actual| actual.contains(message))
+        })
+}
+
 #[test]
 fn doctor_should_report_diagnostics_as_text_json_and_yaml() {
     let repo = git_worktree();
@@ -74,6 +88,198 @@ fn doctor_should_report_diagnostics_as_text_json_and_yaml() {
         .stderr(predicate::str::is_empty())
         .stdout(predicate::str::contains("fatal: false"))
         .stdout(predicate::str::contains("diagnostics:"));
+}
+
+#[test]
+fn doctor_strict_should_treat_missing_config_as_fatal() {
+    let repo = git_worktree();
+
+    let json = treeboot()
+        .args(["doctor", "--strict", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("doctor found fatal issues"))
+        .get_output()
+        .stdout
+        .clone();
+
+    let json = parse_json(json, "doctor");
+    assert_doctor_report_shape(&json);
+    assert_eq!(json["fatal"], true);
+    assert!(has_diagnostic(
+        &json,
+        "config",
+        "error",
+        "no config detected under strict mode"
+    ));
+}
+
+#[test]
+fn doctor_should_apply_environment_strict_to_missing_config() {
+    let repo = git_worktree();
+
+    let json = treeboot()
+        .args(["doctor", "--json"])
+        .env("TREEBOOT_STRICT", "true")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("doctor found fatal issues"))
+        .get_output()
+        .stdout
+        .clone();
+
+    let json = parse_json(json, "doctor");
+    assert_doctor_report_shape(&json);
+    assert_eq!(json["fatal"], true);
+    assert!(has_diagnostic(
+        &json,
+        "config",
+        "error",
+        "no config detected under strict mode"
+    ));
+}
+
+#[test]
+fn doctor_strict_should_report_root_checkout_as_fatal_diagnostic() {
+    let repo = git_repo();
+
+    let json = treeboot()
+        .args(["doctor", "--strict", "--json"])
+        .current_dir(repo.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("doctor found fatal issues"))
+        .get_output()
+        .stdout
+        .clone();
+
+    let json = parse_json(json, "doctor");
+    assert_doctor_report_shape(&json);
+    assert_eq!(json["fatal"], true);
+    assert!(has_diagnostic(
+        &json,
+        "root_worktree",
+        "error",
+        "root checkout is not a worktree under strict mode"
+    ));
+}
+
+#[test]
+fn doctor_should_apply_environment_strict_to_root_checkout() {
+    let repo = git_repo();
+
+    let json = treeboot()
+        .args(["doctor", "--json"])
+        .env("TREEBOOT_STRICT", "true")
+        .current_dir(repo.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("doctor found fatal issues"))
+        .get_output()
+        .stdout
+        .clone();
+
+    let json = parse_json(json, "doctor");
+    assert_doctor_report_shape(&json);
+    assert_eq!(json["fatal"], true);
+    assert!(has_diagnostic(
+        &json,
+        "root_worktree",
+        "error",
+        "root checkout is not a worktree under strict mode"
+    ));
+}
+
+#[test]
+fn doctor_strict_should_validate_config_with_strict_policy() {
+    let repo = git_worktree();
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"sync = ["shared"]"#,
+    );
+
+    let json = treeboot()
+        .args(["doctor", "--strict", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("doctor found fatal issues"))
+        .get_output()
+        .stdout
+        .clone();
+
+    let json = parse_json(json, "doctor");
+    assert_doctor_report_shape(&json);
+    assert_eq!(json["fatal"], true);
+    assert!(has_diagnostic(
+        &json,
+        "config_validation",
+        "error",
+        "strict mode cannot be used with sync"
+    ));
+}
+
+#[test]
+fn doctor_strict_should_report_missing_requested_config() {
+    let repo = git_worktree();
+
+    let json = treeboot()
+        .args([
+            "doctor",
+            "--strict",
+            "--config",
+            "missing.treeboot.toml",
+            "--json",
+        ])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("doctor found fatal issues"))
+        .get_output()
+        .stdout
+        .clone();
+
+    let json = parse_json(json, "doctor");
+    assert_doctor_report_shape(&json);
+    assert_eq!(json["fatal"], true);
+    assert!(has_diagnostic(
+        &json,
+        "config",
+        "error",
+        "config file not found"
+    ));
+}
+
+#[test]
+fn doctor_should_apply_environment_strict_to_config_validation() {
+    let repo = git_worktree();
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"sync = ["shared"]"#,
+    );
+
+    let json = treeboot()
+        .args(["doctor", "--json"])
+        .env("TREEBOOT_STRICT", "true")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("doctor found fatal issues"))
+        .get_output()
+        .stdout
+        .clone();
+
+    let json = parse_json(json, "doctor");
+    assert_doctor_report_shape(&json);
+    assert_eq!(json["fatal"], true);
+    assert!(has_diagnostic(
+        &json,
+        "config_validation",
+        "error",
+        "strict mode cannot be used with sync"
+    ));
 }
 
 #[test]
@@ -264,6 +470,34 @@ fn doctor_should_report_init_script_without_running_it() {
         .stdout(predicate::str::contains("ok: init_script: executable"));
 
     assert!(!marker.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn doctor_strict_should_skip_config_when_init_script_takes_precedence() {
+    let repo = git_worktree();
+    let script = repo.worktree_path().join(".treeboot.sh");
+    write_executable_script(&script, "#!/bin/sh\n");
+
+    let json = treeboot()
+        .args(["doctor", "--strict", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+
+    let json = parse_json(json, "doctor");
+    assert_doctor_report_shape(&json);
+    assert_eq!(json["fatal"], false);
+    assert!(has_diagnostic(
+        &json,
+        "config",
+        "ok",
+        "config discovery skipped because an init script takes precedence"
+    ));
 }
 
 #[cfg(unix)]
