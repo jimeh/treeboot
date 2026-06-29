@@ -6,6 +6,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::*;
 use crate::file_system::copy_file_with_metadata;
+use crate::test_support::{skip_without_symlinks, symlink_dir, symlink_file};
 use crate::validation::PlannedFileOperationParts;
 use crate::{
     ActionPlanOptions, Error, FileOperation, FileOperationKind, MetadataField, OutputEvent,
@@ -89,7 +90,6 @@ impl Reporter for FailingEventReporter {
     }
 }
 
-#[cfg(unix)]
 enum SourceSymlinkMutation {
     DeleteTarget { target: PathBuf },
     PointInside { target: PathBuf },
@@ -97,14 +97,12 @@ enum SourceSymlinkMutation {
     ReplaceWithFile,
 }
 
-#[cfg(unix)]
 struct SourceSymlinkMutationReporter {
     link: PathBuf,
     mutation: SourceSymlinkMutation,
     mutated: bool,
 }
 
-#[cfg(unix)]
 impl SourceSymlinkMutationReporter {
     fn delete_target(link: PathBuf, target: PathBuf) -> Self {
         Self {
@@ -139,7 +137,6 @@ impl SourceSymlinkMutationReporter {
     }
 }
 
-#[cfg(unix)]
 impl Reporter for SourceSymlinkMutationReporter {
     fn report(&mut self, event: OutputEvent) -> std::io::Result<()> {
         if !matches!(event, OutputEvent::FileOperationExecutionStarted { .. }) {
@@ -153,11 +150,11 @@ impl Reporter for SourceSymlinkMutationReporter {
         match &self.mutation {
             SourceSymlinkMutation::DeleteTarget { target } => {
                 fs::remove_file(target)?;
-                std::os::unix::fs::symlink(target, &self.link)?;
+                symlink_file(target, &self.link)?;
             }
             SourceSymlinkMutation::PointInside { target }
             | SourceSymlinkMutation::PointOutside { target } => {
-                std::os::unix::fs::symlink(target, &self.link)?;
+                symlink_file(target, &self.link)?;
             }
             SourceSymlinkMutation::ReplaceWithFile => {
                 fs::write(&self.link, "changed\n")?;
@@ -831,14 +828,16 @@ fn apply_file_operations_should_reject_directory_to_file_target() {
     assert!(error.to_string().contains("target is a file or symlink"));
 }
 
-#[cfg(unix)]
 #[test]
 fn apply_file_operations_should_reject_directory_to_symlink_target() {
+    if skip_without_symlinks("apply_file_operations_should_reject_directory_to_symlink_target") {
+        return;
+    }
+
     let (root, worktree) = temp_workspace("directory-to-symlink");
     fs::create_dir_all(root.join("shared")).expect("source dir should be created");
     fs::write(worktree.join("real-target"), "old\n").expect("target file should be written");
-    std::os::unix::fs::symlink("real-target", worktree.join("shared"))
-        .expect("target symlink should be created");
+    symlink_file("real-target", worktree.join("shared")).expect("target symlink should be created");
     let plan = run_plan(
         &root,
         &worktree,
@@ -1415,14 +1414,16 @@ fn apply_file_operations_should_ignore_sync_directory_permissions_when_configure
     assert!(reporter.messages().is_empty());
 }
 
-#[cfg(unix)]
 #[test]
 fn apply_file_operations_should_replace_target_symlink_with_sync_file() {
+    if skip_without_symlinks("apply_file_operations_should_replace_target_symlink_with_sync_file") {
+        return;
+    }
+
     let (root, worktree) = temp_workspace("sync-file-over-symlink");
     fs::write(root.join(".env"), "new\n").expect("source should be written");
     fs::write(worktree.join("old"), "old\n").expect("old target should be written");
-    std::os::unix::fs::symlink("old", worktree.join(".env"))
-        .expect("target symlink should be created");
+    symlink_file("old", worktree.join(".env")).expect("target symlink should be created");
     let plan = run_plan(
         &root,
         &worktree,
@@ -2196,14 +2197,16 @@ fn apply_file_operations_should_leave_dry_run_unmutated() {
     assert_eq!(reporter.messages(), ["treeboot: would copy .env -> .env"]);
 }
 
-#[cfg(unix)]
 #[test]
 fn apply_file_operations_should_force_copy_file_over_existing_symlink() {
+    if skip_without_symlinks("apply_file_operations_should_force_copy_file_over_existing_symlink") {
+        return;
+    }
+
     let (root, worktree) = temp_workspace("force-copy-over-symlink");
     fs::write(root.join(".env"), "new\n").expect("source should be written");
     fs::write(worktree.join("old"), "old\n").expect("old target should be written");
-    std::os::unix::fs::symlink("old", worktree.join(".env"))
-        .expect("target symlink should be created");
+    symlink_file("old", worktree.join(".env")).expect("target symlink should be created");
     let plan = run_plan(
         &root,
         &worktree,
@@ -2237,9 +2240,14 @@ fn apply_file_operations_should_force_copy_file_over_existing_symlink() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn apply_file_operations_should_reject_symlink_target_parent_before_copy() {
+    if skip_without_symlinks(
+        "apply_file_operations_should_reject_symlink_target_parent_before_copy",
+    ) {
+        return;
+    }
+
     let (root, worktree) = temp_workspace("copy-symlink-parent");
     let outside = worktree
         .parent()
@@ -2247,7 +2255,7 @@ fn apply_file_operations_should_reject_symlink_target_parent_before_copy() {
         .join("outside");
     fs::write(root.join(".env"), "TOKEN=1\n").expect("source should be written");
     fs::create_dir_all(&outside).expect("outside dir should be created");
-    std::os::unix::fs::symlink(&outside, worktree.join("linked"))
+    symlink_dir(&outside, worktree.join("linked"))
         .expect("target parent symlink should be created");
     let plan = run_plan(
         &root,
@@ -2269,9 +2277,14 @@ fn apply_file_operations_should_reject_symlink_target_parent_before_copy() {
     assert!(!outside.join(".env").exists());
 }
 
-#[cfg(unix)]
 #[test]
 fn apply_file_operations_should_reject_source_that_resolves_outside_root_at_apply() {
+    if skip_without_symlinks(
+        "apply_file_operations_should_reject_source_that_resolves_outside_root_at_apply",
+    ) {
+        return;
+    }
+
     let (root, worktree) = temp_workspace("copy-symlink-source-parent");
     let outside = root
         .parent()
@@ -2279,8 +2292,7 @@ fn apply_file_operations_should_reject_source_that_resolves_outside_root_at_appl
         .join("outside-source");
     fs::create_dir_all(&outside).expect("outside source dir should be created");
     fs::write(outside.join(".env"), "TOKEN=1\n").expect("outside source should be written");
-    std::os::unix::fs::symlink(&outside, root.join("linked"))
-        .expect("source parent symlink should be created");
+    symlink_dir(&outside, root.join("linked")).expect("source parent symlink should be created");
     let plan = run_plan(
         &root,
         &worktree,
@@ -2385,14 +2397,16 @@ fn apply_file_operations_should_copy_file_without_owner_write() {
     assert_eq!(mode, 0o420);
 }
 
-#[cfg(unix)]
 #[test]
 fn apply_file_operations_should_force_symlink_over_existing_symlink() {
+    if skip_without_symlinks("apply_file_operations_should_force_symlink_over_existing_symlink") {
+        return;
+    }
+
     let (root, worktree) = temp_workspace("force-symlink-over-symlink");
     fs::write(root.join("tool"), "tool\n").expect("source should be written");
     fs::write(worktree.join("old"), "old\n").expect("old target should be written");
-    std::os::unix::fs::symlink("old", worktree.join(".tool"))
-        .expect("target symlink should be created");
+    symlink_file("old", worktree.join(".tool")).expect("target symlink should be created");
     let plan = run_plan(
         &root,
         &worktree,
@@ -2420,9 +2434,12 @@ fn apply_file_operations_should_force_symlink_over_existing_symlink() {
     assert_ne!(link, PathBuf::from("old"));
 }
 
-#[cfg(unix)]
 #[test]
 fn apply_file_operations_should_force_symlink_over_existing_file() {
+    if skip_without_symlinks("apply_file_operations_should_force_symlink_over_existing_file") {
+        return;
+    }
+
     let (root, worktree) = temp_workspace("force-symlink");
     fs::write(root.join("tool"), "tool\n").expect("source should be written");
     fs::write(worktree.join(".tool"), "old\n").expect("target should be written");
@@ -2576,13 +2593,17 @@ fn apply_file_operations_should_reject_symlink_to_existing_directory_even_with_f
     assert!(error.to_string().contains("target is a directory"));
 }
 
-#[cfg(unix)]
 #[test]
 fn apply_file_operations_should_reject_sync_symlink_to_existing_directory() {
+    if skip_without_symlinks(
+        "apply_file_operations_should_reject_sync_symlink_to_existing_directory",
+    ) {
+        return;
+    }
+
     let (root, worktree) = temp_workspace("sync-symlink-existing-dir");
     fs::write(root.join("tool"), "tool\n").expect("source target should be written");
-    std::os::unix::fs::symlink("tool", root.join("link"))
-        .expect("source symlink should be created");
+    symlink_file("tool", root.join("link")).expect("source symlink should be created");
     fs::create_dir_all(worktree.join("link")).expect("target dir should be created");
     let plan = run_plan(
         &root,
@@ -2597,15 +2618,17 @@ fn apply_file_operations_should_reject_sync_symlink_to_existing_directory() {
     assert!(error.to_string().contains("target is a directory"));
 }
 
-#[cfg(unix)]
 #[test]
 fn apply_file_operations_should_preserve_copied_source_symlinks() {
+    if skip_without_symlinks("apply_file_operations_should_preserve_copied_source_symlinks") {
+        return;
+    }
+
     let (root, worktree) = temp_workspace("preserved-symlink");
     let source_dir = root.join("shared");
     fs::create_dir_all(&source_dir).expect("source dir should be created");
     fs::write(source_dir.join("config"), "value\n").expect("source should be written");
-    std::os::unix::fs::symlink("config", source_dir.join("link"))
-        .expect("source symlink should be created");
+    symlink_file("config", source_dir.join("link")).expect("source symlink should be created");
     let plan = run_plan(
         &root,
         &worktree,
@@ -2626,9 +2649,14 @@ fn apply_file_operations_should_preserve_copied_source_symlinks() {
     assert_eq!(link, PathBuf::from("config"));
 }
 
-#[cfg(unix)]
 #[test]
 fn apply_file_operations_should_reject_preserved_source_symlink_that_escapes_before_apply() {
+    if skip_without_symlinks(
+        "apply_file_operations_should_reject_preserved_source_symlink_that_escapes_before_apply",
+    ) {
+        return;
+    }
+
     let (root, worktree) = temp_workspace("preserved-symlink-escape");
     let source_dir = root.join("shared");
     let outside = root
@@ -2639,8 +2667,7 @@ fn apply_file_operations_should_reject_preserved_source_symlink_that_escapes_bef
     fs::create_dir_all(&outside).expect("outside dir should be created");
     fs::write(source_dir.join("config"), "value\n").expect("source should be written");
     fs::write(outside.join("secret"), "secret\n").expect("outside source should be written");
-    std::os::unix::fs::symlink("config", source_dir.join("link"))
-        .expect("source symlink should be created");
+    symlink_file("config", source_dir.join("link")).expect("source symlink should be created");
     let plan = validated_file_plan(
         FileOperationKind::Copy,
         &root,
@@ -2664,15 +2691,19 @@ fn apply_file_operations_should_reject_preserved_source_symlink_that_escapes_bef
     assert!(fs::symlink_metadata(worktree.join("shared/link")).is_err());
 }
 
-#[cfg(unix)]
 #[test]
 fn apply_file_operations_should_reject_preserved_source_that_stops_being_symlink() {
+    if skip_without_symlinks(
+        "apply_file_operations_should_reject_preserved_source_that_stops_being_symlink",
+    ) {
+        return;
+    }
+
     let (root, worktree) = temp_workspace("preserved-symlink-type-change");
     let source_dir = root.join("shared");
     fs::create_dir_all(&source_dir).expect("source dir should be created");
     fs::write(source_dir.join("config"), "value\n").expect("source should be written");
-    std::os::unix::fs::symlink("config", source_dir.join("link"))
-        .expect("source symlink should be created");
+    symlink_file("config", source_dir.join("link")).expect("source symlink should be created");
     let plan = validated_file_plan(
         FileOperationKind::Copy,
         &root,
@@ -2693,16 +2724,20 @@ fn apply_file_operations_should_reject_preserved_source_that_stops_being_symlink
     assert!(fs::symlink_metadata(worktree.join("shared/link")).is_err());
 }
 
-#[cfg(unix)]
 #[test]
 fn apply_file_operations_should_reject_preserved_source_symlink_that_changes_target() {
+    if skip_without_symlinks(
+        "apply_file_operations_should_reject_preserved_source_symlink_that_changes_target",
+    ) {
+        return;
+    }
+
     let (root, worktree) = temp_workspace("preserved-symlink-target-change");
     let source_dir = root.join("shared");
     fs::create_dir_all(&source_dir).expect("source dir should be created");
     fs::write(source_dir.join("config"), "value\n").expect("source should be written");
     fs::write(source_dir.join("other"), "other\n").expect("other source should be written");
-    std::os::unix::fs::symlink("config", source_dir.join("link"))
-        .expect("source symlink should be created");
+    symlink_file("config", source_dir.join("link")).expect("source symlink should be created");
     let plan = validated_file_plan(
         FileOperationKind::Copy,
         &root,
@@ -2726,15 +2761,19 @@ fn apply_file_operations_should_reject_preserved_source_symlink_that_changes_tar
     assert!(fs::symlink_metadata(worktree.join("shared/link")).is_err());
 }
 
-#[cfg(unix)]
 #[test]
 fn apply_file_operations_should_reject_preserved_source_symlink_with_missing_target() {
+    if skip_without_symlinks(
+        "apply_file_operations_should_reject_preserved_source_symlink_with_missing_target",
+    ) {
+        return;
+    }
+
     let (root, worktree) = temp_workspace("preserved-symlink-missing-target");
     let source_dir = root.join("shared");
     fs::create_dir_all(&source_dir).expect("source dir should be created");
     fs::write(source_dir.join("config"), "value\n").expect("source should be written");
-    std::os::unix::fs::symlink("config", source_dir.join("link"))
-        .expect("source symlink should be created");
+    symlink_file("config", source_dir.join("link")).expect("source symlink should be created");
     let plan = validated_file_plan(
         FileOperationKind::Copy,
         &root,
@@ -2758,9 +2797,14 @@ fn apply_file_operations_should_reject_preserved_source_symlink_with_missing_tar
     assert!(fs::symlink_metadata(worktree.join("shared/link")).is_err());
 }
 
-#[cfg(unix)]
 #[test]
 fn apply_file_operations_should_reject_sync_source_symlink_change_before_replacing_target() {
+    if skip_without_symlinks(
+        "apply_file_operations_should_reject_sync_source_symlink_change_before_replacing_target",
+    ) {
+        return;
+    }
+
     let (root, worktree) = temp_workspace("preserved-sync-symlink-target-change");
     let source_dir = root.join("shared");
     let target_dir = worktree.join("shared");
@@ -2769,8 +2813,7 @@ fn apply_file_operations_should_reject_sync_source_symlink_change_before_replaci
     fs::write(source_dir.join("config"), "value\n").expect("source should be written");
     fs::write(source_dir.join("other"), "other\n").expect("other source should be written");
     fs::write(target_dir.join("link"), "keep\n").expect("target should be written");
-    std::os::unix::fs::symlink("config", source_dir.join("link"))
-        .expect("source symlink should be created");
+    symlink_file("config", source_dir.join("link")).expect("source symlink should be created");
     let plan = validated_file_plan(
         FileOperationKind::Sync,
         &root,
@@ -2797,15 +2840,19 @@ fn apply_file_operations_should_reject_sync_source_symlink_change_before_replaci
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn apply_file_operations_should_warn_for_preserved_symlink_to_uncopied_target() {
+    if skip_without_symlinks(
+        "apply_file_operations_should_warn_for_preserved_symlink_to_uncopied_target",
+    ) {
+        return;
+    }
+
     let (root, worktree) = temp_workspace("preserved-symlink-warning");
     let source_dir = root.join("shared");
     fs::create_dir_all(&source_dir).expect("source dir should be created");
     fs::write(source_dir.join("config"), "value\n").expect("source should be written");
-    std::os::unix::fs::symlink("config", source_dir.join("link"))
-        .expect("source symlink should be created");
+    symlink_file("config", source_dir.join("link")).expect("source symlink should be created");
     let plan = run_plan(
         &root,
         &worktree,
@@ -2829,15 +2876,17 @@ fn apply_file_operations_should_warn_for_preserved_symlink_to_uncopied_target() 
     )));
 }
 
-#[cfg(unix)]
 #[test]
 fn apply_file_operations_should_report_symlink_warning_in_dry_run() {
+    if skip_without_symlinks("apply_file_operations_should_report_symlink_warning_in_dry_run") {
+        return;
+    }
+
     let (root, worktree) = temp_workspace("preserved-symlink-warning-dry-run");
     let source_dir = root.join("shared");
     fs::create_dir_all(&source_dir).expect("source dir should be created");
     fs::write(source_dir.join("config"), "value\n").expect("source should be written");
-    std::os::unix::fs::symlink("config", source_dir.join("link"))
-        .expect("source symlink should be created");
+    symlink_file("config", source_dir.join("link")).expect("source symlink should be created");
     let plan = run_plan(
         &root,
         &worktree,
@@ -2874,15 +2923,17 @@ fn apply_file_operations_should_report_symlink_warning_in_dry_run() {
     assert_eq!(reporter.action_advanced_count, 1);
 }
 
-#[cfg(unix)]
 #[test]
 fn apply_file_operations_should_sync_preserved_source_symlinks() {
+    if skip_without_symlinks("apply_file_operations_should_sync_preserved_source_symlinks") {
+        return;
+    }
+
     let (root, worktree) = temp_workspace("sync-preserved-symlink");
     let source_dir = root.join("shared");
     fs::create_dir_all(&source_dir).expect("source dir should be created");
     fs::write(source_dir.join("config"), "value\n").expect("source should be written");
-    std::os::unix::fs::symlink("config", source_dir.join("link"))
-        .expect("source symlink should be created");
+    symlink_file("config", source_dir.join("link")).expect("source symlink should be created");
     fs::create_dir_all(worktree.join("shared")).expect("target dir should be created");
     fs::write(worktree.join("shared/link"), "old\n").expect("target should be written");
     let plan = run_plan(
@@ -2899,13 +2950,15 @@ fn apply_file_operations_should_sync_preserved_source_symlinks() {
     assert_eq!(link, PathBuf::from("config"));
 }
 
-#[cfg(unix)]
 #[test]
 fn apply_file_operations_should_sync_top_level_source_symlink() {
+    if skip_without_symlinks("apply_file_operations_should_sync_top_level_source_symlink") {
+        return;
+    }
+
     let (root, worktree) = temp_workspace("sync-top-level-symlink");
     fs::write(root.join("config"), "value\n").expect("source target should be written");
-    std::os::unix::fs::symlink("config", root.join("link"))
-        .expect("source symlink should be created");
+    symlink_file("config", root.join("link")).expect("source symlink should be created");
     let plan = run_plan(
         &root,
         &worktree,
@@ -2920,15 +2973,19 @@ fn apply_file_operations_should_sync_top_level_source_symlink() {
     assert_eq!(link, PathBuf::from("config"));
 }
 
-#[cfg(unix)]
 #[test]
 fn apply_file_operations_should_warn_for_sync_symlink_to_uncopied_target() {
+    if skip_without_symlinks(
+        "apply_file_operations_should_warn_for_sync_symlink_to_uncopied_target",
+    ) {
+        return;
+    }
+
     let (root, worktree) = temp_workspace("sync-symlink-warning");
     let source_dir = root.join("shared");
     fs::create_dir_all(&source_dir).expect("source dir should be created");
     fs::write(source_dir.join("config"), "value\n").expect("source should be written");
-    std::os::unix::fs::symlink("config", source_dir.join("link"))
-        .expect("source symlink should be created");
+    symlink_file("config", source_dir.join("link")).expect("source symlink should be created");
     let plan = run_plan(
         &root,
         &worktree,
@@ -2951,16 +3008,17 @@ fn apply_file_operations_should_warn_for_sync_symlink_to_uncopied_target() {
     )));
 }
 
-#[cfg(unix)]
 #[test]
 fn apply_file_operations_should_update_changed_sync_symlink_target() {
+    if skip_without_symlinks("apply_file_operations_should_update_changed_sync_symlink_target") {
+        return;
+    }
+
     let (root, worktree) = temp_workspace("sync-changed-symlink");
     fs::write(root.join("config"), "value\n").expect("source target should be written");
     fs::write(root.join("other"), "value\n").expect("other source target should be written");
-    std::os::unix::fs::symlink("config", root.join("link"))
-        .expect("source symlink should be created");
-    std::os::unix::fs::symlink("../root/other", worktree.join("link"))
-        .expect("target symlink should be created");
+    symlink_file("config", root.join("link")).expect("source symlink should be created");
+    symlink_file("../root/other", worktree.join("link")).expect("target symlink should be created");
     let plan = run_plan(
         &root,
         &worktree,
