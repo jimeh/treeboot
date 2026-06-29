@@ -155,6 +155,8 @@ mod tests {
 
     use tempfile::TempDir;
 
+    use crate::test_support::{skip_without_symlinks, symlink_file};
+
     #[derive(Default)]
     struct VecReporter {
         events: Vec<OutputEvent>,
@@ -195,16 +197,17 @@ mod tests {
         assert!(reporter.events.is_empty());
     }
 
-    #[cfg(unix)]
     #[test]
     fn init_should_refuse_existing_symlink_without_writing_through_it() {
-        use std::os::unix::fs::symlink;
+        if skip_without_symlinks("init_should_refuse_existing_symlink_without_writing_through_it") {
+            return;
+        }
 
         let dir = TempDir::new().expect("tempdir should be created");
         let target = dir.path().join("target.toml");
         let link = dir.path().join(".treeboot.toml");
         std::fs::write(&target, "old\n").expect("target should be written");
-        symlink(&target, &link).expect("symlink should be created");
+        symlink_file(&target, &link).expect("symlink should be created");
         let mut reporter = VecReporter::default();
 
         let err = init(

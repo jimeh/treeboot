@@ -1282,6 +1282,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
+    use crate::test_support::{skip_without_symlinks, symlink_dir, symlink_file};
 
     fn span() -> SourceSpan {
         SourceSpan {
@@ -1307,12 +1308,11 @@ mod tests {
         (root, worktree)
     }
 
-    #[cfg(unix)]
     fn aliased_workspace(name: &str) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
         let (root, worktree) = temp_workspace(name);
         let base = root.parent().expect("root should have parent");
         let alias = base.join("alias");
-        std::os::unix::fs::symlink(base, &alias).expect("workspace alias should be created");
+        symlink_dir(base, &alias).expect("workspace alias should be created");
 
         let alias_root = alias.join("root");
         let alias_worktree = alias.join("worktree");
@@ -1628,16 +1628,21 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn action_plan_from_manifest_should_allow_final_symlink_target_to_root_source() {
+        if skip_without_symlinks(
+            "action_plan_from_manifest_should_allow_final_symlink_target_to_root_source",
+        ) {
+            return;
+        }
+
         let (root, worktree) = temp_workspace("final-symlink-target-to-root");
         let source = root.join("config/master.key");
         let target = worktree.join("config/master.key");
         std::fs::create_dir_all(source.parent().unwrap()).expect("source parent should exist");
         std::fs::create_dir_all(target.parent().unwrap()).expect("target parent should exist");
         std::fs::write(&source, "secret\n").expect("source should be written");
-        std::os::unix::fs::symlink(&source, &target).expect("target symlink should be created");
+        symlink_file(&source, &target).expect("target symlink should be created");
         let config = Config {
             options: Default::default(),
             files: vec![file_operation(
@@ -1660,9 +1665,14 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn action_plan_from_manifest_should_reject_target_parent_symlink_for_all_file_operations() {
+        if skip_without_symlinks(
+            "action_plan_from_manifest_should_reject_target_parent_symlink_for_all_file_operations",
+        ) {
+            return;
+        }
+
         for operation in [
             FileOperationKind::Copy,
             FileOperationKind::Symlink,
@@ -1672,7 +1682,7 @@ mod tests {
             let linked = root.join("config");
             std::fs::create_dir_all(&linked).expect("linked directory should be created");
             std::fs::write(root.join("source"), "value\n").expect("source should be written");
-            std::os::unix::fs::symlink(&linked, worktree.join("config"))
+            symlink_dir(&linked, worktree.join("config"))
                 .expect("target parent symlink should be created");
             let config = Config {
                 options: Default::default(),
@@ -1741,9 +1751,14 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn action_plan_from_manifest_should_reject_target_parent_file_with_worktree_alias() {
+        if skip_without_symlinks(
+            "action_plan_from_manifest_should_reject_target_parent_file_with_worktree_alias",
+        ) {
+            return;
+        }
+
         let (_root, _worktree, alias_root, alias_worktree) =
             aliased_workspace("target-parent-file-alias");
         std::fs::write(alias_root.join("source"), "value\n").expect("source should be written");
@@ -1768,15 +1783,20 @@ mod tests {
         assert!(error.to_string().contains("is not a directory"));
     }
 
-    #[cfg(unix)]
     #[test]
     fn action_plan_from_manifest_should_reject_target_parent_symlink_with_worktree_alias() {
+        if skip_without_symlinks(
+            "action_plan_from_manifest_should_reject_target_parent_symlink_with_worktree_alias",
+        ) {
+            return;
+        }
+
         let (root, _worktree, alias_root, alias_worktree) =
             aliased_workspace("target-parent-symlink-alias");
         let linked = root.join("config");
         std::fs::create_dir_all(&linked).expect("linked directory should be created");
         std::fs::write(alias_root.join("source"), "value\n").expect("source should be written");
-        std::os::unix::fs::symlink(&linked, alias_worktree.join("config"))
+        symlink_dir(&linked, alias_worktree.join("config"))
             .expect("target parent symlink should be created");
         let config = Config {
             options: Default::default(),
@@ -1797,15 +1817,20 @@ mod tests {
         assert!(error.to_string().contains("is a symlink"));
     }
 
-    #[cfg(unix)]
     #[test]
     fn action_plan_from_manifest_should_reject_canonical_absolute_target_parent_symlink() {
+        if skip_without_symlinks(
+            "action_plan_from_manifest_should_reject_canonical_absolute_target_parent_symlink",
+        ) {
+            return;
+        }
+
         let (root, worktree, alias_root, alias_worktree) =
             aliased_workspace("absolute-target-parent-symlink");
         let linked = root.join("config");
         std::fs::create_dir_all(&linked).expect("linked directory should be created");
         std::fs::write(alias_root.join("source"), "value\n").expect("source should be written");
-        std::os::unix::fs::symlink(&linked, worktree.join("config"))
+        symlink_dir(&linked, worktree.join("config"))
             .expect("target parent symlink should be created");
         let target_path = dunce::canonicalize(&worktree)
             .expect("worktree should canonicalize")
@@ -1832,15 +1857,20 @@ mod tests {
         assert!(error.to_string().contains("is a symlink"));
     }
 
-    #[cfg(unix)]
     #[test]
     fn action_plan_from_manifest_should_reject_absolute_alias_target_parent_symlink() {
+        if skip_without_symlinks(
+            "action_plan_from_manifest_should_reject_absolute_alias_target_parent_symlink",
+        ) {
+            return;
+        }
+
         let (root, worktree, _alias_root, alias_worktree) =
             aliased_workspace("absolute-alias-target-parent-symlink");
         let linked = worktree.join("real-config");
         std::fs::create_dir_all(&linked).expect("linked directory should be created");
         std::fs::write(root.join("source"), "value\n").expect("source should be written");
-        std::os::unix::fs::symlink(&linked, worktree.join("config"))
+        symlink_dir(&linked, worktree.join("config"))
             .expect("target parent symlink should be created");
         let target_path = alias_worktree.join("config/source");
         let mut operation = file_operation(
@@ -1865,9 +1895,14 @@ mod tests {
         assert!(error.to_string().contains("is a symlink"));
     }
 
-    #[cfg(unix)]
     #[test]
     fn action_plan_from_manifest_should_keep_input_context_for_worktree_alias() {
+        if skip_without_symlinks(
+            "action_plan_from_manifest_should_keep_input_context_for_worktree_alias",
+        ) {
+            return;
+        }
+
         let (_root, _worktree, alias_root, alias_worktree) = aliased_workspace("context-alias");
         let plan = ActionPlan::from_manifest(
             Path::new(".treeboot.toml"),
@@ -1983,12 +2018,15 @@ mod tests {
         assert_eq!(plan.files[0].symlinks, Some(SymlinkMode::Preserve));
     }
 
-    #[cfg(unix)]
     #[test]
     fn action_plan_from_manifest_should_allow_safe_source_symlink() {
+        if skip_without_symlinks("action_plan_from_manifest_should_allow_safe_source_symlink") {
+            return;
+        }
+
         let (root, worktree) = temp_workspace("safe-symlink");
         std::fs::write(root.join("source"), "value\n").expect("source should be written");
-        std::os::unix::fs::symlink(root.join("source"), root.join("link"))
+        symlink_file(root.join("source"), root.join("link"))
             .expect("safe source symlink should be created");
         let config = Config {
             options: Default::default(),
@@ -2007,11 +2045,14 @@ mod tests {
         assert_eq!(plan.files[0].status, PlannedFileStatus::Ready);
     }
 
-    #[cfg(unix)]
     #[test]
     fn action_plan_from_manifest_should_reject_broken_source_symlink() {
+        if skip_without_symlinks("action_plan_from_manifest_should_reject_broken_source_symlink") {
+            return;
+        }
+
         let (root, worktree) = temp_workspace("broken-symlink");
-        std::os::unix::fs::symlink(root.join("missing"), root.join("link"))
+        symlink_file(root.join("missing"), root.join("link"))
             .expect("broken source symlink should be created");
         let config = Config {
             options: Default::default(),

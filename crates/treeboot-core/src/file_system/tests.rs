@@ -9,6 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use std::os::unix::fs::PermissionsExt;
 
 use super::*;
+use crate::test_support::{skip_without_symlinks, symlink_dir};
 use crate::{ActionPlan, FileOperationKind, PlanOrigin, Worktree};
 
 /// A [`Read`] adapter that hands back bytes in a scripted sequence of short
@@ -246,16 +247,19 @@ fn inspect_target_ancestors_should_reject_missing_parent_when_required() {
     }
 }
 
-#[cfg(unix)]
 #[test]
 fn inspect_target_ancestors_should_reject_symlink_parent() {
+    if skip_without_symlinks("inspect_target_ancestors_should_reject_symlink_parent") {
+        return;
+    }
+
     let (_root, worktree) = temp_workspace("inspect-symlink-parent");
     let outside = worktree
         .parent()
         .expect("worktree should have parent")
         .join("outside-inspect");
     fs::create_dir_all(&outside).expect("outside dir should be created");
-    std::os::unix::fs::symlink(&outside, worktree.join("linked"))
+    symlink_dir(&outside, worktree.join("linked"))
         .expect("target parent symlink should be created");
 
     let issue = inspect_target_ancestors(&worktree.join("linked/config"), &worktree, false)
@@ -313,9 +317,12 @@ fn inspect_target_ancestors_should_reject_worktree_root_file() {
     }
 }
 
-#[cfg(unix)]
 #[test]
 fn remove_any_should_reject_symlink_target_parent_before_delete() {
+    if skip_without_symlinks("remove_any_should_reject_symlink_target_parent_before_delete") {
+        return;
+    }
+
     let (_root, worktree) = temp_workspace("delete-symlink-parent");
     let outside = worktree
         .parent()
@@ -323,7 +330,7 @@ fn remove_any_should_reject_symlink_target_parent_before_delete() {
         .join("outside-delete");
     fs::create_dir_all(&outside).expect("outside dir should be created");
     fs::write(outside.join("extra"), "keep\n").expect("outside file should be written");
-    std::os::unix::fs::symlink(&outside, worktree.join("linked"))
+    symlink_dir(&outside, worktree.join("linked"))
         .expect("target parent symlink should be created");
 
     let error = remove_any(
@@ -374,14 +381,16 @@ fn with_writable_parent_should_restore_parent_permissions_when_action_fails() {
         .expect("parent permissions should be restored for cleanup");
 }
 
-#[cfg(unix)]
 #[test]
 fn preserved_source_link_should_track_directory_target_type() {
+    if skip_without_symlinks("preserved_source_link_should_track_directory_target_type") {
+        return;
+    }
+
     let (root, worktree) = temp_workspace("preserved-directory-symlink");
     let source_dir = root.join("shared");
     fs::create_dir_all(source_dir.join("dir")).expect("source dir should be created");
-    std::os::unix::fs::symlink("dir", source_dir.join("link"))
-        .expect("source symlink should be created");
+    symlink_dir("dir", source_dir.join("link")).expect("source symlink should be created");
     let plan = empty_plan(&root, &worktree);
 
     let (_, final_target, target_is_dir) = preserved_source_link(
@@ -396,13 +405,16 @@ fn preserved_source_link_should_track_directory_target_type() {
     assert!(target_is_dir);
 }
 
-#[cfg(unix)]
 #[test]
 fn preserved_source_link_should_normalize_absolute_root_local_targets() {
+    if skip_without_symlinks("preserved_source_link_should_normalize_absolute_root_local_targets") {
+        return;
+    }
+
     let (root, worktree) = temp_workspace("preserved-absolute-normalized-symlink");
     let source_dir = root.join("shared");
     fs::create_dir_all(source_dir.join("dir")).expect("source dir should be created");
-    std::os::unix::fs::symlink(root.join("shared/../shared/dir"), source_dir.join("link"))
+    symlink_dir(root.join("shared/../shared/dir"), source_dir.join("link"))
         .expect("source symlink should be created");
     let plan = empty_plan(&root, &worktree);
 
