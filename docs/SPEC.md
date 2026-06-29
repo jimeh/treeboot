@@ -1,4 +1,4 @@
-# treeboot Specification v1.13.1
+# treeboot Specification v1.14.0
 
 A portable worktree bootstrapper that lets every coding agent, editor, and
 orchestration tool run the same repo-local setup command.
@@ -1567,6 +1567,15 @@ and do not make the run fail by themselves.
 Windows support is part of the design contract. Implementation and tests must
 account for platform differences in shell execution, path handling, and symlink
 creation.
+
+Resolved paths are canonicalized and emitted in each platform's conventional
+form. On Windows, the extended-length `\\?\` verbatim prefix is removed when the
+path is expressible in legacy form, so `TREEBOOT_ROOT_PATH`,
+`TREEBOOT_WORKTREE_PATH`, their compatibility aliases, and all path output stay
+usable by common shells and tools. Paths that cannot be expressed in legacy form
+(for example `\\server\share` UNC network paths) keep their canonical Windows
+form. Source and target boundary checks compare paths in this same normalized
+form.
 
 ## Operator experience: Output and exit codes
 

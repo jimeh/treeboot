@@ -412,7 +412,7 @@ fn config_command_root_option_should_resolve_json_source_paths() {
     let config = repo.worktree_path().join(".treeboot.toml");
     write_file(&config, "copy = [\"shared/.env\"]\n");
 
-    let root_path = std::fs::canonicalize(root.path()).expect("root should normalize");
+    let root_path = dunce::canonicalize(root.path()).expect("root should normalize");
     let source_path = root_path.join("shared/.env").display().to_string();
     let source_path_json = source_path.replace('\\', "\\\\");
 

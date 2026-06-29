@@ -419,7 +419,7 @@ fn execute_file_operation_group_should_reject_canonical_target_with_context_alia
     fs::write(root.join("source"), "source\n").expect("source should be written");
     std::os::unix::fs::symlink(&outside, worktree.join("linked"))
         .expect("target parent symlink should be created");
-    let target_path = fs::canonicalize(&worktree)
+    let target_path = dunce::canonicalize(&worktree)
         .expect("worktree should canonicalize")
         .join("linked/target");
     let plan = plan(&alias_root, &alias_worktree);

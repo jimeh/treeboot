@@ -184,7 +184,7 @@ fn run_command_only_config_should_execute_from_worktree() {
         .stdout(predicate::str::contains("treeboot: run sh -c"));
 
     let pwd = std::fs::read_to_string(marker).expect("pwd marker should be readable");
-    let worktree = std::fs::canonicalize(repo.worktree_path())
+    let worktree = dunce::canonicalize(repo.worktree_path())
         .expect("worktree should canonicalize")
         .display()
         .to_string();
@@ -1620,15 +1620,15 @@ args = ["-c", "printf '%s\n' \"$LOCAL_VALUE\" > {}"]
     let first = std::fs::read_to_string(first).expect("first marker should be readable");
     let lines = first.lines().collect::<Vec<_>>();
     assert_eq!(lines[0], "local");
-    let root = std::fs::canonicalize(repo.root_path())
+    let root = dunce::canonicalize(repo.root_path())
         .expect("root should canonicalize")
         .display()
         .to_string();
-    let worktree = std::fs::canonicalize(repo.worktree_path())
+    let worktree = dunce::canonicalize(repo.worktree_path())
         .expect("worktree should canonicalize")
         .display()
         .to_string();
-    let app = std::fs::canonicalize(app)
+    let app = dunce::canonicalize(app)
         .expect("app should canonicalize")
         .display()
         .to_string();
@@ -1955,9 +1955,9 @@ fn run_symlink_should_create_relative_symlink() {
         .stdout(predicate::str::contains("treeboot: symlink tool -> .tool"));
 
     let link = std::fs::read_link(&target).expect("target should be a symlink");
-    let resolved = std::fs::canonicalize(target.parent().unwrap().join(&link))
+    let resolved = dunce::canonicalize(target.parent().unwrap().join(&link))
         .expect("relative symlink should resolve");
-    let expected = std::fs::canonicalize(source).expect("source should resolve");
+    let expected = dunce::canonicalize(source).expect("source should resolve");
     assert!(!link.is_absolute());
     assert_eq!(resolved, expected);
 }
@@ -2077,7 +2077,7 @@ fn root_option_should_set_script_root_env() {
         .success();
 
     let script_output = std::fs::read_to_string(output).expect("script output should exist");
-    let root_path = std::fs::canonicalize(root.path()).expect("root should normalize");
+    let root_path = dunce::canonicalize(root.path()).expect("root should normalize");
     assert_eq!(script_output, format!("{}\n", root_path.display()));
 }
 
@@ -2127,9 +2127,9 @@ fn executable_init_script_should_win_over_missing_config() {
         .stdout(predicate::str::contains("treeboot: run"));
 
     let script_output = std::fs::read_to_string(output).expect("script output should exist");
-    let root_path = std::fs::canonicalize(repo.root_path()).expect("root path should normalize");
+    let root_path = dunce::canonicalize(repo.root_path()).expect("root path should normalize");
     let worktree_path =
-        std::fs::canonicalize(repo.worktree_path()).expect("worktree path should normalize");
+        dunce::canonicalize(repo.worktree_path()).expect("worktree path should normalize");
     let expected = format!("{}:{}\n", root_path.display(), worktree_path.display());
     assert_eq!(script_output, expected);
 }

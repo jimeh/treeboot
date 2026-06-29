@@ -19,6 +19,16 @@ dependencies for small wrappers around the standard library.
   matching. Use `ignore::gitignore::GitignoreBuilder` with explicit `add_line`
   patterns only; do not load ambient `.gitignore`, `.ignore`, `.rgignore`, Git
   exclude, or global ignore files for treeboot file operations.
+- `dunce` belongs in `treeboot-core` for path canonicalization. It wraps
+  `std::fs::canonicalize` but, on Windows, strips the `\\?\` verbatim prefix
+  when the path is expressible in legacy form. This clears the "avoid small std
+  wrappers" bar because it correctly refuses to simplify paths that are not safe
+  to strip (for example real `\\server\share` UNC paths), which a hand-rolled
+  prefix strip would corrupt. On non-Windows it is exactly
+  `std::fs::canonicalize`. It has no transitive dependencies. Use
+  `dunce::canonicalize` for every path that reaches environment variables,
+  output, or boundary comparisons so Windows paths stay shell- and tool-friendly
+  and compare consistently.
 - `serde_json` belongs in the `treeboot` CLI crate for
   `treeboot config --format json` and other JSON report rendering.
 - `yaml_serde` belongs in the `treeboot` CLI crate for YAML report rendering. It

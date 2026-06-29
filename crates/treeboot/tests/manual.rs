@@ -224,8 +224,8 @@ fn symlink_should_create_relative_link() {
     let target = std::fs::read_link(&link).expect("target should be a symlink");
     assert!(target.is_relative());
     assert_eq!(
-        std::fs::canonicalize(link).expect("link should resolve"),
-        std::fs::canonicalize(repo.root_path().join(".tool-versions"))
+        dunce::canonicalize(link).expect("link should resolve"),
+        dunce::canonicalize(repo.root_path().join(".tool-versions"))
             .expect("source should canonicalize")
     );
 }

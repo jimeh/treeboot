@@ -493,7 +493,12 @@ pub(crate) fn matching_target_anchor<'a>(
         return Some(Cow::Borrowed(worktree_path));
     }
 
-    let Ok(canonical_worktree_path) = fs::canonicalize(worktree_path) else {
+    // Normalize with `dunce::canonicalize` so this anchor comparison uses the
+    // same legacy (non-verbatim) form as the target path, which is built from
+    // the already-normalized context worktree path. Mixing a `\\?\` verbatim
+    // worktree path with a non-verbatim target would make the `starts_with`
+    // fast path below never match on Windows.
+    let Ok(canonical_worktree_path) = dunce::canonicalize(worktree_path) else {
         return None;
     };
 
@@ -503,7 +508,7 @@ pub(crate) fn matching_target_anchor<'a>(
 
     let mut current = path;
     loop {
-        if fs::canonicalize(current).is_ok_and(|path| path == canonical_worktree_path) {
+        if dunce::canonicalize(current).is_ok_and(|path| path == canonical_worktree_path) {
             return Some(Cow::Owned(current.to_path_buf()));
         }
 
@@ -731,12 +736,16 @@ fn ensure_source_file_safe(
     }
 
     let source_should_stay_in_root = source_path.starts_with(root_path);
-    let source_path = fs::canonicalize(source_path).map_err(|source| Error::FileOperationIo {
-        operation: operation.as_str(),
-        path: source_path.to_path_buf(),
-        source,
-    })?;
-    let root_path = fs::canonicalize(root_path).map_err(|source| Error::FileOperationIo {
+    // Resolve both sides with `dunce::canonicalize` so the source-in-root
+    // boundary check compares paths in the same legacy form on Windows rather
+    // than a mix of `\\?\` verbatim and plain prefixes.
+    let source_path =
+        dunce::canonicalize(source_path).map_err(|source| Error::FileOperationIo {
+            operation: operation.as_str(),
+            path: source_path.to_path_buf(),
+            source,
+        })?;
+    let root_path = dunce::canonicalize(root_path).map_err(|source| Error::FileOperationIo {
         operation: operation.as_str(),
         path: root_path.to_path_buf(),
         source,
@@ -770,7 +779,7 @@ pub(crate) fn ensure_preserved_source_symlink_safe(
         );
     }
 
-    let source_target = fs::canonicalize(source_path).map_err(|source| {
+    let source_target = dunce::canonicalize(source_path).map_err(|source| {
         if source.kind() == std::io::ErrorKind::NotFound {
             return Error::FileOperationConflict {
                 operation: operation.as_str(),
@@ -784,12 +793,13 @@ pub(crate) fn ensure_preserved_source_symlink_safe(
             source,
         }
     })?;
-    let root_path =
-        fs::canonicalize(&plan.context().root_path).map_err(|source| Error::FileOperationIo {
+    let root_path = dunce::canonicalize(&plan.context().root_path).map_err(|source| {
+        Error::FileOperationIo {
             operation: operation.as_str(),
             path: plan.context().root_path.clone(),
             source,
-        })?;
+        }
+    })?;
     if !source_target.starts_with(&root_path) {
         return conflict(
             operation,

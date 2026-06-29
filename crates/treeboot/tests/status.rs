@@ -15,9 +15,9 @@ fn status_should_report_worktree_root_and_config_without_parsing() {
     let config = repo.worktree_path().join(".treeboot.toml");
     write_file(&config, "invalid toml = [\n");
     let expected_worktree =
-        std::fs::canonicalize(repo.worktree_path()).expect("worktree should canonicalize");
-    let expected_root = std::fs::canonicalize(repo.root_path()).expect("root should canonicalize");
-    let expected_config = std::fs::canonicalize(&config).expect("config should canonicalize");
+        dunce::canonicalize(repo.worktree_path()).expect("worktree should canonicalize");
+    let expected_root = dunce::canonicalize(repo.root_path()).expect("root should canonicalize");
+    let expected_config = dunce::canonicalize(&config).expect("config should canonicalize");
 
     treeboot()
         .arg("status")
@@ -45,7 +45,7 @@ fn status_should_report_worktree_root_and_config_without_parsing() {
 fn status_should_support_json_yaml_and_text_formats() {
     let repo = git_worktree();
     let expected_worktree =
-        std::fs::canonicalize(repo.worktree_path()).expect("worktree should canonicalize");
+        dunce::canonicalize(repo.worktree_path()).expect("worktree should canonicalize");
 
     let json = treeboot()
         .args(["status", "--format", "json"])
@@ -183,7 +183,7 @@ fn status_should_report_ignored_non_executable_init_script() {
     let repo = git_worktree();
     let script = repo.worktree_path().join(".treeboot.sh");
     write_file(&script, "#!/bin/sh\n");
-    let expected_script = std::fs::canonicalize(&script).expect("script should canonicalize");
+    let expected_script = dunce::canonicalize(&script).expect("script should canonicalize");
 
     treeboot()
         .arg("status")
@@ -232,7 +232,7 @@ fn status_config_option_should_skip_init_script_and_report_requested_config() {
         &format!("#!/bin/sh\nprintf 'ran\\n' > {}\n", marker.display()),
     );
     write_file(&config, "invalid toml = [\n");
-    let expected_config = std::fs::canonicalize(&config).expect("config should canonicalize");
+    let expected_config = dunce::canonicalize(&config).expect("config should canonicalize");
 
     treeboot()
         .args(["status", "--config", "custom.treeboot.toml"])
@@ -259,7 +259,7 @@ fn status_should_report_executable_init_script_without_running_it() {
         &script,
         &format!("#!/bin/sh\nprintf 'ran\\n' > {}\n", marker.display()),
     );
-    let expected_script = std::fs::canonicalize(&script).expect("script should canonicalize");
+    let expected_script = dunce::canonicalize(&script).expect("script should canonicalize");
 
     treeboot()
         .arg("status")
@@ -285,7 +285,7 @@ fn status_json_should_report_executable_init_script_without_running_it() {
         &script,
         &format!("#!/bin/sh\nprintf 'ran\\n' > {}\n", marker.display()),
     );
-    let expected_script = std::fs::canonicalize(&script).expect("script should canonicalize");
+    let expected_script = dunce::canonicalize(&script).expect("script should canonicalize");
 
     let json = treeboot()
         .args(["status", "--json"])

@@ -220,7 +220,7 @@ fn public_api_worktree_discover_should_use_explicit_environment_input() {
     let repo = git_worktree();
     let alternate_root = TempDir::new().expect("alternate root should be created");
     let expected_root =
-        std::fs::canonicalize(alternate_root.path()).expect("root should canonicalize");
+        dunce::canonicalize(alternate_root.path()).expect("root should canonicalize");
 
     let worktree = Worktree::discover(WorktreeOptions {
         cwd: Some(repo.worktree_path().to_path_buf()),
@@ -246,7 +246,7 @@ fn public_api_worktree_discover_should_use_next_non_empty_environment_alias() {
     let repo = git_worktree();
     let alternate_root = TempDir::new().expect("alternate root should be created");
     let expected_root =
-        std::fs::canonicalize(alternate_root.path()).expect("root should canonicalize");
+        dunce::canonicalize(alternate_root.path()).expect("root should canonicalize");
 
     let worktree = Worktree::discover(WorktreeOptions {
         cwd: Some(repo.worktree_path().to_path_buf()),
@@ -439,7 +439,7 @@ fn public_api_run_should_report_init_script_in_dry_run() {
     let script = repo.worktree_path().join(".treeboot.sh");
     write_file(&script, "#!/usr/bin/env sh\nexit 0\n");
     make_executable(&script);
-    let expected_script = std::fs::canonicalize(&script).expect("script path should canonicalize");
+    let expected_script = dunce::canonicalize(&script).expect("script path should canonicalize");
 
     let mut reporter = VecReporter::default();
     let report = run(
@@ -498,9 +498,9 @@ fn public_api_inspect_status_should_report_context_and_config_without_parsing() 
     let config_path = repo.worktree_path().join(".treeboot.toml");
     write_file(&config_path, "invalid toml = [\n");
     let expected_worktree =
-        std::fs::canonicalize(repo.worktree_path()).expect("worktree should canonicalize");
-    let expected_root = std::fs::canonicalize(repo.root_path()).expect("root should canonicalize");
-    let expected_config = std::fs::canonicalize(&config_path).expect("config should canonicalize");
+        dunce::canonicalize(repo.worktree_path()).expect("worktree should canonicalize");
+    let expected_root = dunce::canonicalize(repo.root_path()).expect("root should canonicalize");
+    let expected_config = dunce::canonicalize(&config_path).expect("config should canonicalize");
 
     let report = inspect_status(StatusOptions {
         cwd: Some(repo.worktree_path().to_path_buf()),
@@ -532,7 +532,7 @@ fn public_api_inspect_status_should_report_ignored_init_script_details() {
     let repo = git_worktree();
     let script = repo.worktree_path().join(".treeboot.sh");
     write_file(&script, "#!/bin/sh\n");
-    let expected_script = std::fs::canonicalize(&script).expect("script should canonicalize");
+    let expected_script = dunce::canonicalize(&script).expect("script should canonicalize");
 
     let report = inspect_status(StatusOptions {
         cwd: Some(repo.worktree_path().to_path_buf()),
@@ -576,7 +576,7 @@ fn public_api_inspect_status_should_report_executable_init_script() {
     let script = repo.worktree_path().join(".treeboot.sh");
     write_file(&script, "#!/bin/sh\n");
     make_executable(&script);
-    let expected_script = std::fs::canonicalize(&script).expect("script should canonicalize");
+    let expected_script = dunce::canonicalize(&script).expect("script should canonicalize");
 
     let report = inspect_status(StatusOptions {
         cwd: Some(repo.worktree_path().to_path_buf()),
@@ -595,7 +595,7 @@ fn public_api_inspect_status_should_use_explicit_environment_input() {
     let repo = git_worktree();
     let alternate_root = TempDir::new().expect("alternate root should be created");
     let expected_root =
-        std::fs::canonicalize(alternate_root.path()).expect("root should canonicalize");
+        dunce::canonicalize(alternate_root.path()).expect("root should canonicalize");
 
     let report = inspect_status(StatusOptions {
         cwd: Some(repo.worktree_path().to_path_buf()),

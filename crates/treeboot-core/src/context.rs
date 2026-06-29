@@ -234,7 +234,11 @@ fn resolve_input_path(cwd: &Path, path: &Path) -> PathBuf {
 }
 
 fn normalize_existing_path(path: &Path) -> Result<PathBuf> {
-    std::fs::canonicalize(path).map_err(|source| Error::NormalizePath {
+    // `dunce::canonicalize` strips the Windows `\\?\` verbatim prefix when the
+    // path is expressible in legacy form, so resolved roots and worktrees stay
+    // in a shell- and tool-friendly shape before reaching environment
+    // variables and output. On non-Windows it is `std::fs::canonicalize`.
+    dunce::canonicalize(path).map_err(|source| Error::NormalizePath {
         path: path.to_path_buf(),
         source,
     })

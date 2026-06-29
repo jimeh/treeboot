@@ -1197,7 +1197,10 @@ fn file_plan_error(
 }
 
 fn normalize_existing(path: &Path) -> std::io::Result<PathBuf> {
-    std::fs::canonicalize(path)
+    // Use `dunce::canonicalize` so resolved paths stay in legacy form on
+    // Windows (no `\\?\` verbatim prefix) and compare consistently with the
+    // worktree and root boundaries, which are normalized the same way.
+    dunce::canonicalize(path)
 }
 
 fn normalize_maybe_existing(path: &Path) -> std::io::Result<PathBuf> {
@@ -1546,7 +1549,7 @@ mod tests {
 
         assert_eq!(
             plan.commands[0].cwd_path,
-            std::fs::canonicalize(app_dir).expect("app dir should canonicalize")
+            dunce::canonicalize(app_dir).expect("app dir should canonicalize")
         );
         assert!(plan.commands[0].allow_failure);
     }
@@ -1804,7 +1807,7 @@ mod tests {
         std::fs::write(alias_root.join("source"), "value\n").expect("source should be written");
         std::os::unix::fs::symlink(&linked, worktree.join("config"))
             .expect("target parent symlink should be created");
-        let target_path = std::fs::canonicalize(&worktree)
+        let target_path = dunce::canonicalize(&worktree)
             .expect("worktree should canonicalize")
             .join("config/source");
         let mut operation = file_operation(
@@ -2060,7 +2063,7 @@ mod tests {
 
         assert_eq!(
             plan.commands[0].cwd_path,
-            std::fs::canonicalize(worktree).expect("worktree should canonicalize")
+            dunce::canonicalize(worktree).expect("worktree should canonicalize")
         );
     }
 }
