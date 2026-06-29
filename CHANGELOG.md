@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.8.0](https://github.com/jimeh/treeboot/compare/v0.7.0...v0.8.0) (2026-06-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* `treeboot-core` replaces the old `RuntimePolicy` type alias with a runtime precedence model, moves `RuntimeOptionOverrides` into the runtime API, and replaces `Reporter` file-operation lifecycle callbacks with structured `OutputEvent::FileOperation*` events.
+
+### Features
+
+* add strict diagnostics to treeboot doctor ([#75](https://github.com/jimeh/treeboot/issues/75)) ([aa1fa50](https://github.com/jimeh/treeboot/commit/aa1fa50c30629fdde3fbe39d3e2055abdc713146))
+
 ## [0.7.0](https://github.com/jimeh/treeboot/compare/v0.6.0...v0.7.0) (2026-06-27)
 
 
