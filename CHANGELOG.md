@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/jimeh/treeboot/compare/v0.8.0...v0.8.1) (2026-06-29)
+
+
+### Bug Fixes
+
+* handle root checkout symlink targets across path aliases ([#77](https://github.com/jimeh/treeboot/issues/77)) ([cc5e11d](https://github.com/jimeh/treeboot/commit/cc5e11d70de82d45ac92d3fbd8ead64afff7a86a))
+
 ## [0.8.0](https://github.com/jimeh/treeboot/compare/v0.7.0...v0.8.0) (2026-06-29)
 
 
