@@ -497,8 +497,22 @@ pub(crate) fn matching_target_anchor<'a>(
         return None;
     };
 
-    path.starts_with(&canonical_worktree_path)
-        .then_some(Cow::Owned(canonical_worktree_path))
+    if path.starts_with(&canonical_worktree_path) {
+        return Some(Cow::Owned(canonical_worktree_path));
+    }
+
+    let mut current = path;
+    loop {
+        if fs::canonicalize(current).is_ok_and(|path| path == canonical_worktree_path) {
+            return Some(Cow::Owned(current.to_path_buf()));
+        }
+
+        let parent = current.parent()?;
+        if parent == current {
+            return None;
+        }
+        current = parent;
+    }
 }
 
 #[cfg(test)]

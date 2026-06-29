@@ -518,7 +518,12 @@ pub(super) fn plan_file_operations(
         )
     })?;
 
-    let target_paths = normalize_target_paths(origin, files, context.worktree_path.as_path())?;
+    let target_paths = normalize_target_paths(
+        origin,
+        files,
+        context.worktree_path.as_path(),
+        worktree_path.as_path(),
+    )?;
     validate_target_conflicts(origin, files, &target_paths)?;
     validate_strict_sync(origin, files, options.strict)?;
 
@@ -536,12 +541,14 @@ fn normalize_target_paths(
     origin: FilePlanOrigin<'_>,
     files: &[FileOperation],
     worktree_path: &Path,
+    normalized_worktree_path: &Path,
 ) -> Result<Vec<PathBuf>> {
     files
         .iter()
         .map(|operation| {
-            validate_target_parent_components(origin, operation, worktree_path)?;
-            normalize_target_path(&operation.target_path).map_err(|source| {
+            let inspected_parent =
+                validate_target_parent_components(origin, operation, worktree_path)?;
+            let target_path = normalize_target_path(&operation.target_path).map_err(|source| {
                 file_plan_error(
                     origin,
                     Some(operation.declaration),
@@ -550,7 +557,20 @@ fn normalize_target_paths(
                         operation.target.display()
                     ),
                 )
-            })
+            })?;
+
+            if !inspected_parent && is_within(&target_path, normalized_worktree_path) {
+                return invalid_file_plan(
+                    origin,
+                    Some(operation.declaration),
+                    format!(
+                        "cannot create target for {}; target parent could not be inspected",
+                        operation_label(operation),
+                    ),
+                );
+            }
+
+            Ok(target_path)
         })
         .collect()
 }
@@ -559,14 +579,14 @@ fn validate_target_parent_components(
     origin: FilePlanOrigin<'_>,
     operation: &FileOperation,
     worktree_path: &Path,
-) -> Result<()> {
+) -> Result<bool> {
     let parent = operation.target_path.parent().unwrap_or(worktree_path);
     let Some(anchor) = matching_target_anchor(parent, worktree_path) else {
-        return Ok(());
+        return Ok(false);
     };
 
     match inspect_target_ancestors(parent, anchor.as_ref(), false) {
-        Ok(()) | Err(TargetAncestorIssue::OutsideWorktree { .. }) => Ok(()),
+        Ok(()) | Err(TargetAncestorIssue::OutsideWorktree { .. }) => Ok(true),
         Err(TargetAncestorIssue::Symlink { path }) => invalid_file_plan(
             origin,
             Some(operation.declaration),
@@ -1804,6 +1824,39 @@ mod tests {
 
         let error = plan(&config, &alias_root, &alias_worktree)
             .expect_err("canonical absolute target should reject symlink parent");
+
+        assert!(error.to_string().contains("target parent"));
+        assert!(error.to_string().contains("is a symlink"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn action_plan_from_manifest_should_reject_absolute_alias_target_parent_symlink() {
+        let (root, worktree, _alias_root, alias_worktree) =
+            aliased_workspace("absolute-alias-target-parent-symlink");
+        let linked = worktree.join("real-config");
+        std::fs::create_dir_all(&linked).expect("linked directory should be created");
+        std::fs::write(root.join("source"), "value\n").expect("source should be written");
+        std::os::unix::fs::symlink(&linked, worktree.join("config"))
+            .expect("target parent symlink should be created");
+        let target_path = alias_worktree.join("config/source");
+        let mut operation = file_operation(
+            FileOperationKind::Copy,
+            &root,
+            &worktree,
+            "source",
+            "config/source",
+        );
+        operation.target = target_path.clone();
+        operation.target_path = target_path;
+        let config = Config {
+            options: Default::default(),
+            files: vec![operation],
+            commands: Vec::new(),
+        };
+
+        let error = plan(&config, &root, &worktree)
+            .expect_err("absolute alias target should reject symlink parent");
 
         assert!(error.to_string().contains("target parent"));
         assert!(error.to_string().contains("is a symlink"));
