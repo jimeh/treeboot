@@ -3,7 +3,10 @@ use tempfile::TempDir;
 
 mod common;
 
-use common::{display_path, git_repo, git_worktree, toml_string_path, treeboot, write_file};
+use common::{
+    display_path, git_repo, git_worktree, skip_without_symlinks, symlink_file, toml_string_path,
+    treeboot, write_file,
+};
 
 #[cfg(unix)]
 use common::write_executable_script;
@@ -1894,15 +1897,21 @@ fn run_default_copy_should_skip_existing_target() {
     assert_eq!(existing, "old\n");
 }
 
-#[cfg(unix)]
 #[test]
 fn run_copied_symlink_should_warn_when_final_target_is_missing() {
+    if skip_without_symlinks("run_copied_symlink_should_warn_when_final_target_is_missing") {
+        return;
+    }
+
     let repo = git_worktree();
     let config = repo.worktree_path().join(".treeboot.toml");
     std::fs::create_dir_all(repo.root_path().join("shared")).expect("source dir should be created");
     write_file(&repo.root_path().join("shared/config"), "value\n");
-    std::os::unix::fs::symlink("config", repo.root_path().join("shared/link"))
-        .expect("source symlink should be created");
+    symlink_file(
+        std::path::Path::new("config"),
+        &repo.root_path().join("shared/link"),
+    )
+    .expect("source symlink should be created");
     write_file(
         &config,
         r#"copy = [{ source = "shared/link", target = "shared/link" }]"#,
@@ -1922,9 +1931,12 @@ fn run_copied_symlink_should_warn_when_final_target_is_missing() {
     assert_eq!(link, std::path::PathBuf::from("config"));
 }
 
-#[cfg(unix)]
 #[test]
 fn run_symlink_should_create_relative_symlink() {
+    if skip_without_symlinks("run_symlink_should_create_relative_symlink") {
+        return;
+    }
+
     let repo = git_worktree();
     let config = repo.worktree_path().join(".treeboot.toml");
     let source = repo.root_path().join("tool");

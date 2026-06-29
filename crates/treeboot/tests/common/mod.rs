@@ -134,3 +134,57 @@ pub fn write_executable_script(path: &Path, content: &str) {
     permissions.set_mode(0o755);
     std::fs::set_permissions(path, permissions).expect("script permissions should be set");
 }
+
+/// Creates a file symlink at `link` pointing to `target`, using the
+/// platform-appropriate API so symlink tests share one body across platforms.
+pub fn symlink_file(target: &Path, link: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link)
+    }
+    #[cfg(windows)]
+    {
+        std::os::windows::fs::symlink_file(target, link)
+    }
+}
+
+/// Creates a directory symlink at `link` pointing to `target`, using the
+/// platform-appropriate API.
+pub fn symlink_dir(target: &Path, link: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link)
+    }
+    #[cfg(windows)]
+    {
+        std::os::windows::fs::symlink_dir(target, link)
+    }
+}
+
+/// Reports whether this process can create symlinks. Windows requires
+/// privilege or Developer Mode, so symlink tests skip rather than fail when
+/// this returns `false`. The probe runs once and is cached for the test run.
+pub fn symlinks_supported() -> bool {
+    static SUPPORTED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *SUPPORTED.get_or_init(|| {
+        let Ok(dir) = TempDir::new() else {
+            return false;
+        };
+        let target = dir.path().join("probe-target");
+        if std::fs::write(&target, b"probe").is_err() {
+            return false;
+        }
+        symlink_file(&target, &dir.path().join("probe-link")).is_ok()
+    })
+}
+
+/// Returns `true` when symlinks are unsupported, after printing a skip notice
+/// so CI logs distinguish a skipped symlink test from one that ran. Call at the
+/// top of a symlink test and early-return when it returns `true`.
+pub fn skip_without_symlinks(test: &str) -> bool {
+    if symlinks_supported() {
+        return false;
+    }
+    eprintln!("skipping {test}: platform cannot create symlinks");
+    true
+}
