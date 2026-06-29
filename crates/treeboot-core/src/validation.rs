@@ -525,17 +525,21 @@ pub(super) fn plan_file_operations(
         context.worktree_path.as_path(),
         worktree_path.as_path(),
     )?;
-    validate_target_conflicts(origin, files, &target_paths)?;
+    validate_duplicate_targets(origin, files, &target_paths)?;
+    validate_sync_delete_overlapping_targets(origin, files, &target_paths)?;
     validate_strict_sync(origin, files, options.strict)?;
 
-    build_file_operations(
+    let planned = build_file_operations(
         origin,
         files,
         options,
         &target_paths,
         root_path.as_path(),
         worktree_path.as_path(),
-    )
+    )?;
+    validate_expanded_target_conflicts(origin, &planned)?;
+
+    Ok(planned)
 }
 
 fn normalize_target_paths(
@@ -617,15 +621,6 @@ fn validate_target_parent_components(
     }
 }
 
-fn validate_target_conflicts(
-    origin: FilePlanOrigin<'_>,
-    files: &[FileOperation],
-    target_paths: &[PathBuf],
-) -> Result<()> {
-    validate_duplicate_targets(origin, files, target_paths)?;
-    validate_overlapping_targets(origin, files, target_paths)
-}
-
 fn validate_duplicate_targets(
     origin: FilePlanOrigin<'_>,
     files: &[FileOperation],
@@ -671,7 +666,7 @@ fn validate_duplicate_targets(
     Err(file_plan_error(origin, None, message))
 }
 
-fn validate_overlapping_targets(
+fn validate_sync_delete_overlapping_targets(
     origin: FilePlanOrigin<'_>,
     files: &[FileOperation],
     target_paths: &[PathBuf],
@@ -681,6 +676,11 @@ fn validate_overlapping_targets(
     for (index, (operation, target_path)) in files.iter().zip(target_paths).enumerate() {
         for (other_operation, other_target_path) in files.iter().zip(target_paths).skip(index + 1) {
             if target_path == other_target_path {
+                continue;
+            }
+            if !operation_deletes_target_children(operation)
+                && !operation_deletes_target_children(other_operation)
+            {
                 continue;
             }
 
@@ -712,6 +712,10 @@ fn validate_overlapping_targets(
     };
 
     Err(file_plan_error(origin, None, message))
+}
+
+fn operation_deletes_target_children(operation: &FileOperation) -> bool {
+    operation.operation == FileOperationKind::Sync && operation.delete.unwrap_or(false)
 }
 
 fn overlapping_targets<'a>(
@@ -831,6 +835,199 @@ fn build_file_operations(
     }
 
     Ok(planned)
+}
+
+fn validate_expanded_target_conflicts(
+    origin: FilePlanOrigin<'_>,
+    files: &[PlannedFileOperation],
+) -> Result<()> {
+    let mut targets: BTreeMap<PathBuf, Vec<&PlannedFileOperation>> = BTreeMap::new();
+
+    for operation in files {
+        collect_expanded_targets(origin, operation, &mut targets)?;
+    }
+
+    let duplicates = targets
+        .into_iter()
+        .filter(|(_, operations)| operations.len() > 1)
+        .collect::<Vec<_>>();
+
+    if duplicates.is_empty() {
+        return Ok(());
+    }
+
+    let details = duplicates
+        .iter()
+        .flat_map(|(target, operations)| {
+            operations.iter().map(move |operation| {
+                format!(
+                    "{}: {}",
+                    target.display(),
+                    planned_operation_summary(origin, operation)
+                )
+            })
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+
+    let message = match origin {
+        FilePlanOrigin::Config(_) => format!("duplicate configured target: {details}"),
+        FilePlanOrigin::Manual { .. } => format!("duplicate target: {details}"),
+    };
+
+    Err(file_plan_error(origin, None, message))
+}
+
+fn collect_expanded_targets<'a>(
+    origin: FilePlanOrigin<'_>,
+    operation: &'a PlannedFileOperation,
+    targets: &mut BTreeMap<PathBuf, Vec<&'a PlannedFileOperation>>,
+) -> Result<()> {
+    if operation.status == PlannedFileStatus::SkippedMissingSource {
+        return Ok(());
+    }
+
+    match operation.operation {
+        FileOperationKind::Copy | FileOperationKind::Sync => {
+            let ignore_rules = planned_operation_ignore_rules(origin, operation)?;
+            let mut collector = ExpandedTargetCollector {
+                origin,
+                operation,
+                source_root: operation.source_path.as_path(),
+                ignore_rules: ignore_rules.as_ref(),
+                targets,
+            };
+            collector.collect(
+                operation.source_path.as_path(),
+                operation.target_path.as_path(),
+                true,
+            )
+        }
+        FileOperationKind::Symlink => {
+            targets
+                .entry(operation.target_path.clone())
+                .or_default()
+                .push(operation);
+            Ok(())
+        }
+    }
+}
+
+struct ExpandedTargetCollector<'operation, 'rules, 'targets> {
+    origin: FilePlanOrigin<'targets>,
+    operation: &'operation PlannedFileOperation,
+    source_root: &'operation Path,
+    ignore_rules: Option<&'rules PathIgnoreRules>,
+    targets: &'targets mut BTreeMap<PathBuf, Vec<&'operation PlannedFileOperation>>,
+}
+
+impl ExpandedTargetCollector<'_, '_, '_> {
+    fn collect(
+        &mut self,
+        source_path: &Path,
+        target_path: &Path,
+        include_current: bool,
+    ) -> Result<()> {
+        let metadata = std::fs::symlink_metadata(source_path).map_err(|source| {
+            file_plan_error(
+                self.origin,
+                Some(self.operation.declaration),
+                format!(
+                    "failed to inspect source {}: {source}",
+                    self.operation.source.display()
+                ),
+            )
+        })?;
+
+        if include_current {
+            self.targets
+                .entry(target_path.to_path_buf())
+                .or_default()
+                .push(self.operation);
+        }
+
+        if !metadata.is_dir() {
+            return Ok(());
+        }
+
+        for entry in std::fs::read_dir(source_path).map_err(|source| {
+            file_plan_error(
+                self.origin,
+                Some(self.operation.declaration),
+                format!(
+                    "failed to inspect source directory {}: {source}",
+                    source_path.display()
+                ),
+            )
+        })? {
+            let entry = entry.map_err(|source| {
+                file_plan_error(
+                    self.origin,
+                    Some(self.operation.declaration),
+                    format!(
+                        "failed to inspect source directory {}: {source}",
+                        source_path.display()
+                    ),
+                )
+            })?;
+            let child_source_path = entry.path();
+            let child_target_path = target_path.join(entry.file_name());
+            let child_metadata =
+                std::fs::symlink_metadata(&child_source_path).map_err(|source| {
+                    file_plan_error(
+                        self.origin,
+                        Some(self.operation.declaration),
+                        format!(
+                            "failed to inspect source directory {}: {source}",
+                            source_path.display()
+                        ),
+                    )
+                })?;
+
+            if ignored_source_path(
+                self.source_root,
+                &child_source_path,
+                &child_metadata,
+                self.ignore_rules,
+            ) {
+                if child_metadata.is_dir()
+                    && self
+                        .ignore_rules
+                        .map(PathIgnoreRules::has_negation)
+                        .unwrap_or(false)
+                {
+                    self.collect(&child_source_path, &child_target_path, false)?;
+                }
+                continue;
+            }
+
+            self.collect(&child_source_path, &child_target_path, true)?;
+        }
+
+        Ok(())
+    }
+}
+
+fn planned_operation_ignore_rules(
+    origin: FilePlanOrigin<'_>,
+    operation: &PlannedFileOperation,
+) -> Result<Option<PathIgnoreRules>> {
+    if operation.ignore.is_empty() {
+        return Ok(None);
+    }
+
+    PathIgnoreRules::new(&operation.source_path, &operation.ignore)
+        .map(Some)
+        .map_err(|source| {
+            file_plan_error(
+                origin,
+                Some(operation.declaration),
+                format!(
+                    "invalid ignore pattern for {}: {source}",
+                    planned_operation_summary(origin, operation)
+                ),
+            )
+        })
 }
 
 fn validate_target_boundary(
@@ -1137,7 +1334,31 @@ fn operation_summary(origin: FilePlanOrigin<'_>, operation: &FileOperation) -> S
     }
 }
 
+fn planned_operation_summary(
+    origin: FilePlanOrigin<'_>,
+    operation: &PlannedFileOperation,
+) -> String {
+    let summary = planned_operation_label(operation);
+
+    match origin {
+        FilePlanOrigin::Config(_) => format!(
+            "{} at line {}, column {}",
+            summary, operation.declaration.line, operation.declaration.column
+        ),
+        FilePlanOrigin::Manual { .. } => summary,
+    }
+}
+
 fn operation_label(operation: &FileOperation) -> String {
+    format!(
+        "{} {} -> {}",
+        operation.operation,
+        operation.source.display(),
+        operation.target.display()
+    )
+}
+
+fn planned_operation_label(operation: &PlannedFileOperation) -> String {
     format!(
         "{} {} -> {}",
         operation.operation,
@@ -1393,8 +1614,84 @@ mod tests {
     }
 
     #[test]
-    fn action_plan_from_manifest_should_reject_overlapping_file_targets() {
-        let (root, worktree) = temp_workspace("overlapping-targets");
+    fn action_plan_from_manifest_should_allow_composed_directory_targets() {
+        let (root, worktree) = temp_workspace("composed-directory-targets");
+        std::fs::create_dir_all(root.join("examples/config"))
+            .expect("base config source should be created");
+        std::fs::create_dir_all(root.join("examples/config-addons"))
+            .expect("addon source should be created");
+        std::fs::write(root.join("examples/config/base.yml"), "base\n")
+            .expect("base config should be written");
+        std::fs::write(root.join("examples/config-addons/docker.yml"), "docker\n")
+            .expect("addon config should be written");
+        let config = Config {
+            options: Default::default(),
+            files: vec![
+                file_operation(
+                    FileOperationKind::Copy,
+                    &root,
+                    &worktree,
+                    "examples/config",
+                    "config",
+                ),
+                file_operation(
+                    FileOperationKind::Copy,
+                    &root,
+                    &worktree,
+                    "examples/config-addons/docker.yml",
+                    "config/docker.yml",
+                ),
+            ],
+            commands: Vec::new(),
+        };
+
+        let plan = plan(&config, &root, &worktree).expect("composed targets should plan");
+
+        assert_eq!(plan.files.len(), 2);
+    }
+
+    #[test]
+    fn action_plan_from_manifest_should_reject_duplicate_expanded_targets() {
+        let (root, worktree) = temp_workspace("duplicate-expanded-targets");
+        std::fs::create_dir_all(root.join("examples/config"))
+            .expect("base config source should be created");
+        std::fs::create_dir_all(root.join("examples/config-addons"))
+            .expect("addon source should be created");
+        std::fs::write(root.join("examples/config/docker.yml"), "base\n")
+            .expect("base config should be written");
+        std::fs::write(root.join("examples/config-addons/docker.yml"), "docker\n")
+            .expect("addon config should be written");
+        let config = Config {
+            options: Default::default(),
+            files: vec![
+                file_operation(
+                    FileOperationKind::Copy,
+                    &root,
+                    &worktree,
+                    "examples/config",
+                    "config",
+                ),
+                file_operation(
+                    FileOperationKind::Copy,
+                    &root,
+                    &worktree,
+                    "examples/config-addons/docker.yml",
+                    "config/docker.yml",
+                ),
+            ],
+            commands: Vec::new(),
+        };
+
+        let error =
+            plan(&config, &root, &worktree).expect_err("duplicate expanded target should fail");
+
+        assert!(error.to_string().contains("duplicate configured target"));
+        assert!(error.to_string().contains("config/docker.yml"));
+    }
+
+    #[test]
+    fn action_plan_from_manifest_should_reject_overlapping_sync_delete_targets() {
+        let (root, worktree) = temp_workspace("overlapping-sync-delete-targets");
         let mut sync = file_operation(
             FileOperationKind::Sync,
             &root,
@@ -1418,7 +1715,8 @@ mod tests {
             commands: Vec::new(),
         };
 
-        let error = plan(&config, &root, &worktree).expect_err("overlapping targets should fail");
+        let error =
+            plan(&config, &root, &worktree).expect_err("overlapping sync delete should fail");
 
         assert!(error.to_string().contains("overlapping configured targets"));
         assert!(error.to_string().contains("shared"));

@@ -113,7 +113,7 @@ treeboot -V
 Human-readable output is a compact, flag-like summary:
 
 ```text
-treeboot 0.8.0 (spec 1.13.1)
+treeboot 0.8.0 (spec 1.14.0)
 ```
 
 JSON and YAML output are defined in
@@ -455,7 +455,7 @@ string. The initial reason is `not_executable`.
 {
   "package": "treeboot",
   "version": "0.8.0",
-  "spec_version": "1.13.1"
+  "spec_version": "1.14.0"
 }
 ```
 
@@ -1106,9 +1106,18 @@ because they depend on process-local current-drive state.
 
 ### Conflicting targets
 
-If multiple file operations target the same normalized absolute path, or one
-target is inside another target, treeboot should report every conflicting entry
-with its operation, source, target, and declaration location when available.
+If multiple file operations target the same normalized absolute path, or their
+expanded concrete target paths contain duplicates, treeboot should report every
+conflicting entry with its operation, source, target, and declaration location
+when available. Directory targets may be composed from multiple sources when the
+expanded concrete paths do not collide. For example, copying `examples/config`
+to `config` and copying `examples/config-addons/docker.yml` to
+`config/docker.yml` is valid unless the `examples/config` source also contains
+an entry that expands to `config/docker.yml`.
+
+Ancestor/descendant operation targets are invalid when any overlapping sync
+operation has `delete = true`, because a delete-enabled sync can remove
+target-only children produced by another operation in the same plan.
 
 ### Target boundary
 
@@ -1142,7 +1151,8 @@ may contain `..`, but the final resolved path must stay inside the worktree.
 
 | Rule                                                        | Behavior                                                        |
 | ----------------------------------------------------------- | --------------------------------------------------------------- |
-| Any duplicate operation target                              | Fail before any file operation or command runs.                 |
+| Any duplicate operation target or expanded concrete target  | Fail before any file operation or command runs.                 |
+| `sync delete` target overlaps another operation target      | Fail before any file operation or command runs.                 |
 | Target resolves outside the worktree                        | Fail before any file operation or command runs.                 |
 | Target parent is a symlink or non-directory at validation   | Fail before any file operation or command runs.                 |
 | Target ancestor becomes a symlink or non-directory at apply | Fail that operation before mutating the target.                 |
@@ -1160,11 +1170,15 @@ may contain `..`, but the final resolved path must stay inside the worktree.
 
 A config that copies a file and later symlinks to the same target is ambiguous
 at best and destructive under force mode. treeboot should reject duplicate
-configured targets in every mode. It should also reject ancestor/descendant
-target pairs because a sync operation with `delete = true` can remove
-target-only children produced by another operation in the same plan. Manual
-commands should reject duplicate and overlapping targets derived from their
-source arguments and `--target` before any file changes are made.
+configured targets in every mode, including duplicate concrete targets expanded
+from directory copy and sync sources. Ancestor/descendant target pairs are
+allowed when their expanded concrete targets do not collide, which lets users
+compose one target directory from multiple source directories and files. They
+remain invalid when any overlapping sync operation has `delete = true`, because
+delete-enabled sync can remove target-only children produced by another
+operation in the same plan. Manual commands should reject duplicate concrete
+targets and sync-delete overlaps derived from their source arguments and
+`--target` before any file changes are made.
 
 ### Outside-worktree targets need an explicit escape hatch
 

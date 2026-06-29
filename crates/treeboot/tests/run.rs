@@ -276,6 +276,48 @@ copy = [
 }
 
 #[test]
+fn run_should_compose_directory_targets_from_multiple_sources() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    std::fs::create_dir_all(repo.root_path().join("examples/config"))
+        .expect("base config source should be created");
+    std::fs::create_dir_all(repo.root_path().join("examples/config-addons"))
+        .expect("addon source should be created");
+    write_file(&repo.root_path().join("examples/config/base.yml"), "base\n");
+    write_file(
+        &repo.root_path().join("examples/config-addons/docker.yml"),
+        "docker\n",
+    );
+    write_file(
+        &config,
+        r#"
+copy = [
+  { source = "examples/config", target = "config" },
+  { source = "examples/config-addons/docker.yml", target = "config/docker.yml" },
+]
+"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("config/base.yml"))
+            .expect("base config should be copied"),
+        "base\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("config/docker.yml"))
+            .expect("addon config should be copied"),
+        "docker\n"
+    );
+}
+
+#[test]
 fn run_overlapping_sync_delete_targets_should_fail_before_side_effects() {
     let repo = git_worktree();
     let config = repo.worktree_path().join(".treeboot.toml");
