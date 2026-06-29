@@ -94,20 +94,6 @@ if [[ -z "${package_version}" ]]; then
   fail "crates/treeboot/Cargo.toml must expose package version X.Y.Z"
 fi
 
-if [[ -n "${package_version}" && -n "${spec_version}" ]]; then
-  if ! grep -Fqx "treeboot ${package_version} (spec ${spec_version})" docs/SPEC.md; then
-    fail "docs/SPEC.md treeboot version text example must match package v${package_version} and spec v${spec_version}"
-  fi
-
-  if ! grep -Fq "\"version\": \"${package_version}\"" docs/SPEC.md; then
-    fail "docs/SPEC.md version JSON example must match package v${package_version}"
-  fi
-
-  if ! grep -Fq "\"spec_version\": \"${spec_version}\"" docs/SPEC.md; then
-    fail "docs/SPEC.md version JSON example must match spec v${spec_version}"
-  fi
-fi
-
 for crate_license in crates/treeboot/LICENSE crates/treeboot-core/LICENSE; do
   if ! cmp -s LICENSE "${crate_license}"; then
     fail "${crate_license} must match root LICENSE"

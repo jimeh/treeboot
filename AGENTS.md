@@ -211,6 +211,9 @@ work. Lefthook checks staged Markdown files through
 - Repo harness invariants are wrapped by `mise run harness:check`; keep
   dependency-boundary and spec-version drift checks there when they can be
   expressed without heavyweight tooling.
+- Do not require package-version literals in `docs/SPEC.md` examples to match
+  Cargo package versions. Release-please does not update spec examples, and
+  example version drift should not block release PRs.
 - Dependabot version updates use a 7-day cooldown. Security updates are not
   affected by Dependabot cooldown and should stay alert-driven.
 - Renovate is scoped to monthly mise tool and lockfile maintenance only. It runs
