@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.2](https://github.com/jimeh/treeboot/compare/v0.8.1...v0.8.2) (2026-06-30)
+
+
+### Bug Fixes
+
+* normalize Windows paths consistently ([#81](https://github.com/jimeh/treeboot/issues/81)) ([1ede1ee](https://github.com/jimeh/treeboot/commit/1ede1ee1630bf08d09b1c46ad0deacf78c660332))
+
 ## [0.8.1](https://github.com/jimeh/treeboot/compare/v0.8.0...v0.8.1) (2026-06-29)
 
 
