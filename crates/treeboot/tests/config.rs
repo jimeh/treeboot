@@ -3,7 +3,9 @@ use tempfile::TempDir;
 
 mod common;
 
-use common::{assert_json_object_keys, git_worktree, parse_json, treeboot, write_file};
+use common::{
+    assert_json_object_keys, canonical_path, git_worktree, parse_json, treeboot, write_file,
+};
 
 #[test]
 fn config_command_should_print_normalized_config() {
@@ -412,19 +414,25 @@ fn config_command_root_option_should_resolve_json_source_paths() {
     let config = repo.worktree_path().join(".treeboot.toml");
     write_file(&config, "copy = [\"shared/.env\"]\n");
 
-    let root_path = std::fs::canonicalize(root.path()).expect("root should normalize");
-    let source_path = root_path.join("shared/.env").display().to_string();
-    let source_path_json = source_path.replace('\\', "\\\\");
+    let root_path = canonical_path(root.path());
+    let source_path = root_path.join("shared").join(".env").display().to_string();
 
-    treeboot()
+    let json = treeboot()
         .args(["config", "-r"])
         .arg(root.path())
         .arg("-J")
         .current_dir(repo.worktree_path())
         .assert()
         .success()
-        .stdout(predicate::str::contains("\"source_path\""))
-        .stdout(predicate::str::contains(source_path_json));
+        .get_output()
+        .stdout
+        .clone();
+    let json = parse_json(json, "config");
+
+    assert_eq!(
+        json["config"]["files"][0]["source_path"],
+        serde_json::json!(source_path)
+    );
 }
 
 #[test]

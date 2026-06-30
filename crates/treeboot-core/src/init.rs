@@ -152,6 +152,7 @@ fn make_executable(_path: &std::path::Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::symlink_file;
 
     use tempfile::TempDir;
 
@@ -195,16 +196,13 @@ mod tests {
         assert!(reporter.events.is_empty());
     }
 
-    #[cfg(unix)]
     #[test]
     fn init_should_refuse_existing_symlink_without_writing_through_it() {
-        use std::os::unix::fs::symlink;
-
         let dir = TempDir::new().expect("tempdir should be created");
         let target = dir.path().join("target.toml");
         let link = dir.path().join(".treeboot.toml");
         std::fs::write(&target, "old\n").expect("target should be written");
-        symlink(&target, &link).expect("symlink should be created");
+        symlink_file(&target, &link).expect("symlink should be created");
         let mut reporter = VecReporter::default();
 
         let err = init(

@@ -5,7 +5,9 @@ use predicates::prelude::*;
 
 mod common;
 
-use common::{display_path, git_repo, git_worktree, treeboot, write_file};
+use common::{
+    canonical_path, display_path, git_repo, git_worktree, symlink_file, treeboot, write_file,
+};
 
 #[cfg(unix)]
 use common::write_executable_script;
@@ -76,6 +78,30 @@ fn copy_should_create_files_and_directories_from_root() {
             .expect("copied nested file should be readable"),
         "value\n"
     );
+}
+
+#[test]
+fn copy_should_accept_absolute_source_and_target_inside_context() {
+    let repo = git_worktree();
+    let source = repo.root_path().join("shared/.env");
+    let target = repo.worktree_path().join("local/.env");
+    std::fs::create_dir_all(source.parent().expect("source should have parent"))
+        .expect("source parent should be created");
+    write_file(&source, "TOKEN=1\n");
+
+    treeboot()
+        .arg("copy")
+        .arg(&source)
+        .args(["--target"])
+        .arg(&target)
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .stdout(predicate::str::contains("treeboot: copy"));
+
+    let copied = std::fs::read_to_string(target).expect("absolute target should be copied");
+    assert_eq!(copied, "TOKEN=1\n");
 }
 
 #[test]
@@ -200,7 +226,6 @@ fn copy_should_place_multiple_sources_under_target_prefix() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn symlink_should_create_relative_link() {
     let repo = git_worktree();
@@ -224,9 +249,8 @@ fn symlink_should_create_relative_link() {
     let target = std::fs::read_link(&link).expect("target should be a symlink");
     assert!(target.is_relative());
     assert_eq!(
-        std::fs::canonicalize(link).expect("link should resolve"),
-        std::fs::canonicalize(repo.root_path().join(".tool-versions"))
-            .expect("source should canonicalize")
+        canonical_path(&link),
+        canonical_path(&repo.root_path().join(".tool-versions"))
     );
 }
 
@@ -621,7 +645,6 @@ fn overlapping_manual_sync_delete_targets_should_fail_before_side_effects() {
     assert!(!repo.worktree_path().join("shared").exists());
 }
 
-#[cfg(unix)]
 #[test]
 fn unsafe_source_symlink_should_fail_before_side_effects() {
     let repo = git_worktree();
@@ -633,8 +656,7 @@ fn unsafe_source_symlink_should_fail_before_side_effects() {
     write_file(&outside, "secret\n");
     std::fs::create_dir_all(repo.root_path().join("unsafe"))
         .expect("source directory should be created");
-    std::os::unix::fs::symlink(&outside, repo.root_path().join("unsafe/link"))
-        .expect("unsafe symlink should be created");
+    symlink_file(&outside, repo.root_path().join("unsafe/link"));
 
     treeboot()
         .args(["copy", "unsafe"])

@@ -8,6 +8,7 @@ use toml::Spanned;
 
 use crate::context;
 use crate::discovery;
+use crate::paths::{self, UnsupportedPath};
 use crate::{EnvironmentInput, Error, Result, Worktree, WorktreeOptions};
 
 /// Options for inspecting a treeboot config.
@@ -651,8 +652,14 @@ fn normalize_file_object(
 
     Ok(FileOperation {
         operation,
-        source_path: resolve_path(&context.root_path, Path::new(&source)),
-        target_path: resolve_path(&context.worktree_path, Path::new(&target)),
+        source_path: resolve_path(path, content, span, &context.root_path, Path::new(&source))?,
+        target_path: resolve_target_path(
+            path,
+            content,
+            span,
+            &context.worktree_path,
+            Path::new(&target),
+        )?,
         source: PathBuf::from(source),
         target: PathBuf::from(target),
         required: object.required,
@@ -768,7 +775,8 @@ fn normalize_command_object(
     let cwd_path = object
         .cwd
         .as_ref()
-        .map(|cwd| resolve_path(&context.worktree_path, Path::new(cwd)));
+        .map(|cwd| resolve_path(path, content, span, &context.worktree_path, Path::new(cwd)))
+        .transpose()?;
 
     Ok(CommandOperation {
         name: object.name,
@@ -781,12 +789,78 @@ fn normalize_command_object(
     })
 }
 
-fn resolve_path(base: &Path, path: &Path) -> PathBuf {
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        base.join(path)
-    }
+fn resolve_path(
+    config_path: &Path,
+    content: &str,
+    span: SourceSpan,
+    base: &Path,
+    path: &Path,
+) -> Result<PathBuf> {
+    let resolved = paths::resolve_path(base, path).map_err(|source| {
+        invalid_config_error(
+            config_path,
+            content,
+            span,
+            unsupported_path_message(path, source),
+        )
+    })?;
+
+    paths::normalize_maybe_existing(&resolved).map_err(|source| {
+        invalid_config_error(
+            config_path,
+            content,
+            span,
+            normalize_path_message(path, source),
+        )
+    })
+}
+
+fn resolve_target_path(
+    config_path: &Path,
+    content: &str,
+    span: SourceSpan,
+    base: &Path,
+    path: &Path,
+) -> Result<PathBuf> {
+    let resolved = paths::resolve_path(base, path).map_err(|source| {
+        invalid_config_error(
+            config_path,
+            content,
+            span,
+            unsupported_path_message(path, source),
+        )
+    })?;
+
+    let Some(name) = resolved.file_name() else {
+        return paths::normalize_maybe_existing(&resolved).map_err(|source| {
+            invalid_config_error(
+                config_path,
+                content,
+                span,
+                normalize_path_message(path, source),
+            )
+        });
+    };
+    let parent = resolved.parent().unwrap_or_else(|| Path::new("."));
+    let mut normalized = paths::normalize_maybe_existing(parent).map_err(|source| {
+        invalid_config_error(
+            config_path,
+            content,
+            span,
+            normalize_path_message(path, source),
+        )
+    })?;
+    normalized.push(name);
+
+    Ok(paths::normalize_lexical(&normalized))
+}
+
+fn unsupported_path_message(path: &Path, source: UnsupportedPath) -> String {
+    format!("unsupported path `{}`: {}", path.display(), source.reason())
+}
+
+fn normalize_path_message(path: &Path, source: std::io::Error) -> String {
+    format!("failed to normalize path `{}`: {}", path.display(), source)
 }
 
 fn parse_error_message(content: &str, error: &toml::de::Error) -> String {
@@ -999,6 +1073,8 @@ struct RawCommandObject {
 mod tests {
     use std::ffi::OsString;
 
+    use crate::test_support::symlink_dir;
+
     use super::*;
 
     fn context() -> Worktree {
@@ -1030,6 +1106,13 @@ mod tests {
             error.contains(expected),
             "expected error to contain {expected:?}, got {error:?}"
         );
+    }
+
+    fn toml_basic_string_path(path: &Path) -> String {
+        path.display()
+            .to_string()
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
     }
 
     #[test]
@@ -1253,18 +1336,103 @@ dangerously_allow_sources_outside_root = true
 
     #[test]
     fn parse_config_should_resolve_absolute_paths_without_rebasing() {
-        let config = parse(
+        let temp = std::env::temp_dir().join("treeboot-config-absolute-paths");
+        let source = temp.join("shared").join("..").join(".env");
+        let target = temp.join("worktree").join("..").join("worktree/.env");
+        let cwd = temp.join("worktree").join("..").join("worktree/app");
+        let config = parse(&format!(
             r#"
-copy = [{ source = "/shared/.env", target = "/worktree/.env" }]
-commands = [{ program = "make", cwd = "/worktree/app" }]
+copy = [{{ source = "{}", target = "{}" }}]
+commands = [{{ program = "make", cwd = "{}" }}]
 "#,
-        );
+            toml_basic_string_path(&source),
+            toml_basic_string_path(&target),
+            toml_basic_string_path(&cwd),
+        ));
 
-        assert_eq!(config.files[0].source_path, PathBuf::from("/shared/.env"));
-        assert_eq!(config.files[0].target_path, PathBuf::from("/worktree/.env"));
+        assert_eq!(
+            config.files[0].source_path,
+            paths::normalize_maybe_existing(&temp.join(".env")).expect("source should normalize")
+        );
+        assert_eq!(
+            config.files[0].target_path,
+            paths::normalize_maybe_existing(&temp.join("worktree/.env"))
+                .expect("target should normalize")
+        );
         assert_eq!(
             config.commands[0].cwd_path,
-            Some(PathBuf::from("/worktree/app"))
+            Some(
+                paths::normalize_maybe_existing(&temp.join("worktree/app"))
+                    .expect("cwd should normalize")
+            )
+        );
+    }
+
+    #[test]
+    fn parse_config_should_normalize_relative_paths_through_existing_aliases() {
+        let temp = tempfile::TempDir::new().expect("tempdir should be created");
+        let actual = temp.path().join("actual");
+        let root = actual.join("root");
+        let worktree = actual.join("worktree");
+        let alias = temp.path().join("alias");
+        let alias_root = alias.join("root");
+        let alias_worktree = alias.join("worktree");
+        std::fs::create_dir_all(root.join("shared")).expect("root source dir should be created");
+        std::fs::create_dir_all(worktree.join("app")).expect("worktree app dir should be created");
+        std::fs::create_dir_all(&alias).expect("alias dir should be created");
+        symlink_dir(&root, &alias_root).expect("root alias should be created");
+        symlink_dir(&worktree, &alias_worktree).expect("worktree alias should be created");
+
+        let context = Worktree {
+            root_path: alias_root,
+            worktree_path: alias_worktree,
+            default_branch: "main".to_owned(),
+            environment: BTreeMap::new(),
+        };
+        let config = parse_config(
+            Path::new(".treeboot.toml"),
+            r#"
+copy = [{ source = "shared/.env", target = ".env" }]
+commands = [{ program = "make", cwd = "app" }]
+"#,
+            &context,
+        )
+        .expect("config should parse");
+
+        assert_eq!(
+            config.files[0].source_path,
+            paths::normalize_maybe_existing(&root.join("shared/.env"))
+                .expect("source should normalize through alias")
+        );
+        assert_eq!(
+            config.files[0].target_path,
+            paths::normalize_maybe_existing(&worktree.join(".env"))
+                .expect("target should normalize through alias")
+        );
+        assert_eq!(
+            config.commands[0].cwd_path,
+            Some(
+                paths::normalize_maybe_existing(&worktree.join("app"))
+                    .expect("cwd should normalize through alias")
+            )
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn parse_config_should_reject_drive_relative_windows_paths() {
+        assert_parse_error_contains(
+            r#"copy = [{ source = 'C:shared/.env' }]"#,
+            "drive-relative paths are not supported",
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn parse_config_should_reject_root_relative_windows_paths() {
+        assert_parse_error_contains(
+            r#"commands = [{ program = "git", cwd = '\app' }]"#,
+            "root-relative paths without a drive or share are not supported",
         );
     }
 
@@ -1301,7 +1469,10 @@ allow_failure = true
         );
         assert_eq!(
             config.commands[2].cwd_path,
-            Some(PathBuf::from("/repo-worktree/web"))
+            Some(
+                paths::normalize_maybe_existing(&context().worktree_path.join("web"))
+                    .expect("expected cwd should normalize")
+            )
         );
     }
 

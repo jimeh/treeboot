@@ -19,6 +19,7 @@ name = "treeboot_core"
 workspace = true
 
 [dependencies]
+dunce = "1"
 ignore = "0.4.26"
 serde = { version = "1.0.228", features = ["derive"] }
 thiserror = "2"

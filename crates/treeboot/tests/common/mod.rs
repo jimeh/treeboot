@@ -7,6 +7,10 @@ use assert_cmd::Command;
 use serde_json::Value;
 use tempfile::TempDir;
 
+pub fn canonical_path(path: &Path) -> PathBuf {
+    dunce::canonicalize(path).expect("path should canonicalize")
+}
+
 pub fn display_path(path: &str) -> String {
     path.split('/').collect::<PathBuf>().display().to_string()
 }
@@ -96,6 +100,30 @@ pub fn git_worktree() -> GitWorktree {
 
 pub fn write_file(path: &Path, content: &str) {
     std::fs::write(path, content).expect("file should be written");
+}
+
+#[cfg(unix)]
+pub fn symlink_file(source: impl AsRef<Path>, target: impl AsRef<Path>) {
+    std::os::unix::fs::symlink(source.as_ref(), target.as_ref())
+        .expect("file symlink should be created");
+}
+
+#[cfg(windows)]
+pub fn symlink_file(source: impl AsRef<Path>, target: impl AsRef<Path>) {
+    std::os::windows::fs::symlink_file(source.as_ref(), target.as_ref())
+        .expect("file symlink should be created");
+}
+
+#[cfg(unix)]
+pub fn symlink_dir(source: impl AsRef<Path>, target: impl AsRef<Path>) {
+    std::os::unix::fs::symlink(source.as_ref(), target.as_ref())
+        .expect("directory symlink should be created");
+}
+
+#[cfg(windows)]
+pub fn symlink_dir(source: impl AsRef<Path>, target: impl AsRef<Path>) {
+    std::os::windows::fs::symlink_dir(source.as_ref(), target.as_ref())
+        .expect("directory symlink should be created");
 }
 
 pub fn parse_json(stdout: Vec<u8>, context: &str) -> Value {

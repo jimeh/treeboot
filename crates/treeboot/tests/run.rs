@@ -3,7 +3,10 @@ use tempfile::TempDir;
 
 mod common;
 
-use common::{display_path, git_repo, git_worktree, toml_string_path, treeboot, write_file};
+use common::{
+    canonical_path, display_path, git_repo, git_worktree, symlink_dir, symlink_file,
+    toml_string_path, treeboot, write_file,
+};
 
 #[cfg(unix)]
 use common::write_executable_script;
@@ -181,10 +184,7 @@ fn run_command_only_config_should_execute_from_worktree() {
         .stdout(predicate::str::contains("treeboot: run sh -c"));
 
     let pwd = std::fs::read_to_string(marker).expect("pwd marker should be readable");
-    let worktree = std::fs::canonicalize(repo.worktree_path())
-        .expect("worktree should canonicalize")
-        .display()
-        .to_string();
+    let worktree = canonical_path(repo.worktree_path()).display().to_string();
     assert_eq!(pwd.trim(), worktree);
 }
 
@@ -499,7 +499,43 @@ copy = [{{ source = "source", target = "{}" }}]
     assert_eq!(copied, "value\n");
 }
 
-#[cfg(unix)]
+#[test]
+fn run_should_accept_absolute_paths_inside_root_and_worktree() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    let source = repo.root_path().join("shared/.env");
+    let target = repo.worktree_path().join("local/.env");
+    let app = repo.worktree_path().join("app");
+    std::fs::create_dir_all(source.parent().expect("source should have parent"))
+        .expect("source parent should be created");
+    std::fs::create_dir_all(&app).expect("app dir should be created");
+    write_file(&source, "TOKEN=1\n");
+    write_file(
+        &config,
+        &format!(
+            r#"
+copy = [{{ source = "{}", target = "{}" }}]
+commands = [{{ program = "git", args = ["rev-parse", "--show-prefix"], cwd = "{}" }}]
+"#,
+            toml_string_path(&source),
+            toml_string_path(&target),
+            toml_string_path(&app),
+        ),
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .stdout(predicate::str::contains("treeboot: copy"))
+        .stdout(predicate::str::contains("app/"));
+
+    let copied = std::fs::read_to_string(target).expect("absolute target should be copied");
+    assert_eq!(copied, "TOKEN=1\n");
+}
+
 #[test]
 fn run_dangerous_source_option_should_allow_symlink_to_outside_source() {
     let repo = git_worktree();
@@ -532,13 +568,9 @@ symlink = [{{ source = "{}", target = "outside.link" }}]
             .file_type()
             .is_symlink()
     );
-    assert_eq!(
-        std::fs::canonicalize(&target).expect("target symlink should resolve"),
-        std::fs::canonicalize(outside.path()).expect("outside source should resolve")
-    );
+    assert_eq!(canonical_path(&target), canonical_path(outside.path()));
 }
 
-#[cfg(unix)]
 #[test]
 fn run_dangerous_source_option_should_allow_existing_symlink_to_outside_source() {
     let repo = git_worktree();
@@ -546,8 +578,7 @@ fn run_dangerous_source_option_should_allow_existing_symlink_to_outside_source()
     let config = repo.worktree_path().join(".treeboot.toml");
     let target = repo.worktree_path().join("outside.link");
     write_file(outside.path(), "value\n");
-    std::os::unix::fs::symlink(outside.path(), &target)
-        .expect("existing symlink should be created");
+    symlink_file(outside.path(), &target);
     write_file(
         &config,
         &format!(
@@ -569,13 +600,9 @@ symlink = [{{ source = "{}", target = "outside.link" }}]
         ))
         .stderr(predicate::str::contains("invalid config").not());
 
-    assert_eq!(
-        std::fs::canonicalize(&target).expect("target symlink should resolve"),
-        std::fs::canonicalize(outside.path()).expect("outside source should resolve")
-    );
+    assert_eq!(canonical_path(&target), canonical_path(outside.path()));
 }
 
-#[cfg(unix)]
 #[test]
 fn run_dangerous_target_option_should_allow_symlink_outside_worktree() {
     let repo = git_worktree();
@@ -609,13 +636,9 @@ symlink = [{{ source = "source", target = "{}" }}]
             .file_type()
             .is_symlink()
     );
-    assert_eq!(
-        std::fs::canonicalize(&target).expect("target symlink should resolve"),
-        std::fs::canonicalize(&source).expect("source should resolve")
-    );
+    assert_eq!(canonical_path(&target), canonical_path(&source));
 }
 
-#[cfg(unix)]
 #[test]
 fn run_dangerous_target_option_should_allow_existing_symlink_outside_worktree() {
     let repo = git_worktree();
@@ -624,7 +647,7 @@ fn run_dangerous_target_option_should_allow_existing_symlink_outside_worktree() 
     let target = outside.path().join("source.link");
     let config = repo.worktree_path().join(".treeboot.toml");
     write_file(&source, "value\n");
-    std::os::unix::fs::symlink(&source, &target).expect("existing symlink should be created");
+    symlink_file(&source, &target);
     write_file(
         &config,
         &format!(
@@ -645,13 +668,9 @@ symlink = [{{ source = "source", target = "{}" }}]
         .stdout(predicate::str::contains("target exists"))
         .stderr(predicate::str::contains("invalid config").not());
 
-    assert_eq!(
-        std::fs::canonicalize(&target).expect("target symlink should resolve"),
-        std::fs::canonicalize(&source).expect("source should resolve")
-    );
+    assert_eq!(canonical_path(&target), canonical_path(&source));
 }
 
-#[cfg(unix)]
 #[test]
 fn run_symlink_should_reject_target_parent_symlink_to_root_subdirectory() {
     let repo = git_worktree();
@@ -659,8 +678,7 @@ fn run_symlink_should_reject_target_parent_symlink_to_root_subdirectory() {
     let source_dir = repo.root_path().join("config");
     std::fs::create_dir_all(&source_dir).expect("source dir should be created");
     write_file(&source_dir.join("master.key"), "secret\n");
-    std::os::unix::fs::symlink(&source_dir, repo.worktree_path().join("config"))
-        .expect("target parent symlink should be created");
+    symlink_dir(&source_dir, repo.worktree_path().join("config"));
     write_file(&config, r#"symlink = ["config/master.key"]"#);
 
     treeboot()
@@ -669,12 +687,11 @@ fn run_symlink_should_reject_target_parent_symlink_to_root_subdirectory() {
         .assert()
         .code(1)
         .stderr(predicate::str::contains("invalid config"))
-        .stderr(predicate::str::contains("cannot create target for symlink"))
-        .stderr(predicate::str::contains("target parent"))
-        .stderr(predicate::str::contains("is a symlink"));
+        .stderr(predicate::str::contains(
+            "target resolves outside worktree for symlink",
+        ));
 }
 
-#[cfg(unix)]
 #[test]
 fn run_symlink_should_reject_target_parent_file_in_subdirectory() {
     let repo = git_worktree();
@@ -696,7 +713,6 @@ fn run_symlink_should_reject_target_parent_file_in_subdirectory() {
         .stderr(predicate::str::contains("is not a directory"));
 }
 
-#[cfg(unix)]
 #[test]
 fn run_copy_should_reject_target_parent_symlink_to_root_subdirectory() {
     let repo = git_worktree();
@@ -704,8 +720,7 @@ fn run_copy_should_reject_target_parent_symlink_to_root_subdirectory() {
     let source_dir = repo.root_path().join("config");
     std::fs::create_dir_all(&source_dir).expect("source dir should be created");
     write_file(&source_dir.join("master.key"), "secret\n");
-    std::os::unix::fs::symlink(&source_dir, repo.worktree_path().join("config"))
-        .expect("target parent symlink should be created");
+    symlink_dir(&source_dir, repo.worktree_path().join("config"));
     write_file(&config, r#"copy = ["config/master.key"]"#);
 
     treeboot()
@@ -714,9 +729,9 @@ fn run_copy_should_reject_target_parent_symlink_to_root_subdirectory() {
         .assert()
         .code(1)
         .stderr(predicate::str::contains("invalid config"))
-        .stderr(predicate::str::contains("cannot create target for copy"))
-        .stderr(predicate::str::contains("target parent"))
-        .stderr(predicate::str::contains("is a symlink"));
+        .stderr(predicate::str::contains(
+            "target resolves outside worktree for copy",
+        ));
 }
 
 #[test]
@@ -740,7 +755,6 @@ fn run_copy_should_reject_target_parent_file_in_subdirectory() {
         .stderr(predicate::str::contains("is not a directory"));
 }
 
-#[cfg(unix)]
 #[test]
 fn run_sync_should_reject_target_parent_symlink_to_root_subdirectory() {
     let repo = git_worktree();
@@ -750,8 +764,7 @@ fn run_sync_should_reject_target_parent_symlink_to_root_subdirectory() {
     std::fs::create_dir_all(&source).expect("source dir should be created");
     std::fs::create_dir_all(&linked).expect("linked dir should be created");
     write_file(&source.join("master.key"), "secret\n");
-    std::os::unix::fs::symlink(&linked, repo.worktree_path().join("config"))
-        .expect("target parent symlink should be created");
+    symlink_dir(&linked, repo.worktree_path().join("config"));
     write_file(
         &config,
         r#"sync = [{ source = "templates/config", target = "config/app" }]"#,
@@ -763,9 +776,9 @@ fn run_sync_should_reject_target_parent_symlink_to_root_subdirectory() {
         .assert()
         .code(1)
         .stderr(predicate::str::contains("invalid config"))
-        .stderr(predicate::str::contains("cannot create target for sync"))
-        .stderr(predicate::str::contains("target parent"))
-        .stderr(predicate::str::contains("is a symlink"));
+        .stderr(predicate::str::contains(
+            "target resolves outside worktree for sync",
+        ));
 }
 
 #[test]
@@ -792,7 +805,6 @@ fn run_sync_should_reject_target_parent_file_in_subdirectory() {
         .stderr(predicate::str::contains("is not a directory"));
 }
 
-#[cfg(unix)]
 #[test]
 fn run_default_symlink_should_skip_existing_mismatched_subdirectory_symlink() {
     let repo = git_worktree();
@@ -803,7 +815,7 @@ fn run_default_symlink_should_skip_existing_mismatched_subdirectory_symlink() {
     std::fs::create_dir_all(target.parent().unwrap()).expect("target dir should be created");
     write_file(&source, "new\n");
     write_file(&repo.worktree_path().join("config/old.key"), "old\n");
-    std::os::unix::fs::symlink("old.key", &target).expect("existing symlink should be created");
+    symlink_file("old.key", &target);
     write_file(&config, r#"symlink = ["config/master.key"]"#);
 
     treeboot()
@@ -821,7 +833,6 @@ fn run_default_symlink_should_skip_existing_mismatched_subdirectory_symlink() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn run_strict_existing_subdirectory_symlink_should_fail_before_mutation() {
     let repo = git_worktree();
@@ -832,7 +843,7 @@ fn run_strict_existing_subdirectory_symlink_should_fail_before_mutation() {
     std::fs::create_dir_all(target.parent().unwrap()).expect("target dir should be created");
     write_file(&source, "new\n");
     write_file(&repo.worktree_path().join("config/old.key"), "old\n");
-    std::os::unix::fs::symlink("old.key", &target).expect("existing symlink should be created");
+    symlink_file("old.key", &target);
     write_file(&config, r#"symlink = ["config/master.key"]"#);
 
     treeboot()
@@ -848,7 +859,6 @@ fn run_strict_existing_subdirectory_symlink_should_fail_before_mutation() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn run_force_should_replace_existing_subdirectory_symlink() {
     let repo = git_worktree();
@@ -859,7 +869,7 @@ fn run_force_should_replace_existing_subdirectory_symlink() {
     std::fs::create_dir_all(target.parent().unwrap()).expect("target dir should be created");
     write_file(&source, "new\n");
     write_file(&repo.worktree_path().join("config/old.key"), "old\n");
-    std::os::unix::fs::symlink("old.key", &target).expect("existing symlink should be created");
+    symlink_file("old.key", &target);
     write_file(&config, r#"symlink = ["config/master.key"]"#);
 
     treeboot()
@@ -871,13 +881,9 @@ fn run_force_should_replace_existing_subdirectory_symlink() {
             "treeboot: symlink config/master.key -> config/master.key",
         ));
 
-    assert_eq!(
-        std::fs::canonicalize(&target).expect("target symlink should resolve"),
-        std::fs::canonicalize(&source).expect("source should resolve")
-    );
+    assert_eq!(canonical_path(&target), canonical_path(&source));
 }
 
-#[cfg(unix)]
 #[test]
 fn run_default_symlink_should_skip_broken_existing_subdirectory_symlink() {
     let repo = git_worktree();
@@ -887,7 +893,7 @@ fn run_default_symlink_should_skip_broken_existing_subdirectory_symlink() {
     std::fs::create_dir_all(source.parent().unwrap()).expect("source dir should be created");
     std::fs::create_dir_all(target.parent().unwrap()).expect("target dir should be created");
     write_file(&source, "new\n");
-    std::os::unix::fs::symlink("missing.key", &target).expect("broken symlink should be created");
+    symlink_file("missing.key", &target);
     write_file(&config, r#"symlink = ["config/master.key"]"#);
 
     treeboot()
@@ -905,7 +911,6 @@ fn run_default_symlink_should_skip_broken_existing_subdirectory_symlink() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn run_dry_run_symlink_should_handle_existing_and_missing_subdirectory_targets() {
     let repo = git_worktree();
@@ -920,8 +925,7 @@ fn run_dry_run_symlink_should_handle_existing_and_missing_subdirectory_targets()
         .expect("target dir should be created");
     write_file(&existing_source, "secret\n");
     write_file(&missing_target_source, "other\n");
-    std::os::unix::fs::symlink(&existing_source, &existing_target)
-        .expect("existing symlink should be created");
+    symlink_file(&existing_source, &existing_target);
     write_file(
         &config,
         r#"symlink = ["config/master.key", "config/other.key"]"#,
@@ -940,13 +944,12 @@ fn run_dry_run_symlink_should_handle_existing_and_missing_subdirectory_targets()
         ));
 
     assert_eq!(
-        std::fs::canonicalize(&existing_target).expect("target symlink should resolve"),
-        std::fs::canonicalize(&existing_source).expect("source should resolve")
+        canonical_path(&existing_target),
+        canonical_path(&existing_source)
     );
     assert!(std::fs::symlink_metadata(missing_target).is_err());
 }
 
-#[cfg(unix)]
 #[test]
 fn run_dangerous_source_option_should_skip_optional_missing_outside_symlink_source() {
     let repo = git_worktree();
@@ -976,7 +979,6 @@ symlink = [{{ source = "{}", target = "outside.link" }}]
     assert!(std::fs::symlink_metadata(repo.worktree_path().join("outside.link")).is_err());
 }
 
-#[cfg(unix)]
 #[test]
 fn run_dangerous_source_option_should_reject_required_missing_outside_symlink_source() {
     let repo = git_worktree();
@@ -1004,7 +1006,6 @@ symlink = [{{ source = "{}", target = "outside.link", required = true }}]
     assert!(std::fs::symlink_metadata(repo.worktree_path().join("outside.link")).is_err());
 }
 
-#[cfg(unix)]
 #[test]
 fn run_dangerous_target_option_should_create_nested_parent_dirs_outside_worktree() {
     let repo = git_worktree();
@@ -1031,13 +1032,9 @@ symlink = [{{ source = "source", target = "{}" }}]
         .success()
         .stdout(predicate::str::contains("treeboot: symlink source ->"));
 
-    assert_eq!(
-        std::fs::canonicalize(&target).expect("target symlink should resolve"),
-        std::fs::canonicalize(&source).expect("source should resolve")
-    );
+    assert_eq!(canonical_path(&target), canonical_path(&source));
 }
 
-#[cfg(unix)]
 #[test]
 fn run_dangerous_target_option_should_reject_existing_directory_target_outside_worktree() {
     let repo = git_worktree();
@@ -1131,7 +1128,6 @@ fn run_command_env_owned_override_should_exit_with_config_error() {
         ));
 }
 
-#[cfg(unix)]
 #[test]
 fn run_unsafe_source_symlink_should_exit_with_config_error() {
     let repo = git_worktree();
@@ -1139,8 +1135,7 @@ fn run_unsafe_source_symlink_should_exit_with_config_error() {
     let source_dir = repo.root_path().join("shared");
     let outside = tempfile::NamedTempFile::new().expect("outside file should be created");
     std::fs::create_dir_all(&source_dir).expect("source dir should be created");
-    std::os::unix::fs::symlink(outside.path(), source_dir.join("outside"))
-        .expect("source symlink should be created");
+    symlink_file(outside.path(), source_dir.join("outside"));
     write_file(
         &config,
         r#"copy = [{ source = "shared", target = "shared" }]"#,
@@ -1617,18 +1612,9 @@ args = ["-c", "printf '%s\n' \"$LOCAL_VALUE\" > {}"]
     let first = std::fs::read_to_string(first).expect("first marker should be readable");
     let lines = first.lines().collect::<Vec<_>>();
     assert_eq!(lines[0], "local");
-    let root = std::fs::canonicalize(repo.root_path())
-        .expect("root should canonicalize")
-        .display()
-        .to_string();
-    let worktree = std::fs::canonicalize(repo.worktree_path())
-        .expect("worktree should canonicalize")
-        .display()
-        .to_string();
-    let app = std::fs::canonicalize(app)
-        .expect("app should canonicalize")
-        .display()
-        .to_string();
+    let root = canonical_path(repo.root_path()).display().to_string();
+    let worktree = canonical_path(repo.worktree_path()).display().to_string();
+    let app = canonical_path(&app).display().to_string();
     assert_eq!(lines[1], root);
     assert_eq!(lines[2], worktree);
     assert_eq!(lines[3], app);
@@ -1894,15 +1880,13 @@ fn run_default_copy_should_skip_existing_target() {
     assert_eq!(existing, "old\n");
 }
 
-#[cfg(unix)]
 #[test]
 fn run_copied_symlink_should_warn_when_final_target_is_missing() {
     let repo = git_worktree();
     let config = repo.worktree_path().join(".treeboot.toml");
     std::fs::create_dir_all(repo.root_path().join("shared")).expect("source dir should be created");
     write_file(&repo.root_path().join("shared/config"), "value\n");
-    std::os::unix::fs::symlink("config", repo.root_path().join("shared/link"))
-        .expect("source symlink should be created");
+    symlink_file("config", repo.root_path().join("shared/link"));
     write_file(
         &config,
         r#"copy = [{ source = "shared/link", target = "shared/link" }]"#,
@@ -1922,7 +1906,6 @@ fn run_copied_symlink_should_warn_when_final_target_is_missing() {
     assert_eq!(link, std::path::PathBuf::from("config"));
 }
 
-#[cfg(unix)]
 #[test]
 fn run_symlink_should_create_relative_symlink() {
     let repo = git_worktree();
@@ -1943,14 +1926,12 @@ fn run_symlink_should_create_relative_symlink() {
         .stdout(predicate::str::contains("treeboot: symlink tool -> .tool"));
 
     let link = std::fs::read_link(&target).expect("target should be a symlink");
-    let resolved = std::fs::canonicalize(target.parent().unwrap().join(&link))
-        .expect("relative symlink should resolve");
-    let expected = std::fs::canonicalize(source).expect("source should resolve");
+    let resolved = canonical_path(&target.parent().unwrap().join(&link));
+    let expected = canonical_path(&source);
     assert!(!link.is_absolute());
     assert_eq!(resolved, expected);
 }
 
-#[cfg(unix)]
 #[test]
 fn run_symlink_should_allow_existing_link_to_root_source_in_subdirectory() {
     let repo = git_worktree();
@@ -1960,7 +1941,7 @@ fn run_symlink_should_allow_existing_link_to_root_source_in_subdirectory() {
     std::fs::create_dir_all(source.parent().unwrap()).expect("source dir should be created");
     std::fs::create_dir_all(target.parent().unwrap()).expect("target dir should be created");
     write_file(&source, "secret\n");
-    std::os::unix::fs::symlink(&source, &target).expect("existing symlink should be created");
+    symlink_file(&source, &target);
     write_file(&config, r#"symlink = ["config/master.key"]"#);
 
     treeboot()
@@ -1978,13 +1959,9 @@ fn run_symlink_should_allow_existing_link_to_root_source_in_subdirectory() {
             .file_type()
             .is_symlink()
     );
-    assert_eq!(
-        std::fs::canonicalize(&target).expect("target symlink should resolve"),
-        std::fs::canonicalize(&source).expect("source should resolve")
-    );
+    assert_eq!(canonical_path(&target), canonical_path(&source));
 }
 
-#[cfg(unix)]
 #[test]
 fn run_file_operations_should_apply_sources_in_subdirectories() {
     let repo = git_worktree();
@@ -2031,9 +2008,8 @@ sync = ["shared/config"]
         "TOKEN=1\n"
     );
     assert_eq!(
-        std::fs::canonicalize(repo.worktree_path().join("config/master.key"))
-            .expect("symlink should resolve"),
-        std::fs::canonicalize(symlink_source).expect("symlink source should resolve")
+        canonical_path(&repo.worktree_path().join("config/master.key")),
+        canonical_path(&symlink_source)
     );
     assert_eq!(
         std::fs::read_to_string(repo.worktree_path().join("shared/config"))
@@ -2065,7 +2041,7 @@ fn root_option_should_set_script_root_env() {
         .success();
 
     let script_output = std::fs::read_to_string(output).expect("script output should exist");
-    let root_path = std::fs::canonicalize(root.path()).expect("root should normalize");
+    let root_path = canonical_path(root.path());
     assert_eq!(script_output, format!("{}\n", root_path.display()));
 }
 
@@ -2115,9 +2091,8 @@ fn executable_init_script_should_win_over_missing_config() {
         .stdout(predicate::str::contains("treeboot: run"));
 
     let script_output = std::fs::read_to_string(output).expect("script output should exist");
-    let root_path = std::fs::canonicalize(repo.root_path()).expect("root path should normalize");
-    let worktree_path =
-        std::fs::canonicalize(repo.worktree_path()).expect("worktree path should normalize");
+    let root_path = canonical_path(repo.root_path());
+    let worktree_path = canonical_path(repo.worktree_path());
     let expected = format!("{}:{}\n", root_path.display(), worktree_path.display());
     assert_eq!(script_output, expected);
 }
