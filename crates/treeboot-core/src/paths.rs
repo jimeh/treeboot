@@ -7,7 +7,7 @@ pub(crate) fn canonicalize(path: &Path) -> std::io::Result<PathBuf> {
 pub(crate) fn normalize_maybe_existing(path: &Path) -> std::io::Result<PathBuf> {
     match canonicalize(path) {
         Ok(path) => return Ok(path),
-        Err(source) if source.kind() != std::io::ErrorKind::NotFound => {
+        Err(source) if !missing_path_error(&source) => {
             return Err(source);
         }
         Err(_) => {}
@@ -19,6 +19,7 @@ pub(crate) fn normalize_maybe_existing(path: &Path) -> std::io::Result<PathBuf> 
         match ancestor.try_exists() {
             Ok(true) => break,
             Ok(false) => {}
+            Err(source) if missing_path_error(&source) => {}
             Err(source) => return Err(source),
         }
 
@@ -38,6 +39,18 @@ pub(crate) fn normalize_maybe_existing(path: &Path) -> std::io::Result<PathBuf> 
     normalized.push(suffix);
 
     Ok(normalize_lexical(&normalized))
+}
+
+/// Returns whether an I/O error means the inspected path cannot exist.
+///
+/// Windows rejects paths containing glob metacharacters such as `*` with
+/// `ERROR_INVALID_NAME` instead of a not-found error. Such paths can never
+/// exist, so they normalize lexically like missing paths.
+pub(crate) fn missing_path_error(error: &std::io::Error) -> bool {
+    matches!(
+        error.kind(),
+        std::io::ErrorKind::NotFound | std::io::ErrorKind::InvalidFilename
+    )
 }
 
 pub(crate) fn normalize_lexical(path: &Path) -> PathBuf {
@@ -157,5 +170,17 @@ mod tests {
             error.reason(),
             "root-relative paths without a drive or share are not supported"
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn normalize_maybe_existing_should_treat_invalid_names_as_missing() {
+        let base = std::env::temp_dir();
+        let path = base.join("treeboot-paths-invalid").join("certs/*.pem");
+
+        let normalized =
+            normalize_maybe_existing(&path).expect("glob metacharacters should normalize");
+
+        assert!(normalized.ends_with(Path::new("certs/*.pem")));
     }
 }

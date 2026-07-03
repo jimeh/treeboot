@@ -1380,7 +1380,7 @@ fn source_exists(
 ) -> Result<bool> {
     match std::fs::symlink_metadata(source_path) {
         Ok(_) => Ok(true),
-        Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(source) if paths::missing_path_error(&source) => Ok(false),
         Err(source) => Err(file_plan_error(
             origin,
             Some(operation.declaration),

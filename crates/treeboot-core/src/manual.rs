@@ -28,6 +28,12 @@ pub struct ManualFileOperationOptions {
     pub required: bool,
     /// Expands glob source patterns into matched sources.
     pub glob: bool,
+    /// Allows glob source pattern bases outside the root checkout.
+    ///
+    /// Expansion never walks directories outside `TREEBOOT_ROOT_PATH` unless
+    /// this is enabled. Expanded operations are still subject to per-source
+    /// boundary validation when the plan is built.
+    pub dangerously_allow_sources_outside_root: bool,
     /// How copy and sync should treat source symlinks.
     pub symlinks: Option<SymlinkMode>,
     /// Sync comparison mode.
@@ -48,6 +54,7 @@ impl Default for ManualFileOperationOptions {
             target: None,
             required: false,
             glob: true,
+            dangerously_allow_sources_outside_root: false,
             symlinks: None,
             compare: None,
             delete: None,
@@ -275,6 +282,7 @@ pub fn run_file_operation(
         target,
         required,
         glob,
+        dangerously_allow_sources_outside_root: false,
         symlinks,
         compare,
         delete,
@@ -314,6 +322,9 @@ pub fn run_file_operation(
         plan_options.default_ignore(),
         manual_options.ignore,
     );
+    manual_options.dangerously_allow_sources_outside_root = plan_options
+        .action_plan_options()
+        .dangerously_allow_sources_outside_root;
     let strict = plan_options.strict();
     let operations = FileOperation::from_manual_options(&context, manual_options)?;
     let plan = ActionPlan::from_file_operations(
@@ -406,10 +417,21 @@ fn manual_operations(
         target,
         required,
         glob,
+        dangerously_allow_sources_outside_root,
         ignore,
         ..
     } = options;
-    let sources = expand_manual_sources(operation, sources, context, required, glob, &ignore)?;
+    let sources = expand_manual_sources(
+        operation,
+        sources,
+        context,
+        &ManualGlobPolicy {
+            required,
+            glob,
+            dangerously_allow_sources_outside_root,
+        },
+        &ignore,
+    )?;
     let multiple_sources = sources.len() > 1;
     let target_explicit = target.is_some();
     sources
@@ -460,18 +482,24 @@ fn manual_operations(
 /// ignore prefix, which is empty for literal sources. Optional patterns with
 /// no matches are kept as literal source values so they follow normal
 /// missing-source skip semantics.
+#[derive(Debug, Clone, Copy)]
+struct ManualGlobPolicy {
+    required: bool,
+    glob: bool,
+    dangerously_allow_sources_outside_root: bool,
+}
+
 fn expand_manual_sources(
     operation: FileOperationKind,
     sources: Vec<PathBuf>,
     context: &Worktree,
-    required: bool,
-    glob: bool,
+    policy: &ManualGlobPolicy,
     ignore: &[String],
 ) -> Result<Vec<(PathBuf, PathBuf)>> {
     let mut expanded = Vec::with_capacity(sources.len());
 
     for source in sources {
-        if !glob || !glob::is_glob_source(&source) {
+        if !policy.glob || !glob::is_glob_source(&source) {
             expanded.push((source, PathBuf::new()));
             continue;
         }
@@ -507,6 +535,7 @@ fn expand_manual_sources(
                     )
                 })
             })?;
+        validate_manual_glob_base(operation, context, policy, &source, &base_path)?;
         let ignore_rules = manual_glob_ignore_rules(operation, &source, &base_path, ignore)?;
         let matches = glob::expand_glob_source(&base_path, &split, ignore_rules.as_ref()).map_err(
             |error| {
@@ -521,7 +550,7 @@ fn expand_manual_sources(
         )?;
 
         if matches.is_empty() {
-            if required {
+            if policy.required {
                 return invalid_manual(
                     operation,
                     format!(
@@ -541,6 +570,35 @@ fn expand_manual_sources(
     }
 
     Ok(expanded)
+}
+
+/// Rejects glob pattern bases outside the root checkout before expansion
+/// walks them, unless sources outside the root are explicitly allowed.
+fn validate_manual_glob_base(
+    operation: FileOperationKind,
+    context: &Worktree,
+    policy: &ManualGlobPolicy,
+    source: &Path,
+    base_path: &Path,
+) -> Result<()> {
+    if policy.dangerously_allow_sources_outside_root {
+        return Ok(());
+    }
+
+    let root_path = paths::normalize_maybe_existing(&context.root_path).map_err(|error| {
+        manual_error(operation, format!("failed to resolve root path: {error}"))
+    })?;
+    if base_path != root_path && !base_path.starts_with(&root_path) {
+        return invalid_manual(
+            operation,
+            format!(
+                "source resolves outside root for glob source pattern `{}`",
+                source.display()
+            ),
+        );
+    }
+
+    Ok(())
 }
 
 fn manual_glob_ignore_rules(
@@ -1339,5 +1397,46 @@ mod tests {
 
         assert_eq!(operations.len(), 1);
         assert_eq!(operations[0].source, PathBuf::from("certs/*.pem"));
+    }
+
+    #[test]
+    fn manual_operations_should_reject_glob_bases_outside_root_before_expansion() {
+        let (root, worktree) = temp_workspace("glob-outside-base");
+        let base = root.parent().expect("root should have parent");
+        std::fs::create_dir_all(base.join("outside")).expect("dirs should be created");
+        std::fs::write(base.join("outside/a.pem"), "a").expect("file should be written");
+        let context = context(&root, &worktree);
+        let options = options(FileOperationKind::Copy, &["../outside/*.pem"]);
+
+        let error = FileOperation::from_manual_options(&context, options)
+            .expect_err("outside glob base should fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("source resolves outside root for glob source pattern"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn manual_operations_should_expand_outside_glob_bases_with_dangerous_override() {
+        let (root, worktree) = temp_workspace("glob-outside-base-allowed");
+        let base = root.parent().expect("root should have parent");
+        std::fs::create_dir_all(base.join("outside")).expect("dirs should be created");
+        std::fs::write(base.join("outside/a.pem"), "a").expect("file should be written");
+        let context = context(&root, &worktree);
+        let mut options = options(FileOperationKind::Copy, &["../outside/*.pem"]);
+        options.dangerously_allow_sources_outside_root = true;
+        options.target = Some(PathBuf::from("out.pem"));
+
+        let operations = FileOperation::from_manual_options(&context, options)
+            .expect("outside glob base should expand with the dangerous override");
+
+        assert_eq!(operations.len(), 1);
+        assert_eq!(
+            operations[0].source,
+            PathBuf::from("../outside").join("a.pem")
+        );
     }
 }

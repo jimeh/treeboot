@@ -1147,3 +1147,37 @@ fn copy_should_drop_glob_matches_ignored_at_pattern_base() {
         "keep\n"
     );
 }
+
+#[test]
+fn copy_should_reject_outside_root_glob_bases_before_expansion() {
+    let repo = git_worktree();
+    let outside = repo
+        .root_path()
+        .parent()
+        .expect("root should have parent")
+        .join("outside-globs");
+    std::fs::create_dir_all(&outside).expect("outside directory should be created");
+    write_file(&outside.join("a.pem"), "a\n");
+
+    treeboot()
+        .args(["copy", "../outside-globs/*.pem"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "source resolves outside root for glob source pattern",
+        ));
+
+    treeboot()
+        .args(["copy", "../outside-globs/*.pem", "--target", "out.pem"])
+        .env("TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT", "true")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("out.pem"))
+            .expect("allowed outside glob should copy"),
+        "a\n"
+    );
+}
