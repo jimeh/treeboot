@@ -1116,10 +1116,7 @@ fn copy_should_skip_optional_glob_sources_without_matches() {
         .current_dir(repo.worktree_path())
         .assert()
         .success()
-        .stdout(predicate::str::contains(format!(
-            "skip copy {}",
-            display_path("missing/*.pem")
-        )))
+        .stdout(predicate::str::contains("skip copy missing/*.pem"))
         .stdout(predicate::str::contains("missing source"));
 }
 
