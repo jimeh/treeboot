@@ -1282,7 +1282,8 @@ A pattern's base is its longest leading run of path components without glob
 metacharacters. `traefik/certs/*.pem` has base `traefik/certs` and
 `traefik/**/*.pem` has base `traefik`. The base resolves like a literal source
 path: relative patterns resolve from `TREEBOOT_ROOT_PATH` and absolute patterns
-keep their absolute base. `.` and `..` components are rejected after the base.
+keep their absolute base. `..` components are rejected after the base; `.`
+components normalize away lexically.
 
 During validation, each pattern expands into independent file operations, one
 per matched file, directory, or symlink, ordered lexicographically by matched

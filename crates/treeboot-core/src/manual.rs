@@ -1439,4 +1439,34 @@ mod tests {
             PathBuf::from("../outside").join("a.pem")
         );
     }
+
+    #[test]
+    fn manual_operations_should_reject_invalid_glob_patterns() {
+        let (root, worktree) = temp_workspace("glob-invalid-pattern");
+        let context = context(&root, &worktree);
+        let options = options(FileOperationKind::Copy, &["certs/[ab"]);
+
+        let error = FileOperation::from_manual_options(&context, options)
+            .expect_err("invalid pattern should fail");
+
+        assert!(
+            error.to_string().contains("invalid glob pattern"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn manual_operations_should_reject_parent_components_after_glob_patterns() {
+        let (root, worktree) = temp_workspace("glob-parent-after-pattern");
+        let context = context(&root, &worktree);
+        let options = options(FileOperationKind::Copy, &["certs/*/../other"]);
+
+        let error = FileOperation::from_manual_options(&context, options)
+            .expect_err("parent component should fail");
+
+        assert!(
+            error.to_string().contains("invalid glob source pattern"),
+            "unexpected error: {error}"
+        );
+    }
 }

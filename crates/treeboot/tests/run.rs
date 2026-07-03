@@ -2494,3 +2494,66 @@ fn run_should_fail_required_glob_config_patterns_without_matches() {
             "no sources match required glob source pattern",
         ));
 }
+
+#[test]
+fn run_should_anchor_glob_sync_delete_ignores_at_pattern_base() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("cfg/a")).expect("source dirs created");
+    write_file(&repo.root_path().join("cfg/a/file"), "a\n");
+    std::fs::create_dir_all(repo.worktree_path().join("out/a")).expect("target dirs created");
+    write_file(&repo.worktree_path().join("out/a/stale"), "stale\n");
+    write_file(&repo.worktree_path().join("out/a/preserved"), "keep\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"sync = [{ source = "cfg/*", target = "out", delete = true, ignore = ["*/preserved"] }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert!(
+        !repo.worktree_path().join("out/a/stale").exists(),
+        "unignored target-only files should be deleted"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("out/a/preserved"))
+            .expect("base-anchored ignore should preserve target-only files"),
+        "keep\n"
+    );
+}
+
+#[test]
+fn run_should_expand_glob_symlink_config_sources() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("bin")).expect("source dirs created");
+    write_file(&repo.root_path().join("bin/tool-a"), "a\n");
+    write_file(&repo.root_path().join("bin/tool-b"), "b\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"symlink = ["bin/tool-*"]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    for name in ["tool-a", "tool-b"] {
+        let link = repo.worktree_path().join("bin").join(name);
+        assert!(
+            link.symlink_metadata()
+                .expect("expanded symlink should exist")
+                .file_type()
+                .is_symlink(),
+            "{name} should be a symlink"
+        );
+        assert_eq!(
+            canonical_path(&link),
+            canonical_path(&repo.root_path().join("bin").join(name))
+        );
+    }
+}

@@ -2742,4 +2742,93 @@ copy = ["cfg/*"]
             "negated ignore patterns must not add paths the glob never matched"
         );
     }
+
+    #[test]
+    fn action_plan_should_expand_bare_glob_patterns_from_root() {
+        let (root, worktree) = temp_workspace("glob-bare-pattern");
+        std::fs::write(root.join("a.pem"), "a").expect("file should be written");
+        std::fs::write(root.join("b.txt"), "b").expect("file should be written");
+        let config = parse_manifest(
+            r#"copy = [{ source = "*.pem", target = "out" }]"#,
+            &root,
+            &worktree,
+        );
+
+        let plan = plan(&config, &root, &worktree).expect("bare pattern should plan");
+
+        assert_eq!(
+            planned_sources_and_targets(&plan),
+            vec![("a.pem".to_owned(), "out/a.pem".to_owned())]
+        );
+    }
+
+    #[test]
+    fn action_plan_should_reject_parent_components_after_glob_patterns() {
+        let (root, worktree) = temp_workspace("glob-parent-after-pattern");
+        let config = parse_manifest(r#"copy = ["certs/*/../other"]"#, &root, &worktree);
+
+        let error = plan(&config, &root, &worktree).expect_err("parent component should fail");
+
+        assert!(
+            error.to_string().contains("invalid glob source pattern"),
+            "unexpected error: {error}"
+        );
+        assert!(
+            error.to_string().contains("`..`"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn action_plan_should_skip_ignored_unsafe_symlinks_inside_glob_directory_matches() {
+        let (root, worktree) = temp_workspace("glob-dir-unsafe-symlink");
+        let base = root.parent().expect("root should have parent");
+        std::fs::write(base.join("outside-file"), "o").expect("file should be written");
+        std::fs::create_dir_all(root.join("cfg/sub")).expect("dirs should be created");
+        std::fs::write(root.join("cfg/sub/safe"), "s").expect("file should be written");
+        symlink_file(base.join("outside-file"), root.join("cfg/sub/bad"))
+            .expect("symlink should be created");
+        let config = parse_manifest(
+            r#"copy = [{ source = "cfg/*", target = "out" }]"#,
+            &root,
+            &worktree,
+        );
+
+        let error = plan(&config, &root, &worktree)
+            .expect_err("unsafe symlink inside matched directory should fail");
+        assert!(
+            error.to_string().contains("unsafe symlink"),
+            "unexpected error: {error}"
+        );
+
+        let config = parse_manifest(
+            r#"copy = [{ source = "cfg/*", target = "out", ignore = ["sub/bad"] }]"#,
+            &root,
+            &worktree,
+        );
+        let plan = plan(&config, &root, &worktree)
+            .expect("base-anchored ignore should skip the unsafe symlink");
+
+        assert_eq!(plan.files.len(), 1);
+        assert_eq!(plan.files[0].status(), PlannedFileStatus::Ready);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn action_plan_should_copy_literal_metacharacter_files_with_glob_disabled() {
+        let (root, worktree) = temp_workspace("glob-literal-file");
+        std::fs::create_dir_all(root.join("certs")).expect("dirs should be created");
+        std::fs::write(root.join("certs/*.pem"), "literal").expect("file should be written");
+        let config = parse_manifest(
+            r#"copy = [{ source = "certs/*.pem", target = "out.pem", glob = false }]"#,
+            &root,
+            &worktree,
+        );
+
+        let plan = plan(&config, &root, &worktree).expect("literal source should plan");
+
+        assert_eq!(plan.files.len(), 1);
+        assert_eq!(plan.files[0].status(), PlannedFileStatus::Ready);
+        assert_eq!(plan.files[0].target(), Path::new("out.pem"));
+    }
 }

@@ -33,7 +33,7 @@ pub(crate) struct SplitGlobSource {
 /// caller boundary.
 #[derive(Debug)]
 pub(crate) enum GlobSourceError {
-    /// The pattern contains a `.` or `..` component after the base.
+    /// The pattern contains a `..` component after the base.
     UnsupportedComponent(&'static str),
     /// A pattern component is not valid UTF-8.
     NotUtf8,
@@ -67,8 +67,8 @@ impl std::fmt::Display for GlobSourceError {
 /// Splits a glob source into its literal base and pattern components.
 ///
 /// The base is the longest leading run of path components without glob
-/// metacharacters. `.` and `..` components are rejected after the first
-/// pattern component.
+/// metacharacters. `..` components are rejected after the first pattern
+/// component; `.` components normalize away.
 pub(crate) fn split_glob_source(source: &Path) -> Result<SplitGlobSource, GlobSourceError> {
     let mut base = PathBuf::new();
     let mut components = Vec::new();
@@ -87,9 +87,10 @@ pub(crate) fn split_glob_source(source: &Path) -> Result<SplitGlobSource, GlobSo
                 let value = value.to_str().ok_or(GlobSourceError::NotUtf8)?;
                 components.push(value.to_owned());
             }
-            Component::CurDir if components.is_empty() => {}
+            // `Path::components` normalizes away non-leading `.` components,
+            // so `.` never needs rejection after the pattern starts.
+            Component::CurDir => {}
             Component::ParentDir if components.is_empty() => base.push(component),
-            Component::CurDir => return Err(GlobSourceError::UnsupportedComponent(".")),
             Component::ParentDir => return Err(GlobSourceError::UnsupportedComponent("..")),
             Component::Prefix(_) | Component::RootDir => base.push(component),
         }
@@ -438,5 +439,42 @@ mod tests {
 
         assert_eq!(split.base, PathBuf::from("traefik").join("certs"));
         assert_eq!(split.components, vec!["*.pem".to_owned()]);
+    }
+
+    #[test]
+    fn split_glob_source_should_normalize_current_dir_components() {
+        let split = split("certs/*/./other");
+
+        assert_eq!(split.base, PathBuf::from("certs"));
+        assert_eq!(split.components, vec!["*".to_owned(), "other".to_owned()]);
+    }
+
+    #[test]
+    fn expand_glob_source_should_match_literal_components_between_patterns() {
+        let base = temp_base("literal-middle");
+        std::fs::create_dir_all(base.join("a/keep")).expect("dirs should be created");
+        std::fs::create_dir_all(base.join("b/skip")).expect("dirs should be created");
+        std::fs::write(base.join("a/keep/x.pem"), "x").expect("file should be written");
+        std::fs::write(base.join("b/skip/y.pem"), "y").expect("file should be written");
+        std::fs::create_dir_all(base.join("a/keep/deeper")).expect("dirs should be created");
+        std::fs::write(base.join("a/keep/deeper/z.pem"), "z").expect("file should be written");
+
+        assert_eq!(
+            expand(&base, "*/keep/*.pem"),
+            vec!["a/keep/x.pem"],
+            "only paths matching every component at the right depth should match"
+        );
+    }
+
+    #[test]
+    fn expand_glob_source_should_match_case_sensitively() {
+        let base = temp_base("case-sensitive");
+        std::fs::write(base.join("Upper.pem"), "u").expect("file should be written");
+
+        assert!(
+            expand(&base, "upper*").is_empty(),
+            "patterns must not match case-insensitively, even on case-insensitive filesystems"
+        );
+        assert_eq!(expand(&base, "Upper*"), vec!["Upper.pem"]);
     }
 }
