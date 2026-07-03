@@ -574,7 +574,13 @@ pub(super) fn plan_file_operations(
             ExpandedFileEntry::Active(_) => Ok(planned
                 .next()
                 .unwrap_or_else(|| unreachable!("planned operations match active entries"))),
-            ExpandedFileEntry::SkippedPattern(operation) => plan_skipped_pattern(origin, operation),
+            ExpandedFileEntry::SkippedPattern(operation) => plan_skipped_pattern(
+                origin,
+                operation,
+                options,
+                context.worktree_path.as_path(),
+                worktree_path.as_path(),
+            ),
         })
         .collect()
 }
@@ -655,7 +661,7 @@ fn expand_glob_file_operation(
     }
 
     let ignore_rules = glob_ignore_rules(origin, operation, &base_path)?;
-    let matches =
+    let expansion =
         glob::expand_glob_source(&base_path, &split, ignore_rules.as_ref()).map_err(|source| {
             file_plan_error(
                 origin,
@@ -667,7 +673,14 @@ fn expand_glob_file_operation(
             )
         })?;
 
-    if matches.is_empty() {
+    if expansion.matches.is_empty() {
+        // Matches dropped by ignore rules are an explicit exclusion, not a
+        // missing source: the operation expands to no file operations and
+        // `required` is satisfied.
+        if expansion.ignored_matches > 0 {
+            return Ok(Vec::new());
+        }
+
         if operation.required {
             return invalid_file_plan(
                 origin,
@@ -682,7 +695,8 @@ fn expand_glob_file_operation(
         return Ok(vec![ExpandedFileEntry::SkippedPattern(operation.clone())]);
     }
 
-    matches
+    expansion
+        .matches
         .into_iter()
         .map(|entry| {
             let source = split.base.join(&entry.relative);
@@ -752,9 +766,18 @@ fn glob_ignore_rules(
         })
 }
 
+/// Plans an optional glob pattern with no matches as a skipped operation.
+///
+/// Skipped patterns are excluded from duplicate/overlap target conflicts
+/// because their literal pattern target is an artifact of the declaration,
+/// but their targets still go through the same parent-component and
+/// worktree-boundary validation as every other file operation.
 fn plan_skipped_pattern(
     origin: FilePlanOrigin<'_>,
     operation: FileOperation,
+    options: ActionPlanOptions,
+    worktree_path: &Path,
+    normalized_worktree_path: &Path,
 ) -> Result<PlannedFileOperation> {
     let source_path = normalize_maybe_existing(&operation.source_path).map_err(|source| {
         file_plan_error(
@@ -766,16 +789,21 @@ fn plan_skipped_pattern(
             ),
         )
     })?;
-    let target_path = normalize_target_path(&operation.target_path).map_err(|source| {
-        file_plan_error(
-            origin,
-            Some(operation.declaration),
-            format!(
-                "failed to resolve target {}: {source}",
-                operation.target.display()
-            ),
-        )
-    })?;
+    let target_path = normalize_target_paths(
+        origin,
+        std::slice::from_ref(&operation),
+        worktree_path,
+        normalized_worktree_path,
+    )?
+    .pop()
+    .unwrap_or_else(|| unreachable!("one operation normalizes to one target"));
+    validate_target_boundary(
+        origin,
+        options,
+        &operation,
+        &target_path,
+        normalized_worktree_path,
+    )?;
 
     Ok(PlannedFileOperation {
         operation: operation.operation,
@@ -2830,5 +2858,59 @@ copy = ["cfg/*"]
         assert_eq!(plan.files.len(), 1);
         assert_eq!(plan.files[0].status(), PlannedFileStatus::Ready);
         assert_eq!(plan.files[0].target(), Path::new("out.pem"));
+    }
+
+    #[test]
+    fn action_plan_should_validate_targets_of_skipped_glob_patterns() {
+        let (root, worktree) = temp_workspace("glob-skipped-target-boundary");
+        let config = parse_manifest(
+            r#"copy = [{ source = "missing/*.pem", target = "../outside" }]"#,
+            &root,
+            &worktree,
+        );
+
+        let error = plan(&config, &root, &worktree)
+            .expect_err("skipped pattern targets must stay inside the worktree");
+        assert!(
+            error
+                .to_string()
+                .contains("target resolves outside worktree"),
+            "unexpected error: {error}"
+        );
+
+        let plan = ActionPlan::from_manifest(
+            Path::new(".treeboot.toml"),
+            &config,
+            &context(&root, &worktree),
+            ActionPlanOptions {
+                dangerously_allow_targets_outside_worktree: true,
+                ..ActionPlanOptions::default()
+            },
+        )
+        .expect("outside target should plan with the dangerous override");
+        assert_eq!(
+            plan.files[0].status(),
+            PlannedFileStatus::SkippedMissingSource
+        );
+    }
+
+    #[test]
+    fn action_plan_should_expand_all_ignored_patterns_to_no_operations() {
+        let (root, worktree) = temp_workspace("glob-all-ignored");
+        std::fs::create_dir_all(root.join("certs")).expect("dirs should be created");
+        std::fs::write(root.join("certs/foo.pem"), "f").expect("file should be written");
+        let config = parse_manifest(
+            r#"copy = [{ source = "certs/*.pem", ignore = ["foo.pem"], required = true }]"#,
+            &root,
+            &worktree,
+        );
+
+        let plan =
+            plan(&config, &root, &worktree).expect("all-ignored matches should satisfy required");
+
+        assert!(
+            plan.files.is_empty(),
+            "ignored matches are explicit exclusions, not missing sources"
+        );
     }
 }

@@ -1088,22 +1088,23 @@ fn copy_should_expand_multiple_glob_source_arguments() {
 }
 
 #[test]
-fn copy_should_use_exact_target_for_single_glob_match() {
+fn copy_should_use_stable_target_prefix_for_single_glob_match() {
     let repo = git_worktree();
     std::fs::create_dir_all(repo.root_path().join("certs"))
         .expect("source directory should be created");
     write_file(&repo.root_path().join("certs/only.pem"), "only\n");
 
     treeboot()
-        .args(["copy", "certs/*.pem", "--target", "local/cert.pem"])
+        .args(["copy", "certs/*.pem", "--target", "local"])
         .current_dir(repo.worktree_path())
         .assert()
         .success();
 
     assert_eq!(
-        std::fs::read_to_string(repo.worktree_path().join("local/cert.pem"))
-            .expect("single match should use the exact target"),
-        "only\n"
+        std::fs::read_to_string(repo.worktree_path().join("local/certs/only.pem"))
+            .expect("single match should use the target prefix rule"),
+        "only\n",
+        "a pattern's target mapping must not change when more files appear"
     );
 }
 
@@ -1166,14 +1167,14 @@ fn copy_should_reject_outside_root_glob_bases_before_expansion() {
         ));
 
     treeboot()
-        .args(["copy", "../outside-globs/*.pem", "--target", "out.pem"])
+        .args(["copy", "../outside-globs/*.pem", "--target", "local/deep"])
         .env("TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT", "true")
         .current_dir(repo.worktree_path())
         .assert()
         .success();
 
     assert_eq!(
-        std::fs::read_to_string(repo.worktree_path().join("out.pem"))
+        std::fs::read_to_string(repo.worktree_path().join("local/outside-globs/a.pem"))
             .expect("allowed outside glob should copy"),
         "a\n"
     );

@@ -436,8 +436,21 @@ fn manual_operations(
     let target_explicit = target.is_some();
     sources
         .into_iter()
-        .map(|(source, ignore_prefix)| {
-            let target = manual_target(operation, &source, target.as_deref(), multiple_sources)?;
+        .map(|entry| {
+            let ExpandedManualSource {
+                source,
+                ignore_prefix,
+                expanded,
+            } = entry;
+            // Treeboot-expanded matches always use the multi-source target
+            // prefix rule, even for a single match, so a pattern's target
+            // mapping does not change when new files appear later.
+            let target = manual_target(
+                operation,
+                &source,
+                target.as_deref(),
+                multiple_sources || expanded,
+            )?;
             let source_path = resolve_path(
                 operation,
                 &context.root_path,
@@ -489,18 +502,39 @@ struct ManualGlobPolicy {
     dangerously_allow_sources_outside_root: bool,
 }
 
+/// A manual source value after glob expansion.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ExpandedManualSource {
+    /// Source value, either as passed or produced by expansion.
+    source: PathBuf,
+    /// Pattern-base-relative ignore prefix; empty for literal sources.
+    ignore_prefix: PathBuf,
+    /// Whether the value came from treeboot glob expansion.
+    expanded: bool,
+}
+
+impl ExpandedManualSource {
+    fn literal(source: PathBuf) -> Self {
+        Self {
+            source,
+            ignore_prefix: PathBuf::new(),
+            expanded: false,
+        }
+    }
+}
+
 fn expand_manual_sources(
     operation: FileOperationKind,
     sources: Vec<PathBuf>,
     context: &Worktree,
     policy: &ManualGlobPolicy,
     ignore: &[String],
-) -> Result<Vec<(PathBuf, PathBuf)>> {
+) -> Result<Vec<ExpandedManualSource>> {
     let mut expanded = Vec::with_capacity(sources.len());
 
     for source in sources {
         if !policy.glob || !glob::is_glob_source(&source) {
-            expanded.push((source, PathBuf::new()));
+            expanded.push(ExpandedManualSource::literal(source));
             continue;
         }
 
@@ -537,8 +571,8 @@ fn expand_manual_sources(
             })?;
         validate_manual_glob_base(operation, context, policy, &source, &base_path)?;
         let ignore_rules = manual_glob_ignore_rules(operation, &source, &base_path, ignore)?;
-        let matches = glob::expand_glob_source(&base_path, &split, ignore_rules.as_ref()).map_err(
-            |error| {
+        let expansion = glob::expand_glob_source(&base_path, &split, ignore_rules.as_ref())
+            .map_err(|error| {
                 manual_error(
                     operation,
                     format!(
@@ -546,10 +580,16 @@ fn expand_manual_sources(
                         source.display()
                     ),
                 )
-            },
-        )?;
+            })?;
 
-        if matches.is_empty() {
+        if expansion.matches.is_empty() {
+            // Matches dropped by ignore rules are an explicit exclusion, not
+            // a missing source: the pattern contributes no source values and
+            // `--required` is satisfied.
+            if expansion.ignored_matches > 0 {
+                continue;
+            }
+
             if policy.required {
                 return invalid_manual(
                     operation,
@@ -560,12 +600,16 @@ fn expand_manual_sources(
                 );
             }
 
-            expanded.push((source, PathBuf::new()));
+            expanded.push(ExpandedManualSource::literal(source));
             continue;
         }
 
-        for entry in matches {
-            expanded.push((split.base.join(&entry.relative), entry.relative));
+        for entry in expansion.matches {
+            expanded.push(ExpandedManualSource {
+                source: split.base.join(&entry.relative),
+                ignore_prefix: entry.relative,
+                expanded: true,
+            });
         }
     }
 
@@ -1333,13 +1377,13 @@ mod tests {
     }
 
     #[test]
-    fn manual_operations_should_use_exact_target_for_single_glob_match() {
+    fn manual_operations_should_use_target_prefix_for_single_glob_match() {
         let (root, worktree) = temp_workspace("glob-single-match");
         std::fs::create_dir_all(root.join("certs")).expect("dirs should be created");
         std::fs::write(root.join("certs/only.pem"), "o").expect("file should be written");
         let context = context(&root, &worktree);
         let mut options = options(FileOperationKind::Copy, &["certs/*.pem"]);
-        options.target = Some(PathBuf::from("local/cert.pem"));
+        options.target = Some(PathBuf::from("local"));
 
         let operations = FileOperation::from_manual_options(&context, options)
             .expect("glob source should normalize");
@@ -1349,7 +1393,30 @@ mod tests {
             operations[0].source,
             PathBuf::from("certs").join("only.pem")
         );
-        assert_eq!(operations[0].target, PathBuf::from("local/cert.pem"));
+        assert_eq!(
+            operations[0].target,
+            PathBuf::from("local").join("certs/only.pem"),
+            "expanded matches use the target prefix rule even for one match"
+        );
+    }
+
+    #[test]
+    fn manual_operations_should_expand_all_ignored_patterns_to_no_operations() {
+        let (root, worktree) = temp_workspace("glob-all-ignored");
+        std::fs::create_dir_all(root.join("certs")).expect("dirs should be created");
+        std::fs::write(root.join("certs/foo.pem"), "f").expect("file should be written");
+        let context = context(&root, &worktree);
+        let mut options = options(FileOperationKind::Copy, &["certs/*.pem"]);
+        options.required = true;
+        options.ignore = vec!["foo.pem".to_owned()];
+
+        let operations = FileOperation::from_manual_options(&context, options)
+            .expect("all-ignored matches should satisfy required");
+
+        assert!(
+            operations.is_empty(),
+            "ignored matches are explicit exclusions, not missing sources"
+        );
     }
 
     #[test]

@@ -2557,3 +2557,39 @@ fn run_should_expand_glob_symlink_config_sources() {
         );
     }
 }
+
+#[test]
+fn run_should_validate_targets_of_zero_match_glob_patterns() {
+    let repo = git_worktree();
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "missing/*.pem", target = "../outside" }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("target resolves outside worktree"));
+}
+
+#[test]
+fn run_should_treat_all_ignored_glob_matches_as_no_work() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("certs")).expect("source dirs created");
+    write_file(&repo.root_path().join("certs/foo.pem"), "f\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "certs/*.pem", ignore = ["foo.pem"], required = true }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("skip").not());
+
+    assert!(!repo.worktree_path().join("certs").exists());
+}

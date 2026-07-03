@@ -108,6 +108,17 @@ pub(crate) struct GlobSourceMatch {
     pub(crate) is_dir: bool,
 }
 
+/// Result of expanding a glob source against the filesystem.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GlobExpansion {
+    /// Matches kept after ignore filtering, ordered lexicographically by
+    /// base-relative path.
+    pub(crate) matches: Vec<GlobSourceMatch>,
+    /// Number of pattern matches dropped by ignore rules. Distinguishes a
+    /// pattern that matched nothing from one whose matches were all ignored.
+    pub(crate) ignored_matches: usize,
+}
+
 /// Expands a split glob source against the filesystem under `base_path`.
 ///
 /// Matches are ordered lexicographically by base-relative path. Matched
@@ -119,14 +130,17 @@ pub(crate) fn expand_glob_source(
     base_path: &Path,
     split: &SplitGlobSource,
     ignore: Option<&PathIgnoreRules>,
-) -> Result<Vec<GlobSourceMatch>, GlobSourceError> {
+) -> Result<GlobExpansion, GlobSourceError> {
     let matcher = build_matcher(&split.components)?;
     let max_depth = if split.components.iter().any(|component| component == "**") {
         None
     } else {
         Some(split.components.len())
     };
-    let mut matches = Vec::new();
+    let mut expansion = GlobExpansion {
+        matches: Vec::new(),
+        ignored_matches: 0,
+    };
 
     walk(
         &WalkContext {
@@ -137,11 +151,13 @@ pub(crate) fn expand_glob_source(
         base_path,
         Path::new(""),
         1,
-        &mut matches,
+        &mut expansion,
     )?;
-    matches.sort_by(|left, right| left.relative.cmp(&right.relative));
+    expansion
+        .matches
+        .sort_by(|left, right| left.relative.cmp(&right.relative));
 
-    Ok(matches)
+    Ok(expansion)
 }
 
 struct WalkContext<'a> {
@@ -170,7 +186,7 @@ fn walk(
     directory: &Path,
     relative: &Path,
     depth: usize,
-    matches: &mut Vec<GlobSourceMatch>,
+    expansion: &mut GlobExpansion,
 ) -> Result<(), GlobSourceError> {
     let entries = match std::fs::read_dir(directory) {
         Ok(entries) => entries,
@@ -202,19 +218,22 @@ fn walk(
             .ignore
             .is_some_and(|rules| rules.is_ignored(&entry_relative, is_dir))
         {
+            if context.matcher.is_match(&entry_relative) {
+                expansion.ignored_matches += 1;
+            }
             if may_descend
                 && context
                     .ignore
                     .map(PathIgnoreRules::has_negation)
                     .unwrap_or(false)
             {
-                walk(context, &entry_path, &entry_relative, depth + 1, matches)?;
+                walk(context, &entry_path, &entry_relative, depth + 1, expansion)?;
             }
             continue;
         }
 
         if context.matcher.is_match(&entry_relative) {
-            matches.push(GlobSourceMatch {
+            expansion.matches.push(GlobSourceMatch {
                 relative: entry_relative,
                 is_dir,
             });
@@ -222,7 +241,7 @@ fn walk(
         }
 
         if may_descend {
-            walk(context, &entry_path, &entry_relative, depth + 1, matches)?;
+            walk(context, &entry_path, &entry_relative, depth + 1, expansion)?;
         }
     }
 
@@ -270,6 +289,7 @@ mod tests {
 
         expand_glob_source(base, &split, rules.as_ref())
             .expect("expansion should succeed")
+            .matches
             .into_iter()
             .map(|entry| {
                 entry
@@ -476,5 +496,36 @@ mod tests {
             "patterns must not match case-insensitively, even on case-insensitive filesystems"
         );
         assert_eq!(expand(&base, "Upper*"), vec!["Upper.pem"]);
+    }
+
+    #[test]
+    fn expand_glob_source_should_count_ignored_matches_separately() {
+        let base = temp_base("ignored-count");
+        std::fs::write(base.join("foo.pem"), "f").expect("file should be written");
+        let split = split("*.pem");
+        let rules = PathIgnoreRules::new(&base, &["foo.pem".to_owned()])
+            .expect("ignore rules should build");
+
+        let expansion =
+            expand_glob_source(&base, &split, Some(&rules)).expect("expansion should succeed");
+
+        assert!(expansion.matches.is_empty());
+        assert_eq!(expansion.ignored_matches, 1);
+
+        let missing = expand_glob_source(&base.join("missing"), &split, Some(&rules))
+            .expect("missing base should expand");
+        assert!(missing.matches.is_empty());
+        assert_eq!(missing.ignored_matches, 0);
+    }
+
+    #[test]
+    fn expand_glob_source_should_not_match_the_pattern_base_itself() {
+        let base = temp_base("base-not-matched");
+        std::fs::create_dir_all(base.join("sub")).expect("dir should be created");
+
+        assert!(
+            expand(&base.join("sub"), "**").is_empty(),
+            "an empty directory base is zero matches; `**` never matches the base itself"
+        );
     }
 }

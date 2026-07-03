@@ -346,13 +346,14 @@ example, `treeboot copy .env.local mise.local.toml --target local` copies
 `local/mise.local.toml`.
 
 Source arguments use the same glob detection as declarative source values.
-Manual glob expansion behaves exactly as if the pattern had been replaced by its
-matched source values on the command line, so shell-expanded and
-treeboot-expanded patterns produce identical operations and `--target` joins
-each matched value under the normal multi-source rule. Quoting a pattern changes
-only who expands it. `--no-glob` treats glob metacharacters in every source
-argument of that invocation literally. See
-[Glob source expansion](#glob-source-expansion).
+Manual glob expansion replaces each pattern with its matched source values, and
+`--target` always acts as the multi-source prefix joined with each
+treeboot-expanded value, even when a pattern matches exactly one path, so a
+pattern's target mapping never changes when new files appear. Shell-expanded
+patterns follow the ordinary source-argument rules, so quoted and unquoted
+patterns differ only when a pattern expands to exactly one match and `--target`
+is set. `--no-glob` treats glob metacharacters in every source argument of that
+invocation literally. See [Glob source expansion](#glob-source-expansion).
 
 Manual commands apply the same output contract as declarative file operations.
 Multiple source arguments create multiple top-level file operations for output
@@ -538,10 +539,12 @@ ordered array of canonical ignored metadata fields: `permissions`, `owner`, and
 inspection output expands it to `owner` and `group`.
 
 File `glob` is a boolean: `true` when the entry's source is treated as a glob
-pattern and `false` otherwise. Glob entries are reported as declared, one entry
-per pattern with the pattern in `source` and the lexically resolved pattern path
-in `source_path`, not as their expanded operations. See
-[Glob source expansion](#glob-source-expansion).
+pattern and `false` otherwise. It reports the effective decision rather than the
+raw `glob` option value, so a source without glob metacharacters reports `false`
+even though the entry leaves the `glob` option enabled. Glob entries are
+reported as declared, one entry per pattern with the pattern in `source` and the
+lexically resolved pattern path in `source_path`, not as their expanded
+operations. See [Glob source expansion](#glob-source-expansion).
 
 Command `name`, `cwd`, and `cwd_path` are strings or `null`. `env` is an object
 whose keys and values are strings. `command` is one of:
@@ -1179,6 +1182,7 @@ may contain `..`, but the final resolved path must stay inside the worktree.
 | Optional file operation source does not exist               | Skip that operation, make no target changes, and continue.      |
 | Required glob source pattern matches nothing                | Fail before any file operation or command runs.                 |
 | Optional glob source pattern matches nothing                | Skip that operation, make no target changes, and continue.      |
+| Glob source pattern matches only ignored paths              | Expand to no file operations and continue.                      |
 | Command `cwd` resolves outside the worktree                 | Fail before any file operation or command runs.                 |
 | Command `env` overrides treeboot-owned variables            | Fail before any file operation or command runs.                 |
 | Copy or sync encounters an unsafe source symlink            | Fail before any file operation or command runs.                 |
@@ -1297,7 +1301,10 @@ A matched directory behaves exactly like a literal directory source: the
 operation is recursive and the pattern does not filter the directory's contents.
 When one match is a descendant of another matched directory from the same
 pattern, the descendant match is dropped because the matched ancestor directory
-already includes it.
+already includes it. A pattern never matches its own base: `config/**` expands
+to `config`'s children with matched directories pruned recursively, and an empty
+or missing `config` directory is zero matches. Use a literal `config` source to
+operate on the directory itself.
 
 Each match's target derives from the match's path relative to the pattern base.
 For declarative entries, `target` is a path prefix joined with each match's
@@ -1308,13 +1315,16 @@ base-relative path, even when the pattern matches exactly one path. With
 `traefik/certs/sub/local.pem` targets `certs/certs/sub/local.pem`. When `target`
 is omitted, each match's target defaults to that match's own source path.
 
-Manual commands expand glob source arguments exactly as if the pattern had been
-written out as its matched source values on the command line, so `--target`
-joins each matched value under the normal manual multi-source rule and
-shell-expanded and treeboot-expanded patterns produce identical operations.
+Manual commands expand glob source arguments into their matched source values.
+For treeboot-expanded matches, `--target` always acts as the manual multi-source
+prefix joined with each matched value, even when a pattern matches exactly one
+path, so a pattern's target mapping never changes when new files appear.
 `treeboot copy 'certs/*.pem' --target local` matching `certs/a.pem` targets
-`local/certs/a.pem`. Without `--target`, each match's target defaults to its
-matched source value.
+`local/certs/a.pem`, whether or not other `.pem` files exist. Without
+`--target`, each match's target defaults to its matched source value.
+Shell-expanded patterns follow the ordinary source-argument rules, so quoted and
+unquoted patterns produce identical operations except when a pattern expands to
+exactly one match and `--target` is set.
 
 Effective ignore rules for a glob operation are anchored at the pattern base and
 filter expansion itself: a match whose base-relative path is ignored is dropped,
@@ -1324,10 +1334,14 @@ evaluates the same base-relative paths. With
 is dropped. Negated patterns re-include matches the same way they re-include
 paths inside directory sources.
 
-A pattern with no matches after ignore filtering, including a pattern whose base
-directory does not exist, follows missing-source semantics: the operation is
-skipped and reported like an optional missing source. With `required = true` or
-`--required`, zero matches are a validation failure that reports the pattern.
+A pattern that matches no source paths, including a pattern whose base directory
+does not exist, follows missing-source semantics: the operation is skipped and
+reported like an optional missing source, and its target still passes normal
+target validation. With `required = true` or `--required`, zero pattern matches
+are a validation failure that reports the pattern. When the pattern matches
+source paths but ignore rules drop every match, the operation instead expands to
+no file operations: nothing is reported, and `required` is satisfied because
+ignore rules explicitly excluded the matched paths.
 
 Sync operations expanded from a pattern reconcile, compare, and delete only
 within each matched target. With `delete = true`, target-only paths under a
@@ -1869,7 +1883,7 @@ idempotency, compatibility env vars, and real Git worktree behavior.
 - `init --script` creates executable script.
 - `copy`, `symlink`, and `sync` require sources.
 - Manual `--target` handles one and many sources.
-- Quoted manual glob sources expand like shell-expanded sources; `--no-glob`
+- Manual glob sources expand with a stable `--target` prefix rule; `--no-glob`
   disables expansion.
 - Manual operation source completion reads from root path.
 - `completions` emits scripts for supported shells.
