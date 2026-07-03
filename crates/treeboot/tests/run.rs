@@ -234,6 +234,318 @@ copy = [{ source = "shared", ignore = ["!.DS_Store", "**/vendor/**", "!**/vendor
 }
 
 #[test]
+fn run_should_apply_configured_source_globs() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("config/client"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("config/server.pem"), "server\n");
+    write_file(
+        &repo.root_path().join("config/client/client.pem"),
+        "client\n",
+    );
+    write_file(&repo.root_path().join("config/client/skip.key"), "skip\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"
+copy = [{ source = "config/**/*.pem", target = "certs" }]
+"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "treeboot: copy config/client/client.pem -> certs/client/client.pem",
+        ))
+        .stdout(predicate::str::contains(
+            "treeboot: copy config/server.pem -> certs/server.pem",
+        ));
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("certs/server.pem"))
+            .expect("target should be readable"),
+        "server\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("certs/client/client.pem"))
+            .expect("target should be readable"),
+        "client\n"
+    );
+    assert!(!repo.worktree_path().join("certs/client/skip.key").exists());
+}
+
+#[test]
+fn run_should_treat_single_source_glob_match_target_as_prefix() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("config"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("config/server.pem"), "server\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "config/*.pem", target = "certs" }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "treeboot: copy config/server.pem -> certs/server.pem",
+        ));
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("certs/server.pem"))
+            .expect("target should be readable"),
+        "server\n"
+    );
+    assert!(repo.worktree_path().join("certs").is_dir());
+}
+
+#[test]
+fn run_should_use_root_relative_targets_for_source_globs_without_target() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("config"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("config/server.pem"), "server\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "config/*.pem" }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "treeboot: copy config/server.pem -> config/server.pem",
+        ));
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("config/server.pem"))
+            .expect("target should be readable"),
+        "server\n"
+    );
+}
+
+#[test]
+fn run_should_filter_source_globs_with_ignore_rules() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("config/client"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("config/foo.pem"), "drop\n");
+    write_file(&repo.root_path().join("config/client/foo.pem"), "drop\n");
+    write_file(&repo.root_path().join("config/client/bar.pem"), "keep\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "config/**/*.pem", target = "certs", ignore = ["foo.pem"] }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "treeboot: copy config/client/bar.pem -> certs/client/bar.pem",
+        ))
+        .stdout(predicate::str::contains("foo.pem").not());
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("certs/client/bar.pem"))
+            .expect("target should be readable"),
+        "keep\n"
+    );
+    assert!(!repo.worktree_path().join("certs/foo.pem").exists());
+    assert!(!repo.worktree_path().join("certs/client/foo.pem").exists());
+}
+
+#[test]
+fn run_should_not_broaden_source_globs_with_ignore_rules() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("config/client"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("config/foo.pem"), "drop\n");
+    write_file(
+        &repo.root_path().join("config/client/foo.pem"),
+        "not matched\n",
+    );
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"
+copy = [{ source = "config/*.pem", target = "certs", required = true, ignore = ["foo.pem"] }]
+"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("treeboot: copy").not());
+
+    assert!(!repo.worktree_path().join("certs").exists());
+}
+
+#[test]
+fn run_required_source_glob_should_fail_when_raw_pattern_matches_nothing() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("config"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("config/server.key"), "server\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "config/*.pem", target = "certs", required = true }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("invalid config"))
+        .stderr(predicate::str::contains("required source does not exist"));
+
+    assert!(!repo.worktree_path().join("certs").exists());
+}
+
+#[test]
+fn run_should_treat_disabled_source_glob_as_literal() {
+    let repo = git_worktree();
+    write_file(&repo.root_path().join("literal-[abc]"), "literal\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "literal-[abc]", target = "out", glob = false }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "treeboot: copy literal-[abc] -> out",
+        ));
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("out"))
+            .expect("target should be readable"),
+        "literal\n"
+    );
+}
+
+#[test]
+fn run_should_collapse_recursive_directory_source_globs() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("config/client"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("config/client/app.pem"), "app\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "config/**" }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("treeboot: copy config -> config"));
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("config/client/app.pem"))
+            .expect("target should be readable"),
+        "app\n"
+    );
+}
+
+#[test]
+fn run_should_apply_configured_symlink_source_globs() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("config"))
+        .expect("source directory should be created");
+    let server = repo.root_path().join("config/server.pem");
+    let client = repo.root_path().join("config/client.pem");
+    write_file(&server, "server\n");
+    write_file(&client, "client\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"symlink = [{ source = "config/*.pem", target = "certs" }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "treeboot: symlink config/client.pem -> certs/client.pem",
+        ))
+        .stdout(predicate::str::contains(
+            "treeboot: symlink config/server.pem -> certs/server.pem",
+        ));
+
+    let server_link = repo.worktree_path().join("certs/server.pem");
+    let client_link = repo.worktree_path().join("certs/client.pem");
+    assert!(
+        std::fs::symlink_metadata(&server_link)
+            .expect("server link should exist")
+            .file_type()
+            .is_symlink()
+    );
+    assert!(
+        std::fs::symlink_metadata(&client_link)
+            .expect("client link should exist")
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(canonical_path(&server_link), canonical_path(&server));
+    assert_eq!(canonical_path(&client_link), canonical_path(&client));
+}
+
+#[test]
+fn run_should_apply_configured_sync_source_globs() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("shared/a.txt"), "new a\n");
+    write_file(&repo.root_path().join("shared/b.txt"), "new b\n");
+    std::fs::create_dir_all(repo.worktree_path().join("mirror"))
+        .expect("target directory should be created");
+    write_file(&repo.worktree_path().join("mirror/a.txt"), "old a\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"sync = [{ source = "shared/*.txt", target = "mirror" }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "treeboot: sync shared/a.txt -> mirror/a.txt",
+        ))
+        .stdout(predicate::str::contains(
+            "treeboot: sync shared/b.txt -> mirror/b.txt",
+        ));
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("mirror/a.txt"))
+            .expect("target should be readable"),
+        "new a\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("mirror/b.txt"))
+            .expect("target should be readable"),
+        "new b\n"
+    );
+}
+
+#[test]
 fn run_invalid_config_should_exit_with_config_error() {
     let repo = git_worktree();
     let config = repo.worktree_path().join(".treeboot.toml");

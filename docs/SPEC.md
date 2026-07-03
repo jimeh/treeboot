@@ -481,6 +481,7 @@ string. The initial reason is `not_executable`.
         "target": ".env",
         "source_path": "/repo/.env",
         "target_path": "/repo-worktree/.env",
+        "glob": true,
         "required": false,
         "compare": null,
         "delete": null,
@@ -520,11 +521,11 @@ string. The initial reason is `not_executable`.
 
 `files` and `commands` are ordered arrays. File `operation` is `copy`,
 `symlink`, or `sync`. `compare` is `metadata`, `checksum`, or `null`. `delete`
-and `glob` are booleans or `null`. `symlinks` is `preserve` or `null`. `ignore`
-is an ordered array of operation-local path ignore patterns. `ignore_metadata`
-is an ordered array of canonical ignored metadata fields: `permissions`,
-`owner`, and `group`. Config input can use `ownership` as a shorthand, but
-normalized inspection output expands it to `owner` and `group`.
+is a boolean or `null`. `glob` is a boolean. `symlinks` is `preserve` or `null`.
+`ignore` is an ordered array of operation-local path ignore patterns.
+`ignore_metadata` is an ordered array of canonical ignored metadata fields:
+`permissions`, `owner`, and `group`. Config input can use `ownership` as a
+shorthand, but normalized inspection output expands it to `owner` and `group`.
 
 Command `name`, `cwd`, and `cwd_path` are strings or `null`. `env` is an object
 whose keys and values are strings. `command` is one of:
@@ -1307,7 +1308,7 @@ Examples:
   `config/client/foo.pem` because the source glob does not match it.
 - `{ source = "config/*", ignore = ["*/cache/**"] }`: ignores `cache`
   descendants inside matched child directories.
-- `{ source = "config/**" }`: if it matches `config` and descendants, keeps only
+- `{ source = "config/**" }`: matches `config` and descendants, then keeps only
   `config`.
 - `{ source = "config/*" }`: expands the immediate children of `config`; it is
   not equivalent to `source = "config"`.

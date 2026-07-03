@@ -39,6 +39,28 @@ fn check_should_validate_config_without_side_effects() {
 }
 
 #[test]
+fn check_should_validate_source_globs_without_side_effects() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("config"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("config/server.pem"), "server\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "config/*.pem", target = "certs" }]"#,
+    );
+
+    treeboot()
+        .arg("check")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .stdout("treeboot: check ok\n");
+
+    assert!(!repo.worktree_path().join("certs/server.pem").exists());
+}
+
+#[test]
 fn check_should_support_json_yaml_and_text_formats() {
     let repo = git_worktree();
     write_file(
@@ -114,6 +136,24 @@ fn check_should_fail_for_invalid_ignore_patterns() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("invalid ignore pattern"));
+}
+
+#[test]
+fn check_should_fail_for_invalid_source_globs() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("config"))
+        .expect("source directory should be created");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "config/[.pem" }]"#,
+    );
+
+    treeboot()
+        .arg("check")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid source glob"));
 }
 
 #[test]

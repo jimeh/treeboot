@@ -399,6 +399,7 @@ fn manual_operations(
         ..
     } = options;
     let multiple_sources = sources.len() > 1;
+    let target_explicit = target.is_some();
     sources
         .into_iter()
         .map(|source| {
@@ -425,6 +426,8 @@ fn manual_operations(
                 target_path,
                 source,
                 target,
+                glob: false,
+                target_explicit,
                 required,
                 compare: settings.compare,
                 delete: settings.delete,
@@ -1067,6 +1070,8 @@ mod tests {
                 target: PathBuf::from("outside"),
                 source_path: root.join("../outside"),
                 target_path: worktree.join("outside"),
+                glob: false,
+                target_explicit: true,
                 required: false,
                 compare: None,
                 delete: None,
@@ -1100,6 +1105,8 @@ mod tests {
                 target: PathBuf::from("shared"),
                 source_path: root.join("shared"),
                 target_path: worktree.join("shared"),
+                glob: false,
+                target_explicit: true,
                 required: false,
                 compare: Some(SyncCompare::Metadata),
                 delete: Some(false),

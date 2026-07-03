@@ -1,9 +1,12 @@
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::fs;
+use std::path::{Component, Path, PathBuf};
+
+use globset::GlobBuilder;
 
 use crate::file_system::{TargetAncestorIssue, inspect_target_ancestors, matching_target_anchor};
 use crate::ignore_rules::PathIgnoreRules;
-use crate::paths;
+use crate::paths::{self, normalize_lexical};
 use crate::{
     CommandKind, CommandOperation, Config, ConfigRuntimeOptions, Error, FileOperation,
     FileOperationKind, MetadataField, Result, SourceSpan, SymlinkMode, SyncCompare, Worktree,
@@ -519,23 +522,421 @@ pub(super) fn plan_file_operations(
         )
     })?;
 
-    let target_paths = normalize_target_paths(
+    let files = expand_file_operations(
         origin,
         files,
         context.worktree_path.as_path(),
+        root_path.as_path(),
         worktree_path.as_path(),
     )?;
-    validate_target_conflicts(origin, files, &target_paths)?;
-    validate_strict_sync(origin, files, options.strict)?;
+
+    let target_paths = normalize_target_paths(
+        origin,
+        &files,
+        context.worktree_path.as_path(),
+        worktree_path.as_path(),
+    )?;
+    validate_target_conflicts(origin, &files, &target_paths)?;
+    validate_strict_sync(origin, &files, options.strict)?;
 
     build_file_operations(
         origin,
-        files,
+        &files,
         options,
         &target_paths,
         root_path.as_path(),
         worktree_path.as_path(),
     )
+}
+
+#[derive(Debug)]
+struct GlobCandidate {
+    source: PathBuf,
+    source_path: PathBuf,
+    is_dir: bool,
+}
+
+fn expand_file_operations(
+    origin: FilePlanOrigin<'_>,
+    files: &[FileOperation],
+    worktree_path: &Path,
+    root_path: &Path,
+    normalized_worktree_path: &Path,
+) -> Result<Vec<FileOperation>> {
+    let mut expanded = Vec::new();
+
+    for operation in files {
+        if !operation.glob || !has_unescaped_glob_meta(&operation.source) {
+            expanded.push(operation.clone());
+            continue;
+        }
+
+        expanded.extend(expand_file_operation_glob(
+            origin,
+            operation,
+            worktree_path,
+            root_path,
+            normalized_worktree_path,
+        )?);
+    }
+
+    Ok(expanded)
+}
+
+fn expand_file_operation_glob(
+    origin: FilePlanOrigin<'_>,
+    operation: &FileOperation,
+    worktree_path: &Path,
+    root_path: &Path,
+    normalized_worktree_path: &Path,
+) -> Result<Vec<FileOperation>> {
+    if operation.source.is_absolute() {
+        return invalid_file_plan(
+            origin,
+            Some(operation.declaration),
+            format!(
+                "source glob must be relative to root path for {}",
+                operation_summary(origin, operation)
+            ),
+        );
+    }
+
+    let pattern = path_to_glob_pattern(&operation.source);
+    let matcher = GlobBuilder::new(&pattern)
+        .literal_separator(true)
+        .backslash_escape(true)
+        .build()
+        .map_err(|source| {
+            file_plan_error(
+                origin,
+                Some(operation.declaration),
+                format!(
+                    "invalid source glob for {}: {source}",
+                    operation_summary(origin, operation)
+                ),
+            )
+        })?
+        .compile_matcher();
+    let source_base = fixed_glob_base(&operation.source);
+    let source_base_path = normalize_lexical(&root_path.join(&source_base));
+
+    let mut candidates = Vec::new();
+    collect_glob_candidates(
+        origin,
+        operation,
+        root_path,
+        source_base_path.as_path(),
+        &matcher,
+        &mut candidates,
+    )?;
+    maybe_add_recursive_base_candidate(
+        &operation.source,
+        &source_base,
+        &source_base_path,
+        &mut candidates,
+    );
+    candidates.sort_by(|left, right| left.source.cmp(&right.source));
+
+    if candidates.is_empty() {
+        return Ok(vec![operation.clone()]);
+    }
+
+    let ignore_rules = glob_ignore_rules(origin, operation, source_base_path.as_path())?;
+    let mut candidates = candidates
+        .into_iter()
+        .filter(|candidate| {
+            !ignored_glob_candidate(
+                source_base_path.as_path(),
+                candidate.source_path.as_path(),
+                candidate.is_dir,
+                ignore_rules.as_ref(),
+            )
+        })
+        .collect::<Vec<_>>();
+    candidates = collapse_overlapping_glob_candidates(candidates);
+
+    candidates
+        .into_iter()
+        .map(|candidate| {
+            expanded_file_operation(
+                origin,
+                operation,
+                candidate,
+                &source_base,
+                worktree_path,
+                normalized_worktree_path,
+            )
+        })
+        .collect()
+}
+
+fn maybe_add_recursive_base_candidate(
+    source: &Path,
+    source_base: &Path,
+    source_base_path: &Path,
+    candidates: &mut Vec<GlobCandidate>,
+) {
+    if !recursive_glob_matches_base(source, source_base)
+        || candidates
+            .iter()
+            .any(|candidate| candidate.source == source_base)
+    {
+        return;
+    }
+
+    let Ok(metadata) = fs::symlink_metadata(source_base_path) else {
+        return;
+    };
+    if !metadata.is_dir() {
+        return;
+    }
+
+    candidates.push(GlobCandidate {
+        source: source_base.to_path_buf(),
+        source_path: source_base_path.to_path_buf(),
+        is_dir: true,
+    });
+}
+
+fn collect_glob_candidates(
+    origin: FilePlanOrigin<'_>,
+    operation: &FileOperation,
+    root_path: &Path,
+    path: &Path,
+    matcher: &globset::GlobMatcher,
+    candidates: &mut Vec<GlobCandidate>,
+) -> Result<()> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(source) => {
+            return Err(file_plan_error(
+                origin,
+                Some(operation.declaration),
+                format!(
+                    "failed to inspect source glob base {}: {source}",
+                    path.display()
+                ),
+            ));
+        }
+    };
+
+    if let Ok(relative) = path.strip_prefix(root_path) {
+        let relative = normalize_lexical(relative);
+        if matcher.is_match(path_to_glob_pattern(&relative)) {
+            candidates.push(GlobCandidate {
+                source: relative,
+                source_path: path.to_path_buf(),
+                is_dir: metadata.is_dir(),
+            });
+        }
+    }
+
+    if !metadata.is_dir() {
+        return Ok(());
+    }
+
+    let mut children = fs::read_dir(path)
+        .map_err(|source| {
+            file_plan_error(
+                origin,
+                Some(operation.declaration),
+                format!(
+                    "failed to inspect source glob base {}: {source}",
+                    path.display()
+                ),
+            )
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|source| {
+            file_plan_error(
+                origin,
+                Some(operation.declaration),
+                format!(
+                    "failed to inspect source glob base {}: {source}",
+                    path.display()
+                ),
+            )
+        })?;
+    children.sort_by_key(|entry| entry.path());
+
+    for child in children {
+        collect_glob_candidates(
+            origin,
+            operation,
+            root_path,
+            child.path().as_path(),
+            matcher,
+            candidates,
+        )?;
+    }
+
+    Ok(())
+}
+
+fn glob_ignore_rules(
+    origin: FilePlanOrigin<'_>,
+    operation: &FileOperation,
+    source_base_path: &Path,
+) -> Result<Option<PathIgnoreRules>> {
+    if !matches!(
+        operation.operation,
+        FileOperationKind::Copy | FileOperationKind::Sync
+    ) || operation.ignore.is_empty()
+    {
+        return Ok(None);
+    }
+
+    PathIgnoreRules::new(source_base_path, &operation.ignore)
+        .map(Some)
+        .map_err(|source| {
+            file_plan_error(
+                origin,
+                Some(operation.declaration),
+                format!(
+                    "invalid ignore pattern for {}: {source}",
+                    operation_summary(origin, operation)
+                ),
+            )
+        })
+}
+
+fn collapse_overlapping_glob_candidates(candidates: Vec<GlobCandidate>) -> Vec<GlobCandidate> {
+    let mut collapsed: Vec<GlobCandidate> = Vec::new();
+
+    'candidate: for candidate in candidates {
+        for kept in &collapsed {
+            if kept.is_dir
+                && candidate.source_path != kept.source_path
+                && candidate.source_path.starts_with(&kept.source_path)
+            {
+                continue 'candidate;
+            }
+        }
+        collapsed.push(candidate);
+    }
+
+    collapsed
+}
+
+fn expanded_file_operation(
+    origin: FilePlanOrigin<'_>,
+    operation: &FileOperation,
+    candidate: GlobCandidate,
+    source_base: &Path,
+    worktree_path: &Path,
+    normalized_worktree_path: &Path,
+) -> Result<FileOperation> {
+    let target = if operation.target_explicit {
+        let suffix = candidate
+            .source
+            .strip_prefix(source_base)
+            .unwrap_or(&candidate.source);
+        operation.target.join(suffix)
+    } else {
+        candidate.source.clone()
+    };
+    let target_path = normalize_maybe_existing(&worktree_path.join(&target)).map_err(|source| {
+        file_plan_error(
+            origin,
+            Some(operation.declaration),
+            format!("failed to resolve target {}: {source}", target.display()),
+        )
+    })?;
+
+    Ok(FileOperation {
+        operation: operation.operation,
+        source_path: candidate.source_path,
+        target_path: if target_path.is_absolute() {
+            target_path
+        } else {
+            normalize_lexical(&normalized_worktree_path.join(target_path))
+        },
+        source: candidate.source,
+        target,
+        glob: false,
+        target_explicit: true,
+        required: operation.required,
+        compare: operation.compare,
+        delete: operation.delete,
+        symlinks: operation.symlinks,
+        ignore: operation.ignore.clone(),
+        ignore_metadata: operation.ignore_metadata.clone(),
+        declaration: operation.declaration,
+    })
+}
+
+fn has_unescaped_glob_meta(path: &Path) -> bool {
+    let mut escaped = false;
+    for character in path_to_glob_pattern(path).chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if character == '\\' {
+            escaped = true;
+            continue;
+        }
+        if matches!(character, '*' | '?' | '[') {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn fixed_glob_base(path: &Path) -> PathBuf {
+    let pattern = path_to_glob_pattern(path);
+    let mut escaped = false;
+    for (index, character) in pattern.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if character == '\\' {
+            escaped = true;
+            continue;
+        }
+        if matches!(character, '*' | '?' | '[') {
+            let base = pattern[..index]
+                .rsplit_once('/')
+                .map_or("", |(base, _)| base);
+            return slash_path(base);
+        }
+    }
+
+    path.to_path_buf()
+}
+
+fn recursive_glob_matches_base(source: &Path, source_base: &Path) -> bool {
+    let pattern = path_to_glob_pattern(source);
+    let Some(base_pattern) = pattern.strip_suffix("/**") else {
+        return false;
+    };
+
+    !base_pattern.is_empty() && base_pattern == path_to_glob_pattern(source_base)
+}
+
+fn path_to_glob_pattern(path: &Path) -> String {
+    path.components()
+        .filter_map(|component| match component {
+            Component::CurDir => None,
+            Component::Normal(part) => Some(part.to_string_lossy().into_owned()),
+            Component::ParentDir => Some("..".to_owned()),
+            Component::RootDir | Component::Prefix(_) => {
+                Some(component.as_os_str().to_string_lossy().into_owned())
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn slash_path(path: &str) -> PathBuf {
+    let mut output = PathBuf::new();
+    for component in path.split('/').filter(|component| !component.is_empty()) {
+        output.push(component);
+    }
+    output
 }
 
 fn normalize_target_paths(
@@ -1101,9 +1502,18 @@ fn ignored_source_path(
     metadata: &std::fs::Metadata,
     ignore_rules: Option<&PathIgnoreRules>,
 ) -> bool {
+    ignored_glob_candidate(source_root, path, metadata.is_dir(), ignore_rules)
+}
+
+fn ignored_glob_candidate(
+    source_root: &Path,
+    path: &Path,
+    is_dir: bool,
+    ignore_rules: Option<&PathIgnoreRules>,
+) -> bool {
     ignore_rules
         .zip(path.strip_prefix(source_root).ok())
-        .is_some_and(|(rules, relative)| rules.is_ignored(relative, metadata.is_dir()))
+        .is_some_and(|(rules, relative)| rules.is_ignored(relative, is_dir))
 }
 
 fn source_exists(
@@ -1299,6 +1709,8 @@ mod tests {
             target: PathBuf::from(target),
             source_path: root.join(source),
             target_path: worktree.join(target),
+            glob: false,
+            target_explicit: true,
             required: false,
             compare: match operation {
                 FileOperationKind::Sync => Some(SyncCompare::Metadata),
@@ -1346,6 +1758,8 @@ mod tests {
                 target: PathBuf::from("missing"),
                 source_path: root.join("missing"),
                 target_path: worktree.join("missing"),
+                glob: false,
+                target_explicit: true,
                 required: false,
                 compare: None,
                 delete: None,
@@ -1390,6 +1804,181 @@ mod tests {
         let plan = plan(&config, &root, &worktree).expect("file should plan");
 
         assert_eq!(plan.files[0].status, PlannedFileStatus::Ready);
+    }
+
+    #[test]
+    fn action_plan_from_manifest_should_expand_glob_source_to_target_prefix() {
+        let (root, worktree) = temp_workspace("glob-target-prefix");
+        std::fs::create_dir_all(root.join("config")).expect("source dir should be created");
+        std::fs::write(root.join("config/a.pem"), "a\n").expect("source should be written");
+        let mut operation = file_operation(
+            FileOperationKind::Copy,
+            &root,
+            &worktree,
+            "config/*.pem",
+            "certs",
+        );
+        operation.glob = true;
+        let config = Config {
+            options: Default::default(),
+            files: vec![operation],
+            commands: Vec::new(),
+        };
+
+        let plan = plan(&config, &root, &worktree).expect("glob should plan");
+
+        assert_eq!(plan.files.len(), 1);
+        assert_eq!(plan.files[0].source, PathBuf::from("config/a.pem"));
+        assert_eq!(plan.files[0].target, PathBuf::from("certs/a.pem"));
+        assert_eq!(
+            plan.files[0].target_path,
+            normalize_target_path(&worktree.join("certs/a.pem")).expect("target should normalize")
+        );
+    }
+
+    #[test]
+    fn action_plan_from_manifest_should_expand_glob_source_without_target_prefix() {
+        let (root, worktree) = temp_workspace("glob-default-target");
+        std::fs::create_dir_all(root.join("config")).expect("source dir should be created");
+        std::fs::write(root.join("config/a.pem"), "a\n").expect("source should be written");
+        std::fs::write(root.join("config/b.pem"), "b\n").expect("source should be written");
+        let mut operation = file_operation(
+            FileOperationKind::Copy,
+            &root,
+            &worktree,
+            "config/*.pem",
+            "config/*.pem",
+        );
+        operation.glob = true;
+        operation.target_explicit = false;
+        let config = Config {
+            options: Default::default(),
+            files: vec![operation],
+            commands: Vec::new(),
+        };
+
+        let plan = plan(&config, &root, &worktree).expect("glob should plan");
+        let targets = plan
+            .files
+            .iter()
+            .map(|file| file.target.clone())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            targets,
+            vec![PathBuf::from("config/a.pem"), PathBuf::from("config/b.pem")]
+        );
+    }
+
+    #[test]
+    fn action_plan_from_manifest_should_filter_glob_matches_with_ignore_rules() {
+        let (root, worktree) = temp_workspace("glob-ignore");
+        std::fs::create_dir_all(root.join("config/client")).expect("source dir should be created");
+        std::fs::write(root.join("config/foo.pem"), "drop\n").expect("source should be written");
+        std::fs::write(root.join("config/client/foo.pem"), "drop\n")
+            .expect("source should be written");
+        std::fs::write(root.join("config/client/bar.pem"), "keep\n")
+            .expect("source should be written");
+        let mut operation = file_operation(
+            FileOperationKind::Copy,
+            &root,
+            &worktree,
+            "config/**/*.pem",
+            "certs",
+        );
+        operation.glob = true;
+        operation.ignore = vec!["foo.pem".to_owned()];
+        let config = Config {
+            options: Default::default(),
+            files: vec![operation],
+            commands: Vec::new(),
+        };
+
+        let plan = plan(&config, &root, &worktree).expect("glob should plan");
+
+        assert_eq!(plan.files.len(), 1);
+        assert_eq!(plan.files[0].source, PathBuf::from("config/client/bar.pem"));
+        assert_eq!(plan.files[0].target, PathBuf::from("certs/client/bar.pem"));
+    }
+
+    #[test]
+    fn action_plan_from_manifest_should_not_broaden_glob_with_ignore_rules() {
+        let (root, worktree) = temp_workspace("glob-ignore-no-broaden");
+        std::fs::create_dir_all(root.join("config/client")).expect("source dir should be created");
+        std::fs::write(root.join("config/foo.pem"), "drop\n").expect("source should be written");
+        std::fs::write(root.join("config/client/foo.pem"), "not matched\n")
+            .expect("source should be written");
+        let mut operation = file_operation(
+            FileOperationKind::Copy,
+            &root,
+            &worktree,
+            "config/*.pem",
+            "certs",
+        );
+        operation.glob = true;
+        operation.required = true;
+        operation.ignore = vec!["foo.pem".to_owned()];
+        let config = Config {
+            options: Default::default(),
+            files: vec![operation],
+            commands: Vec::new(),
+        };
+
+        let plan = plan(&config, &root, &worktree).expect("ignored matches should plan");
+
+        assert!(plan.files.is_empty());
+    }
+
+    #[test]
+    fn action_plan_from_manifest_should_treat_empty_required_glob_as_missing() {
+        let (root, worktree) = temp_workspace("glob-required-missing");
+        std::fs::create_dir_all(root.join("config")).expect("source dir should be created");
+        let mut operation = file_operation(
+            FileOperationKind::Copy,
+            &root,
+            &worktree,
+            "config/*.pem",
+            "certs",
+        );
+        operation.glob = true;
+        operation.required = true;
+        let config = Config {
+            options: Default::default(),
+            files: vec![operation],
+            commands: Vec::new(),
+        };
+
+        let error = plan(&config, &root, &worktree).expect_err("missing glob should fail");
+
+        assert!(error.to_string().contains("required source does not exist"));
+    }
+
+    #[test]
+    fn action_plan_from_manifest_should_collapse_recursive_glob_directory_match() {
+        let (root, worktree) = temp_workspace("glob-recursive-collapse");
+        std::fs::create_dir_all(root.join("config/client")).expect("source dir should be created");
+        std::fs::write(root.join("config/client/app.pem"), "app\n")
+            .expect("source should be written");
+        let mut operation = file_operation(
+            FileOperationKind::Copy,
+            &root,
+            &worktree,
+            "config/**",
+            "config/**",
+        );
+        operation.glob = true;
+        operation.target_explicit = false;
+        let config = Config {
+            options: Default::default(),
+            files: vec![operation],
+            commands: Vec::new(),
+        };
+
+        let plan = plan(&config, &root, &worktree).expect("recursive glob should plan");
+
+        assert_eq!(plan.files.len(), 1);
+        assert_eq!(plan.files[0].source, PathBuf::from("config"));
+        assert_eq!(plan.files[0].target, PathBuf::from("config"));
     }
 
     #[test]
@@ -1512,6 +2101,8 @@ mod tests {
                 target: outside_target.clone(),
                 source_path: outside_source,
                 target_path: outside_target,
+                glob: false,
+                target_explicit: true,
                 required: false,
                 compare: None,
                 delete: None,

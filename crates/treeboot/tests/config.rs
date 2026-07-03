@@ -99,6 +99,7 @@ commands = [
                 "compare",
                 "declaration",
                 "delete",
+                "glob",
                 "ignore",
                 "ignore_metadata",
                 "operation",
@@ -115,6 +116,7 @@ commands = [
     assert_eq!(files[0]["operation"], "copy");
     assert_eq!(files[0]["source"], ".env");
     assert_eq!(files[0]["target"], ".env");
+    assert_eq!(files[0]["glob"], true);
     assert_eq!(files[0]["required"], true);
     assert_eq!(files[0]["compare"], serde_json::Value::Null);
     assert_eq!(files[0]["delete"], serde_json::Value::Null);
@@ -130,6 +132,7 @@ commands = [
     assert_eq!(files[1]["operation"], "sync");
     assert_eq!(files[1]["source"], "shared");
     assert_eq!(files[1]["target"], ".config/shared");
+    assert_eq!(files[1]["glob"], true);
     assert_eq!(files[1]["required"], false);
     assert_eq!(files[1]["compare"], "checksum");
     assert_eq!(files[1]["delete"], true);
@@ -353,6 +356,24 @@ commands = [{
             "exec npm install allow_failure=true cwd=app ",
             "env={NODE_ENV=\"development\"}"
         )));
+}
+
+#[test]
+fn config_command_should_print_disabled_source_globs() {
+    let repo = git_worktree();
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "literal-*", glob = false }]"#,
+    );
+
+    treeboot()
+        .arg("config")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "copy literal-* -> literal-* glob=false symlinks=preserve",
+        ));
 }
 
 #[test]

@@ -136,6 +136,11 @@ pub struct FileOperation {
     pub source_path: PathBuf,
     /// Target path resolved from the current worktree.
     pub target_path: PathBuf,
+    /// Whether source glob patterns should expand.
+    pub glob: bool,
+    /// Whether the target path was explicitly declared.
+    #[serde(skip)]
+    pub target_explicit: bool,
     /// Whether a missing source should fail validation.
     pub required: bool,
     /// Sync comparison mode.
@@ -539,6 +544,7 @@ fn normalize_file_group(
                 operation: None,
                 source: Some(source),
                 target: None,
+                glob: true,
                 required: false,
                 compare: None,
                 delete: None,
@@ -626,6 +632,7 @@ fn normalize_file_object(
             "file operation is missing required `source`",
         )
     })?;
+    let target_explicit = object.target.is_some();
     let target = object.target.unwrap_or_else(|| source.clone());
     let settings = normalize_file_operation_settings(
         operation,
@@ -662,6 +669,8 @@ fn normalize_file_object(
         )?,
         source: PathBuf::from(source),
         target: PathBuf::from(target),
+        glob: object.glob,
+        target_explicit,
         required: object.required,
         compare: settings.compare,
         delete: settings.delete,
@@ -1002,12 +1011,18 @@ struct RawFileObject {
     operation: Option<FileOperationKind>,
     source: Option<String>,
     target: Option<String>,
+    #[serde(default = "default_true")]
+    glob: bool,
     required: bool,
     compare: Option<SyncCompare>,
     delete: Option<bool>,
     symlinks: Option<SymlinkMode>,
     ignore: Vec<String>,
     ignore_metadata: Vec<RawMetadataField>,
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug)]
@@ -1162,14 +1177,27 @@ sync = ["shared/config"]
         let sync = &config.files[1];
 
         assert_eq!(copy.target, PathBuf::from(".env.local"));
+        assert!(copy.glob);
         assert!(!copy.required);
         assert_eq!(copy.symlinks, Some(SymlinkMode::Preserve));
         assert!(copy.ignore.is_empty());
         assert!(copy.ignore_metadata.is_empty());
         assert_eq!(sync.compare, Some(SyncCompare::Metadata));
         assert_eq!(sync.delete, Some(false));
+        assert!(sync.glob);
         assert!(sync.ignore.is_empty());
         assert!(sync.ignore_metadata.is_empty());
+    }
+
+    #[test]
+    fn parse_config_should_preserve_explicit_glob_setting() {
+        let config = parse(
+            r#"
+copy = [{ source = "literal-*", glob = false }]
+"#,
+        );
+
+        assert!(!config.files[0].glob);
     }
 
     #[test]

@@ -297,6 +297,8 @@ fn validated_file_plan(
         target: PathBuf::from(target),
         source_path: root.join(source),
         target_path: worktree.join(target),
+        glob: false,
+        target_explicit: true,
         required: false,
         compare: None,
         delete: None,

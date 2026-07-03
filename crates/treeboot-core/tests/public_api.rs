@@ -157,6 +157,8 @@ fn copy_spec(context: &Worktree, source: &str, target: &str) -> FileOperation {
         target: PathBuf::from(target),
         source_path: context.root_path.join(source),
         target_path: context.worktree_path.join(target),
+        glob: false,
+        target_explicit: true,
         required: false,
         compare: None,
         delete: None,

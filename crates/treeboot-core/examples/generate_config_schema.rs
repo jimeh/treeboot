@@ -91,6 +91,9 @@ struct CopyObject {
     /// Target path, relative to the current worktree unless absolute.
     #[serde(skip_serializing_if = "Option::is_none")]
     target: Option<String>,
+    /// Whether source glob patterns should expand.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    glob: Option<bool>,
     /// Whether a missing source should fail validation.
     #[serde(skip_serializing_if = "Option::is_none")]
     required: Option<bool>,
@@ -113,6 +116,9 @@ struct SymlinkObject {
     /// Target path, relative to the current worktree unless absolute.
     #[serde(skip_serializing_if = "Option::is_none")]
     target: Option<String>,
+    /// Whether source glob patterns should expand.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    glob: Option<bool>,
     /// Whether a missing source should fail validation.
     #[serde(skip_serializing_if = "Option::is_none")]
     required: Option<bool>,
@@ -126,6 +132,9 @@ struct SyncObject {
     /// Target path, relative to the current worktree unless absolute.
     #[serde(skip_serializing_if = "Option::is_none")]
     target: Option<String>,
+    /// Whether source glob patterns should expand.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    glob: Option<bool>,
     /// Whether a missing source should fail validation.
     #[serde(skip_serializing_if = "Option::is_none")]
     required: Option<bool>,
@@ -156,6 +165,9 @@ enum MixedFileObject {
         /// Target path, relative to the current worktree unless absolute.
         #[serde(skip_serializing_if = "Option::is_none")]
         target: Option<String>,
+        /// Whether source glob patterns should expand.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        glob: Option<bool>,
         /// Whether a missing source should fail validation.
         #[serde(skip_serializing_if = "Option::is_none")]
         required: Option<bool>,
@@ -176,6 +188,9 @@ enum MixedFileObject {
         /// Target path, relative to the current worktree unless absolute.
         #[serde(skip_serializing_if = "Option::is_none")]
         target: Option<String>,
+        /// Whether source glob patterns should expand.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        glob: Option<bool>,
         /// Whether a missing source should fail validation.
         #[serde(skip_serializing_if = "Option::is_none")]
         required: Option<bool>,
@@ -187,6 +202,9 @@ enum MixedFileObject {
         /// Target path, relative to the current worktree unless absolute.
         #[serde(skip_serializing_if = "Option::is_none")]
         target: Option<String>,
+        /// Whether source glob patterns should expand.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        glob: Option<bool>,
         /// Whether a missing source should fail validation.
         #[serde(skip_serializing_if = "Option::is_none")]
         required: Option<bool>,

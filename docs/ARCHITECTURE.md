@@ -170,7 +170,7 @@ flowchart LR
 ```
 
 _The normalized model is intentionally separate from the validated plan.
-Parsing/defaulting happens before path-boundary validation._
+Parsing/defaulting happens before glob expansion and path-boundary validation._
 
 ### Declarative config path
 
@@ -178,7 +178,8 @@ Parsing/defaulting happens before path-boundary validation._
 2. `Config::load_discovered` returns a `LoadedConfig`.
 3. `Config::parse` parses raw TOML internally and returns normalized `Config`
    plus source spans.
-4. `ActionPlan::from_manifest` validates files and commands.
+4. `ActionPlan::from_manifest` expands file source globs, validates files, and
+   validates commands.
 
 `ActionPlan` and its planned operation entries keep their fields private.
 External callers inspect validated plans through accessors instead of
@@ -286,7 +287,7 @@ file-operation execution._
 | `file_system.rs`     | Low-level filesystem inspection, comparison, metadata, writable-parent, copy, symlink, delete helpers, and permission-denied ownership warnings for file planning and execution. | File-operation policy, action grouping, or output lifecycle.                                                 |
 | `ignore_rules.rs`    | Compiling and matching copy/sync path ignore rules.                                                                                                                              | Config parsing, validation policy, or filesystem mutation.                                                   |
 | `runtime.rs`         | Environment/config/CLI runtime policy precedence and conversion to validation options.                                                                                           | Config parsing, Git discovery, or side effects.                                                              |
-| `validation.rs`      | Pre-side-effect checks, path normalization, duplicate targets, strict sync rejection, command cwd/env checks.                                                                    | Parsing or filesystem mutation.                                                                              |
+| `validation.rs`      | Source glob expansion, pre-side-effect checks, path normalization, duplicate targets, strict sync rejection, command cwd/env checks.                                             | Parsing or filesystem mutation.                                                                              |
 | `commands.rs`        | Sequential configured command spawning and dry-run output.                                                                                                                       | Parsing command config or deciding command order.                                                            |
 | `metadata.rs`        | Embedded config schema, spec version, and version metadata helpers.                                                                                                              | Generating source files or reading runtime files.                                                            |
 | `output.rs`          | Structured output events and message formatting.                                                                                                                                 | Choosing when events happen.                                                                                 |
