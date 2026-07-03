@@ -682,15 +682,14 @@ fn expand_glob_file_operation(
         return Ok(vec![ExpandedFileEntry::SkippedPattern(operation.clone())]);
     }
 
-    let default_target = operation.target == operation.source;
     matches
         .into_iter()
         .map(|entry| {
             let source = split.base.join(&entry.relative);
-            let target = if default_target {
-                source.clone()
-            } else {
+            let target = if operation.target_explicit {
                 operation.target.join(&entry.relative)
+            } else {
+                source.clone()
             };
             let target_path = paths::resolve_path(worktree_path, &target).map_err(|source| {
                 file_plan_error(
@@ -713,6 +712,7 @@ fn expand_glob_file_operation(
                 target,
                 required: operation.required,
                 glob: false,
+                target_explicit: true,
                 compare: operation.compare,
                 delete: operation.delete,
                 symlinks: operation.symlinks,
@@ -1568,6 +1568,7 @@ mod tests {
             target_path: worktree.join(target),
             required: false,
             glob: false,
+            target_explicit: true,
             compare: match operation {
                 FileOperationKind::Sync => Some(SyncCompare::Metadata),
                 FileOperationKind::Copy | FileOperationKind::Symlink => None,
@@ -1617,6 +1618,7 @@ mod tests {
                 target_path: worktree.join("missing"),
                 required: false,
                 glob: false,
+                target_explicit: true,
                 compare: None,
                 delete: None,
                 symlinks: Some(SymlinkMode::Preserve),
@@ -1785,6 +1787,7 @@ mod tests {
                 target_path: outside_target,
                 required: false,
                 glob: false,
+                target_explicit: true,
                 compare: None,
                 delete: None,
                 symlinks: Some(SymlinkMode::Preserve),
@@ -2637,6 +2640,7 @@ copy = ["cfg/*"]
                 target_path: worktree.join("out"),
                 required: false,
                 glob: true,
+                target_explicit: true,
                 compare: None,
                 delete: None,
                 symlinks: Some(SymlinkMode::Preserve),
@@ -2703,5 +2707,39 @@ copy = ["cfg/*"]
 
         assert_eq!(plan.files.len(), 1);
         assert_eq!(plan.files[0].target(), Path::new("out/a.pem"));
+    }
+
+    #[test]
+    fn action_plan_should_reject_invalid_glob_source_patterns() {
+        let (root, worktree) = temp_workspace("glob-invalid-pattern");
+        let config = parse_manifest(r#"copy = ["certs/[ab.pem"]"#, &root, &worktree);
+
+        let error = plan(&config, &root, &worktree).expect_err("invalid pattern should fail");
+
+        assert!(
+            error.to_string().contains("invalid glob pattern"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn action_plan_should_not_broaden_glob_matches_with_negated_ignores() {
+        let (root, worktree) = temp_workspace("glob-no-broaden");
+        std::fs::create_dir_all(root.join("certs")).expect("dirs should be created");
+        std::fs::write(root.join("certs/a.pem"), "a").expect("file should be written");
+        std::fs::write(root.join("certs/extra.txt"), "x").expect("file should be written");
+        let config = parse_manifest(
+            r#"copy = [{ source = "certs/*.pem", ignore = ["!extra.txt"] }]"#,
+            &root,
+            &worktree,
+        );
+
+        let plan = plan(&config, &root, &worktree).expect("glob sources should plan");
+
+        assert_eq!(
+            planned_sources_and_targets(&plan),
+            vec![("certs/a.pem".to_owned(), "certs/a.pem".to_owned())],
+            "negated ignore patterns must not add paths the glob never matched"
+        );
     }
 }

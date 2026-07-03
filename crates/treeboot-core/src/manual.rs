@@ -411,6 +411,7 @@ fn manual_operations(
     } = options;
     let sources = expand_manual_sources(operation, sources, context, required, glob, &ignore)?;
     let multiple_sources = sources.len() > 1;
+    let target_explicit = target.is_some();
     sources
         .into_iter()
         .map(|(source, ignore_prefix)| {
@@ -439,6 +440,7 @@ fn manual_operations(
                 target,
                 required,
                 glob: false,
+                target_explicit,
                 compare: settings.compare,
                 delete: settings.delete,
                 symlinks: settings.symlinks,
@@ -1189,6 +1191,7 @@ mod tests {
                 target_path: worktree.join("outside"),
                 required: false,
                 glob: false,
+                target_explicit: true,
                 compare: None,
                 delete: None,
                 symlinks: Some(SymlinkMode::Preserve),
@@ -1224,6 +1227,7 @@ mod tests {
                 target_path: worktree.join("shared"),
                 required: false,
                 glob: false,
+                target_explicit: true,
                 compare: Some(SyncCompare::Metadata),
                 delete: Some(false),
                 symlinks: Some(SymlinkMode::Preserve),

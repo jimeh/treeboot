@@ -140,6 +140,11 @@ pub struct FileOperation {
     pub required: bool,
     /// Whether the source is treated as a glob pattern.
     pub glob: bool,
+    /// Whether the target path was explicitly declared instead of defaulting
+    /// to the source path. Glob expansion maps explicit targets as path
+    /// prefixes and defaults each match's target to its own source path.
+    #[serde(skip)]
+    pub target_explicit: bool,
     /// Sync comparison mode.
     pub compare: Option<SyncCompare>,
     /// Whether sync should delete target-only files.
@@ -635,6 +640,7 @@ fn normalize_file_object(
             "file operation is missing required `source`",
         )
     })?;
+    let target_explicit = object.target.is_some();
     let target = object.target.unwrap_or_else(|| source.clone());
     let settings = normalize_file_operation_settings(
         operation,
@@ -675,6 +681,7 @@ fn normalize_file_object(
         target: PathBuf::from(target),
         required: object.required,
         glob,
+        target_explicit,
         compare: settings.compare,
         delete: settings.delete,
         symlinks: settings.symlinks,

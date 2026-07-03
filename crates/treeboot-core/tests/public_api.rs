@@ -159,6 +159,7 @@ fn copy_spec(context: &Worktree, source: &str, target: &str) -> FileOperation {
         target_path: context.worktree_path.join(target),
         required: false,
         glob: false,
+        target_explicit: true,
         compare: None,
         delete: None,
         symlinks: Some(SymlinkMode::Preserve),

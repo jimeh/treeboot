@@ -299,6 +299,7 @@ fn validated_file_plan(
         target_path: worktree.join(target),
         required: false,
         glob: false,
+        target_explicit: true,
         compare: None,
         delete: None,
         symlinks: None,

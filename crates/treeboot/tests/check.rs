@@ -564,3 +564,19 @@ fn check_should_fail_required_glob_patterns_without_matches() {
             "no sources match required glob source pattern",
         ));
 }
+
+#[test]
+fn check_should_fail_for_invalid_glob_source_patterns() {
+    let repo = git_worktree();
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = ["certs/[ab.pem"]"#,
+    );
+
+    treeboot()
+        .arg("check")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("invalid glob pattern"));
+}
