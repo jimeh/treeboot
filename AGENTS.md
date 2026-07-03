@@ -92,6 +92,8 @@ commands:
 - manual root-to-worktree file operation planning and execution
 - top-level and operation-local copy/sync path ignore rules, including `!`
   re-inclusion
+- glob source pattern expansion for declarative and manual file operations, with
+  `glob = false` and `--no-glob` opt-outs
 - public Worktree/Manifest/ActionPlan/Executor API surface, with command-shaped
   workflow facades for full treeboot behavior
 - view-only discovery status inspection

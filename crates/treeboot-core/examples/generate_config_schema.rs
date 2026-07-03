@@ -94,6 +94,9 @@ struct CopyObject {
     /// Whether a missing source should fail validation.
     #[serde(skip_serializing_if = "Option::is_none")]
     required: Option<bool>,
+    /// Whether glob metacharacters in source expand to matched paths.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    glob: Option<bool>,
     /// How safe source symlinks are handled.
     #[serde(skip_serializing_if = "Option::is_none")]
     symlinks: Option<SymlinkMode>,
@@ -116,6 +119,9 @@ struct SymlinkObject {
     /// Whether a missing source should fail validation.
     #[serde(skip_serializing_if = "Option::is_none")]
     required: Option<bool>,
+    /// Whether glob metacharacters in source expand to matched paths.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    glob: Option<bool>,
 }
 
 #[derive(JsonSchema, Serialize)]
@@ -129,6 +135,9 @@ struct SyncObject {
     /// Whether a missing source should fail validation.
     #[serde(skip_serializing_if = "Option::is_none")]
     required: Option<bool>,
+    /// Whether glob metacharacters in source expand to matched paths.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    glob: Option<bool>,
     /// File comparison mode.
     #[serde(skip_serializing_if = "Option::is_none")]
     compare: Option<SyncCompare>,
@@ -159,6 +168,9 @@ enum MixedFileObject {
         /// Whether a missing source should fail validation.
         #[serde(skip_serializing_if = "Option::is_none")]
         required: Option<bool>,
+        /// Whether glob metacharacters in source expand to matched paths.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        glob: Option<bool>,
         /// How safe source symlinks are handled.
         #[serde(skip_serializing_if = "Option::is_none")]
         symlinks: Option<SymlinkMode>,
@@ -179,6 +191,9 @@ enum MixedFileObject {
         /// Whether a missing source should fail validation.
         #[serde(skip_serializing_if = "Option::is_none")]
         required: Option<bool>,
+        /// Whether glob metacharacters in source expand to matched paths.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        glob: Option<bool>,
     },
     /// Sync object entry for mixed `files` and `[[file]]` declarations.
     Sync {
@@ -190,6 +205,9 @@ enum MixedFileObject {
         /// Whether a missing source should fail validation.
         #[serde(skip_serializing_if = "Option::is_none")]
         required: Option<bool>,
+        /// Whether glob metacharacters in source expand to matched paths.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        glob: Option<bool>,
         /// File comparison mode.
         #[serde(skip_serializing_if = "Option::is_none")]
         compare: Option<SyncCompare>,

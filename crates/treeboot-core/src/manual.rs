@@ -6,6 +6,8 @@ use crate::config::{
     effective_ignore_patterns, normalize_file_operation_settings,
 };
 use crate::context;
+use crate::glob;
+use crate::ignore_rules::PathIgnoreRules;
 use crate::paths::{self, UnsupportedPath};
 use crate::{
     ActionPlan, EnvironmentInput, Error, ExecuteOptions, Executor, FileOperation,
@@ -24,6 +26,8 @@ pub struct ManualFileOperationOptions {
     pub target: Option<PathBuf>,
     /// Fails when a source is missing.
     pub required: bool,
+    /// Expands glob source patterns into matched sources.
+    pub glob: bool,
     /// How copy and sync should treat source symlinks.
     pub symlinks: Option<SymlinkMode>,
     /// Sync comparison mode.
@@ -43,6 +47,7 @@ impl Default for ManualFileOperationOptions {
             sources: Vec::new(),
             target: None,
             required: false,
+            glob: true,
             symlinks: None,
             compare: None,
             delete: None,
@@ -125,6 +130,8 @@ pub struct FileOperationOptions {
     pub target: Option<PathBuf>,
     /// Fails when a source is missing.
     pub required: bool,
+    /// Expands glob source patterns into matched sources.
+    pub glob: bool,
     /// How copy and sync should treat source symlinks.
     pub symlinks: Option<SymlinkMode>,
     /// Sync comparison mode.
@@ -155,6 +162,7 @@ impl Default for FileOperationOptions {
             sources: Vec::new(),
             target: None,
             required: false,
+            glob: true,
             symlinks: None,
             compare: None,
             delete: None,
@@ -250,6 +258,7 @@ pub fn run_file_operation(
         sources,
         target,
         required,
+        glob,
         symlinks,
         compare,
         delete,
@@ -265,6 +274,7 @@ pub fn run_file_operation(
         sources,
         target,
         required,
+        glob,
         symlinks,
         compare,
         delete,
@@ -395,13 +405,15 @@ fn manual_operations(
         sources,
         target,
         required,
+        glob,
         ignore,
         ..
     } = options;
+    let sources = expand_manual_sources(operation, sources, context, required, glob, &ignore)?;
     let multiple_sources = sources.len() > 1;
     sources
         .into_iter()
-        .map(|source| {
+        .map(|(source, ignore_prefix)| {
             let target = manual_target(operation, &source, target.as_deref(), multiple_sources)?;
             let source_path = resolve_path(
                 operation,
@@ -426,15 +438,131 @@ fn manual_operations(
                 source,
                 target,
                 required,
+                glob: false,
                 compare: settings.compare,
                 delete: settings.delete,
                 symlinks: settings.symlinks,
                 ignore: ignore.clone(),
                 ignore_metadata: settings.ignore_metadata.clone(),
+                ignore_prefix,
                 declaration: manual_span(),
             })
         })
         .collect()
+}
+
+/// Expands manual glob source arguments into matched source values, exactly
+/// as if the shell had expanded the pattern into multiple source arguments.
+///
+/// Each returned entry pairs a source value with the pattern-base-relative
+/// ignore prefix, which is empty for literal sources. Optional patterns with
+/// no matches are kept as literal source values so they follow normal
+/// missing-source skip semantics.
+fn expand_manual_sources(
+    operation: FileOperationKind,
+    sources: Vec<PathBuf>,
+    context: &Worktree,
+    required: bool,
+    glob: bool,
+    ignore: &[String],
+) -> Result<Vec<(PathBuf, PathBuf)>> {
+    let mut expanded = Vec::with_capacity(sources.len());
+
+    for source in sources {
+        if !glob || !glob::is_glob_source(&source) {
+            expanded.push((source, PathBuf::new()));
+            continue;
+        }
+
+        let split = glob::split_glob_source(&source).map_err(|error| {
+            manual_error(
+                operation,
+                format!(
+                    "invalid glob source pattern `{}`: {error}",
+                    source.display()
+                ),
+            )
+        })?;
+        let base_path = paths::resolve_path(&context.root_path, &split.base)
+            .map_err(|error| {
+                manual_error(
+                    operation,
+                    format!(
+                        "unsupported glob source pattern `{}`: {}",
+                        source.display(),
+                        error.reason()
+                    ),
+                )
+            })
+            .and_then(|resolved| {
+                paths::normalize_maybe_existing(&resolved).map_err(|error| {
+                    manual_error(
+                        operation,
+                        format!(
+                            "failed to resolve glob source pattern `{}`: {error}",
+                            source.display()
+                        ),
+                    )
+                })
+            })?;
+        let ignore_rules = manual_glob_ignore_rules(operation, &source, &base_path, ignore)?;
+        let matches = glob::expand_glob_source(&base_path, &split, ignore_rules.as_ref()).map_err(
+            |error| {
+                manual_error(
+                    operation,
+                    format!(
+                        "failed to expand glob source pattern `{}`: {error}",
+                        source.display()
+                    ),
+                )
+            },
+        )?;
+
+        if matches.is_empty() {
+            if required {
+                return invalid_manual(
+                    operation,
+                    format!(
+                        "no sources match required glob source pattern `{}`",
+                        source.display()
+                    ),
+                );
+            }
+
+            expanded.push((source, PathBuf::new()));
+            continue;
+        }
+
+        for entry in matches {
+            expanded.push((split.base.join(&entry.relative), entry.relative));
+        }
+    }
+
+    Ok(expanded)
+}
+
+fn manual_glob_ignore_rules(
+    operation: FileOperationKind,
+    source: &Path,
+    base_path: &Path,
+    ignore: &[String],
+) -> Result<Option<PathIgnoreRules>> {
+    if !matches!(operation, FileOperationKind::Copy | FileOperationKind::Sync) || ignore.is_empty()
+    {
+        return Ok(None);
+    }
+
+    PathIgnoreRules::new(base_path, ignore)
+        .map(Some)
+        .map_err(|error| {
+            manual_error(
+                operation,
+                format!(
+                    "invalid ignore pattern for glob source pattern `{}`: {error}",
+                    source.display()
+                ),
+            )
+        })
 }
 
 fn manual_target(
@@ -588,10 +716,14 @@ const fn manual_span() -> SourceSpan {
 }
 
 fn invalid_manual<T>(operation: FileOperationKind, message: impl Into<String>) -> Result<T> {
-    Err(Error::FileOperationInvalid {
+    Err(manual_error(operation, message))
+}
+
+fn manual_error(operation: FileOperationKind, message: impl Into<String>) -> Error {
+    Error::FileOperationInvalid {
         operation: operation.as_str(),
         message: message.into(),
-    })
+    }
 }
 
 fn report(reporter: &mut dyn Reporter, event: OutputEvent) -> Result<()> {
@@ -640,13 +772,7 @@ mod tests {
         ManualFileOperationOptions {
             operation,
             sources: sources.iter().map(PathBuf::from).collect(),
-            target: None,
-            required: false,
-            symlinks: None,
-            compare: None,
-            delete: None,
-            ignore: Vec::new(),
-            ignore_metadata: Vec::new(),
+            ..ManualFileOperationOptions::default()
         }
     }
 
@@ -714,13 +840,7 @@ mod tests {
         let mut options = ManualFileOperationOptions {
             operation: FileOperationKind::Copy,
             sources: vec![source.clone()],
-            target: None,
-            required: false,
-            symlinks: None,
-            compare: None,
-            delete: None,
-            ignore: Vec::new(),
-            ignore_metadata: Vec::new(),
+            ..ManualFileOperationOptions::default()
         };
         options.sources.push(root.join("b"));
         options.target = Some(PathBuf::from("local"));
@@ -1068,11 +1188,13 @@ mod tests {
                 source_path: root.join("../outside"),
                 target_path: worktree.join("outside"),
                 required: false,
+                glob: false,
                 compare: None,
                 delete: None,
                 symlinks: Some(SymlinkMode::Preserve),
                 ignore: Vec::new(),
                 ignore_metadata: Vec::new(),
+                ignore_prefix: PathBuf::new(),
                 declaration: manual_span(),
             }],
             ActionPlanOptions::default(),
@@ -1101,11 +1223,13 @@ mod tests {
                 source_path: root.join("shared"),
                 target_path: worktree.join("shared"),
                 required: false,
+                glob: false,
                 compare: Some(SyncCompare::Metadata),
                 delete: Some(false),
                 symlinks: Some(SymlinkMode::Preserve),
                 ignore: Vec::new(),
                 ignore_metadata: Vec::new(),
+                ignore_prefix: PathBuf::new(),
                 declaration: manual_span(),
             }],
             ActionPlanOptions {
@@ -1117,5 +1241,99 @@ mod tests {
 
         assert!(error.to_string().contains("cannot be used with sync"));
         assert!(!worktree.join("shared").exists());
+    }
+
+    #[test]
+    fn manual_operations_should_expand_glob_sources_like_shell_expansion() {
+        let (root, worktree) = temp_workspace("glob-shell-parity");
+        std::fs::create_dir_all(root.join("certs")).expect("dirs should be created");
+        std::fs::write(root.join("certs/a.pem"), "a").expect("file should be written");
+        std::fs::write(root.join("certs/b.pem"), "b").expect("file should be written");
+        let context = context(&root, &worktree);
+        let mut options = options(FileOperationKind::Copy, &["certs/*.pem"]);
+        options.target = Some(PathBuf::from("local"));
+
+        let operations = FileOperation::from_manual_options(&context, options)
+            .expect("glob sources should normalize");
+
+        let targets = operations
+            .iter()
+            .map(|operation| operation.target.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            targets,
+            vec![
+                PathBuf::from("local").join("certs/a.pem"),
+                PathBuf::from("local").join("certs/b.pem"),
+            ]
+        );
+        assert_eq!(operations[0].ignore_prefix, PathBuf::from("a.pem"));
+    }
+
+    #[test]
+    fn manual_operations_should_use_exact_target_for_single_glob_match() {
+        let (root, worktree) = temp_workspace("glob-single-match");
+        std::fs::create_dir_all(root.join("certs")).expect("dirs should be created");
+        std::fs::write(root.join("certs/only.pem"), "o").expect("file should be written");
+        let context = context(&root, &worktree);
+        let mut options = options(FileOperationKind::Copy, &["certs/*.pem"]);
+        options.target = Some(PathBuf::from("local/cert.pem"));
+
+        let operations = FileOperation::from_manual_options(&context, options)
+            .expect("glob source should normalize");
+
+        assert_eq!(operations.len(), 1);
+        assert_eq!(
+            operations[0].source,
+            PathBuf::from("certs").join("only.pem")
+        );
+        assert_eq!(operations[0].target, PathBuf::from("local/cert.pem"));
+    }
+
+    #[test]
+    fn manual_operations_should_keep_optional_zero_match_patterns_literal() {
+        let (root, worktree) = temp_workspace("glob-zero-match-literal");
+        let context = context(&root, &worktree);
+        let options = options(FileOperationKind::Copy, &["missing/*.pem"]);
+
+        let operations = FileOperation::from_manual_options(&context, options)
+            .expect("zero matches should normalize");
+
+        assert_eq!(operations.len(), 1);
+        assert_eq!(operations[0].source, PathBuf::from("missing/*.pem"));
+    }
+
+    #[test]
+    fn manual_operations_should_fail_required_zero_match_patterns() {
+        let (root, worktree) = temp_workspace("glob-zero-match-required");
+        let context = context(&root, &worktree);
+        let mut options = options(FileOperationKind::Copy, &["missing/*.pem"]);
+        options.required = true;
+
+        let error = FileOperation::from_manual_options(&context, options)
+            .expect_err("required zero matches should fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("no sources match required glob source pattern"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn manual_operations_should_treat_sources_literally_without_glob() {
+        let (root, worktree) = temp_workspace("glob-disabled");
+        std::fs::create_dir_all(root.join("certs")).expect("dirs should be created");
+        std::fs::write(root.join("certs/a.pem"), "a").expect("file should be written");
+        let context = context(&root, &worktree);
+        let mut options = options(FileOperationKind::Copy, &["certs/*.pem"]);
+        options.glob = false;
+
+        let operations = FileOperation::from_manual_options(&context, options)
+            .expect("literal pattern should normalize");
+
+        assert_eq!(operations.len(), 1);
+        assert_eq!(operations[0].source, PathBuf::from("certs/*.pem"));
     }
 }

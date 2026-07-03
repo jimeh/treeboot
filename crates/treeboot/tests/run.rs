@@ -2195,3 +2195,302 @@ fn non_executable_init_script_should_be_ignored() {
         .stdout(predicate::str::contains("treeboot: ignore"))
         .stdout(predicate::str::contains("treeboot: no config detected"));
 }
+
+#[test]
+fn run_should_expand_glob_config_sources() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("traefik/certs"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("traefik/certs/a.pem"), "a\n");
+    write_file(&repo.root_path().join("traefik/certs/b.pem"), "b\n");
+    write_file(&repo.root_path().join("traefik/certs/skip.txt"), "s\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "traefik/certs/*.pem", target = "certs" }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "treeboot: copy {} -> {}",
+            display_path("traefik/certs/a.pem"),
+            display_path("certs/a.pem")
+        )))
+        .stdout(predicate::str::contains(format!(
+            "treeboot: copy {} -> {}",
+            display_path("traefik/certs/b.pem"),
+            display_path("certs/b.pem")
+        )));
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("certs/a.pem"))
+            .expect("expanded target should be readable"),
+        "a\n"
+    );
+    assert!(!repo.worktree_path().join("certs/skip.txt").exists());
+}
+
+#[test]
+fn run_should_anchor_glob_ignore_rules_at_pattern_base() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("cfg/sub/tmp"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("cfg/sub/keep"), "keep\n");
+    write_file(&repo.root_path().join("cfg/sub/tmp/drop"), "drop\n");
+    write_file(&repo.root_path().join("cfg/foo.pem"), "foo\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "cfg/*", target = "out", ignore = ["foo.pem", "sub/tmp/"] }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("out/sub/keep"))
+            .expect("kept target should be readable"),
+        "keep\n"
+    );
+    assert!(
+        !repo.worktree_path().join("out/foo.pem").exists(),
+        "ignored match should be dropped"
+    );
+    assert!(
+        !repo.worktree_path().join("out/sub/tmp").exists(),
+        "base-anchored content ignore should apply inside matched directories"
+    );
+}
+
+#[test]
+fn run_should_scope_glob_sync_deletes_to_matched_targets() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("cfg/a")).expect("source dirs created");
+    write_file(&repo.root_path().join("cfg/a/file"), "a\n");
+    std::fs::create_dir_all(repo.worktree_path().join("out/a")).expect("target dirs created");
+    write_file(&repo.worktree_path().join("out/a/stale"), "stale\n");
+    write_file(&repo.worktree_path().join("out/unrelated"), "keep\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"sync = [{ source = "cfg/*", target = "out", delete = true }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert!(
+        !repo.worktree_path().join("out/a/stale").exists(),
+        "target-only files inside matched targets should be deleted"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("out/unrelated"))
+            .expect("uncovered target-only file should be preserved"),
+        "keep\n"
+    );
+}
+
+#[test]
+fn run_should_skip_optional_glob_patterns_without_matches() {
+    let repo = git_worktree();
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = ["missing/*.pem"]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("skip copy"))
+        .stdout(predicate::str::contains("missing source"));
+}
+
+#[test]
+fn run_dry_run_should_report_expanded_glob_operations_without_side_effects() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("certs"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("certs/a.pem"), "a\n");
+    write_file(&repo.root_path().join("certs/b.pem"), "b\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "certs/*.pem", target = "out" }]"#,
+    );
+
+    treeboot()
+        .args(["run", "--dry-run"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "treeboot: would copy {} -> {}",
+            display_path("certs/a.pem"),
+            display_path("out/a.pem")
+        )))
+        .stdout(predicate::str::contains(format!(
+            "treeboot: would copy {} -> {}",
+            display_path("certs/b.pem"),
+            display_path("out/b.pem")
+        )));
+
+    assert!(!repo.worktree_path().join("out").exists());
+}
+
+#[test]
+fn run_should_preserve_nested_structure_for_globstar_sources() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("n/a/b"))
+        .expect("source directories should be created");
+    write_file(&repo.root_path().join("n/top.txt"), "top\n");
+    write_file(&repo.root_path().join("n/a/b/deep.txt"), "deep\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "n/**/*.txt", target = "o" }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("o/top.txt"))
+            .expect("top-level match should be copied"),
+        "top\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("o/a/b/deep.txt"))
+            .expect("nested match should preserve structure"),
+        "deep\n"
+    );
+}
+
+#[test]
+fn run_should_expand_glob_directory_and_hidden_matches_recursively() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("cfg/dir/nested"))
+        .expect("source directories should be created");
+    write_file(&repo.root_path().join("cfg/dir/nested/file"), "value\n");
+    write_file(&repo.root_path().join("cfg/.env"), "TOKEN=1\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = ["cfg/*"]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("cfg/dir/nested/file"))
+            .expect("matched directory should copy recursively"),
+        "value\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("cfg/.env"))
+            .expect("hidden files should match glob patterns"),
+        "TOKEN=1\n"
+    );
+}
+
+#[test]
+fn run_should_apply_conflict_modes_to_expanded_glob_operations() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("certs"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("certs/a.pem"), "new-a\n");
+    write_file(&repo.root_path().join("certs/b.pem"), "new-b\n");
+    write_file(&repo.worktree_path().join("a.pem"), "old-a\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "certs/*.pem", target = "." }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("skip copy"))
+        .stdout(predicate::str::contains("target exists"));
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("a.pem"))
+            .expect("existing target should be readable"),
+        "old-a\n",
+        "default mode should skip the existing expanded target"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("b.pem"))
+            .expect("missing target should be copied"),
+        "new-b\n"
+    );
+
+    treeboot()
+        .args(["run", "--strict"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("target exists"));
+
+    treeboot()
+        .args(["run", "--force"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("a.pem"))
+            .expect("replaced target should be readable"),
+        "new-a\n",
+        "force mode should replace the existing expanded target"
+    );
+}
+
+#[test]
+fn run_should_not_create_target_prefix_for_zero_match_glob_patterns() {
+    let repo = git_worktree();
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "missing/*.pem", target = "out" }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("missing source"));
+
+    assert!(!repo.worktree_path().join("out").exists());
+}
+
+#[test]
+fn run_should_fail_required_glob_config_patterns_without_matches() {
+    let repo = git_worktree();
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "missing/*.pem", required = true }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "no sources match required glob source pattern",
+        ));
+}

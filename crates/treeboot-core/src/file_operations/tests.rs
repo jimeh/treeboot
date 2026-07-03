@@ -298,11 +298,13 @@ fn validated_file_plan(
         source_path: root.join(source),
         target_path: worktree.join(target),
         required: false,
+        glob: false,
         compare: None,
         delete: None,
         symlinks: None,
         ignore: Vec::new(),
         ignore_metadata: Vec::new(),
+        ignore_prefix: PathBuf::new(),
         declaration: span(),
     };
     ActionPlan::from_file_operations(

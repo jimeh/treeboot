@@ -823,6 +823,7 @@ name = "treeboot-core"
 version = "0.8.2"
 dependencies = [
  "dunce",
+ "globset",
  "ignore",
  "schemars",
  "serde",

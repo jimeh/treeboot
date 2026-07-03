@@ -39,6 +39,10 @@
     "CopyObject": {
       "additionalProperties": false,
       "properties": {
+        "glob": {
+          "description": "Whether glob metacharacters in source expand to matched paths.",
+          "type": "boolean"
+        },
         "ignore": {
           "description": "Source-relative path patterns that copy should skip.",
           "items": {
@@ -129,6 +133,10 @@
           "additionalProperties": false,
           "description": "Copy object entry for mixed `files` and `[[file]]` declarations.",
           "properties": {
+            "glob": {
+              "description": "Whether glob metacharacters in source expand to matched paths.",
+              "type": "boolean"
+            },
             "ignore": {
               "description": "Source-relative path patterns that copy should skip.",
               "items": {
@@ -174,6 +182,10 @@
           "additionalProperties": false,
           "description": "Symlink object entry for mixed `files` and `[[file]]` declarations.",
           "properties": {
+            "glob": {
+              "description": "Whether glob metacharacters in source expand to matched paths.",
+              "type": "boolean"
+            },
             "operation": {
               "const": "symlink",
               "type": "string"
@@ -207,6 +219,10 @@
             },
             "delete": {
               "description": "Whether target-only files are deleted for directory sync.",
+              "type": "boolean"
+            },
+            "glob": {
+              "description": "Whether glob metacharacters in source expand to matched paths.",
               "type": "boolean"
             },
             "ignore": {
@@ -305,6 +321,10 @@
     "SymlinkObject": {
       "additionalProperties": false,
       "properties": {
+        "glob": {
+          "description": "Whether glob metacharacters in source expand to matched paths.",
+          "type": "boolean"
+        },
         "required": {
           "description": "Whether a missing source should fail validation.",
           "type": "boolean"
@@ -351,6 +371,10 @@
         },
         "delete": {
           "description": "Whether target-only files are deleted for directory sync.",
+          "type": "boolean"
+        },
+        "glob": {
+          "description": "Whether glob metacharacters in source expand to matched paths.",
           "type": "boolean"
         },
         "ignore": {

@@ -138,6 +138,8 @@ pub struct FileOperation {
     pub target_path: PathBuf,
     /// Whether a missing source should fail validation.
     pub required: bool,
+    /// Whether the source is treated as a glob pattern.
+    pub glob: bool,
     /// Sync comparison mode.
     pub compare: Option<SyncCompare>,
     /// Whether sync should delete target-only files.
@@ -148,6 +150,12 @@ pub struct FileOperation {
     pub ignore: Vec<String>,
     /// Metadata fields ignored by copy and sync.
     pub ignore_metadata: Vec<MetadataField>,
+    /// Pattern-base-relative prefix applied to operation-relative paths
+    /// during ignore matching. Non-empty only for operations expanded from a
+    /// glob source pattern, where ignore rules stay anchored at the pattern
+    /// base instead of the expanded operation's own source.
+    #[serde(skip)]
+    pub ignore_prefix: PathBuf,
     /// Source location for the operation declaration.
     pub declaration: SourceSpan,
 }
@@ -540,6 +548,7 @@ fn normalize_file_group(
                 source: Some(source),
                 target: None,
                 required: false,
+                glob: None,
                 compare: None,
                 delete: None,
                 symlinks: None,
@@ -650,6 +659,8 @@ fn normalize_file_object(
         )
     })?;
 
+    let glob = object.glob.unwrap_or(true) && crate::glob::is_glob_source(Path::new(&source));
+
     Ok(FileOperation {
         operation,
         source_path: resolve_path(path, content, span, &context.root_path, Path::new(&source))?,
@@ -663,11 +674,13 @@ fn normalize_file_object(
         source: PathBuf::from(source),
         target: PathBuf::from(target),
         required: object.required,
+        glob,
         compare: settings.compare,
         delete: settings.delete,
         symlinks: settings.symlinks,
         ignore: effective_ignore_patterns(operation, default_ignore, settings.ignore),
         ignore_metadata: settings.ignore_metadata,
+        ignore_prefix: PathBuf::new(),
         declaration: span,
     })
 }
@@ -1003,6 +1016,7 @@ struct RawFileObject {
     source: Option<String>,
     target: Option<String>,
     required: bool,
+    glob: Option<bool>,
     compare: Option<SyncCompare>,
     delete: Option<bool>,
     symlinks: Option<SymlinkMode>,
@@ -1611,5 +1625,27 @@ commands = [{
     #[test]
     fn parse_config_should_report_invalid_toml_location() {
         assert_parse_error_contains("commands = [\n", "line 1, column");
+    }
+
+    #[test]
+    fn parse_config_should_detect_glob_sources() {
+        let config = parse(
+            r#"
+copy = [
+  "certs/*.pem",
+  { source = "config/?" },
+  { source = "config/[ab]", glob = false },
+  ".env",
+]
+"#,
+        );
+
+        let globs = config
+            .files
+            .iter()
+            .map(|operation| operation.glob)
+            .collect::<Vec<_>>();
+
+        assert_eq!(globs, vec![true, true, false, false]);
     }
 }

@@ -936,3 +936,214 @@ fn dynamic_completion_should_use_root_equals_option_for_sources() {
         .stdout(predicate::str::contains("default.env").not());
     }
 }
+
+#[test]
+fn copy_should_expand_glob_sources_like_shell_expansion() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("certs"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("certs/a.pem"), "a\n");
+    write_file(&repo.root_path().join("certs/b.pem"), "b\n");
+    write_file(&repo.root_path().join("certs/skip.txt"), "s\n");
+
+    treeboot()
+        .args(["copy", "certs/*.pem", "--target", "local"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "treeboot: copy {} -> {}",
+            display_path("certs/a.pem"),
+            display_path("local/certs/a.pem")
+        )))
+        .stdout(predicate::str::contains(format!(
+            "treeboot: copy {} -> {}",
+            display_path("certs/b.pem"),
+            display_path("local/certs/b.pem")
+        )));
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("local/certs/a.pem"))
+            .expect("expanded file should be copied"),
+        "a\n"
+    );
+    assert!(!repo.worktree_path().join("local/certs/skip.txt").exists());
+}
+
+#[test]
+fn copy_should_treat_glob_sources_literally_with_no_glob() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("certs"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("certs/a.pem"), "a\n");
+
+    treeboot()
+        .args(["copy", "--no-glob", "certs/*.pem"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("skip copy"))
+        .stdout(predicate::str::contains("missing source"));
+
+    assert!(!repo.worktree_path().join("certs/a.pem").exists());
+}
+
+#[test]
+fn copy_should_fail_required_glob_sources_without_matches() {
+    let repo = git_worktree();
+
+    treeboot()
+        .args(["copy", "--required", "missing/*.pem"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "no sources match required glob source pattern",
+        ));
+}
+
+#[test]
+fn symlink_should_expand_glob_sources() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("bin"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("bin/tool-a"), "a\n");
+    write_file(&repo.root_path().join("bin/tool-b"), "b\n");
+
+    treeboot()
+        .args(["symlink", "bin/tool-*"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    for name in ["tool-a", "tool-b"] {
+        let link = repo.worktree_path().join("bin").join(name);
+        assert!(
+            link.symlink_metadata()
+                .expect("expanded symlink should exist")
+                .file_type()
+                .is_symlink(),
+            "{name} should be a symlink"
+        );
+        assert_eq!(
+            canonical_path(&link),
+            canonical_path(&repo.root_path().join("bin").join(name))
+        );
+    }
+}
+
+#[test]
+fn sync_should_expand_glob_sources() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("cfg"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("cfg/a.toml"), "new-a\n");
+    write_file(&repo.root_path().join("cfg/b.toml"), "new-b\n");
+    std::fs::create_dir_all(repo.worktree_path().join("cfg"))
+        .expect("target directory should be created");
+    write_file(&repo.worktree_path().join("cfg/a.toml"), "old-a\n");
+
+    treeboot()
+        .args(["sync", "cfg/*.toml", "--compare", "checksum"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("cfg/a.toml"))
+            .expect("changed target should be reconciled"),
+        "new-a\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("cfg/b.toml"))
+            .expect("missing target should be created"),
+        "new-b\n"
+    );
+}
+
+#[test]
+fn copy_should_expand_multiple_glob_source_arguments() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("a")).expect("source dirs created");
+    std::fs::create_dir_all(repo.root_path().join("b")).expect("source dirs created");
+    write_file(&repo.root_path().join("a/one.x"), "1\n");
+    write_file(&repo.root_path().join("b/two.y"), "2\n");
+
+    treeboot()
+        .args(["copy", "a/*.x", "b/*.y", "--target", "t"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("t/a/one.x"))
+            .expect("first expanded target should be readable"),
+        "1\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("t/b/two.y"))
+            .expect("second expanded target should be readable"),
+        "2\n"
+    );
+}
+
+#[test]
+fn copy_should_use_exact_target_for_single_glob_match() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("certs"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("certs/only.pem"), "only\n");
+
+    treeboot()
+        .args(["copy", "certs/*.pem", "--target", "local/cert.pem"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("local/cert.pem"))
+            .expect("single match should use the exact target"),
+        "only\n"
+    );
+}
+
+#[test]
+fn copy_should_skip_optional_glob_sources_without_matches() {
+    let repo = git_worktree();
+
+    treeboot()
+        .args(["copy", "missing/*.pem"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "skip copy {}",
+            display_path("missing/*.pem")
+        )))
+        .stdout(predicate::str::contains("missing source"));
+}
+
+#[test]
+fn copy_should_drop_glob_matches_ignored_at_pattern_base() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("config"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("config/foo.pem"), "foo\n");
+    write_file(&repo.root_path().join("config/keep.pem"), "keep\n");
+
+    treeboot()
+        .args(["copy", "config/*.pem", "--ignore", "foo.pem"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert!(
+        !repo.worktree_path().join("config/foo.pem").exists(),
+        "ignored match should be dropped"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("config/keep.pem"))
+            .expect("kept match should be copied"),
+        "keep\n"
+    );
+}

@@ -345,6 +345,7 @@ Use `treeboot schema` to print the embedded schema from the installed binary, or
 - Git worktree, root checkout, and default-branch discovery
 - declarative TOML config parsing, inspection, validation, and execution
 - copy, symlink, and sync file operations with copy/sync path ignore rules
+- glob source patterns that expand to matched files and directories
 - command execution with treeboot environment variables
 - executable init-script discovery and execution
 - check/doctor/env introspection and embedded version/schema metadata

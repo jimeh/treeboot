@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::file_system::{TargetAncestorIssue, inspect_target_ancestors, matching_target_anchor};
+use crate::glob;
 use crate::ignore_rules::PathIgnoreRules;
 use crate::paths;
 use crate::{
@@ -248,6 +249,9 @@ pub struct PlannedFileOperation {
     ignore: Vec<String>,
     /// Metadata fields ignored by copy and sync.
     ignore_metadata: Vec<MetadataField>,
+    /// Pattern-base-relative prefix applied to operation-relative paths
+    /// during ignore matching for glob-expanded operations.
+    ignore_prefix: PathBuf,
     /// Whether this operation should execute.
     status: PlannedFileStatus,
     /// Source location for the operation declaration.
@@ -321,6 +325,17 @@ impl PlannedFileOperation {
         &self.ignore_metadata
     }
 
+    /// Returns the pattern-base-relative prefix applied to operation-relative
+    /// paths during ignore matching.
+    ///
+    /// The prefix is non-empty only for operations expanded from a glob
+    /// source pattern, where ignore rules stay anchored at the pattern base
+    /// instead of the expanded operation's own source.
+    #[must_use]
+    pub fn ignore_prefix(&self) -> &Path {
+        &self.ignore_prefix
+    }
+
     /// Returns whether this operation should execute.
     #[must_use]
     pub const fn status(&self) -> PlannedFileStatus {
@@ -347,6 +362,7 @@ impl PlannedFileOperation {
             symlinks: parts.symlinks,
             ignore: parts.ignore,
             ignore_metadata: parts.ignore_metadata,
+            ignore_prefix: PathBuf::new(),
             status: parts.status,
             declaration: parts.declaration,
         }
@@ -519,23 +535,264 @@ pub(super) fn plan_file_operations(
         )
     })?;
 
-    let target_paths = normalize_target_paths(
+    validate_strict_sync(origin, files, options.strict)?;
+    let entries = expand_glob_file_operations(
         origin,
         files,
+        options,
+        root_path.as_path(),
+        context.worktree_path.as_path(),
+    )?;
+    let active = entries
+        .iter()
+        .filter_map(|entry| match entry {
+            ExpandedFileEntry::Active(operation) => Some(operation.clone()),
+            ExpandedFileEntry::SkippedPattern(_) => None,
+        })
+        .collect::<Vec<_>>();
+
+    let target_paths = normalize_target_paths(
+        origin,
+        &active,
         context.worktree_path.as_path(),
         worktree_path.as_path(),
     )?;
-    validate_target_conflicts(origin, files, &target_paths)?;
-    validate_strict_sync(origin, files, options.strict)?;
+    validate_target_conflicts(origin, &active, &target_paths)?;
 
-    build_file_operations(
+    let mut planned = build_file_operations(
         origin,
-        files,
+        &active,
         options,
         &target_paths,
         root_path.as_path(),
         worktree_path.as_path(),
-    )
+    )?
+    .into_iter();
+    entries
+        .into_iter()
+        .map(|entry| match entry {
+            ExpandedFileEntry::Active(_) => Ok(planned
+                .next()
+                .unwrap_or_else(|| unreachable!("planned operations match active entries"))),
+            ExpandedFileEntry::SkippedPattern(operation) => plan_skipped_pattern(origin, operation),
+        })
+        .collect()
+}
+
+/// A file operation entry after glob source expansion.
+enum ExpandedFileEntry {
+    /// A literal or glob-expanded operation to validate and plan.
+    Active(FileOperation),
+    /// An optional glob pattern with no matches, reported as skipped without
+    /// claiming its literal pattern target in conflict detection.
+    SkippedPattern(FileOperation),
+}
+
+fn expand_glob_file_operations(
+    origin: FilePlanOrigin<'_>,
+    files: &[FileOperation],
+    options: ActionPlanOptions,
+    root_path: &Path,
+    worktree_path: &Path,
+) -> Result<Vec<ExpandedFileEntry>> {
+    let mut entries = Vec::with_capacity(files.len());
+
+    for operation in files {
+        if !operation.glob {
+            entries.push(ExpandedFileEntry::Active(operation.clone()));
+            continue;
+        }
+
+        expand_glob_file_operation(origin, operation, options, root_path, worktree_path)?
+            .into_iter()
+            .for_each(|entry| entries.push(entry));
+    }
+
+    Ok(entries)
+}
+
+fn expand_glob_file_operation(
+    origin: FilePlanOrigin<'_>,
+    operation: &FileOperation,
+    options: ActionPlanOptions,
+    root_path: &Path,
+    worktree_path: &Path,
+) -> Result<Vec<ExpandedFileEntry>> {
+    let split = glob::split_glob_source(&operation.source).map_err(|source| {
+        file_plan_error(
+            origin,
+            Some(operation.declaration),
+            format!(
+                "invalid glob source pattern for {}: {source}",
+                operation_summary(origin, operation)
+            ),
+        )
+    })?;
+    let mut base_path = operation.source_path.clone();
+    for _ in 0..split.components.len() {
+        base_path.pop();
+    }
+    let base_path = normalize_maybe_existing(&base_path).map_err(|source| {
+        file_plan_error(
+            origin,
+            Some(operation.declaration),
+            format!(
+                "failed to resolve source {}: {source}",
+                operation.source.display()
+            ),
+        )
+    })?;
+
+    if !options.dangerously_allow_sources_outside_root && !is_within(&base_path, root_path) {
+        return invalid_file_plan(
+            origin,
+            Some(operation.declaration),
+            format!(
+                "source resolves outside root for {}",
+                operation_summary(origin, operation)
+            ),
+        );
+    }
+
+    let ignore_rules = glob_ignore_rules(origin, operation, &base_path)?;
+    let matches =
+        glob::expand_glob_source(&base_path, &split, ignore_rules.as_ref()).map_err(|source| {
+            file_plan_error(
+                origin,
+                Some(operation.declaration),
+                format!(
+                    "failed to expand glob source pattern for {}: {source}",
+                    operation_summary(origin, operation)
+                ),
+            )
+        })?;
+
+    if matches.is_empty() {
+        if operation.required {
+            return invalid_file_plan(
+                origin,
+                Some(operation.declaration),
+                format!(
+                    "no sources match required glob source pattern for {}",
+                    operation_summary(origin, operation)
+                ),
+            );
+        }
+
+        return Ok(vec![ExpandedFileEntry::SkippedPattern(operation.clone())]);
+    }
+
+    let default_target = operation.target == operation.source;
+    matches
+        .into_iter()
+        .map(|entry| {
+            let source = split.base.join(&entry.relative);
+            let target = if default_target {
+                source.clone()
+            } else {
+                operation.target.join(&entry.relative)
+            };
+            let target_path = paths::resolve_path(worktree_path, &target).map_err(|source| {
+                file_plan_error(
+                    origin,
+                    Some(operation.declaration),
+                    format!(
+                        "unsupported target path `{}` for {}: {}",
+                        target.display(),
+                        operation_summary(origin, operation),
+                        source.reason()
+                    ),
+                )
+            })?;
+
+            Ok(ExpandedFileEntry::Active(FileOperation {
+                operation: operation.operation,
+                source_path: base_path.join(&entry.relative),
+                target_path,
+                source,
+                target,
+                required: operation.required,
+                glob: false,
+                compare: operation.compare,
+                delete: operation.delete,
+                symlinks: operation.symlinks,
+                ignore: operation.ignore.clone(),
+                ignore_metadata: operation.ignore_metadata.clone(),
+                ignore_prefix: entry.relative,
+                declaration: operation.declaration,
+            }))
+        })
+        .collect()
+}
+
+fn glob_ignore_rules(
+    origin: FilePlanOrigin<'_>,
+    operation: &FileOperation,
+    base_path: &Path,
+) -> Result<Option<PathIgnoreRules>> {
+    if !matches!(
+        operation.operation,
+        FileOperationKind::Copy | FileOperationKind::Sync
+    ) || operation.ignore.is_empty()
+    {
+        return Ok(None);
+    }
+
+    PathIgnoreRules::new(base_path, &operation.ignore)
+        .map(Some)
+        .map_err(|source| {
+            file_plan_error(
+                origin,
+                Some(operation.declaration),
+                format!(
+                    "invalid ignore pattern for {}: {source}",
+                    operation_summary(origin, operation)
+                ),
+            )
+        })
+}
+
+fn plan_skipped_pattern(
+    origin: FilePlanOrigin<'_>,
+    operation: FileOperation,
+) -> Result<PlannedFileOperation> {
+    let source_path = normalize_maybe_existing(&operation.source_path).map_err(|source| {
+        file_plan_error(
+            origin,
+            Some(operation.declaration),
+            format!(
+                "failed to resolve source {}: {source}",
+                operation.source.display()
+            ),
+        )
+    })?;
+    let target_path = normalize_target_path(&operation.target_path).map_err(|source| {
+        file_plan_error(
+            origin,
+            Some(operation.declaration),
+            format!(
+                "failed to resolve target {}: {source}",
+                operation.target.display()
+            ),
+        )
+    })?;
+
+    Ok(PlannedFileOperation {
+        operation: operation.operation,
+        source: operation.source,
+        target: operation.target,
+        source_path,
+        target_path,
+        required: operation.required,
+        compare: operation.compare,
+        delete: operation.delete,
+        symlinks: operation.symlinks,
+        ignore: operation.ignore,
+        ignore_metadata: operation.ignore_metadata,
+        ignore_prefix: PathBuf::new(),
+        status: PlannedFileStatus::SkippedMissingSource,
+        declaration: operation.declaration,
+    })
 }
 
 fn normalize_target_paths(
@@ -825,6 +1082,7 @@ fn build_file_operations(
             symlinks: operation.symlinks,
             ignore: operation.ignore.clone(),
             ignore_metadata: operation.ignore_metadata.clone(),
+            ignore_prefix: operation.ignore_prefix.clone(),
             status,
             declaration: operation.declaration,
         });
@@ -1064,7 +1322,13 @@ fn validate_source_symlink_path(
             )
         })?;
 
-        if ignored_source_path(source_root, &path, &metadata, ignore_rules) {
+        if ignored_source_path(
+            &operation.ignore_prefix,
+            source_root,
+            &path,
+            &metadata,
+            ignore_rules,
+        ) {
             if metadata.is_dir()
                 && ignore_rules
                     .map(PathIgnoreRules::has_negation)
@@ -1096,6 +1360,7 @@ fn validate_source_symlink_path(
 }
 
 fn ignored_source_path(
+    ignore_prefix: &Path,
     source_root: &Path,
     path: &Path,
     metadata: &std::fs::Metadata,
@@ -1103,7 +1368,9 @@ fn ignored_source_path(
 ) -> bool {
     ignore_rules
         .zip(path.strip_prefix(source_root).ok())
-        .is_some_and(|(rules, relative)| rules.is_ignored(relative, metadata.is_dir()))
+        .is_some_and(|(rules, relative)| {
+            rules.is_ignored(&ignore_prefix.join(relative), metadata.is_dir())
+        })
 }
 
 fn source_exists(
@@ -1300,6 +1567,7 @@ mod tests {
             source_path: root.join(source),
             target_path: worktree.join(target),
             required: false,
+            glob: false,
             compare: match operation {
                 FileOperationKind::Sync => Some(SyncCompare::Metadata),
                 FileOperationKind::Copy | FileOperationKind::Symlink => None,
@@ -1314,6 +1582,7 @@ mod tests {
             },
             ignore: Vec::new(),
             ignore_metadata: Vec::new(),
+            ignore_prefix: PathBuf::new(),
             declaration: span(),
         }
     }
@@ -1347,11 +1616,13 @@ mod tests {
                 source_path: root.join("missing"),
                 target_path: worktree.join("missing"),
                 required: false,
+                glob: false,
                 compare: None,
                 delete: None,
                 symlinks: Some(SymlinkMode::Preserve),
                 ignore: Vec::new(),
                 ignore_metadata: Vec::new(),
+                ignore_prefix: PathBuf::new(),
                 declaration: span(),
             }],
             commands: Vec::new(),
@@ -1513,11 +1784,13 @@ mod tests {
                 source_path: outside_source,
                 target_path: outside_target,
                 required: false,
+                glob: false,
                 compare: None,
                 delete: None,
                 symlinks: Some(SymlinkMode::Preserve),
                 ignore: Vec::new(),
                 ignore_metadata: Vec::new(),
+                ignore_prefix: PathBuf::new(),
                 declaration: span(),
             }],
             commands: Vec::new(),
@@ -1994,5 +2267,441 @@ mod tests {
             plan.commands[0].cwd_path,
             paths::canonicalize(&worktree).expect("worktree should canonicalize")
         );
+    }
+
+    fn parse_manifest(content: &str, root: &Path, worktree: &Path) -> Config {
+        Config::parse(
+            Path::new(".treeboot.toml"),
+            content,
+            &context(root, worktree),
+        )
+        .expect("config should parse")
+    }
+
+    fn planned_sources_and_targets(plan: &ActionPlan) -> Vec<(String, String)> {
+        plan.files
+            .iter()
+            .map(|operation| {
+                (
+                    operation.source().display().to_string().replace('\\', "/"),
+                    operation.target().display().to_string().replace('\\', "/"),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn action_plan_should_expand_glob_sources_with_target_prefix() {
+        let (root, worktree) = temp_workspace("glob-target-prefix");
+        std::fs::create_dir_all(root.join("traefik/certs")).expect("dirs should be created");
+        std::fs::write(root.join("traefik/certs/b.pem"), "b").expect("file should be written");
+        std::fs::write(root.join("traefik/certs/a.pem"), "a").expect("file should be written");
+        std::fs::write(root.join("traefik/certs/skip.txt"), "s").expect("file should be written");
+        let config = parse_manifest(
+            r#"copy = [{ source = "traefik/certs/*.pem", target = "certs" }]"#,
+            &root,
+            &worktree,
+        );
+
+        let plan = plan(&config, &root, &worktree).expect("glob sources should plan");
+
+        assert_eq!(
+            planned_sources_and_targets(&plan),
+            vec![
+                ("traefik/certs/a.pem".to_owned(), "certs/a.pem".to_owned()),
+                ("traefik/certs/b.pem".to_owned(), "certs/b.pem".to_owned()),
+            ]
+        );
+        assert!(
+            plan.files
+                .iter()
+                .all(|operation| operation.status() == PlannedFileStatus::Ready)
+        );
+    }
+
+    #[test]
+    fn action_plan_should_default_glob_targets_to_match_paths() {
+        let (root, worktree) = temp_workspace("glob-default-target");
+        std::fs::create_dir_all(root.join("certs")).expect("dirs should be created");
+        std::fs::write(root.join("certs/a.pem"), "a").expect("file should be written");
+        let config = parse_manifest(r#"copy = ["certs/*.pem"]"#, &root, &worktree);
+
+        let plan = plan(&config, &root, &worktree).expect("glob sources should plan");
+
+        assert_eq!(
+            planned_sources_and_targets(&plan),
+            vec![("certs/a.pem".to_owned(), "certs/a.pem".to_owned())]
+        );
+    }
+
+    #[test]
+    fn action_plan_should_drop_glob_matches_ignored_at_pattern_base() {
+        let (root, worktree) = temp_workspace("glob-ignored-match");
+        std::fs::create_dir_all(root.join("config")).expect("dirs should be created");
+        std::fs::write(root.join("config/foo.pem"), "f").expect("file should be written");
+        std::fs::write(root.join("config/keep.pem"), "k").expect("file should be written");
+        let config = parse_manifest(
+            r#"copy = [{ source = "config/*.pem", ignore = ["foo.pem"] }]"#,
+            &root,
+            &worktree,
+        );
+
+        let plan = plan(&config, &root, &worktree).expect("glob sources should plan");
+
+        assert_eq!(
+            planned_sources_and_targets(&plan),
+            vec![("config/keep.pem".to_owned(), "config/keep.pem".to_owned())]
+        );
+    }
+
+    #[test]
+    fn action_plan_should_set_ignore_prefix_on_expanded_directory_matches() {
+        let (root, worktree) = temp_workspace("glob-ignore-prefix");
+        std::fs::create_dir_all(root.join("config/sub")).expect("dirs should be created");
+        std::fs::write(root.join("config/sub/file"), "x").expect("file should be written");
+        let config = parse_manifest(r#"copy = ["config/*"]"#, &root, &worktree);
+
+        let plan = plan(&config, &root, &worktree).expect("glob sources should plan");
+
+        assert_eq!(plan.files.len(), 1);
+        assert_eq!(plan.files[0].ignore_prefix(), Path::new("sub"));
+    }
+
+    #[test]
+    fn action_plan_should_skip_optional_glob_patterns_without_matches() {
+        let (root, worktree) = temp_workspace("glob-zero-match-skip");
+        let config = parse_manifest(r#"copy = ["missing/*.pem"]"#, &root, &worktree);
+
+        let plan = plan(&config, &root, &worktree).expect("zero matches should plan");
+
+        assert_eq!(plan.files.len(), 1);
+        assert_eq!(
+            plan.files[0].status(),
+            PlannedFileStatus::SkippedMissingSource
+        );
+        assert_eq!(plan.files[0].source(), Path::new("missing/*.pem"));
+    }
+
+    #[test]
+    fn action_plan_should_fail_required_glob_patterns_without_matches() {
+        let (root, worktree) = temp_workspace("glob-zero-match-required");
+        let config = parse_manifest(
+            r#"copy = [{ source = "missing/*.pem", required = true }]"#,
+            &root,
+            &worktree,
+        );
+
+        let error = plan(&config, &root, &worktree).expect_err("required zero matches should fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("no sources match required glob source pattern"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn action_plan_should_not_conflict_skipped_glob_patterns_on_literal_targets() {
+        let (root, worktree) = temp_workspace("glob-zero-match-no-conflict");
+        let config = parse_manifest(
+            r#"
+copy = [
+  { source = "a/*", target = "x" },
+  { source = "b/*", target = "x" },
+]
+"#,
+            &root,
+            &worktree,
+        );
+
+        let plan = plan(&config, &root, &worktree).expect("skipped patterns should not conflict");
+
+        assert_eq!(plan.files.len(), 2);
+        assert!(
+            plan.files
+                .iter()
+                .all(|operation| operation.status() == PlannedFileStatus::SkippedMissingSource)
+        );
+    }
+
+    #[test]
+    fn action_plan_should_reject_conflicting_expanded_glob_targets() {
+        let (root, worktree) = temp_workspace("glob-expanded-conflict");
+        std::fs::create_dir_all(root.join("certs")).expect("dirs should be created");
+        std::fs::write(root.join("certs/a.pem"), "a").expect("file should be written");
+        std::fs::write(root.join("other.pem"), "o").expect("file should be written");
+        let config = parse_manifest(
+            r#"
+copy = [
+  { source = "certs/*.pem", target = "out" },
+  { source = "other.pem", target = "out/a.pem" },
+]
+"#,
+            &root,
+            &worktree,
+        );
+
+        let error = plan(&config, &root, &worktree).expect_err("expanded conflict should fail");
+
+        assert!(
+            error.to_string().contains("duplicate configured target"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn action_plan_should_treat_disabled_glob_sources_literally() {
+        let (root, worktree) = temp_workspace("glob-disabled");
+        std::fs::create_dir_all(root.join("certs")).expect("dirs should be created");
+        std::fs::write(root.join("certs/a.pem"), "a").expect("file should be written");
+        let config = parse_manifest(
+            r#"copy = [{ source = "certs/*.pem", glob = false }]"#,
+            &root,
+            &worktree,
+        );
+
+        let plan = plan(&config, &root, &worktree).expect("literal pattern should plan");
+
+        assert_eq!(plan.files.len(), 1);
+        assert_eq!(
+            plan.files[0].status(),
+            PlannedFileStatus::SkippedMissingSource
+        );
+    }
+
+    #[test]
+    fn action_plan_should_expand_glob_symlink_sources() {
+        let (root, worktree) = temp_workspace("glob-symlink");
+        std::fs::create_dir_all(root.join("bin")).expect("dirs should be created");
+        std::fs::write(root.join("bin/tool-a"), "a").expect("file should be written");
+        std::fs::write(root.join("bin/tool-b"), "b").expect("file should be written");
+        let config = parse_manifest(
+            r#"symlink = [{ source = "bin/tool-*", target = "bin" }]"#,
+            &root,
+            &worktree,
+        );
+
+        let plan = plan(&config, &root, &worktree).expect("glob symlinks should plan");
+
+        assert_eq!(
+            planned_sources_and_targets(&plan),
+            vec![
+                ("bin/tool-a".to_owned(), "bin/tool-a".to_owned()),
+                ("bin/tool-b".to_owned(), "bin/tool-b".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn action_plan_should_preserve_nested_structure_for_globstar_targets() {
+        let (root, worktree) = temp_workspace("glob-globstar-mapping");
+        std::fs::create_dir_all(root.join("traefik/certs/sub")).expect("dirs should be created");
+        std::fs::write(root.join("traefik/top.pem"), "t").expect("file should be written");
+        std::fs::write(root.join("traefik/certs/sub/local.pem"), "l")
+            .expect("file should be written");
+        let config = parse_manifest(
+            r#"copy = [{ source = "traefik/**/*.pem", target = "certs" }]"#,
+            &root,
+            &worktree,
+        );
+
+        let plan = plan(&config, &root, &worktree).expect("globstar sources should plan");
+
+        assert_eq!(
+            planned_sources_and_targets(&plan),
+            vec![
+                (
+                    "traefik/certs/sub/local.pem".to_owned(),
+                    "certs/certs/sub/local.pem".to_owned(),
+                ),
+                ("traefik/top.pem".to_owned(), "certs/top.pem".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn action_plan_should_anchor_default_ignore_at_glob_base() {
+        let (root, worktree) = temp_workspace("glob-default-ignore");
+        std::fs::create_dir_all(root.join("cfg")).expect("dirs should be created");
+        std::fs::write(root.join("cfg/.DS_Store"), "junk").expect("file should be written");
+        std::fs::write(root.join("cfg/keep"), "keep").expect("file should be written");
+        let config = parse_manifest(
+            r#"
+default_ignore = [".DS_Store"]
+copy = ["cfg/*"]
+"#,
+            &root,
+            &worktree,
+        );
+
+        let plan = plan(&config, &root, &worktree).expect("glob sources should plan");
+
+        assert_eq!(
+            planned_sources_and_targets(&plan),
+            vec![("cfg/keep".to_owned(), "cfg/keep".to_owned())]
+        );
+    }
+
+    #[test]
+    fn action_plan_should_reinclude_negated_glob_matches() {
+        let (root, worktree) = temp_workspace("glob-negated-match");
+        std::fs::create_dir_all(root.join("certs")).expect("dirs should be created");
+        std::fs::write(root.join("certs/drop.pem"), "d").expect("file should be written");
+        std::fs::write(root.join("certs/keep.pem"), "k").expect("file should be written");
+        let config = parse_manifest(
+            r#"copy = [{ source = "certs/*.pem", ignore = ["*.pem", "!keep.pem"] }]"#,
+            &root,
+            &worktree,
+        );
+
+        let plan = plan(&config, &root, &worktree).expect("glob sources should plan");
+
+        assert_eq!(
+            planned_sources_and_targets(&plan),
+            vec![("certs/keep.pem".to_owned(), "certs/keep.pem".to_owned())]
+        );
+    }
+
+    #[test]
+    fn action_plan_should_reject_strict_sync_glob_patterns_without_expansion() {
+        let (root, worktree) = temp_workspace("glob-strict-sync");
+        let config = parse_manifest(r#"sync = ["missing/*"]"#, &root, &worktree);
+
+        let error = ActionPlan::from_manifest(
+            Path::new(".treeboot.toml"),
+            &config,
+            &context(&root, &worktree),
+            ActionPlanOptions {
+                strict: true,
+                ..ActionPlanOptions::default()
+            },
+        )
+        .expect_err("strict sync glob should fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("strict mode cannot be used with sync"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn action_plan_should_reject_glob_bases_outside_root() {
+        let (root, worktree) = temp_workspace("glob-outside-base");
+        let base = root.parent().expect("root should have parent");
+        std::fs::create_dir_all(base.join("other")).expect("dirs should be created");
+        std::fs::write(base.join("other/a.pem"), "a").expect("file should be written");
+        let config = parse_manifest(
+            r#"copy = [{ source = "../other/*.pem", target = "out" }]"#,
+            &root,
+            &worktree,
+        );
+
+        let error = plan(&config, &root, &worktree).expect_err("outside base should fail");
+
+        assert!(
+            error.to_string().contains("source resolves outside root"),
+            "unexpected error: {error}"
+        );
+
+        let plan = ActionPlan::from_manifest(
+            Path::new(".treeboot.toml"),
+            &config,
+            &context(&root, &worktree),
+            ActionPlanOptions {
+                dangerously_allow_sources_outside_root: true,
+                ..ActionPlanOptions::default()
+            },
+        )
+        .expect("outside base should plan with the dangerous override");
+
+        assert_eq!(plan.files.len(), 1);
+        assert_eq!(plan.files[0].status(), PlannedFileStatus::Ready);
+    }
+
+    #[test]
+    fn action_plan_should_expand_absolute_glob_sources() {
+        let (root, worktree) = temp_workspace("glob-absolute-source");
+        std::fs::create_dir_all(root.join("certs")).expect("dirs should be created");
+        std::fs::write(root.join("certs/a.pem"), "a").expect("file should be written");
+        let source = root.join("certs/*.pem");
+        let config = Config {
+            options: Default::default(),
+            files: vec![FileOperation {
+                operation: FileOperationKind::Copy,
+                source: source.clone(),
+                target: PathBuf::from("out"),
+                source_path: source,
+                target_path: worktree.join("out"),
+                required: false,
+                glob: true,
+                compare: None,
+                delete: None,
+                symlinks: Some(SymlinkMode::Preserve),
+                ignore: Vec::new(),
+                ignore_metadata: Vec::new(),
+                ignore_prefix: PathBuf::new(),
+                declaration: span(),
+            }],
+            commands: Vec::new(),
+        };
+
+        let plan = plan(&config, &root, &worktree).expect("absolute glob sources should plan");
+
+        assert_eq!(plan.files.len(), 1);
+        assert_eq!(plan.files[0].source(), root.join("certs/a.pem"));
+        assert_eq!(plan.files[0].target(), Path::new("out/a.pem"));
+        assert_eq!(plan.files[0].status(), PlannedFileStatus::Ready);
+    }
+
+    #[test]
+    fn action_plan_should_boundary_check_symlink_glob_matches_like_literals() {
+        let (root, worktree) = temp_workspace("glob-unsafe-symlink");
+        let base = root.parent().expect("root should have parent");
+        std::fs::write(base.join("outside.pem"), "o").expect("file should be written");
+        std::fs::create_dir_all(root.join("certs")).expect("dirs should be created");
+        std::fs::write(root.join("certs/safe.pem"), "s").expect("file should be written");
+        symlink_file(base.join("outside.pem"), root.join("certs/link.pem"))
+            .expect("symlink should be created");
+        let config = parse_manifest(r#"copy = ["certs/*.pem"]"#, &root, &worktree);
+
+        let error = plan(&config, &root, &worktree).expect_err("outside symlink match should fail");
+
+        assert!(
+            error.to_string().contains("source resolves outside root"),
+            "unexpected error: {error}"
+        );
+
+        let config = parse_manifest(
+            r#"copy = [{ source = "certs/*.pem", ignore = ["link.pem"] }]"#,
+            &root,
+            &worktree,
+        );
+        let plan = plan(&config, &root, &worktree)
+            .expect("ignored outside symlink match should be dropped");
+
+        assert_eq!(
+            planned_sources_and_targets(&plan),
+            vec![("certs/safe.pem".to_owned(), "certs/safe.pem".to_owned())]
+        );
+    }
+
+    #[test]
+    fn action_plan_should_expand_glob_patterns_with_leading_current_dir() {
+        let (root, worktree) = temp_workspace("glob-curdir");
+        std::fs::create_dir_all(root.join("certs")).expect("dirs should be created");
+        std::fs::write(root.join("certs/a.pem"), "a").expect("file should be written");
+        let config = parse_manifest(
+            r#"copy = [{ source = "./certs/*.pem", target = "out" }]"#,
+            &root,
+            &worktree,
+        );
+
+        let plan = plan(&config, &root, &worktree).expect("glob sources should plan");
+
+        assert_eq!(plan.files.len(), 1);
+        assert_eq!(plan.files[0].target(), Path::new("out/a.pem"));
     }
 }

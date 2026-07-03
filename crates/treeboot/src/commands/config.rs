@@ -90,6 +90,9 @@ fn file_operation_summary(operation: &FileOperation) -> String {
     if operation.required {
         summary.push_str(" required=true");
     }
+    if operation.glob {
+        summary.push_str(" glob=true");
+    }
     if let Some(compare) = operation.compare {
         summary.push_str(&format!(" compare={compare:?}").to_lowercase());
     }

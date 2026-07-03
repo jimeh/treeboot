@@ -525,3 +525,42 @@ fn check_config_option_should_skip_init_script_and_validate_requested_config() {
 
     assert!(!marker.exists());
 }
+
+#[test]
+fn check_should_validate_glob_config_sources_without_side_effects() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("certs"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("certs/a.pem"), "a\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "certs/*.pem", target = "out" }]"#,
+    );
+
+    treeboot()
+        .arg("check")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout("treeboot: check ok\n");
+
+    assert!(!repo.worktree_path().join("out").exists());
+}
+
+#[test]
+fn check_should_fail_required_glob_patterns_without_matches() {
+    let repo = git_worktree();
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "missing/*.pem", required = true }]"#,
+    );
+
+    treeboot()
+        .arg("check")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "no sources match required glob source pattern",
+        ));
+}

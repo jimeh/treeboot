@@ -338,6 +338,7 @@ fn plan_tree_directory_children(
         let child_metadata = metadata(&child_source_path, operation.operation())?;
 
         if ignored_source_entry(
+            operation,
             source_root_path,
             &child_source_path,
             &child_metadata,
@@ -394,6 +395,7 @@ fn plan_tree_directory_children(
 }
 
 fn ignored_source_entry(
+    operation: &PlannedFileOperation,
     source_root_path: &Path,
     source_path: &Path,
     metadata: &Metadata,
@@ -401,7 +403,9 @@ fn ignored_source_entry(
 ) -> bool {
     ignore_rules
         .zip(source_path.strip_prefix(source_root_path).ok())
-        .is_some_and(|(rules, relative)| rules.is_ignored(relative, metadata.is_dir()))
+        .is_some_and(|(rules, relative)| {
+            rules.is_ignored(&operation.ignore_prefix().join(relative), metadata.is_dir())
+        })
 }
 
 fn plan_tree_file(
@@ -715,7 +719,9 @@ fn ignored_target_entry(
 ) -> bool {
     ignore_rules
         .zip(target_path.strip_prefix(operation.target_path()).ok())
-        .is_some_and(|(rules, relative)| rules.is_ignored(relative, metadata.is_dir()))
+        .is_some_and(|(rules, relative)| {
+            rules.is_ignored(&operation.ignore_prefix().join(relative), metadata.is_dir())
+        })
 }
 
 #[cfg(test)]

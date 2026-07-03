@@ -24,6 +24,10 @@ struct ManualArgs {
     #[arg(long)]
     required: bool,
 
+    /// Treat glob metacharacters in sources literally.
+    #[arg(long)]
+    no_glob: bool,
+
     /// Fail on stricter file-operation conflicts.
     #[arg(short = 'S', long)]
     strict: bool,
@@ -199,6 +203,7 @@ impl ManualArgs {
         options.environment = environment_input();
         options.target = self.target;
         options.required = self.required;
+        options.glob = !self.no_glob;
         options.strict = self.strict;
         options.force = self.force;
         options.dry_run = self.dry_run;

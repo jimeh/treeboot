@@ -99,6 +99,7 @@ commands = [
                 "compare",
                 "declaration",
                 "delete",
+                "glob",
                 "ignore",
                 "ignore_metadata",
                 "operation",
@@ -116,6 +117,7 @@ commands = [
     assert_eq!(files[0]["source"], ".env");
     assert_eq!(files[0]["target"], ".env");
     assert_eq!(files[0]["required"], true);
+    assert_eq!(files[0]["glob"], false);
     assert_eq!(files[0]["compare"], serde_json::Value::Null);
     assert_eq!(files[0]["delete"], serde_json::Value::Null);
     assert_eq!(files[0]["symlinks"], "preserve");
@@ -565,4 +567,66 @@ sync = ["shared"]
         .stdout(predicate::str::contains("treeboot: config"))
         .stderr(predicate::str::contains("treeboot: warning"))
         .stderr(predicate::str::contains("cannot be used with sync"));
+}
+
+#[test]
+fn config_command_should_report_glob_entries_as_declared_patterns() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("certs"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("certs/a.pem"), "a\n");
+    write_file(&repo.root_path().join("certs/b.pem"), "b\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"
+copy = [
+  { source = "certs/*.pem", target = "out" },
+  { source = "literal/*.pem", glob = false },
+]
+"#,
+    );
+
+    treeboot()
+        .arg("config")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "copy certs/*.pem -> out glob=true",
+        ));
+
+    let assert = treeboot()
+        .args(["config", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+    let report = parse_json(assert.get_output().stdout.clone(), "config");
+    let files = report["config"]["files"]
+        .as_array()
+        .expect("files should be an array");
+
+    assert_eq!(files.len(), 2, "patterns should not be expanded");
+    assert_eq!(files[0]["source"], "certs/*.pem");
+    assert_eq!(files[0]["glob"], true);
+    assert_eq!(files[1]["source"], "literal/*.pem");
+    assert_eq!(files[1]["glob"], false);
+}
+
+#[test]
+fn config_command_should_warn_for_required_glob_patterns_without_matches() {
+    let repo = git_worktree();
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "missing/*.pem", required = true }]"#,
+    );
+
+    treeboot()
+        .arg("config")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("treeboot: warning"))
+        .stderr(predicate::str::contains(
+            "no sources match required glob source pattern",
+        ));
 }
