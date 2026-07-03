@@ -157,6 +157,25 @@ fn check_should_fail_for_invalid_source_globs() {
 }
 
 #[test]
+fn check_should_fail_for_parent_components_after_source_globs() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("config/client"))
+        .expect("source directory should be created");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "config/*/../secret" }]"#,
+    );
+
+    treeboot()
+        .arg("check")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid source glob"))
+        .stderr(predicate::str::contains("`..`"));
+}
+
+#[test]
 fn check_should_fail_for_invalid_default_ignore_patterns() {
     let repo = git_worktree();
     std::fs::create_dir_all(repo.root_path().join("shared"))

@@ -305,6 +305,7 @@ fn validated_file_plan(
         symlinks: None,
         ignore: Vec::new(),
         ignore_metadata: Vec::new(),
+        ignore_prefix: PathBuf::new(),
         declaration: span(),
     };
     ActionPlan::from_file_operations(

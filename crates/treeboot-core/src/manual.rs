@@ -434,6 +434,7 @@ fn manual_operations(
                 symlinks: settings.symlinks,
                 ignore: ignore.clone(),
                 ignore_metadata: settings.ignore_metadata.clone(),
+                ignore_prefix: PathBuf::new(),
                 declaration: manual_span(),
             })
         })
@@ -1078,6 +1079,7 @@ mod tests {
                 symlinks: Some(SymlinkMode::Preserve),
                 ignore: Vec::new(),
                 ignore_metadata: Vec::new(),
+                ignore_prefix: PathBuf::new(),
                 declaration: manual_span(),
             }],
             ActionPlanOptions::default(),
@@ -1113,6 +1115,7 @@ mod tests {
                 symlinks: Some(SymlinkMode::Preserve),
                 ignore: Vec::new(),
                 ignore_metadata: Vec::new(),
+                ignore_prefix: PathBuf::new(),
                 declaration: manual_span(),
             }],
             ActionPlanOptions {

@@ -1,10 +1,8 @@
 use std::collections::BTreeMap;
-use std::fs;
-use std::path::{Component, Path, PathBuf};
-
-use globset::GlobBuilder;
+use std::path::{Path, PathBuf};
 
 use crate::file_system::{TargetAncestorIssue, inspect_target_ancestors, matching_target_anchor};
+use crate::glob;
 use crate::ignore_rules::PathIgnoreRules;
 use crate::paths::{self, normalize_lexical};
 use crate::{
@@ -251,6 +249,9 @@ pub struct PlannedFileOperation {
     ignore: Vec<String>,
     /// Metadata fields ignored by copy and sync.
     ignore_metadata: Vec<MetadataField>,
+    /// Pattern-base-relative prefix applied to operation-relative paths
+    /// during ignore matching for glob-expanded operations.
+    ignore_prefix: PathBuf,
     /// Whether this operation should execute.
     status: PlannedFileStatus,
     /// Source location for the operation declaration.
@@ -324,6 +325,13 @@ impl PlannedFileOperation {
         &self.ignore_metadata
     }
 
+    /// Returns the pattern-base-relative prefix applied to operation-relative
+    /// paths during ignore matching.
+    #[must_use]
+    pub fn ignore_prefix(&self) -> &Path {
+        &self.ignore_prefix
+    }
+
     /// Returns whether this operation should execute.
     #[must_use]
     pub const fn status(&self) -> PlannedFileStatus {
@@ -350,6 +358,7 @@ impl PlannedFileOperation {
             symlinks: parts.symlinks,
             ignore: parts.ignore,
             ignore_metadata: parts.ignore_metadata,
+            ignore_prefix: PathBuf::new(),
             status: parts.status,
             declaration: parts.declaration,
         }
@@ -553,6 +562,7 @@ pub(super) fn plan_file_operations(
 struct GlobCandidate {
     source: PathBuf,
     source_path: PathBuf,
+    relative_to_base: PathBuf,
     is_dir: bool,
 }
 
@@ -566,7 +576,7 @@ fn expand_file_operations(
     let mut expanded = Vec::new();
 
     for operation in files {
-        if !operation.glob || !has_unescaped_glob_meta(&operation.source) {
+        if !operation.glob || !glob::is_glob_source(&operation.source) {
             expanded.push(operation.clone());
             continue;
         }
@@ -601,34 +611,44 @@ fn expand_file_operation_glob(
         );
     }
 
-    let pattern = path_to_glob_pattern(&operation.source);
-    let matcher = GlobBuilder::new(&pattern)
-        .literal_separator(true)
-        .backslash_escape(true)
-        .build()
-        .map_err(|source| {
+    let split = glob::split_glob_source(&operation.source).map_err(|source| {
+        file_plan_error(
+            origin,
+            Some(operation.declaration),
+            format!(
+                "invalid source glob for {}: {source}",
+                operation_summary(origin, operation)
+            ),
+        )
+    })?;
+    let source_base = split.base.clone();
+    let source_base_path = normalize_lexical(&root_path.join(&source_base));
+
+    let matches =
+        glob::expand_glob_source(source_base_path.as_path(), &split).map_err(|source| {
+            let prefix = match &source {
+                glob::GlobSourceError::InvalidPattern(_) => "invalid source glob",
+                glob::GlobSourceError::UnsupportedComponent(_)
+                | glob::GlobSourceError::Io { .. } => "failed to expand source glob",
+            };
             file_plan_error(
                 origin,
                 Some(operation.declaration),
                 format!(
-                    "invalid source glob for {}: {source}",
+                    "{prefix} for {}: {source}",
                     operation_summary(origin, operation)
                 ),
             )
-        })?
-        .compile_matcher();
-    let source_base = fixed_glob_base(&operation.source);
-    let source_base_path = normalize_lexical(&root_path.join(&source_base));
-
-    let mut candidates = Vec::new();
-    collect_glob_candidates(
-        origin,
-        operation,
-        root_path,
-        source_base_path.as_path(),
-        &matcher,
-        &mut candidates,
-    )?;
+        })?;
+    let mut candidates = matches
+        .into_iter()
+        .map(|entry| GlobCandidate {
+            source: source_base.join(&entry.relative),
+            source_path: source_base_path.join(&entry.relative),
+            relative_to_base: entry.relative,
+            is_dir: entry.is_dir,
+        })
+        .collect::<Vec<_>>();
     maybe_add_recursive_base_candidate(
         &operation.source,
         &source_base,
@@ -646,8 +666,7 @@ fn expand_file_operation_glob(
         .into_iter()
         .filter(|candidate| {
             !ignored_glob_candidate(
-                source_base_path.as_path(),
-                candidate.source_path.as_path(),
+                &candidate.relative_to_base,
                 candidate.is_dir,
                 ignore_rules.as_ref(),
             )
@@ -684,7 +703,7 @@ fn maybe_add_recursive_base_candidate(
         return;
     }
 
-    let Ok(metadata) = fs::symlink_metadata(source_base_path) else {
+    let Ok(metadata) = std::fs::symlink_metadata(source_base_path) else {
         return;
     };
     if !metadata.is_dir() {
@@ -694,84 +713,9 @@ fn maybe_add_recursive_base_candidate(
     candidates.push(GlobCandidate {
         source: source_base.to_path_buf(),
         source_path: source_base_path.to_path_buf(),
+        relative_to_base: PathBuf::new(),
         is_dir: true,
     });
-}
-
-fn collect_glob_candidates(
-    origin: FilePlanOrigin<'_>,
-    operation: &FileOperation,
-    root_path: &Path,
-    path: &Path,
-    matcher: &globset::GlobMatcher,
-    candidates: &mut Vec<GlobCandidate>,
-) -> Result<()> {
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
-        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(source) => {
-            return Err(file_plan_error(
-                origin,
-                Some(operation.declaration),
-                format!(
-                    "failed to inspect source glob base {}: {source}",
-                    path.display()
-                ),
-            ));
-        }
-    };
-
-    if let Ok(relative) = path.strip_prefix(root_path) {
-        let relative = normalize_lexical(relative);
-        if matcher.is_match(path_to_glob_pattern(&relative)) {
-            candidates.push(GlobCandidate {
-                source: relative,
-                source_path: path.to_path_buf(),
-                is_dir: metadata.is_dir(),
-            });
-        }
-    }
-
-    if !metadata.is_dir() {
-        return Ok(());
-    }
-
-    let mut children = fs::read_dir(path)
-        .map_err(|source| {
-            file_plan_error(
-                origin,
-                Some(operation.declaration),
-                format!(
-                    "failed to inspect source glob base {}: {source}",
-                    path.display()
-                ),
-            )
-        })?
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|source| {
-            file_plan_error(
-                origin,
-                Some(operation.declaration),
-                format!(
-                    "failed to inspect source glob base {}: {source}",
-                    path.display()
-                ),
-            )
-        })?;
-    children.sort_by_key(|entry| entry.path());
-
-    for child in children {
-        collect_glob_candidates(
-            origin,
-            operation,
-            root_path,
-            child.path().as_path(),
-            matcher,
-            candidates,
-        )?;
-    }
-
-    Ok(())
 }
 
 fn glob_ignore_rules(
@@ -862,81 +806,40 @@ fn expanded_file_operation(
         symlinks: operation.symlinks,
         ignore: operation.ignore.clone(),
         ignore_metadata: operation.ignore_metadata.clone(),
+        ignore_prefix: candidate.relative_to_base,
         declaration: operation.declaration,
     })
 }
 
-fn has_unescaped_glob_meta(path: &Path) -> bool {
-    let mut escaped = false;
-    for character in path_to_glob_pattern(path).chars() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        if character == '\\' {
-            escaped = true;
-            continue;
-        }
-        if matches!(character, '*' | '?' | '[') {
-            return true;
-        }
-    }
-
-    false
-}
-
-fn fixed_glob_base(path: &Path) -> PathBuf {
-    let pattern = path_to_glob_pattern(path);
-    let mut escaped = false;
-    for (index, character) in pattern.char_indices() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        if character == '\\' {
-            escaped = true;
-            continue;
-        }
-        if matches!(character, '*' | '?' | '[') {
-            let base = pattern[..index]
-                .rsplit_once('/')
-                .map_or("", |(base, _)| base);
-            return slash_path(base);
-        }
-    }
-
-    path.to_path_buf()
-}
-
 fn recursive_glob_matches_base(source: &Path, source_base: &Path) -> bool {
-    let pattern = path_to_glob_pattern(source);
+    let pattern = path_to_slash_string(source);
     let Some(base_pattern) = pattern.strip_suffix("/**") else {
         return false;
     };
 
-    !base_pattern.is_empty() && base_pattern == path_to_glob_pattern(source_base)
+    !base_pattern.is_empty() && base_pattern == path_to_slash_string(source_base)
 }
 
-fn path_to_glob_pattern(path: &Path) -> String {
+fn ignored_glob_candidate(
+    relative_to_base: &Path,
+    is_dir: bool,
+    ignore_rules: Option<&PathIgnoreRules>,
+) -> bool {
+    ignore_rules.is_some_and(|rules| rules.is_ignored(relative_to_base, is_dir))
+}
+
+fn path_to_slash_string(path: &Path) -> String {
     path.components()
         .filter_map(|component| match component {
-            Component::CurDir => None,
-            Component::Normal(part) => Some(part.to_string_lossy().into_owned()),
-            Component::ParentDir => Some("..".to_owned()),
-            Component::RootDir | Component::Prefix(_) => {
+            std::path::Component::CurDir => None,
+            std::path::Component::Normal(part) => Some(part.to_string_lossy().into_owned()),
+            std::path::Component::ParentDir => Some("..".to_owned()),
+            std::path::Component::RootDir | std::path::Component::Prefix(_) => {
                 Some(component.as_os_str().to_string_lossy().into_owned())
             }
         })
         .collect::<Vec<_>>()
         .join("/")
-}
-
-fn slash_path(path: &str) -> PathBuf {
-    let mut output = PathBuf::new();
-    for component in path.split('/').filter(|component| !component.is_empty()) {
-        output.push(component);
-    }
-    output
 }
 
 fn normalize_target_paths(
@@ -1226,6 +1129,7 @@ fn build_file_operations(
             symlinks: operation.symlinks,
             ignore: operation.ignore.clone(),
             ignore_metadata: operation.ignore_metadata.clone(),
+            ignore_prefix: operation.ignore_prefix.clone(),
             status,
             declaration: operation.declaration,
         });
@@ -1502,18 +1406,9 @@ fn ignored_source_path(
     metadata: &std::fs::Metadata,
     ignore_rules: Option<&PathIgnoreRules>,
 ) -> bool {
-    ignored_glob_candidate(source_root, path, metadata.is_dir(), ignore_rules)
-}
-
-fn ignored_glob_candidate(
-    source_root: &Path,
-    path: &Path,
-    is_dir: bool,
-    ignore_rules: Option<&PathIgnoreRules>,
-) -> bool {
     ignore_rules
         .zip(path.strip_prefix(source_root).ok())
-        .is_some_and(|(rules, relative)| rules.is_ignored(relative, is_dir))
+        .is_some_and(|(rules, relative)| rules.is_ignored(relative, metadata.is_dir()))
 }
 
 fn source_exists(
@@ -1523,7 +1418,7 @@ fn source_exists(
 ) -> Result<bool> {
     match std::fs::symlink_metadata(source_path) {
         Ok(_) => Ok(true),
-        Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(source) if paths::missing_path_error(&source) => Ok(false),
         Err(source) => Err(file_plan_error(
             origin,
             Some(operation.declaration),
@@ -1726,6 +1621,7 @@ mod tests {
             },
             ignore: Vec::new(),
             ignore_metadata: Vec::new(),
+            ignore_prefix: PathBuf::new(),
             declaration: span(),
         }
     }
@@ -1766,6 +1662,7 @@ mod tests {
                 symlinks: Some(SymlinkMode::Preserve),
                 ignore: Vec::new(),
                 ignore_metadata: Vec::new(),
+                ignore_prefix: PathBuf::new(),
                 declaration: span(),
             }],
             commands: Vec::new(),
@@ -2109,6 +2006,7 @@ mod tests {
                 symlinks: Some(SymlinkMode::Preserve),
                 ignore: Vec::new(),
                 ignore_metadata: Vec::new(),
+                ignore_prefix: PathBuf::new(),
                 declaration: span(),
             }],
             commands: Vec::new(),

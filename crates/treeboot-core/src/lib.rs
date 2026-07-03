@@ -20,6 +20,7 @@ mod file_operations;
 mod file_planning;
 mod file_system;
 mod git;
+mod glob;
 mod ignore_rules;
 mod init;
 mod manual;

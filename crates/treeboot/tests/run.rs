@@ -364,6 +364,40 @@ fn run_should_filter_source_globs_with_ignore_rules() {
 }
 
 #[test]
+fn run_should_anchor_glob_directory_ignores_at_pattern_base() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("cfg/sub/tmp"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("cfg/sub/keep"), "keep\n");
+    write_file(&repo.root_path().join("cfg/sub/tmp/drop"), "drop\n");
+    write_file(&repo.root_path().join("cfg/foo.pem"), "foo\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "cfg/*", target = "out", ignore = ["foo.pem", "sub/tmp/"] }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("out/sub/keep"))
+            .expect("kept target should be readable"),
+        "keep\n"
+    );
+    assert!(
+        !repo.worktree_path().join("out/foo.pem").exists(),
+        "ignored match should be dropped"
+    );
+    assert!(
+        !repo.worktree_path().join("out/sub/tmp").exists(),
+        "matched-directory contents should use base-relative ignores"
+    );
+}
+
+#[test]
 fn run_should_not_broaden_source_globs_with_ignore_rules() {
     let repo = git_worktree();
     std::fs::create_dir_all(repo.root_path().join("config/client"))
@@ -542,6 +576,36 @@ fn run_should_apply_configured_sync_source_globs() {
         std::fs::read_to_string(repo.worktree_path().join("mirror/b.txt"))
             .expect("target should be readable"),
         "new b\n"
+    );
+}
+
+#[test]
+fn run_should_anchor_glob_sync_delete_ignores_at_pattern_base() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("cfg/a")).expect("source dirs created");
+    write_file(&repo.root_path().join("cfg/a/file"), "a\n");
+    std::fs::create_dir_all(repo.worktree_path().join("out/a")).expect("target dirs created");
+    write_file(&repo.worktree_path().join("out/a/stale"), "stale\n");
+    write_file(&repo.worktree_path().join("out/a/preserved"), "keep\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"sync = [{ source = "cfg/*", target = "out", delete = true, ignore = ["*/preserved"] }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert!(
+        !repo.worktree_path().join("out/a/stale").exists(),
+        "unignored target-only files should be deleted"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("out/a/preserved"))
+            .expect("base-anchored ignore should preserve target-only files"),
+        "keep\n"
     );
 }
 

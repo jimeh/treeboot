@@ -153,6 +153,10 @@ pub struct FileOperation {
     pub ignore: Vec<String>,
     /// Metadata fields ignored by copy and sync.
     pub ignore_metadata: Vec<MetadataField>,
+    /// Pattern-base-relative prefix applied to operation-relative paths
+    /// during ignore matching.
+    #[serde(skip)]
+    pub ignore_prefix: PathBuf,
     /// Source location for the operation declaration.
     pub declaration: SourceSpan,
 }
@@ -677,6 +681,7 @@ fn normalize_file_object(
         symlinks: settings.symlinks,
         ignore: effective_ignore_patterns(operation, default_ignore, settings.ignore),
         ignore_metadata: settings.ignore_metadata,
+        ignore_prefix: PathBuf::new(),
         declaration: span,
     })
 }

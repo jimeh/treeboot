@@ -218,6 +218,7 @@ flowchart LR
   CONTEXT["context.rs<br/>Worktree"]
   DISC["discovery.rs<br/>scripts + config"]
   GIT["git.rs<br/>Git wrapper"]
+  GLOB["glob.rs<br/>source glob matching"]
   IGNORE["ignore_rules.rs<br/>copy/sync path ignores"]
   EXEC["executor.rs<br/>plan execution"]
   VALID["validation.rs<br/>ActionPlan<br/>boundary checks"]
@@ -251,6 +252,7 @@ flowchart LR
   GIT -.-> VALID
   CONFIG --> VALID
   MANUAL --> VALID
+  VALID --> GLOB
   VALID --> IGNORE
   FILE_OPS --> FILE_ACTIONS
   FILE_OPS --> FILE_PLANNING
@@ -285,9 +287,10 @@ file-operation execution._
 | `file_planning.rs`   | Planning concrete filesystem actions from validated file operations.                                                                                                             | Config semantics, CLI argument validation, action summary modeling, output lifecycle, or mutation execution. |
 | `file_execution.rs`  | Executing planned file-action groups and emitting compact/verbose file-operation output events.                                                                                  | Planning filesystem actions or low-level filesystem helper implementation.                                   |
 | `file_system.rs`     | Low-level filesystem inspection, comparison, metadata, writable-parent, copy, symlink, delete helpers, and permission-denied ownership warnings for file planning and execution. | File-operation policy, action grouping, or output lifecycle.                                                 |
+| `glob.rs`            | Splitting source glob patterns, matching them under a fixed base, and pruning matched directory descendants.                                                                     | Config semantics, target mapping, ignore filtering policy, or filesystem mutation.                           |
 | `ignore_rules.rs`    | Compiling and matching copy/sync path ignore rules.                                                                                                                              | Config parsing, validation policy, or filesystem mutation.                                                   |
 | `runtime.rs`         | Environment/config/CLI runtime policy precedence and conversion to validation options.                                                                                           | Config parsing, Git discovery, or side effects.                                                              |
-| `validation.rs`      | Source glob expansion, pre-side-effect checks, path normalization, duplicate targets, strict sync rejection, command cwd/env checks.                                             | Parsing or filesystem mutation.                                                                              |
+| `validation.rs`      | Source glob target mapping and ignore filtering, pre-side-effect checks, path normalization, duplicate targets, strict sync rejection, command cwd/env checks.                   | Parsing or filesystem mutation.                                                                              |
 | `commands.rs`        | Sequential configured command spawning and dry-run output.                                                                                                                       | Parsing command config or deciding command order.                                                            |
 | `metadata.rs`        | Embedded config schema, spec version, and version metadata helpers.                                                                                                              | Generating source files or reading runtime files.                                                            |
 | `output.rs`          | Structured output events and message formatting.                                                                                                                                 | Choosing when events happen.                                                                                 |
