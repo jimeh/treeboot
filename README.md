@@ -338,7 +338,7 @@ Use `treeboot schema` to print the embedded schema from the installed binary, or
 ## Project Status
 
 `treeboot` is feature-complete for the core worktree bootstrap workflow in
-[spec v1.14.0](./docs/SPEC.md). It supports:
+[spec v1.15.0](./docs/SPEC.md). It supports:
 
 - `run`, `status`, `config`, `check`, `doctor`, `env`, `schema`, `version`,
   `init`, `copy`, `symlink`, `sync`, and `completions`

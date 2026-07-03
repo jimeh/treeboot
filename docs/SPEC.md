@@ -1,4 +1,4 @@
-# treeboot Specification v1.14.0
+# treeboot Specification v1.15.0
 
 A portable worktree bootstrapper that lets every coding agent, editor, and
 orchestration tool run the same repo-local setup command.
@@ -138,8 +138,8 @@ parsing behavior; editing config values is out of scope.
 
 Human-readable text output lists normalized source and target values plus
 behavior-affecting normalized fields such as `required`, `compare`, `delete`,
-`symlinks`, `ignore`, `allow_failure`, `cwd`, and command `env` values when
-present. JSON and YAML output emit the full normalized config structure.
+`symlinks`, `glob`, `ignore`, `allow_failure`, `cwd`, and command `env` values
+when present. JSON and YAML output emit the full normalized config structure.
 
 ### `treeboot check`
 
@@ -520,11 +520,11 @@ string. The initial reason is `not_executable`.
 
 `files` and `commands` are ordered arrays. File `operation` is `copy`,
 `symlink`, or `sync`. `compare` is `metadata`, `checksum`, or `null`. `delete`
-is a boolean or `null`. `symlinks` is `preserve` or `null`. `ignore` is an
-ordered array of operation-local path ignore patterns. `ignore_metadata` is an
-ordered array of canonical ignored metadata fields: `permissions`, `owner`, and
-`group`. Config input can use `ownership` as a shorthand, but normalized
-inspection output expands it to `owner` and `group`.
+and `glob` are booleans or `null`. `symlinks` is `preserve` or `null`. `ignore`
+is an ordered array of operation-local path ignore patterns. `ignore_metadata`
+is an ordered array of canonical ignored metadata fields: `permissions`,
+`owner`, and `group`. Config input can use `ownership` as a shorthand, but
+normalized inspection output expands it to `owner` and `group`.
 
 Command `name`, `cwd`, and `cwd_path` are strings or `null`. `env` is an object
 whose keys and values are strings. `command` is one of:
@@ -818,8 +818,8 @@ default happy path.
    no config is found, print an info message and exit.
 7. **Resolve config options**: Merge top-level config options with environment
    overrides and CLI flags.
-8. **Validate config**: Normalize entries and detect duplicate operation
-   targets.
+8. **Validate config**: Normalize entries, expand glob sources, and detect
+   duplicate operation targets.
 9. **Apply files, then commands**: Run file operations first; commands run
    afterward.
 
@@ -999,6 +999,7 @@ copy = [
   ".env.test.local",
   "mise.local.toml",
   { source = ".env.required.local", required = true },
+  { source = "traefik/certs/*.pem", target = "certs" },
 ]
 
 symlink = [
@@ -1034,6 +1035,7 @@ plural `files = [...]` list in the same TOML file.
 | ----------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `operation`       | `files`, `[[file]]` | Required for object entries; one of copy, symlink, or sync.                                                                                                      |
 | `source`          | all file operations | Required for object entries. Relative paths resolve from root path.                                                                                              |
+| `glob`            | all file operations | Defaults to `true`. When true, glob patterns in `source` expand from the root path; set `false` to treat metacharacters literally.                               |
 | `required`        | all file operations | Defaults to `false`. When true, a missing source is a failure instead of a skipped operation.                                                                    |
 | `target`          | all file operations | Optional; defaults to source. Relative paths resolve from worktree path.                                                                                         |
 | `compare`         | `sync`              | `metadata` by default; `checksum` for content checks.                                                                                                            |
@@ -1148,7 +1150,9 @@ may contain `..`, but the final resolved path must stay inside the worktree.
 | Target ancestor becomes a symlink or non-directory at apply | Fail that operation before mutating the target.                 |
 | Source resolves outside the root path                       | Fail before any file operation or command runs.                 |
 | Required file operation source does not exist               | Fail before any file operation or command runs.                 |
+| Required file operation source glob matches nothing         | Fail before any file operation or command runs.                 |
 | Optional file operation source does not exist               | Skip that operation, make no target changes, and continue.      |
+| Optional file operation source glob matches nothing         | Skip that operation, make no target changes, and continue.      |
 | Command `cwd` resolves outside the worktree                 | Fail before any file operation or command runs.                 |
 | Command `env` overrides treeboot-owned variables            | Fail before any file operation or command runs.                 |
 | Copy or sync encounters an unsafe source symlink            | Fail before any file operation or command runs.                 |
@@ -1238,6 +1242,78 @@ skips that operation and leaves the target unchanged. This lets one config list
 several local-only files, such as `.env.local` and `.env.development.local`,
 while only applying the files that exist in the root checkout.
 
+### Source glob expansion
+
+File operation sources support glob expansion by default. String entries behave
+like object entries with only `source`, and object entries use `glob = true`
+unless they set `glob = false`.
+
+A `source` is a glob only when `glob` is not `false` and the source contains
+unescaped glob metacharacters. Glob patterns are evaluated relative to
+`TREEBOOT_ROOT_PATH` and support `*`, `?`, `**`, character classes, and
+escaping. Non-glob sources keep the ordinary single-source behavior.
+
+Each glob source has a fixed non-glob base: the path prefix before the first
+glob metacharacter. treeboot uses that base for both target suffixes and
+glob-level ignore matching. For `config/*.pem`, the base is `config`; for
+`traefik/**/*.pem`, the base is `traefik`.
+
+For `copy` and `sync`, ignore filtering uses the gitignore-style semantics
+described in [Path ignore rules](#path-ignore-rules) under the fixed non-glob
+base. Patterns without a slash match a basename at any depth below that base.
+Ignore rules can remove source paths that the raw glob matched, but they do not
+broaden what the source glob matches.
+
+Expansion order is:
+
+1. Match the raw glob pattern.
+2. Sort matches in a stable, platform-consistent order.
+3. For `copy` and `sync`, remove matches ignored by effective ignore rules.
+4. Remove any match contained by another matched directory.
+5. Validate and plan the remaining matches as normal file operations.
+
+Every expanded match is subject to the same boundary checks, unsafe symlink
+checks, duplicate target checks, conflict modes, dry-run behavior, and output
+contract as any other file operation. The remaining expanded operations must
+still pass duplicate and overlapping target validation.
+
+When a raw glob pattern matches no source paths, treeboot treats it like a
+missing source: `required = true` fails before any file operation or command
+runs, and optional entries skip without changing targets. If the raw glob
+matches source paths but every match is ignored, the operation expands to no
+concrete file operations and is not treated as a missing source.
+
+When a glob source omits `target`, each match targets the same root-relative
+path in the worktree. When a glob source sets `target`, `target` is always a
+destination prefix, even if the pattern matches only one path. treeboot appends
+each matched path relative to the fixed non-glob base.
+
+Directory matches are valid. For `copy` and `sync`, each matched directory is
+planned as a directory source and recursed normally. For `symlink`, each matched
+file or directory produces its own symlink operation.
+
+Examples:
+
+- `{ source = "config/*.pem" }`: `config/a.pem` targets `config/a.pem`.
+- `{ source = "config/*.pem", target = "c" }`: `config/a.pem` targets `c/a.pem`,
+  even when it is the only match.
+- `{ source = "traefik/**/*.pem", target = "c" }`: `traefik/prod/a.pem` targets
+  `c/prod/a.pem`.
+- `{ source = "config/*.pem", ignore = ["foo.pem"] }`: filters out
+  `config/foo.pem` during glob expansion.
+- `{ source = "config/**/*.pem", ignore = ["foo.pem"] }`: filters out both
+  `config/foo.pem` and `config/client/foo.pem`.
+- `{ source = "config/*.pem", ignore = ["foo.pem"] }`: does not affect
+  `config/client/foo.pem` because the source glob does not match it.
+- `{ source = "config/*", ignore = ["*/cache/**"] }`: ignores `cache`
+  descendants inside matched child directories.
+- `{ source = "config/**" }`: if it matches `config` and descendants, keeps only
+  `config`.
+- `{ source = "config/*" }`: expands the immediate children of `config`; it is
+  not equivalent to `source = "config"`.
+- `{ source = "literal-*", glob = false }`: treats `literal-*` as a literal
+  source path.
+
 ### Copy
 
 Copies files and directories. Directory copies recursively copy the source
@@ -1302,7 +1378,9 @@ Patterns match source-relative paths for the operation. For example, with
 `source = "shared"` and `ignore = ["**/vendor/**"]`, the pattern is evaluated
 against paths below `TREEBOOT_ROOT_PATH/shared`, not against paths below the
 repository root unless the operation source is the root itself. Matching uses
-directory knowledge, so directory-only patterns match only directories.
+directory knowledge, so directory-only patterns match only directories. For
+glob-expanded sources, ignore rules are evaluated under the fixed non-glob base
+defined in [Source glob expansion](#source-glob-expansion).
 
 Ignore rules affect directory sources only. When a `copy` or `sync` source is a
 single file or a source symlink, treeboot validates the patterns but does not
@@ -1461,7 +1539,8 @@ explicit deletes.
 File-operation output should stay compact by default while preserving detailed
 diagnostics when requested. Default text output is grouped by top-level file
 operation. Top-level operations are declarative config entries or normalized
-manual source arguments.
+manual source arguments; glob-expanded matches become normalized top-level file
+operations after expansion.
 
 Single concrete actions omit parenthesized counts because the source and target
 already describe the work:
@@ -1725,6 +1804,7 @@ idempotency, compatibility env vars, and real Git worktree behavior.
 
 - Config parsing.
 - Duplicate file operation target detection.
+- Source glob expansion, ignored glob matches, and overlap collapse.
 - Outside-worktree target validation.
 - String and object file parsing.
 - Sync comparison and explicit delete behavior.
