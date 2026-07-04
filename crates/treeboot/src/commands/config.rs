@@ -43,13 +43,22 @@ pub(crate) fn run_config_command(args: ConfigArgs) -> treeboot_core::Result<()> 
 
     let plan_options = runtime_policy.resolve(&report.config.options);
 
-    if let Err(error) = treeboot_core::ActionPlan::from_manifest(
+    // Warnings go to stderr in every output format so JSON and YAML stdout
+    // output stays parseable.
+    match treeboot_core::ActionPlan::from_manifest(
         &report.path,
         &report.config,
         &report.context,
         plan_options.into_action_plan_options(),
     ) {
-        eprintln!("treeboot: warning: run validation would fail: {error}");
+        Ok(plan) => {
+            for warning in plan.warnings() {
+                eprintln!("treeboot: warning: {warning}");
+            }
+        }
+        Err(error) => {
+            eprintln!("treeboot: warning: run validation would fail: {error}");
+        }
     }
 
     Ok(())
@@ -98,6 +107,15 @@ fn file_operation_summary(operation: &FileOperation) -> String {
     }
     if let Some(symlinks) = operation.symlinks {
         summary.push_str(&format!(" symlinks={symlinks:?}").to_lowercase());
+    }
+    if !operation.include.is_empty() {
+        let included = operation
+            .include
+            .iter()
+            .map(|pattern| format!("{pattern:?}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        summary.push_str(&format!(" include=[{included}]"));
     }
     if !operation.ignore.is_empty() {
         let ignored = operation

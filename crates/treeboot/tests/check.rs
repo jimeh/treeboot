@@ -56,7 +56,7 @@ fn check_should_support_json_yaml_and_text_formats() {
         .stdout
         .clone();
     let json = parse_json(json, "check");
-    assert_json_object_keys(&json, &["action", "context"]);
+    assert_json_object_keys(&json, &["action", "context", "warnings"]);
     assert_context_shape(&json["context"]);
     assert_json_object_keys(&json["action"], &["kind", "path"]);
     assert_eq!(json["action"]["kind"], "config");
@@ -151,7 +151,7 @@ fn check_should_succeed_for_missing_config_unless_strict() {
         .stdout
         .clone();
     let json = parse_json(json, "check");
-    assert_json_object_keys(&json, &["action", "context"]);
+    assert_json_object_keys(&json, &["action", "context", "warnings"]);
     assert_context_shape(&json["context"]);
     assert_json_object_keys(&json["action"], &["kind"]);
     assert_eq!(json["action"]["kind"], "missing_config");
@@ -178,7 +178,7 @@ fn check_should_skip_root_checkout_unless_strict() {
         .stdout
         .clone();
     let json = parse_json(json, "check");
-    assert_json_object_keys(&json, &["action", "context"]);
+    assert_json_object_keys(&json, &["action", "context", "warnings"]);
     assert_context_shape(&json["context"]);
     assert_json_object_keys(&json["action"], &["kind"]);
     assert_eq!(json["action"]["kind"], "root_worktree_skipped");
@@ -524,4 +524,77 @@ fn check_config_option_should_skip_init_script_and_validate_requested_config() {
     assert!(json["action"]["path"].is_string());
 
     assert!(!marker.exists());
+}
+
+#[test]
+fn check_should_warn_on_zero_match_include_and_stay_ok() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared")).expect("source should be created");
+    write_file(&repo.root_path().join("shared/file.txt"), "data\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "shared", include = ["docs/**"] }]"#,
+    );
+
+    treeboot()
+        .arg("check")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "treeboot: warning: include patterns match no source paths for copy shared -> shared",
+        ))
+        .stdout(predicate::str::contains("treeboot: check ok"));
+}
+
+#[test]
+fn check_json_should_carry_zero_match_include_warnings() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared")).expect("source should be created");
+    write_file(&repo.root_path().join("shared/file.txt"), "data\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "shared", include = ["docs/**"] }]"#,
+    );
+
+    let json = treeboot()
+        .args(["check", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json = parse_json(json, "check");
+
+    assert_json_object_keys(&json, &["action", "context", "warnings"]);
+    let warnings = json["warnings"]
+        .as_array()
+        .expect("warnings should be an array");
+    assert_eq!(warnings.len(), 1);
+    assert!(
+        warnings[0]
+            .as_str()
+            .expect("warning should be a string")
+            .contains("include patterns match no source paths")
+    );
+}
+
+#[test]
+fn check_should_reject_include_with_sync_delete() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared")).expect("source should be created");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"sync = [{ source = "shared", include = ["docs/**"], delete = true }]"#,
+    );
+
+    treeboot()
+        .arg("check")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "`include` cannot be combined with `delete = true`",
+        ));
 }

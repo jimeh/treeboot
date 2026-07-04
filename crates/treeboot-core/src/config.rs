@@ -8,6 +8,7 @@ use toml::Spanned;
 
 use crate::context;
 use crate::discovery;
+use crate::path_filter::{IncludePatternIssue, invalid_include_pattern};
 use crate::paths::{self, UnsupportedPath};
 use crate::{EnvironmentInput, Error, Result, Worktree, WorktreeOptions};
 
@@ -144,6 +145,9 @@ pub struct FileOperation {
     pub delete: Option<bool>,
     /// How copy and sync should treat source symlinks.
     pub symlinks: Option<SymlinkMode>,
+    /// Source-relative path patterns that narrow copy and sync directory
+    /// traversal to matching source paths. Empty means no include filtering.
+    pub include: Vec<String>,
     /// Source-relative path patterns ignored by copy and sync.
     pub ignore: Vec<String>,
     /// Metadata fields ignored by copy and sync.
@@ -300,6 +304,7 @@ pub(crate) struct FileOperationSettingsInput {
     pub(crate) compare: Option<SyncCompare>,
     pub(crate) delete: Option<bool>,
     pub(crate) symlinks: Option<SymlinkMode>,
+    pub(crate) include: Vec<String>,
     pub(crate) ignore: Vec<String>,
     pub(crate) ignore_metadata: Vec<RawMetadataField>,
 }
@@ -309,8 +314,51 @@ pub(crate) struct FileOperationSettings {
     pub(crate) compare: Option<SyncCompare>,
     pub(crate) delete: Option<bool>,
     pub(crate) symlinks: Option<SymlinkMode>,
+    pub(crate) include: Vec<String>,
     pub(crate) ignore: Vec<String>,
     pub(crate) ignore_metadata: Vec<MetadataField>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum InvalidFileOperationSettings {
+    Field(InvalidFileOperationField),
+    IncludeWithDelete,
+    IncludePattern {
+        pattern: String,
+        issue: IncludePatternIssue,
+    },
+}
+
+impl InvalidFileOperationSettings {
+    pub(crate) fn config_message(&self) -> String {
+        match self {
+            Self::Field(field) => format!(
+                "`{}` is only valid for {} file operations",
+                field.name(),
+                field.allowed_operations()
+            ),
+            Self::IncludeWithDelete => include_with_delete_message(),
+            Self::IncludePattern { pattern, issue } => issue.message(pattern),
+        }
+    }
+
+    pub(crate) fn manual_message(&self) -> String {
+        match self {
+            Self::Field(field) => format!(
+                "`{}` is only valid for {}",
+                field.name(),
+                field.allowed_operations()
+            ),
+            Self::IncludeWithDelete => include_with_delete_message(),
+            Self::IncludePattern { pattern, issue } => issue.message(pattern),
+        }
+    }
+}
+
+pub(crate) fn include_with_delete_message() -> String {
+    "`include` cannot be combined with `delete = true`; \
+     drop `delete` or narrow the operation source instead"
+        .to_owned()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -318,6 +366,7 @@ pub(crate) enum InvalidFileOperationField {
     Compare,
     Delete,
     Symlinks,
+    Include,
     Ignore,
     IgnoreMetadata,
 }
@@ -328,6 +377,7 @@ impl InvalidFileOperationField {
             Self::Compare => "compare",
             Self::Delete => "delete",
             Self::Symlinks => "symlinks",
+            Self::Include => "include",
             Self::Ignore => "ignore",
             Self::IgnoreMetadata => "ignore_metadata",
         }
@@ -336,7 +386,7 @@ impl InvalidFileOperationField {
     pub(crate) const fn allowed_operations(self) -> &'static str {
         match self {
             Self::Compare | Self::Delete => "sync",
-            Self::Symlinks | Self::Ignore | Self::IgnoreMetadata => "copy and sync",
+            Self::Symlinks | Self::Include | Self::Ignore | Self::IgnoreMetadata => "copy and sync",
         }
     }
 }
@@ -344,12 +394,14 @@ impl InvalidFileOperationField {
 pub(crate) fn normalize_file_operation_settings(
     operation: FileOperationKind,
     input: FileOperationSettingsInput,
-) -> std::result::Result<FileOperationSettings, InvalidFileOperationField> {
+) -> std::result::Result<FileOperationSettings, InvalidFileOperationSettings> {
     let compare = match operation {
         FileOperationKind::Sync => Some(input.compare.unwrap_or(SyncCompare::Metadata)),
         FileOperationKind::Copy | FileOperationKind::Symlink => {
             if input.compare.is_some() {
-                return Err(InvalidFileOperationField::Compare);
+                return Err(InvalidFileOperationSettings::Field(
+                    InvalidFileOperationField::Compare,
+                ));
             }
             None
         }
@@ -358,7 +410,9 @@ pub(crate) fn normalize_file_operation_settings(
         FileOperationKind::Sync => Some(input.delete.unwrap_or(false)),
         FileOperationKind::Copy | FileOperationKind::Symlink => {
             if input.delete.is_some() {
-                return Err(InvalidFileOperationField::Delete);
+                return Err(InvalidFileOperationSettings::Field(
+                    InvalidFileOperationField::Delete,
+                ));
             }
             None
         }
@@ -369,16 +423,44 @@ pub(crate) fn normalize_file_operation_settings(
         }
         FileOperationKind::Symlink => {
             if input.symlinks.is_some() {
-                return Err(InvalidFileOperationField::Symlinks);
+                return Err(InvalidFileOperationSettings::Field(
+                    InvalidFileOperationField::Symlinks,
+                ));
             }
             None
         }
     };
+    let include = match operation {
+        FileOperationKind::Copy | FileOperationKind::Sync => {
+            for pattern in &input.include {
+                if let Some(issue) = invalid_include_pattern(pattern) {
+                    return Err(InvalidFileOperationSettings::IncludePattern {
+                        pattern: pattern.clone(),
+                        issue,
+                    });
+                }
+            }
+            input.include
+        }
+        FileOperationKind::Symlink => {
+            if !input.include.is_empty() {
+                return Err(InvalidFileOperationSettings::Field(
+                    InvalidFileOperationField::Include,
+                ));
+            }
+            Vec::new()
+        }
+    };
+    if operation == FileOperationKind::Sync && delete == Some(true) && !include.is_empty() {
+        return Err(InvalidFileOperationSettings::IncludeWithDelete);
+    }
     let ignore = match operation {
         FileOperationKind::Copy | FileOperationKind::Sync => input.ignore,
         FileOperationKind::Symlink => {
             if !input.ignore.is_empty() {
-                return Err(InvalidFileOperationField::Ignore);
+                return Err(InvalidFileOperationSettings::Field(
+                    InvalidFileOperationField::Ignore,
+                ));
             }
             Vec::new()
         }
@@ -389,7 +471,9 @@ pub(crate) fn normalize_file_operation_settings(
         }
         FileOperationKind::Symlink => {
             if !input.ignore_metadata.is_empty() {
-                return Err(InvalidFileOperationField::IgnoreMetadata);
+                return Err(InvalidFileOperationSettings::Field(
+                    InvalidFileOperationField::IgnoreMetadata,
+                ));
             }
             Vec::new()
         }
@@ -399,6 +483,7 @@ pub(crate) fn normalize_file_operation_settings(
         compare,
         delete,
         symlinks,
+        include,
         ignore,
         ignore_metadata,
     })
@@ -543,6 +628,7 @@ fn normalize_file_group(
                 compare: None,
                 delete: None,
                 symlinks: None,
+                include: Vec::new(),
                 ignore: Vec::new(),
                 ignore_metadata: Vec::new(),
             },
@@ -633,22 +719,12 @@ fn normalize_file_object(
             compare: object.compare,
             delete: object.delete,
             symlinks: object.symlinks,
+            include: object.include,
             ignore: object.ignore,
             ignore_metadata: object.ignore_metadata,
         },
     )
-    .map_err(|field| {
-        invalid_config_error(
-            path,
-            content,
-            span,
-            format!(
-                "`{}` is only valid for {} file operations",
-                field.name(),
-                field.allowed_operations()
-            ),
-        )
-    })?;
+    .map_err(|invalid| invalid_config_error(path, content, span, invalid.config_message()))?;
 
     Ok(FileOperation {
         operation,
@@ -666,6 +742,7 @@ fn normalize_file_object(
         compare: settings.compare,
         delete: settings.delete,
         symlinks: settings.symlinks,
+        include: settings.include,
         ignore: effective_ignore_patterns(operation, default_ignore, settings.ignore),
         ignore_metadata: settings.ignore_metadata,
         declaration: span,
@@ -1006,6 +1083,7 @@ struct RawFileObject {
     compare: Option<SyncCompare>,
     delete: Option<bool>,
     symlinks: Option<SymlinkMode>,
+    include: Vec<String>,
     ignore: Vec<String>,
     ignore_metadata: Vec<RawMetadataField>,
 }
@@ -1210,6 +1288,97 @@ sync = [{ source = "shared", ignore_metadata = ["group"] }]
             ]
         );
         assert_eq!(config.files[1].ignore_metadata, vec![MetadataField::Group]);
+    }
+
+    #[test]
+    fn parse_config_should_preserve_explicit_include_patterns() {
+        let config = parse(
+            r#"
+copy = [{ source = "shared", include = ["docs/**", "*.toml"] }]
+sync = [{ source = "editor", include = ["settings/**"] }]
+"#,
+        );
+
+        assert_eq!(config.files[0].include, vec!["docs/**", "*.toml"]);
+        assert_eq!(config.files[1].include, vec!["settings/**"]);
+    }
+
+    #[test]
+    fn parse_config_should_default_include_to_empty() {
+        let config = parse("copy = [\"shared\"]\n");
+
+        assert!(config.files[0].include.is_empty());
+    }
+
+    #[test]
+    fn parse_config_should_reject_include_on_symlink_file_operations() {
+        assert_parse_error_contains(
+            "symlink = [{ source = \"shared\", include = [\"docs/**\"] }]\n",
+            "`include` is only valid for copy and sync file operations",
+        );
+        assert_parse_error_contains(
+            r#"
+[[file]]
+operation = "symlink"
+source = "shared"
+include = ["docs/**"]
+"#,
+            "`include` is only valid for copy and sync file operations",
+        );
+    }
+
+    #[test]
+    fn parse_config_should_reject_include_with_sync_delete() {
+        assert_parse_error_contains(
+            "sync = [{ source = \"shared\", include = [\"docs/**\"], delete = true }]\n",
+            "`include` cannot be combined with `delete = true`",
+        );
+        assert_parse_error_contains(
+            r#"
+files = [{ operation = "sync", source = "shared", include = ["docs/**"], delete = true }]
+"#,
+            "`include` cannot be combined with `delete = true`",
+        );
+    }
+
+    #[test]
+    fn parse_config_should_allow_empty_include_with_sync_delete() {
+        let config = parse("sync = [{ source = \"shared\", include = [], delete = true }]\n");
+
+        assert!(config.files[0].include.is_empty());
+        assert_eq!(config.files[0].delete, Some(true));
+    }
+
+    #[test]
+    fn parse_config_should_reject_inert_include_patterns() {
+        assert_parse_error_contains(
+            "copy = [{ source = \"shared\", include = [\"!docs\"] }]\n",
+            "uses `!` negation",
+        );
+        assert_parse_error_contains(
+            "copy = [{ source = \"shared\", include = [\"\"] }]\n",
+            "include patterns cannot be blank",
+        );
+        assert_parse_error_contains(
+            "copy = [{ source = \"shared\", include = [\"# docs\"] }]\n",
+            "is a gitignore comment",
+        );
+    }
+
+    #[test]
+    fn parse_config_should_accept_escaped_include_prefixes() {
+        let config =
+            parse(r#"copy = [{ source = "shared", include = ['\!literal', '\#literal'] }]"#);
+
+        assert_eq!(config.files[0].include, vec![r"\!literal", r"\#literal"]);
+    }
+
+    #[test]
+    fn parse_config_should_keep_comment_and_blank_patterns_valid_in_ignore() {
+        let config =
+            parse("copy = [{ source = \"shared\", ignore = [\"# comment\", \"\", \"!keep\"] }]\n");
+
+        assert_eq!(config.files[0].ignore, vec!["# comment", "", "!keep"]);
     }
 
     #[test]

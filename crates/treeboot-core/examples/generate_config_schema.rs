@@ -97,6 +97,10 @@ struct CopyObject {
     /// How safe source symlinks are handled.
     #[serde(skip_serializing_if = "Option::is_none")]
     symlinks: Option<SymlinkMode>,
+    /// Source-relative path patterns that narrow directory copies to
+    /// matching source paths.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    include: Option<Vec<String>>,
     /// Source-relative path patterns that copy should skip.
     #[serde(skip_serializing_if = "Option::is_none")]
     ignore: Option<Vec<String>>,
@@ -138,6 +142,10 @@ struct SyncObject {
     /// How safe source symlinks are handled.
     #[serde(skip_serializing_if = "Option::is_none")]
     symlinks: Option<SymlinkMode>,
+    /// Source-relative path patterns that narrow directory sync to matching
+    /// source paths. A non-empty list cannot combine with `delete = true`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    include: Option<Vec<String>>,
     /// Source-relative path patterns that sync should skip.
     #[serde(skip_serializing_if = "Option::is_none")]
     ignore: Option<Vec<String>>,
@@ -162,6 +170,10 @@ enum MixedFileObject {
         /// How safe source symlinks are handled.
         #[serde(skip_serializing_if = "Option::is_none")]
         symlinks: Option<SymlinkMode>,
+        /// Source-relative path patterns that narrow directory copies to
+        /// matching source paths.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        include: Option<Vec<String>>,
         /// Source-relative path patterns that copy should skip.
         #[serde(skip_serializing_if = "Option::is_none")]
         ignore: Option<Vec<String>>,
@@ -199,6 +211,11 @@ enum MixedFileObject {
         /// How safe source symlinks are handled.
         #[serde(skip_serializing_if = "Option::is_none")]
         symlinks: Option<SymlinkMode>,
+        /// Source-relative path patterns that narrow directory sync to
+        /// matching source paths. A non-empty list cannot combine with
+        /// `delete = true`.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        include: Option<Vec<String>>,
         /// Source-relative path patterns that sync should skip.
         #[serde(skip_serializing_if = "Option::is_none")]
         ignore: Option<Vec<String>>,

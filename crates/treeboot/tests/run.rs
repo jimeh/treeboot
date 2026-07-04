@@ -2195,3 +2195,76 @@ fn non_executable_init_script_should_be_ignored() {
         .stdout(predicate::str::contains("treeboot: ignore"))
         .stdout(predicate::str::contains("treeboot: no config detected"));
 }
+
+#[test]
+fn run_should_apply_config_include_filters() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared/docs")).expect("docs should be created");
+    std::fs::create_dir_all(repo.root_path().join("shared/src")).expect("src should be created");
+    write_file(&repo.root_path().join("shared/docs/guide.md"), "guide\n");
+    write_file(
+        &repo.root_path().join("shared/src/main.rs"),
+        "fn main() {}\n",
+    );
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "shared", include = ["docs/**"] }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert!(repo.worktree_path().join("shared/docs/guide.md").exists());
+    assert!(
+        !repo.worktree_path().join("shared/src").exists(),
+        "non-included directory should not be created"
+    );
+}
+
+#[test]
+fn run_should_stay_silent_on_zero_match_include() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared")).expect("source should be created");
+    write_file(&repo.root_path().join("shared/file.txt"), "data\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "shared", include = ["docs/**"] }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("warning").not())
+        .stderr(predicate::str::contains("warning").not());
+}
+
+#[test]
+fn run_should_reject_include_with_sync_delete_before_side_effects() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared/docs"))
+        .expect("source should be created");
+    write_file(&repo.root_path().join("shared/docs/guide.md"), "guide\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"sync = [{ source = "shared", include = ["docs/**"], delete = true }]"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "`include` cannot be combined with `delete = true`",
+        ));
+
+    assert!(
+        !repo.worktree_path().join("shared").exists(),
+        "validation failure should not create targets"
+    );
+}

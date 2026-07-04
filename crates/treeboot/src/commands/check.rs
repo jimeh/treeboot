@@ -34,6 +34,9 @@ pub(crate) fn run_check_command(args: CheckArgs) -> treeboot_core::Result<()> {
 
     match format {
         ReportFormat::Text => {
+            for warning in &report.warnings {
+                println!("treeboot: warning: {warning}");
+            }
             println!("treeboot: check ok");
             Ok(())
         }

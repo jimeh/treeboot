@@ -8,7 +8,9 @@ use crate::file_system::{
     conflict, file_sync_changed, maybe_metadata, metadata, metadata_drifted, preserved_source_link,
     raw_source_path, relative_path,
 };
-use crate::ignore_rules::PathIgnoreRules;
+use crate::path_filter::{
+    PathIgnoreRules, PathIncludeRules, invalid_include_pattern, subtree_contains_included,
+};
 use crate::{
     ActionPlan, Error, FileOperationKind, PlannedFileOperation, PlannedFileStatus, Result,
 };
@@ -25,12 +27,16 @@ struct CopyEntry<'a> {
     target_path: &'a Path,
     source: &'a Path,
     target: &'a Path,
+    /// Whether this entry passes the include gate, either directly or through
+    /// an included ancestor. Always true when no include rules are active.
+    included: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
-struct TreeIgnoreContext<'a> {
+struct TreeFilterContext<'a> {
     source_root_path: &'a Path,
-    rules: Option<&'a PathIgnoreRules>,
+    ignore: Option<&'a PathIgnoreRules>,
+    include: Option<&'a PathIncludeRules>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,19 +134,24 @@ fn plan_tree(
     let source_path = raw_source_path(plan, operation);
     let metadata = metadata(&source_path, operation.operation())?;
     let ignore_rules = operation_ignore_rules(operation, &source_path)?;
-    let ignore_context = TreeIgnoreContext {
+    let include_rules = operation_include_rules(operation, &source_path)?;
+    let filter = TreeFilterContext {
         source_root_path: &source_path,
-        rules: ignore_rules.as_ref(),
+        ignore: ignore_rules.as_ref(),
+        include: include_rules.as_ref(),
     };
+    // The top-level operation source is never filtered by include or ignore
+    // rules; the gates apply only to paths inside a directory source.
     plan_tree_entry(
         plan,
         operation,
-        ignore_context,
+        filter,
         CopyEntry {
             source_path: &source_path,
             target_path: operation.target_path(),
             source: operation.source(),
             target: operation.target(),
+            included: false,
         },
         &metadata,
         mode,
@@ -164,10 +175,35 @@ fn operation_ignore_rules(
         })
 }
 
+fn operation_include_rules(
+    operation: &PlannedFileOperation,
+    source_path: &Path,
+) -> Result<Option<PathIncludeRules>> {
+    if operation.include().is_empty() {
+        return Ok(None);
+    }
+
+    for pattern in operation.include() {
+        if let Some(issue) = invalid_include_pattern(pattern) {
+            return Err(Error::FileOperationInvalid {
+                operation: operation.operation().as_str(),
+                message: issue.message(pattern),
+            });
+        }
+    }
+
+    PathIncludeRules::new(source_path, operation.include())
+        .map(Some)
+        .map_err(|source| Error::FileOperationInvalid {
+            operation: operation.operation().as_str(),
+            message: format!("invalid include pattern: {source}"),
+        })
+}
+
 fn plan_tree_entry(
     plan: &ActionPlan,
     operation: &PlannedFileOperation,
-    ignore_context: TreeIgnoreContext<'_>,
+    filter: TreeFilterContext<'_>,
     entry: CopyEntry<'_>,
     source_metadata: &Metadata,
     mode: TreePlanMode,
@@ -180,15 +216,7 @@ fn plan_tree_entry(
         return plan_tree_file(operation, entry, mode, actions);
     }
     if source_metadata.is_dir() {
-        return plan_tree_directory(
-            plan,
-            operation,
-            ignore_context.source_root_path,
-            entry,
-            mode,
-            ignore_context.rules,
-            actions,
-        );
+        return plan_tree_directory(plan, operation, filter, entry, mode, actions);
     }
 
     conflict(
@@ -201,10 +229,9 @@ fn plan_tree_entry(
 fn plan_tree_directory(
     plan: &ActionPlan,
     operation: &PlannedFileOperation,
-    source_root_path: &Path,
+    filter: TreeFilterContext<'_>,
     entry: CopyEntry<'_>,
     mode: TreePlanMode,
-    ignore_rules: Option<&PathIgnoreRules>,
     actions: &mut Vec<FileAction>,
 ) -> Result<()> {
     let mut directory_metadata = None;
@@ -275,15 +302,7 @@ fn plan_tree_directory(
         }
     }
 
-    plan_tree_directory_children(
-        plan,
-        operation,
-        source_root_path,
-        entry,
-        mode,
-        ignore_rules,
-        actions,
-    )?;
+    plan_tree_directory_children(plan, operation, filter, entry, mode, actions)?;
 
     if let Some(action) = directory_metadata {
         actions.push(action);
@@ -295,32 +314,23 @@ fn plan_tree_directory(
 fn plan_ignored_tree_directory(
     plan: &ActionPlan,
     operation: &PlannedFileOperation,
-    source_root_path: &Path,
+    filter: TreeFilterContext<'_>,
     entry: CopyEntry<'_>,
     mode: TreePlanMode,
-    ignore_rules: Option<&PathIgnoreRules>,
     actions: &mut Vec<FileAction>,
 ) -> Result<()> {
-    plan_tree_directory_children(
-        plan,
-        operation,
-        source_root_path,
-        entry,
-        mode,
-        ignore_rules,
-        actions,
-    )
+    plan_tree_directory_children(plan, operation, filter, entry, mode, actions)
 }
 
 fn plan_tree_directory_children(
     plan: &ActionPlan,
     operation: &PlannedFileOperation,
-    source_root_path: &Path,
+    filter: TreeFilterContext<'_>,
     entry: CopyEntry<'_>,
     mode: TreePlanMode,
-    ignore_rules: Option<&PathIgnoreRules>,
     actions: &mut Vec<FileAction>,
 ) -> Result<()> {
+    let ancestor_included = entry.included;
     for child in fs::read_dir(entry.source_path).map_err(|source| Error::FileOperationIo {
         operation: operation.operation().as_str(),
         path: entry.source_path.to_path_buf(),
@@ -336,48 +346,60 @@ fn plan_tree_directory_children(
         let child_source = entry.source.join(child.file_name());
         let child_target = entry.target.join(child.file_name());
         let child_metadata = metadata(&child_source_path, operation.operation())?;
+        let child_included =
+            ancestor_included || included_source_entry(filter, &child_source_path, &child_metadata);
 
         if ignored_source_entry(
-            source_root_path,
+            filter.source_root_path,
             &child_source_path,
             &child_metadata,
-            ignore_rules,
+            filter.ignore,
         ) {
             if child_metadata.is_dir()
-                && ignore_rules
+                && filter
+                    .ignore
                     .map(PathIgnoreRules::has_negation)
                     .unwrap_or(false)
             {
                 plan_ignored_tree_directory(
                     plan,
                     operation,
-                    source_root_path,
+                    filter,
                     CopyEntry {
                         source_path: &child_source_path,
                         target_path: &child_target_path,
                         source: &child_source,
                         target: &child_target,
+                        included: child_included,
                     },
                     mode,
-                    ignore_rules,
                     actions,
                 )?;
             }
             continue;
         }
 
+        // Include gate: non-included files are skipped; non-included
+        // directories only get target actions when their subtree contains an
+        // included entry, and are pruned when no descendant can match.
+        if filter.include.is_some()
+            && !child_included
+            && (!child_metadata.is_dir()
+                || !included_descendants_possible(filter, &child_source_path))
+        {
+            continue;
+        }
+
         plan_tree_entry(
             plan,
             operation,
-            TreeIgnoreContext {
-                source_root_path,
-                rules: ignore_rules,
-            },
+            filter,
             CopyEntry {
                 source_path: &child_source_path,
                 target_path: &child_target_path,
                 source: &child_source,
                 target: &child_target,
+                included: child_included,
             },
             &child_metadata,
             mode,
@@ -387,7 +409,9 @@ fn plan_tree_directory_children(
 
     if matches!(mode, TreePlanMode::Sync) && operation.delete().unwrap_or(false) {
         // Only recursive delete planning needs the ignored-preserved flag.
-        let _ = plan_sync_deletes(operation, entry, ignore_rules, actions)?;
+        // Include cannot be combined with sync delete, so delete planning
+        // stays include-unaware.
+        let _ = plan_sync_deletes(operation, entry, filter.ignore, actions)?;
     }
 
     Ok(())
@@ -402,6 +426,31 @@ fn ignored_source_entry(
     ignore_rules
         .zip(source_path.strip_prefix(source_root_path).ok())
         .is_some_and(|(rules, relative)| rules.is_ignored(relative, metadata.is_dir()))
+}
+
+fn included_source_entry(
+    filter: TreeFilterContext<'_>,
+    source_path: &Path,
+    metadata: &Metadata,
+) -> bool {
+    match filter.include {
+        None => true,
+        Some(include) => source_path
+            .strip_prefix(filter.source_root_path)
+            .is_ok_and(|relative| include.is_included(relative, metadata.is_dir())),
+    }
+}
+
+fn included_descendants_possible(filter: TreeFilterContext<'_>, source_path: &Path) -> bool {
+    let Some(include) = filter.include else {
+        return true;
+    };
+    let Ok(relative) = source_path.strip_prefix(filter.source_root_path) else {
+        return true;
+    };
+
+    include.dir_may_contain_matches(relative)
+        && subtree_contains_included(filter.source_root_path, source_path, include, filter.ignore)
 }
 
 fn plan_tree_file(
@@ -670,6 +719,7 @@ fn plan_sync_deletes(
                         target_path: &child_target_path,
                         source: &child_source,
                         target: &child_target,
+                        included: entry.included,
                     },
                     ignore_rules,
                     actions,
@@ -687,6 +737,7 @@ fn plan_sync_deletes(
                         target_path: &child_target_path,
                         source: &child_source,
                         target: &child_target,
+                        included: entry.included,
                     },
                     ignore_rules,
                     &mut child_actions,

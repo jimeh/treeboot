@@ -1,8 +1,13 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use std::fmt;
+
+use crate::config::include_with_delete_message;
 use crate::file_system::{TargetAncestorIssue, inspect_target_ancestors, matching_target_anchor};
-use crate::ignore_rules::PathIgnoreRules;
+use crate::path_filter::{
+    PathIgnoreRules, PathIncludeRules, include_matches_any_source_path, invalid_include_pattern,
+};
 use crate::paths;
 use crate::{
     CommandKind, CommandOperation, Config, ConfigRuntimeOptions, Error, FileOperation,
@@ -89,6 +94,45 @@ pub struct ActionPlan {
     files: Vec<PlannedFileOperation>,
     /// Planned command operations.
     commands: Vec<PlannedCommand>,
+    /// Non-fatal warnings produced while building the plan.
+    warnings: Vec<PlanWarning>,
+}
+
+/// Non-fatal warning produced while building an action plan.
+///
+/// Warnings never fail validation. `treeboot check` and `treeboot config`
+/// surface them; `run` intentionally does not report them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PlanWarning {
+    /// A non-empty include list matched no source paths before ignore
+    /// filtering.
+    IncludeMatchedNothing {
+        /// File operation kind.
+        operation: FileOperationKind,
+        /// Declared source path.
+        source: PathBuf,
+        /// Declared target path.
+        target: PathBuf,
+    },
+}
+
+impl fmt::Display for PlanWarning {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::IncludeMatchedNothing {
+                operation,
+                source,
+                target,
+            } => write!(
+                formatter,
+                "include patterns match no source paths for {} {} -> {}",
+                operation,
+                source.display(),
+                target.display()
+            ),
+        }
+    }
 }
 
 impl ActionPlan {
@@ -96,6 +140,12 @@ impl ActionPlan {
     #[must_use]
     pub const fn context(&self) -> &Worktree {
         &self.context
+    }
+
+    /// Returns non-fatal warnings produced while building the plan.
+    #[must_use]
+    pub fn warnings(&self) -> &[PlanWarning] {
+        &self.warnings
     }
 
     /// Returns the origin of this plan.
@@ -144,7 +194,7 @@ impl ActionPlan {
                 format!("failed to resolve worktree path: {source}"),
             )
         })?;
-        let files = plan_file_operations(
+        let (files, warnings) = plan_file_operations(
             FilePlanOrigin::Config(path),
             &manifest.files,
             context,
@@ -160,6 +210,7 @@ impl ActionPlan {
             config_path: Some(path.to_path_buf()),
             files,
             commands,
+            warnings,
         })
     }
 
@@ -183,7 +234,7 @@ impl ActionPlan {
                 operation: *operation,
             },
         };
-        let files = plan_file_operations(file_origin, files, context, options)?;
+        let (files, warnings) = plan_file_operations(file_origin, files, context, options)?;
         let config_path = match &origin {
             PlanOrigin::Manifest { path } => Some(path.clone()),
             PlanOrigin::Manual { .. } => None,
@@ -195,6 +246,7 @@ impl ActionPlan {
             config_path,
             files,
             commands: Vec::new(),
+            warnings,
         })
     }
 
@@ -212,6 +264,7 @@ impl ActionPlan {
             config_path,
             files,
             commands,
+            warnings: Vec::new(),
         }
     }
 }
@@ -244,6 +297,8 @@ pub struct PlannedFileOperation {
     delete: Option<bool>,
     /// How copy and sync should treat source symlinks.
     symlinks: Option<SymlinkMode>,
+    /// Source-relative path patterns that narrow copy and sync traversal.
+    include: Vec<String>,
     /// Source-relative path patterns ignored by copy and sync.
     ignore: Vec<String>,
     /// Metadata fields ignored by copy and sync.
@@ -309,6 +364,13 @@ impl PlannedFileOperation {
         self.symlinks
     }
 
+    /// Returns source-relative path patterns that narrow copy and sync
+    /// directory traversal to matching source paths.
+    #[must_use]
+    pub fn include(&self) -> &[String] {
+        &self.include
+    }
+
     /// Returns source-relative path patterns ignored by copy and sync.
     #[must_use]
     pub fn ignore(&self) -> &[String] {
@@ -345,6 +407,7 @@ impl PlannedFileOperation {
             compare: parts.compare,
             delete: parts.delete,
             symlinks: parts.symlinks,
+            include: parts.include,
             ignore: parts.ignore,
             ignore_metadata: parts.ignore_metadata,
             status: parts.status,
@@ -361,6 +424,12 @@ impl PlannedFileOperation {
     #[cfg(test)]
     pub(crate) const fn with_delete(mut self, delete: Option<bool>) -> Self {
         self.delete = delete;
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_include(mut self, include: Vec<String>) -> Self {
+        self.include = include;
         self
     }
 
@@ -388,6 +457,7 @@ pub(crate) struct PlannedFileOperationParts {
     pub(crate) compare: Option<SyncCompare>,
     pub(crate) delete: Option<bool>,
     pub(crate) symlinks: Option<SymlinkMode>,
+    pub(crate) include: Vec<String>,
     pub(crate) ignore: Vec<String>,
     pub(crate) ignore_metadata: Vec<MetadataField>,
     pub(crate) status: PlannedFileStatus,
@@ -503,7 +573,7 @@ pub(super) fn plan_file_operations(
     files: &[FileOperation],
     context: &Worktree,
     options: ActionPlanOptions,
-) -> Result<Vec<PlannedFileOperation>> {
+) -> Result<(Vec<PlannedFileOperation>, Vec<PlanWarning>)> {
     let root_path = normalize_existing(&context.root_path).map_err(|source| {
         file_plan_error(
             origin,
@@ -764,8 +834,9 @@ fn build_file_operations(
     target_paths: &[PathBuf],
     root_path: &Path,
     worktree_path: &Path,
-) -> Result<Vec<PlannedFileOperation>> {
+) -> Result<(Vec<PlannedFileOperation>, Vec<PlanWarning>)> {
     let mut planned = Vec::with_capacity(files.len());
+    let mut warnings = Vec::new();
 
     for (operation, target_path) in files.iter().zip(target_paths) {
         validate_target_boundary(origin, options, operation, target_path, worktree_path)?;
@@ -782,6 +853,7 @@ fn build_file_operations(
         })?;
         validate_source_boundary(origin, options, operation, &source_path, root_path)?;
         let ignore_rules = operation_ignore_rules(origin, operation, &source_path)?;
+        let include_rules = operation_include_rules(origin, operation, &source_path)?;
 
         let status = match source_exists(origin, operation, source_path.as_path())? {
             true => {
@@ -795,7 +867,23 @@ fn build_file_operations(
                         source_path.as_path(),
                         root_path,
                         ignore_rules.as_ref(),
+                        include_rules.as_ref(),
                     )?;
+
+                    // Gate the zero-match warning on the raw declared source:
+                    // normalization resolves symlinks, but a source symlink is
+                    // planned as a symlink and include never applies to it.
+                    if let Some(include) = include_rules.as_ref()
+                        && std::fs::symlink_metadata(&operation.source_path)
+                            .is_ok_and(|metadata| metadata.is_dir())
+                        && !include_matches_any_source_path(&source_path, include)
+                    {
+                        warnings.push(PlanWarning::IncludeMatchedNothing {
+                            operation: operation.operation,
+                            source: operation.source.clone(),
+                            target: operation.target.clone(),
+                        });
+                    }
                 }
 
                 PlannedFileStatus::Ready
@@ -823,6 +911,7 @@ fn build_file_operations(
             compare: operation.compare,
             delete: operation.delete,
             symlinks: operation.symlinks,
+            include: operation.include.clone(),
             ignore: operation.ignore.clone(),
             ignore_metadata: operation.ignore_metadata.clone(),
             status,
@@ -830,7 +919,7 @@ fn build_file_operations(
         });
     }
 
-    Ok(planned)
+    Ok((planned, warnings))
 }
 
 fn validate_target_boundary(
@@ -910,6 +999,61 @@ fn operation_ignore_rules(
         })
 }
 
+fn operation_include_rules(
+    origin: FilePlanOrigin<'_>,
+    operation: &FileOperation,
+    source_path: &Path,
+) -> Result<Option<PathIncludeRules>> {
+    if !matches!(
+        operation.operation,
+        FileOperationKind::Copy | FileOperationKind::Sync
+    ) || operation.include.is_empty()
+    {
+        return Ok(None);
+    }
+
+    // Config parsing and manual option validation reject these earlier;
+    // revalidate here so directly constructed file operations get the same
+    // contract.
+    if operation.operation == FileOperationKind::Sync && operation.delete == Some(true) {
+        return invalid_file_plan(
+            origin,
+            Some(operation.declaration),
+            format!(
+                "{} for {}",
+                include_with_delete_message(),
+                operation_summary(origin, operation)
+            ),
+        );
+    }
+    for pattern in &operation.include {
+        if let Some(issue) = invalid_include_pattern(pattern) {
+            return invalid_file_plan(
+                origin,
+                Some(operation.declaration),
+                format!(
+                    "{} for {}",
+                    issue.message(pattern),
+                    operation_summary(origin, operation)
+                ),
+            );
+        }
+    }
+
+    PathIncludeRules::new(source_path, &operation.include)
+        .map(Some)
+        .map_err(|source| {
+            file_plan_error(
+                origin,
+                Some(operation.declaration),
+                format!(
+                    "invalid include pattern for {}: {source}",
+                    operation_summary(origin, operation)
+                ),
+            )
+        })
+}
+
 fn plan_commands(
     path: &Path,
     commands: &[CommandOperation],
@@ -972,24 +1116,44 @@ fn validate_source_symlinks(
     source_path: &Path,
     root_path: &Path,
     ignore_rules: Option<&PathIgnoreRules>,
+    include_rules: Option<&PathIncludeRules>,
 ) -> Result<()> {
     validate_source_symlink_path(
         origin,
         operation,
-        source_path,
+        source_root_context(source_path, ignore_rules, include_rules),
         source_path,
         root_path,
-        ignore_rules,
+        false,
     )
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SourceFilterContext<'a> {
+    source_root: &'a Path,
+    ignore_rules: Option<&'a PathIgnoreRules>,
+    include_rules: Option<&'a PathIncludeRules>,
+}
+
+const fn source_root_context<'a>(
+    source_root: &'a Path,
+    ignore_rules: Option<&'a PathIgnoreRules>,
+    include_rules: Option<&'a PathIncludeRules>,
+) -> SourceFilterContext<'a> {
+    SourceFilterContext {
+        source_root,
+        ignore_rules,
+        include_rules,
+    }
 }
 
 fn validate_source_symlink_path(
     origin: FilePlanOrigin<'_>,
     operation: &FileOperation,
-    source_root: &Path,
+    filter: SourceFilterContext<'_>,
     path: &Path,
     root_path: &Path,
-    ignore_rules: Option<&PathIgnoreRules>,
+    ancestor_included: bool,
 ) -> Result<()> {
     let metadata = std::fs::symlink_metadata(path).map_err(|source| {
         file_plan_error(
@@ -1064,35 +1228,61 @@ fn validate_source_symlink_path(
             )
         })?;
 
-        if ignored_source_path(source_root, &path, &metadata, ignore_rules) {
+        let entry_included = ancestor_included || entry_matches_include(filter, &path, &metadata);
+
+        if ignored_source_path(filter.source_root, &path, &metadata, filter.ignore_rules) {
             if metadata.is_dir()
-                && ignore_rules
+                && filter
+                    .ignore_rules
                     .map(PathIgnoreRules::has_negation)
                     .unwrap_or(false)
             {
                 validate_source_symlink_path(
                     origin,
                     operation,
-                    source_root,
+                    filter,
                     &path,
                     root_path,
-                    ignore_rules,
+                    entry_included,
                 )?;
             }
             continue;
         }
 
-        validate_source_symlink_path(
-            origin,
-            operation,
-            source_root,
-            &path,
-            root_path,
-            ignore_rules,
-        )?;
+        // Non-included paths are skipped before unsafe symlink validation,
+        // mirroring ignored paths. Non-included directories are still
+        // traversed while a descendant could match include rules.
+        if filter.include_rules.is_some() && !entry_included {
+            if metadata.is_dir() && dir_may_contain_included(filter, &path) {
+                validate_source_symlink_path(origin, operation, filter, &path, root_path, false)?;
+            }
+            continue;
+        }
+
+        validate_source_symlink_path(origin, operation, filter, &path, root_path, entry_included)?;
     }
 
     Ok(())
+}
+
+fn entry_matches_include(
+    filter: SourceFilterContext<'_>,
+    path: &Path,
+    metadata: &std::fs::Metadata,
+) -> bool {
+    match filter.include_rules {
+        None => true,
+        Some(include) => path
+            .strip_prefix(filter.source_root)
+            .is_ok_and(|relative| include.is_included(relative, metadata.is_dir())),
+    }
+}
+
+fn dir_may_contain_included(filter: SourceFilterContext<'_>, path: &Path) -> bool {
+    filter.include_rules.is_none_or(|include| {
+        path.strip_prefix(filter.source_root)
+            .is_ok_and(|relative| include.dir_may_contain_matches(relative))
+    })
 }
 
 fn ignored_source_path(
@@ -1312,6 +1502,7 @@ mod tests {
                 FileOperationKind::Copy | FileOperationKind::Sync => Some(SymlinkMode::Preserve),
                 FileOperationKind::Symlink => None,
             },
+            include: Vec::new(),
             ignore: Vec::new(),
             ignore_metadata: Vec::new(),
             declaration: span(),
@@ -1325,6 +1516,223 @@ mod tests {
             &context(root, worktree),
             ActionPlanOptions::default(),
         )
+    }
+
+    fn include_operation(
+        operation: FileOperationKind,
+        root: &Path,
+        worktree: &Path,
+        source: &str,
+        include: &[&str],
+    ) -> FileOperation {
+        FileOperation {
+            include: include.iter().map(ToString::to_string).collect(),
+            ..file_operation(operation, root, worktree, source, source)
+        }
+    }
+
+    #[test]
+    fn plan_should_warn_when_include_matches_no_source_paths() {
+        let (root, worktree) = temp_workspace("include-zero-match");
+        std::fs::create_dir_all(root.join("shared")).expect("source should be created");
+        std::fs::write(root.join("shared/file.txt"), "data\n").expect("file should be written");
+        let config = Config {
+            options: Default::default(),
+            files: vec![include_operation(
+                FileOperationKind::Copy,
+                &root,
+                &worktree,
+                "shared",
+                &["docs/**"],
+            )],
+            commands: Vec::new(),
+        };
+
+        let plan = plan(&config, &root, &worktree).expect("plan should build");
+
+        assert_eq!(plan.warnings().len(), 1);
+        let message = plan.warnings()[0].to_string();
+        assert!(message.contains("include patterns match no source paths"));
+        assert!(message.contains("copy shared -> shared"));
+    }
+
+    #[test]
+    fn plan_should_not_warn_when_include_matches_before_ignore_filtering() {
+        let (root, worktree) = temp_workspace("include-match-before-ignore");
+        std::fs::create_dir_all(root.join("shared/docs")).expect("source should be created");
+        std::fs::write(root.join("shared/docs/guide.md"), "guide\n")
+            .expect("file should be written");
+        let mut operation = include_operation(
+            FileOperationKind::Copy,
+            &root,
+            &worktree,
+            "shared",
+            &["docs/**"],
+        );
+        // Ignore removes every included path, but the include list still
+        // matched source paths, so no zero-match warning is emitted.
+        operation.ignore = vec!["docs/**".to_owned()];
+        let config = Config {
+            options: Default::default(),
+            files: vec![operation],
+            commands: Vec::new(),
+        };
+
+        let plan = plan(&config, &root, &worktree).expect("plan should build");
+
+        assert!(plan.warnings().is_empty());
+    }
+
+    #[test]
+    fn plan_should_not_warn_for_missing_or_file_sources_with_include() {
+        let (root, worktree) = temp_workspace("include-no-warning-sources");
+        std::fs::write(root.join(".env"), "TOKEN=1\n").expect("file should be written");
+        let config = Config {
+            options: Default::default(),
+            files: vec![
+                include_operation(
+                    FileOperationKind::Copy,
+                    &root,
+                    &worktree,
+                    "missing",
+                    &["docs/**"],
+                ),
+                include_operation(
+                    FileOperationKind::Copy,
+                    &root,
+                    &worktree,
+                    ".env",
+                    &["docs/**"],
+                ),
+            ],
+            commands: Vec::new(),
+        };
+
+        let plan = plan(&config, &root, &worktree).expect("plan should build");
+
+        assert!(plan.warnings().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn plan_should_not_warn_for_symlink_directory_sources_with_include() {
+        let (root, worktree) = temp_workspace("include-symlink-dir-source");
+        std::fs::create_dir_all(root.join("real")).expect("real dir should be created");
+        std::fs::write(root.join("real/file.txt"), "data\n").expect("file should be written");
+        symlink_dir(root.join("real"), root.join("linked"))
+            .expect("source symlink should be created");
+        let config = Config {
+            options: Default::default(),
+            files: vec![include_operation(
+                FileOperationKind::Copy,
+                &root,
+                &worktree,
+                "linked",
+                &["nomatch/**"],
+            )],
+            commands: Vec::new(),
+        };
+
+        let plan = plan(&config, &root, &worktree).expect("plan should build");
+
+        assert!(plan.warnings().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn plan_should_skip_unsafe_symlinks_excluded_by_include() {
+        let (root, worktree) = temp_workspace("include-unsafe-symlink");
+        std::fs::create_dir_all(root.join("shared/docs")).expect("source should be created");
+        std::fs::write(root.join("shared/docs/guide.md"), "guide\n")
+            .expect("file should be written");
+        let outside = root.parent().expect("root should have parent").join("out");
+        std::fs::create_dir_all(&outside).expect("outside dir should be created");
+        symlink_dir(&outside, root.join("shared/unsafe-link"))
+            .expect("unsafe symlink should be created");
+
+        let filtered = Config {
+            options: Default::default(),
+            files: vec![include_operation(
+                FileOperationKind::Copy,
+                &root,
+                &worktree,
+                "shared",
+                &["docs/**"],
+            )],
+            commands: Vec::new(),
+        };
+        plan(&filtered, &root, &worktree)
+            .expect("non-included unsafe symlink should not fail validation");
+
+        let unfiltered = Config {
+            options: Default::default(),
+            files: vec![file_operation(
+                FileOperationKind::Copy,
+                &root,
+                &worktree,
+                "shared",
+                "shared",
+            )],
+            commands: Vec::new(),
+        };
+        let error = plan(&unfiltered, &root, &worktree)
+            .expect_err("unfiltered unsafe symlink should fail validation");
+        assert!(error.to_string().contains("unsafe symlink"));
+    }
+
+    #[test]
+    fn plan_should_reject_include_with_sync_delete_for_direct_file_operations() {
+        let (root, worktree) = temp_workspace("include-delete-direct");
+        std::fs::create_dir_all(root.join("shared")).expect("source should be created");
+        let mut operation = include_operation(
+            FileOperationKind::Sync,
+            &root,
+            &worktree,
+            "shared",
+            &["docs/**"],
+        );
+        operation.delete = Some(true);
+
+        let error = ActionPlan::from_file_operations(
+            &context(&root, &worktree),
+            PlanOrigin::Manual {
+                operation: FileOperationKind::Sync,
+            },
+            &[operation],
+            ActionPlanOptions::default(),
+        )
+        .expect_err("include with delete should fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("`include` cannot be combined with `delete = true`")
+        );
+    }
+
+    #[test]
+    fn plan_should_reject_inert_include_patterns_for_direct_file_operations() {
+        let (root, worktree) = temp_workspace("include-inert-direct");
+        std::fs::create_dir_all(root.join("shared")).expect("source should be created");
+        let operation = include_operation(
+            FileOperationKind::Copy,
+            &root,
+            &worktree,
+            "shared",
+            &["!docs"],
+        );
+
+        let error = ActionPlan::from_file_operations(
+            &context(&root, &worktree),
+            PlanOrigin::Manual {
+                operation: FileOperationKind::Copy,
+            },
+            &[operation],
+            ActionPlanOptions::default(),
+        )
+        .expect_err("negated include should fail");
+
+        assert!(error.to_string().contains("uses `!` negation"));
     }
 
     #[test]
@@ -1350,6 +1758,7 @@ mod tests {
                 compare: None,
                 delete: None,
                 symlinks: Some(SymlinkMode::Preserve),
+                include: Vec::new(),
                 ignore: Vec::new(),
                 ignore_metadata: Vec::new(),
                 declaration: span(),
@@ -1516,6 +1925,7 @@ mod tests {
                 compare: None,
                 delete: None,
                 symlinks: Some(SymlinkMode::Preserve),
+                include: Vec::new(),
                 ignore: Vec::new(),
                 ignore_metadata: Vec::new(),
                 declaration: span(),

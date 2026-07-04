@@ -30,6 +30,9 @@ pub struct ManualFileOperationOptions {
     pub compare: Option<SyncCompare>,
     /// Whether sync should delete target-only files.
     pub delete: Option<bool>,
+    /// Source-relative path patterns that narrow copy and sync directory
+    /// traversal to matching source paths. Empty means no include filtering.
+    pub include: Vec<String>,
     /// Source-relative path patterns ignored by copy and sync.
     pub ignore: Vec<String>,
     /// Metadata fields ignored by copy and sync.
@@ -46,6 +49,7 @@ impl Default for ManualFileOperationOptions {
             symlinks: None,
             compare: None,
             delete: None,
+            include: Vec::new(),
             ignore: Vec::new(),
             ignore_metadata: Vec::new(),
         }
@@ -95,15 +99,7 @@ impl FileOperation {
         context: &Worktree,
         options: ManualFileOperationOptions,
     ) -> Result<Vec<Self>> {
-        let settings = validate_manual_options(
-            options.operation,
-            &options.sources,
-            options.symlinks,
-            options.compare,
-            options.delete,
-            &options.ignore,
-            &options.ignore_metadata,
-        )?;
+        let settings = validate_manual_options(&options)?;
         manual_operations(options, context, settings)
     }
 }
@@ -131,6 +127,9 @@ pub struct FileOperationOptions {
     pub compare: Option<SyncCompare>,
     /// Whether sync should delete target-only files.
     pub delete: Option<bool>,
+    /// Source-relative path patterns that narrow copy and sync directory
+    /// traversal to matching source paths. Empty means no include filtering.
+    pub include: Vec<String>,
     /// Source-relative path patterns ignored by copy and sync.
     pub ignore: Vec<String>,
     /// Metadata fields ignored by copy and sync.
@@ -158,6 +157,7 @@ impl Default for FileOperationOptions {
             symlinks: None,
             compare: None,
             delete: None,
+            include: Vec::new(),
             ignore: Vec::new(),
             ignore_metadata: Vec::new(),
             strict: false,
@@ -253,6 +253,7 @@ pub fn run_file_operation(
         symlinks,
         compare,
         delete,
+        include,
         ignore,
         ignore_metadata,
         strict,
@@ -268,6 +269,7 @@ pub fn run_file_operation(
         symlinks,
         compare,
         delete,
+        include,
         ignore,
         ignore_metadata,
     };
@@ -347,41 +349,31 @@ pub fn file_operation_source_candidates(options: FileOperationCompletionOptions)
     source_candidates(&context.root_path, &options.current)
 }
 
-fn validate_manual_options(
-    operation: FileOperationKind,
-    sources: &[PathBuf],
-    symlinks: Option<SymlinkMode>,
-    compare: Option<SyncCompare>,
-    delete: Option<bool>,
-    ignore: &[String],
-    ignore_metadata: &[MetadataField],
-) -> Result<FileOperationSettings> {
-    if sources.is_empty() {
-        return invalid_manual(operation, "at least one source is required");
+fn validate_manual_options(options: &ManualFileOperationOptions) -> Result<FileOperationSettings> {
+    if options.sources.is_empty() {
+        return invalid_manual(options.operation, "at least one source is required");
     }
 
-    let ignore_metadata = ignore_metadata
+    let ignore_metadata = options
+        .ignore_metadata
         .iter()
         .copied()
         .map(RawMetadataField::from)
         .collect();
     normalize_file_operation_settings(
-        operation,
+        options.operation,
         FileOperationSettingsInput {
-            compare,
-            delete,
-            symlinks,
-            ignore: ignore.to_vec(),
+            compare: options.compare,
+            delete: options.delete,
+            symlinks: options.symlinks,
+            include: options.include.clone(),
+            ignore: options.ignore.clone(),
             ignore_metadata,
         },
     )
-    .map_err(|field| Error::FileOperationInvalid {
-        operation: operation.as_str(),
-        message: format!(
-            "`{}` is only valid for {}",
-            field.name(),
-            field.allowed_operations()
-        ),
+    .map_err(|invalid| Error::FileOperationInvalid {
+        operation: options.operation.as_str(),
+        message: invalid.manual_message(),
     })
 }
 
@@ -395,6 +387,7 @@ fn manual_operations(
         sources,
         target,
         required,
+        include,
         ignore,
         ..
     } = options;
@@ -429,6 +422,7 @@ fn manual_operations(
                 compare: settings.compare,
                 delete: settings.delete,
                 symlinks: settings.symlinks,
+                include: include.clone(),
                 ignore: ignore.clone(),
                 ignore_metadata: settings.ignore_metadata.clone(),
                 declaration: manual_span(),
@@ -645,6 +639,7 @@ mod tests {
             symlinks: None,
             compare: None,
             delete: None,
+            include: Vec::new(),
             ignore: Vec::new(),
             ignore_metadata: Vec::new(),
         }
@@ -719,6 +714,7 @@ mod tests {
             symlinks: None,
             compare: None,
             delete: None,
+            include: Vec::new(),
             ignore: Vec::new(),
             ignore_metadata: Vec::new(),
         };
@@ -795,16 +791,7 @@ mod tests {
         let mut options = options(FileOperationKind::Symlink, &["link"]);
         options.symlinks = Some(SymlinkMode::Preserve);
 
-        let error = validate_manual_options(
-            options.operation,
-            &options.sources,
-            options.symlinks,
-            options.compare,
-            options.delete,
-            &options.ignore,
-            &options.ignore_metadata,
-        )
-        .expect_err("symlinks should fail");
+        let error = validate_manual_options(&options).expect_err("symlinks should fail");
 
         assert!(error.to_string().contains("invalid symlink file operation"));
         assert!(error.to_string().contains("only valid for copy and sync"));
@@ -815,16 +802,7 @@ mod tests {
         let mut options = options(FileOperationKind::Copy, &["file"]);
         options.compare = Some(SyncCompare::Checksum);
 
-        let error = validate_manual_options(
-            options.operation,
-            &options.sources,
-            options.symlinks,
-            options.compare,
-            options.delete,
-            &options.ignore,
-            &options.ignore_metadata,
-        )
-        .expect_err("compare should fail");
+        let error = validate_manual_options(&options).expect_err("compare should fail");
 
         assert!(
             error
@@ -838,16 +816,7 @@ mod tests {
         let mut options = options(FileOperationKind::Copy, &["file"]);
         options.delete = Some(true);
 
-        let error = validate_manual_options(
-            options.operation,
-            &options.sources,
-            options.symlinks,
-            options.compare,
-            options.delete,
-            &options.ignore,
-            &options.ignore_metadata,
-        )
-        .expect_err("delete should fail");
+        let error = validate_manual_options(&options).expect_err("delete should fail");
 
         assert!(
             error
@@ -861,16 +830,7 @@ mod tests {
         let mut options = options(FileOperationKind::Symlink, &["file"]);
         options.compare = Some(SyncCompare::Metadata);
 
-        let error = validate_manual_options(
-            options.operation,
-            &options.sources,
-            options.symlinks,
-            options.compare,
-            options.delete,
-            &options.ignore,
-            &options.ignore_metadata,
-        )
-        .expect_err("compare should fail");
+        let error = validate_manual_options(&options).expect_err("compare should fail");
 
         assert!(
             error
@@ -884,16 +844,7 @@ mod tests {
         let mut options = options(FileOperationKind::Symlink, &["file"]);
         options.delete = Some(false);
 
-        let error = validate_manual_options(
-            options.operation,
-            &options.sources,
-            options.symlinks,
-            options.compare,
-            options.delete,
-            &options.ignore,
-            &options.ignore_metadata,
-        )
-        .expect_err("delete should fail");
+        let error = validate_manual_options(&options).expect_err("delete should fail");
 
         assert!(
             error
@@ -905,16 +856,7 @@ mod tests {
     #[test]
     fn validate_manual_options_should_reject_empty_sources() {
         let options = options(FileOperationKind::Copy, &[]);
-        let error = validate_manual_options(
-            options.operation,
-            &options.sources,
-            options.symlinks,
-            options.compare,
-            options.delete,
-            &options.ignore,
-            &options.ignore_metadata,
-        )
-        .expect_err("empty sources should fail");
+        let error = validate_manual_options(&options).expect_err("empty sources should fail");
 
         assert!(
             error
@@ -951,20 +893,72 @@ mod tests {
     }
 
     #[test]
+    fn validate_manual_options_should_reject_include_for_symlink() {
+        let mut options = options(FileOperationKind::Symlink, &["file"]);
+        options.include = vec!["docs/**".to_owned()];
+
+        let error = validate_manual_options(&options).expect_err("include should fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("`include` is only valid for copy and sync")
+        );
+    }
+
+    #[test]
+    fn validate_manual_options_should_reject_include_with_sync_delete() {
+        let mut options = options(FileOperationKind::Sync, &["shared"]);
+        options.include = vec!["docs/**".to_owned()];
+        options.delete = Some(true);
+
+        let error = validate_manual_options(&options).expect_err("include with delete should fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("`include` cannot be combined with `delete = true`")
+        );
+    }
+
+    #[test]
+    fn validate_manual_options_should_allow_include_with_no_delete() {
+        let mut options = options(FileOperationKind::Sync, &["shared"]);
+        options.include = vec!["docs/**".to_owned()];
+        options.delete = Some(false);
+
+        let settings =
+            validate_manual_options(&options).expect("include with delete = false should validate");
+
+        assert_eq!(settings.include, vec!["docs/**"]);
+    }
+
+    #[test]
+    fn validate_manual_options_should_reject_inert_include_patterns() {
+        for (pattern, message) in [
+            ("!docs", "uses `!` negation"),
+            ("", "include patterns cannot be blank"),
+            ("# docs", "is a gitignore comment"),
+        ] {
+            let mut options = options(FileOperationKind::Copy, &["shared"]);
+            options.include = vec![pattern.to_owned()];
+
+            let error =
+                validate_manual_options(&options).expect_err("inert include pattern should fail");
+
+            assert!(
+                error.to_string().contains(message),
+                "pattern {pattern:?} should mention {message:?}: {error}"
+            );
+        }
+    }
+
+    #[test]
     fn validate_manual_options_should_reject_ignore_for_symlink() {
         let mut options = options(FileOperationKind::Symlink, &["file"]);
         options.ignore = vec!["**/tmp/**".to_owned()];
 
-        let error = validate_manual_options(
-            options.operation,
-            &options.sources,
-            options.symlinks,
-            options.compare,
-            options.delete,
-            &options.ignore,
-            &options.ignore_metadata,
-        )
-        .expect_err("ignore should fail");
+        let error = validate_manual_options(&options).expect_err("ignore should fail");
 
         assert!(
             error
@@ -978,16 +972,7 @@ mod tests {
         let mut options = options(FileOperationKind::Symlink, &["file"]);
         options.ignore_metadata = vec![MetadataField::Permissions];
 
-        let error = validate_manual_options(
-            options.operation,
-            &options.sources,
-            options.symlinks,
-            options.compare,
-            options.delete,
-            &options.ignore,
-            &options.ignore_metadata,
-        )
-        .expect_err("ignore_metadata should fail");
+        let error = validate_manual_options(&options).expect_err("ignore_metadata should fail");
 
         assert!(
             error
@@ -1071,6 +1056,7 @@ mod tests {
                 compare: None,
                 delete: None,
                 symlinks: Some(SymlinkMode::Preserve),
+                include: Vec::new(),
                 ignore: Vec::new(),
                 ignore_metadata: Vec::new(),
                 declaration: manual_span(),
@@ -1104,6 +1090,7 @@ mod tests {
                 compare: Some(SyncCompare::Metadata),
                 delete: Some(false),
                 symlinks: Some(SymlinkMode::Preserve),
+                include: Vec::new(),
                 ignore: Vec::new(),
                 ignore_metadata: Vec::new(),
                 declaration: manual_span(),

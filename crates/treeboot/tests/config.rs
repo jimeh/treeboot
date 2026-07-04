@@ -99,6 +99,7 @@ commands = [
                 "compare",
                 "declaration",
                 "delete",
+                "include",
                 "ignore",
                 "ignore_metadata",
                 "operation",
@@ -565,4 +566,54 @@ sync = ["shared"]
         .stdout(predicate::str::contains("treeboot: config"))
         .stderr(predicate::str::contains("treeboot: warning"))
         .stderr(predicate::str::contains("cannot be used with sync"));
+}
+
+#[test]
+fn config_command_should_print_include_and_warn_on_zero_match() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared")).expect("source should be created");
+    write_file(&repo.root_path().join("shared/file.txt"), "data\n");
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(
+        &config,
+        r#"copy = [{ source = "shared", include = ["docs/**"] }]"#,
+    );
+
+    treeboot()
+        .arg("config")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#"include=["docs/**"]"#))
+        .stderr(predicate::str::contains(
+            "treeboot: warning: include patterns match no source paths",
+        ));
+}
+
+#[test]
+fn config_command_json_should_stay_parseable_with_include_warnings() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared")).expect("source should be created");
+    write_file(&repo.root_path().join("shared/file.txt"), "data\n");
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(
+        &config,
+        r#"copy = [{ source = "shared", include = ["docs/**"] }]"#,
+    );
+
+    let output = treeboot()
+        .args(["config", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(
+            "treeboot: warning: include patterns match no source paths",
+        ))
+        .get_output()
+        .stdout
+        .clone();
+    let json = parse_json(output, "config");
+
+    assert_json_object_keys(&json, &["config", "path"]);
+    assert_eq!(json["config"]["files"][0]["include"][0], "docs/**");
 }

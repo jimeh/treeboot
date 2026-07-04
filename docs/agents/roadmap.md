@@ -199,3 +199,28 @@ Validation focus:
   effects
 - generated schema and metadata freshness is enforced by
   `mise run generate:check`
+
+## Milestone 11: Path Include Rules
+
+Status: implemented.
+
+Scope:
+
+- `include` option on copy and sync operations in declarative config and the
+  manual `treeboot copy` / `treeboot sync` commands
+- include and ignore as independent gates during directory-source traversal
+- include entries restricted to effective positive patterns; `!` negation, blank
+  entries, and `#` comments are validation errors
+- lazy directory materialization keyed on included descendants
+- conservative viability pruning of directories that cannot contain matches
+- rejection of non-empty `include` combined with sync `delete = true`
+- non-fatal zero-match include warnings through a new `ActionPlan` warnings
+  channel, surfaced by `treeboot check` (report field) and `treeboot config`
+  (stderr), silent in `run`
+
+Validation focus:
+
+- include gate semantics at parse, manual-option, plan, and CLI layers
+- pruned directories are never read
+- ancestor metadata repair with unchanged included descendants
+- warning output shapes across text, JSON, and YAML
