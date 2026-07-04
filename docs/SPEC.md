@@ -1382,13 +1382,15 @@ a non-empty include list always filters.
 A directory that matches an include pattern includes its whole subtree, subject
 to ignore rules. A directory that matches no include pattern is still traversed
 when a descendant could match. Directories receive target actions only when the
-directory itself is included or its subtree contains an included path. Ancestor
-directories of included paths that are not ignored are created as target parent
-directories and keep their normal metadata comparison and repair behavior, even
-when every included descendant is unchanged. Ignored ancestors traversed only to
-reach in-scope descendants follow [Path ignore rules](#path-ignore-rules) and
-are not reported or repaired unless re-included. Directories with no included
-descendants that are not themselves included produce no target actions.
+directory itself is included or its subtree contains an in-scope path; a path
+that matches include but is ignored is not in scope and does not materialize its
+ancestors. Ancestor directories of in-scope paths that are not ignored are
+created as target parent directories and keep their normal metadata comparison
+and repair behavior, even when every in-scope descendant is unchanged. Ignored
+ancestors traversed only to reach in-scope descendants follow
+[Path ignore rules](#path-ignore-rules) and are not reported or repaired unless
+re-included. Directories with no in-scope descendants that are not themselves
+included produce no target actions.
 
 Like ignore rules, include rules affect directory sources only. When a `copy` or
 `sync` source is a single file or a source symlink, treeboot validates the

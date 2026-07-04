@@ -151,7 +151,7 @@ fn pattern_viability(pattern: &str) -> PatternViability {
         .map(|segment| {
             if segment == "**" {
                 ViabilitySegment::DoubleStar
-            } else if segment.contains(['*', '?', '[', ']', '\\']) {
+            } else if segment.contains(['*', '?', '[', ']', '{', '}', '\\']) {
                 // Non-literal segments are conservatively viable so pruning
                 // never under-approximates.
                 ViabilitySegment::Wildcard
@@ -192,12 +192,15 @@ fn utf8_components(relative: &Path) -> Option<Vec<&str>> {
         .collect()
 }
 
-/// Returns whether any planning-reachable entry under `dir_path` matches the
-/// include rules.
+/// Returns whether any planning-reachable entry under `dir_path` is in scope:
+/// included, directly or through an included ancestor, and not ignored.
 ///
-/// Reachability mirrors tree planning: ignored directories are only entered
-/// when the ignore rules use negation, while ignored files still count when
-/// they match include. Non-viable directories are pruned. Read errors are
+/// This keys lazy directory materialization, so it mirrors planning gates
+/// exactly. Reachability mirrors tree planning: ignored directories are only
+/// entered when the ignore rules use negation, and directories that cannot
+/// contain include matches are pruned. Entries that match include but are
+/// ignored do not count; they produce no actions, so materializing their
+/// ancestors would leave empty scaffold directories. Read errors are
 /// conservatively treated as containing matches so planning surfaces them
 /// with proper operation context.
 pub(crate) fn subtree_contains_included(
@@ -205,6 +208,16 @@ pub(crate) fn subtree_contains_included(
     dir_path: &Path,
     include: &PathIncludeRules,
     ignore: Option<&PathIgnoreRules>,
+) -> bool {
+    subtree_contains_in_scope(source_root, dir_path, include, ignore, false)
+}
+
+fn subtree_contains_in_scope(
+    source_root: &Path,
+    dir_path: &Path,
+    include: &PathIncludeRules,
+    ignore: Option<&PathIgnoreRules>,
+    ancestor_included: bool,
 ) -> bool {
     let Ok(entries) = std::fs::read_dir(dir_path) else {
         return true;
@@ -222,8 +235,10 @@ pub(crate) fn subtree_contains_included(
             return true;
         };
         let is_dir = file_type.is_dir();
+        let included = ancestor_included || include.is_included(relative, is_dir);
+        let ignored = ignore.is_some_and(|rules| rules.is_ignored(relative, is_dir));
 
-        if include.is_included(relative, is_dir) {
+        if included && !ignored {
             return true;
         }
 
@@ -231,13 +246,12 @@ pub(crate) fn subtree_contains_included(
             continue;
         }
 
-        let skipped_ignored_dir =
-            ignore.is_some_and(|rules| rules.is_ignored(relative, true) && !rules.has_negation());
-        if skipped_ignored_dir || !include.dir_may_contain_matches(relative) {
+        let unreachable_ignored_dir = ignored && !ignore.is_some_and(PathIgnoreRules::has_negation);
+        if unreachable_ignored_dir || (!included && !include.dir_may_contain_matches(relative)) {
             continue;
         }
 
-        if subtree_contains_included(source_root, &path, include, ignore) {
+        if subtree_contains_in_scope(source_root, &path, include, ignore, included) {
             return true;
         }
     }
@@ -248,46 +262,15 @@ pub(crate) fn subtree_contains_included(
 /// Returns whether any source path below `source_root` matches the include
 /// rules, before ignore filtering.
 ///
-/// This feeds the zero-match include warning. Read errors conservatively
-/// count as a match so the warning heuristic never introduces new failures.
+/// This feeds the zero-match include warning. Without ignore rules, the
+/// in-scope subtree scan reduces to a plain include-match walk, so the same
+/// traversal serves both. Read errors conservatively count as a match so the
+/// warning heuristic never introduces new failures.
 pub(crate) fn include_matches_any_source_path(
     source_root: &Path,
     include: &PathIncludeRules,
 ) -> bool {
-    include_matches_under(source_root, source_root, include)
-}
-
-fn include_matches_under(source_root: &Path, dir_path: &Path, include: &PathIncludeRules) -> bool {
-    let Ok(entries) = std::fs::read_dir(dir_path) else {
-        return true;
-    };
-
-    for entry in entries {
-        let Ok(entry) = entry else {
-            return true;
-        };
-        let path = entry.path();
-        let Ok(relative) = path.strip_prefix(source_root) else {
-            continue;
-        };
-        let Ok(file_type) = entry.file_type() else {
-            return true;
-        };
-        let is_dir = file_type.is_dir();
-
-        if include.is_included(relative, is_dir) {
-            return true;
-        }
-
-        if is_dir
-            && include.dir_may_contain_matches(relative)
-            && include_matches_under(source_root, &path, include)
-        {
-            return true;
-        }
-    }
-
-    false
+    subtree_contains_included(source_root, source_root, include, None)
 }
 
 #[cfg(test)]
@@ -481,6 +464,16 @@ mod tests {
         assert!(rules.dir_may_contain_matches(Path::new("a/anything")));
         assert!(!rules.dir_may_contain_matches(Path::new("a/x/y")));
         assert!(!rules.dir_may_contain_matches(Path::new("b")));
+    }
+
+    #[test]
+    fn viability_should_treat_brace_segments_conservatively() {
+        let rules = include_rules(&["configs/{a,b}/app.toml"]);
+
+        assert!(rules.dir_may_contain_matches(Path::new("configs")));
+        assert!(rules.dir_may_contain_matches(Path::new("configs/a")));
+        assert!(rules.dir_may_contain_matches(Path::new("configs/other")));
+        assert!(!rules.dir_may_contain_matches(Path::new("vendor")));
     }
 
     #[test]

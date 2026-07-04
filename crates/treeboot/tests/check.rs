@@ -598,3 +598,24 @@ fn check_should_reject_include_with_sync_delete() {
             "`include` cannot be combined with `delete = true`",
         ));
 }
+
+#[test]
+fn check_yaml_should_carry_zero_match_include_warnings() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared")).expect("source should be created");
+    write_file(&repo.root_path().join("shared/file.txt"), "data\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "shared", include = ["docs/**"] }]"#,
+    );
+
+    treeboot()
+        .args(["check", "--yaml"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("warnings:"))
+        .stdout(predicate::str::contains(
+            "include patterns match no source paths for copy shared -> shared",
+        ));
+}

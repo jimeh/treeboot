@@ -157,16 +157,20 @@ fn plan_file_operation_group_should_reject_invalid_ignore_pattern() {
 fn action_targets(actions: &[FileAction]) -> Vec<String> {
     actions
         .iter()
-        .map(|action| match action {
-            FileAction::CopyFile { target, .. } => format!("copy {}", target.display()),
-            FileAction::CreateDirectory { target, .. } => format!("mkdir {}", target.display()),
-            FileAction::CreateSymlink { target, .. } => format!("symlink {}", target.display()),
-            FileAction::RepairMetadata { target, .. } => format!("metadata {}", target.display()),
-            FileAction::Delete { target, .. } => format!("delete {}", target.display()),
-            FileAction::Skip { target, .. } => format!("skip {}", target.display()),
-            FileAction::Warning { path, .. } => format!("warning {}", path.display()),
-        })
+        .map(|action| display_target(action).replace('\\', "/"))
         .collect()
+}
+
+fn display_target(action: &FileAction) -> String {
+    match action {
+        FileAction::CopyFile { target, .. } => format!("copy {}", target.display()),
+        FileAction::CreateDirectory { target, .. } => format!("mkdir {}", target.display()),
+        FileAction::CreateSymlink { target, .. } => format!("symlink {}", target.display()),
+        FileAction::RepairMetadata { target, .. } => format!("metadata {}", target.display()),
+        FileAction::Delete { target, .. } => format!("delete {}", target.display()),
+        FileAction::Skip { target, .. } => format!("skip {}", target.display()),
+        FileAction::Warning { path, .. } => format!("warning {}", path.display()),
+    }
 }
 
 #[test]
@@ -430,4 +434,75 @@ fn sync_should_repair_drifted_ancestor_metadata_for_unchanged_included_descendan
         "drifted ancestor should be repaired: {targets:?}"
     );
     assert!(!targets.iter().any(|t| t.starts_with("copy")));
+}
+
+#[test]
+fn include_matched_but_ignored_files_should_not_materialize_parents() {
+    let (root, worktree) = temp_workspace("include-ignored-no-scaffold");
+    fs::create_dir_all(root.join("shared/data")).expect("data should be created");
+    fs::create_dir_all(root.join("shared/docs")).expect("docs should be created");
+    fs::write(root.join("shared/data/cache.log"), "log\n").expect("file should be written");
+    fs::write(root.join("shared/docs/guide.md"), "guide\n").expect("file should be written");
+    let operation = operation(
+        FileOperationKind::Copy,
+        &root,
+        &worktree,
+        "shared",
+        "shared",
+    )
+    // cache.log matches include but is removed by ignore, so it is not in
+    // scope and must not materialize its parent directory.
+    .with_include(vec!["**/*.log".to_owned(), "docs/**".to_owned()])
+    .with_ignore(vec!["**/*.log".to_owned()]);
+    let plan = plan(&root, &worktree, vec![operation.clone()]);
+
+    let group = plan_file_operation_group(&plan, &operation, FilePlanningOptions::default())
+        .expect("include copy should plan");
+
+    let targets = action_targets(&group.actions);
+    assert!(targets.contains(&"copy shared/docs/guide.md".to_owned()));
+    assert!(
+        !targets.iter().any(|t| t.contains("shared/data")),
+        "parent of an include-matched but ignored file should not be created: {targets:?}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn include_should_not_traverse_non_viable_ignored_directories_with_negation() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (root, worktree) = temp_workspace("include-ignored-negation-pruned");
+    fs::create_dir_all(root.join("shared/docs")).expect("docs should be created");
+    fs::create_dir_all(root.join("shared/blocked")).expect("blocked should be created");
+    fs::write(root.join("shared/docs/guide.md"), "guide\n").expect("file should be written");
+    fs::set_permissions(
+        root.join("shared/blocked"),
+        fs::Permissions::from_mode(0o000),
+    )
+    .expect("permissions should change");
+
+    let operation = operation(
+        FileOperationKind::Copy,
+        &root,
+        &worktree,
+        "shared",
+        "shared",
+    )
+    .with_include(vec!["docs/**".to_owned()])
+    // The negation forces conservative traversal of ignored directories, but
+    // the include gate cannot pass under `blocked`, so it must stay pruned.
+    .with_ignore(vec!["blocked/".to_owned(), "!blocked/keep".to_owned()]);
+    let plan = plan(&root, &worktree, vec![operation.clone()]);
+
+    let result = plan_file_operation_group(&plan, &operation, FilePlanningOptions::default());
+
+    fs::set_permissions(
+        root.join("shared/blocked"),
+        fs::Permissions::from_mode(0o755),
+    )
+    .expect("permissions should restore");
+
+    let group = result.expect("non-viable ignored directory should not be traversed");
+    assert!(action_targets(&group.actions).contains(&"copy shared/docs/guide.md".to_owned()));
 }

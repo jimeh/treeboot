@@ -355,11 +355,15 @@ fn plan_tree_directory_children(
             &child_metadata,
             filter.ignore,
         ) {
+            // Ignored directories are only traversed for re-included
+            // descendants, and only when the include gate could still pass
+            // somewhere underneath.
             if child_metadata.is_dir()
                 && filter
                     .ignore
                     .map(PathIgnoreRules::has_negation)
                     .unwrap_or(false)
+                && (child_included || include_viable_dir(filter, &child_source_path))
             {
                 plan_ignored_tree_directory(
                     plan,
@@ -441,7 +445,7 @@ fn included_source_entry(
     }
 }
 
-fn included_descendants_possible(filter: TreeFilterContext<'_>, source_path: &Path) -> bool {
+fn include_viable_dir(filter: TreeFilterContext<'_>, source_path: &Path) -> bool {
     let Some(include) = filter.include else {
         return true;
     };
@@ -450,6 +454,14 @@ fn included_descendants_possible(filter: TreeFilterContext<'_>, source_path: &Pa
     };
 
     include.dir_may_contain_matches(relative)
+}
+
+fn included_descendants_possible(filter: TreeFilterContext<'_>, source_path: &Path) -> bool {
+    let Some(include) = filter.include else {
+        return true;
+    };
+
+    include_viable_dir(filter, source_path)
         && subtree_contains_included(filter.source_root_path, source_path, include, filter.ignore)
 }
 

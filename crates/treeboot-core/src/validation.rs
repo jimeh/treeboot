@@ -1231,11 +1231,15 @@ fn validate_source_symlink_path(
         let entry_included = ancestor_included || entry_matches_include(filter, &path, &metadata);
 
         if ignored_source_path(filter.source_root, &path, &metadata, filter.ignore_rules) {
+            // Ignored directories are only traversed for re-included
+            // descendants, and only when the include gate could still pass
+            // somewhere underneath.
             if metadata.is_dir()
                 && filter
                     .ignore_rules
                     .map(PathIgnoreRules::has_negation)
                     .unwrap_or(false)
+                && (entry_included || dir_may_contain_included(filter, &path))
             {
                 validate_source_symlink_path(
                     origin,
