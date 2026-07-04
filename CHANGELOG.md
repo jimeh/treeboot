@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/jimeh/treeboot/compare/v0.8.2...v0.9.0) (2026-07-04)
+
+
+### Features
+
+* add include rules to copy and sync operations ([#88](https://github.com/jimeh/treeboot/issues/88)) ([462a53c](https://github.com/jimeh/treeboot/commit/462a53ca9af4c9e811334824ae3785073e7ca2e5))
+
 ## [0.8.2](https://github.com/jimeh/treeboot/compare/v0.8.1...v0.8.2) (2026-06-30)
 
 
