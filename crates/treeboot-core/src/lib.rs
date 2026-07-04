@@ -20,11 +20,11 @@ mod file_operations;
 mod file_planning;
 mod file_system;
 mod git;
-mod ignore_rules;
 mod init;
 mod manual;
 mod metadata;
 mod output;
+mod path_filter;
 mod paths;
 mod run;
 mod runtime;
@@ -57,7 +57,7 @@ pub use status::{
     inspect_status_snapshot,
 };
 pub use validation::{
-    ActionPlan, ActionPlanOptions, PlanOrigin, PlannedCommand, PlannedFileOperation,
+    ActionPlan, ActionPlanOptions, PlanOrigin, PlanWarning, PlannedCommand, PlannedFileOperation,
     PlannedFileStatus,
 };
 

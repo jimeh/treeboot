@@ -161,6 +161,7 @@ fn copy_spec(context: &Worktree, source: &str, target: &str) -> FileOperation {
         compare: None,
         delete: None,
         symlinks: Some(SymlinkMode::Preserve),
+        include: Vec::new(),
         ignore: Vec::new(),
         ignore_metadata: Vec::new(),
         declaration: span(),

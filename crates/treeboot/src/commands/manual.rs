@@ -59,6 +59,10 @@ pub(crate) struct CopyArgs {
     #[arg(long, value_enum)]
     symlinks: Option<CliSymlinkMode>,
 
+    /// Source-relative path pattern to include. Repeat to add rules.
+    #[arg(long = "include")]
+    include: Vec<String>,
+
     /// Source-relative path pattern to ignore. Repeat to add rules.
     #[arg(long = "ignore")]
     ignore: Vec<String>,
@@ -82,6 +86,10 @@ pub(crate) struct SyncArgs {
     /// How to handle source symlinks.
     #[arg(long, value_enum)]
     symlinks: Option<CliSymlinkMode>,
+
+    /// Source-relative path pattern to include. Repeat to add rules.
+    #[arg(long = "include", conflicts_with = "delete")]
+    include: Vec<String>,
 
     /// Source-relative path pattern to ignore. Repeat to add rules.
     #[arg(long = "ignore")]
@@ -160,6 +168,7 @@ impl CopyArgs {
     pub(crate) fn into_options(self) -> FileOperationOptions {
         FileOperationOptions {
             symlinks: self.symlinks.map(Into::into),
+            include: self.include,
             ignore: self.ignore,
             ignore_metadata: normalize_ignored_metadata(self.ignore_metadata),
             ..self.manual.into_options(FileOperationKind::Copy)
@@ -177,6 +186,7 @@ impl SyncArgs {
     pub(crate) fn into_options(self) -> FileOperationOptions {
         FileOperationOptions {
             symlinks: self.symlinks.map(Into::into),
+            include: self.include,
             ignore: self.ignore,
             ignore_metadata: normalize_ignored_metadata(self.ignore_metadata),
             compare: self.compare.map(Into::into),
@@ -289,6 +299,7 @@ mod tests {
                 ..manual_args()
             },
             symlinks: Some(CliSymlinkMode::Preserve),
+            include: Vec::new(),
             ignore: vec!["**/vendor/**".to_owned()],
             ignore_metadata: vec![CliMetadataField::Ownership],
         };
@@ -325,6 +336,7 @@ mod tests {
         let options = SyncArgs {
             manual: manual_args(),
             symlinks: Some(CliSymlinkMode::Preserve),
+            include: Vec::new(),
             ignore: vec!["cache/".to_owned()],
             ignore_metadata: vec![CliMetadataField::Permissions],
             compare: Some(CliSyncCompare::Checksum),

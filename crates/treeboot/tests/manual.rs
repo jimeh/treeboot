@@ -936,3 +936,153 @@ fn dynamic_completion_should_use_root_equals_option_for_sources() {
         .stdout(predicate::str::contains("default.env").not());
     }
 }
+
+#[test]
+fn copy_should_apply_include_patterns() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared/docs")).expect("docs should be created");
+    std::fs::create_dir_all(repo.root_path().join("shared/src")).expect("src should be created");
+    write_file(&repo.root_path().join("shared/docs/guide.md"), "guide\n");
+    write_file(
+        &repo.root_path().join("shared/src/main.rs"),
+        "fn main() {}\n",
+    );
+
+    treeboot()
+        .args(["copy", "shared", "--include", "docs/**"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("treeboot: copy shared -> shared"));
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("shared/docs/guide.md"))
+            .expect("included file should be copied"),
+        "guide\n"
+    );
+    assert!(
+        !repo.worktree_path().join("shared/src").exists(),
+        "non-included directory should not be created"
+    );
+}
+
+#[test]
+fn copy_should_combine_repeated_include_flags_with_ignore() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared/docs")).expect("docs should be created");
+    std::fs::create_dir_all(repo.root_path().join("shared/configs"))
+        .expect("configs should be created");
+    write_file(&repo.root_path().join("shared/docs/guide.md"), "guide\n");
+    write_file(&repo.root_path().join("shared/docs/draft.log"), "draft\n");
+    write_file(&repo.root_path().join("shared/configs/app.toml"), "[app]\n");
+
+    treeboot()
+        .args([
+            "copy",
+            "shared",
+            "--include",
+            "docs/**",
+            "--include",
+            "configs/**",
+            "--ignore",
+            "**/*.log",
+        ])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert!(repo.worktree_path().join("shared/docs/guide.md").exists());
+    assert!(
+        repo.worktree_path()
+            .join("shared/configs/app.toml")
+            .exists()
+    );
+    assert!(
+        !repo.worktree_path().join("shared/docs/draft.log").exists(),
+        "ignored file should not be copied despite matching include"
+    );
+}
+
+#[test]
+fn include_should_never_filter_top_level_sources() {
+    let repo = git_worktree();
+    write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
+    write_file(&repo.root_path().join("README"), "readme\n");
+
+    treeboot()
+        .args(["copy", ".env", "README", "--include", "docs/**"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert!(repo.worktree_path().join(".env").exists());
+    assert!(repo.worktree_path().join("README").exists());
+}
+
+#[test]
+fn sync_include_should_conflict_with_delete_flags() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared")).expect("source should be created");
+
+    for delete_flag in ["--delete", "-D"] {
+        treeboot()
+            .args(["sync", "shared", "--include", "docs/**", delete_flag])
+            .current_dir(repo.worktree_path())
+            .assert()
+            .code(2)
+            .stderr(predicate::str::contains("--include"));
+    }
+}
+
+#[test]
+fn sync_include_should_allow_no_delete() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared/docs"))
+        .expect("source should be created");
+    write_file(&repo.root_path().join("shared/docs/guide.md"), "guide\n");
+
+    treeboot()
+        .args(["sync", "shared", "--include", "docs/**", "--no-delete"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert!(repo.worktree_path().join("shared/docs/guide.md").exists());
+}
+
+#[test]
+fn copy_should_reject_inert_include_patterns() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared")).expect("source should be created");
+
+    treeboot()
+        .args(["copy", "shared", "--include", "!docs"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("uses `!` negation"));
+
+    treeboot()
+        .args(["copy", "shared", "--include", "# docs"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("is a gitignore comment"));
+}
+
+#[test]
+fn copy_should_accept_escaped_include_prefixes() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared")).expect("source should be created");
+    write_file(&repo.root_path().join("shared/!literal"), "bang\n");
+    write_file(&repo.root_path().join("shared/other"), "other\n");
+
+    treeboot()
+        .args(["copy", "shared", "--include", r"\!literal"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert!(repo.worktree_path().join("shared/!literal").exists());
+    assert!(!repo.worktree_path().join("shared/other").exists());
+}

@@ -53,6 +53,13 @@
           },
           "type": "array"
         },
+        "include": {
+          "description": "Source-relative path patterns that narrow directory copies to\nmatching source paths.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "required": {
           "description": "Whether a missing source should fail validation.",
           "type": "boolean"
@@ -143,6 +150,13 @@
               },
               "type": "array"
             },
+            "include": {
+              "description": "Source-relative path patterns that narrow directory copies to\nmatching source paths.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "operation": {
               "const": "copy",
               "type": "string"
@@ -220,6 +234,13 @@
               "description": "Metadata fields that sync should not compare or apply.",
               "items": {
                 "$ref": "#/$defs/MetadataField"
+              },
+              "type": "array"
+            },
+            "include": {
+              "description": "Source-relative path patterns that narrow directory sync to\nmatching source paths. A non-empty list cannot combine with\n`delete = true`.",
+              "items": {
+                "type": "string"
               },
               "type": "array"
             },
@@ -364,6 +385,13 @@
           "description": "Metadata fields that sync should not compare or apply.",
           "items": {
             "$ref": "#/$defs/MetadataField"
+          },
+          "type": "array"
+        },
+        "include": {
+          "description": "Source-relative path patterns that narrow directory sync to matching\nsource paths. A non-empty list cannot combine with `delete = true`.",
+          "items": {
+            "type": "string"
           },
           "type": "array"
         },

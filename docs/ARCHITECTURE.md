@@ -217,7 +217,7 @@ flowchart LR
   CONTEXT["context.rs<br/>Worktree"]
   DISC["discovery.rs<br/>scripts + config"]
   GIT["git.rs<br/>Git wrapper"]
-  IGNORE["ignore_rules.rs<br/>copy/sync path ignores"]
+  FILTER["path_filter.rs<br/>copy/sync include and<br/>ignore path rules"]
   EXEC["executor.rs<br/>plan execution"]
   VALID["validation.rs<br/>ActionPlan<br/>boundary checks"]
   FILE_ACTIONS["file_actions.rs<br/>FileAction groups"]
@@ -250,13 +250,13 @@ flowchart LR
   GIT -.-> VALID
   CONFIG --> VALID
   MANUAL --> VALID
-  VALID --> IGNORE
+  VALID --> FILTER
   FILE_OPS --> FILE_ACTIONS
   FILE_OPS --> FILE_PLANNING
   FILE_OPS --> FILE_EXECUTION
   FILE_PLANNING --> FILE_ACTIONS
   FILE_PLANNING --> FILE_SYSTEM
-  FILE_PLANNING --> IGNORE
+  FILE_PLANNING --> FILTER
   FILE_EXECUTION --> FILE_ACTIONS
   FILE_EXECUTION --> FILE_SYSTEM
   VALID --> EXEC
@@ -284,9 +284,9 @@ file-operation execution._
 | `file_planning.rs`   | Planning concrete filesystem actions from validated file operations.                                                                                                             | Config semantics, CLI argument validation, action summary modeling, output lifecycle, or mutation execution. |
 | `file_execution.rs`  | Executing planned file-action groups and emitting compact/verbose file-operation output events.                                                                                  | Planning filesystem actions or low-level filesystem helper implementation.                                   |
 | `file_system.rs`     | Low-level filesystem inspection, comparison, metadata, writable-parent, copy, symlink, delete helpers, and permission-denied ownership warnings for file planning and execution. | File-operation policy, action grouping, or output lifecycle.                                                 |
-| `ignore_rules.rs`    | Compiling and matching copy/sync path ignore rules.                                                                                                                              | Config parsing, validation policy, or filesystem mutation.                                                   |
+| `path_filter.rs`     | Compiling and matching copy/sync include and ignore path rules, include viability pruning, and include-oriented source scans.                                                    | Config parsing, validation policy, or filesystem mutation.                                                   |
 | `runtime.rs`         | Environment/config/CLI runtime policy precedence and conversion to validation options.                                                                                           | Config parsing, Git discovery, or side effects.                                                              |
-| `validation.rs`      | Pre-side-effect checks, path normalization, duplicate targets, strict sync rejection, command cwd/env checks.                                                                    | Parsing or filesystem mutation.                                                                              |
+| `validation.rs`      | Pre-side-effect checks, path normalization, duplicate targets, strict sync rejection, include/ignore pattern validation, non-fatal plan warnings, command cwd/env checks.        | Parsing or filesystem mutation.                                                                              |
 | `commands.rs`        | Sequential configured command spawning and dry-run output.                                                                                                                       | Parsing command config or deciding command order.                                                            |
 | `metadata.rs`        | Embedded config schema, spec version, and version metadata helpers.                                                                                                              | Generating source files or reading runtime files.                                                            |
 | `output.rs`          | Structured output events and message formatting.                                                                                                                                 | Choosing when events happen.                                                                                 |
@@ -307,8 +307,16 @@ group; verbose mode reports the concrete action stream.
 
 - Skips optional missing sources before filesystem traversal.
 - Plans copy and sync through shared tree traversal.
+- Applies include and ignore gates independently during traversal: non-included
+  files are skipped, and non-included directories only receive target actions
+  when their subtree contains an included entry, keyed on included descendants
+  rather than emitted actions so drifted ancestor metadata still repairs.
+- Prunes directories that cannot contain include matches through
+  `path_filter.rs` viability checks; unanchored include patterns fall back to
+  the conservative full walk.
 - Plans symlink creation and replacement separately.
-- Plans sync delete actions for target-only paths.
+- Plans sync delete actions for target-only paths. Delete planning stays
+  include-unaware because validation rejects `include` with `delete = true`.
 - Delegates grouped action summaries and cross-action warning aggregation to
   `file_actions.rs`.
 - Delegates filesystem inspection and comparison helpers to `file_system.rs`.

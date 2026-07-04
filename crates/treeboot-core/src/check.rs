@@ -52,6 +52,10 @@ pub struct CheckReport {
     pub context: WorktreeSnapshot,
     /// Action that was validated.
     pub action: CheckAction,
+    /// Ordered human-readable non-fatal run-validation warnings, such as an
+    /// include list that matches no source paths. Empty when validation
+    /// produces no warnings.
+    pub warnings: Vec<String>,
 }
 
 /// Serializable worktree context snapshot for reports.
@@ -99,6 +103,7 @@ pub fn check(options: CheckOptions) -> Result<CheckReport> {
         return Ok(CheckReport {
             context: WorktreeSnapshot::from(&context),
             action: CheckAction::RootWorktreeSkipped,
+            warnings: Vec::new(),
         });
     }
 
@@ -109,6 +114,7 @@ pub fn check(options: CheckOptions) -> Result<CheckReport> {
             return Ok(CheckReport {
                 context: WorktreeSnapshot::from(&context),
                 action: CheckAction::InitScript { path },
+                warnings: Vec::new(),
             });
         }
     }
@@ -117,7 +123,7 @@ pub fn check(options: CheckOptions) -> Result<CheckReport> {
         Some(path) => {
             let config = Config::load(&path, &context)?;
             let plan_options = runtime_policy.resolve(&config.options);
-            ActionPlan::from_manifest(
+            let plan = ActionPlan::from_manifest(
                 &path,
                 &config,
                 &context,
@@ -127,6 +133,7 @@ pub fn check(options: CheckOptions) -> Result<CheckReport> {
             Ok(CheckReport {
                 context: WorktreeSnapshot::from(&context),
                 action: CheckAction::Config { path },
+                warnings: plan.warnings().iter().map(ToString::to_string).collect(),
             })
         }
         None => {
@@ -136,6 +143,7 @@ pub fn check(options: CheckOptions) -> Result<CheckReport> {
                 Ok(CheckReport {
                     context: WorktreeSnapshot::from(&context),
                     action: CheckAction::MissingConfig,
+                    warnings: Vec::new(),
                 })
             }
         }
