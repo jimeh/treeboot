@@ -1,4 +1,4 @@
-# treeboot Specification v1.14.0
+# treeboot Specification v1.15.0
 
 A portable worktree bootstrapper that lets every coding agent, editor, and
 orchestration tool run the same repo-local setup command.
@@ -138,8 +138,9 @@ parsing behavior; editing config values is out of scope.
 
 Human-readable text output lists normalized source and target values plus
 behavior-affecting normalized fields such as `required`, `compare`, `delete`,
-`symlinks`, `ignore`, `allow_failure`, `cwd`, and command `env` values when
-present. JSON and YAML output emit the full normalized config structure.
+`symlinks`, `include`, `ignore`, `allow_failure`, `cwd`, and command `env`
+values when present. JSON and YAML output emit the full normalized config
+structure.
 
 ### `treeboot check`
 
@@ -176,6 +177,11 @@ On success, human-readable output prints:
 ```text
 treeboot: check ok
 ```
+
+Run validation can produce non-fatal warnings, such as an include list that
+matches no source paths. `check` prints each warning as a
+`treeboot: warning: ...` line before the final `treeboot: check ok` line and
+still exits zero.
 
 JSON and YAML output are defined in
 [Structured output formats](#structured-output-formats). Fatal errors still use
@@ -373,6 +379,7 @@ a CLI usage error and exits with code `2`.
 | `-t`, `--target <path>`                                    | copy/symlink/sync                                    | Overrides the target. With multiple sources, acts as the target path prefix for each source.                                                                                                                                                                                |
 | `--required`                                               | copy/symlink/sync                                    | Fails when any requested source does not exist.                                                                                                                                                                                                                             |
 | `--symlinks <preserve>`                                    | copy/sync                                            | Selects how source symlinks are handled. The initial supported value is `preserve`.                                                                                                                                                                                         |
+| `--include <pattern>`                                      | copy/sync                                            | Repeats to narrow directory operations to source paths matching operation-local include patterns. Patterns use gitignore-style syntax without `!` negation and are not read from `.gitignore` files. Conflicts with `--delete` / `-D`.                                      |
 | `--ignore <pattern>`                                       | copy/sync                                            | Repeats to skip source paths matching operation-local ignore patterns. Patterns use gitignore-style syntax and are not read from `.gitignore` files.                                                                                                                        |
 | `--ignore-metadata <permissions\|owner\|group\|ownership>` | copy/sync                                            | Repeats to opt out of metadata comparison and preservation. `ownership` means owner and group.                                                                                                                                                                              |
 | `--compare <metadata\|checksum>`                           | sync                                                 | Selects sync comparison behavior.                                                                                                                                                                                                                                           |
@@ -485,6 +492,7 @@ string. The initial reason is `not_executable`.
         "compare": null,
         "delete": null,
         "symlinks": "preserve",
+        "include": [],
         "ignore": [],
         "ignore_metadata": [],
         "declaration": {
@@ -520,11 +528,12 @@ string. The initial reason is `not_executable`.
 
 `files` and `commands` are ordered arrays. File `operation` is `copy`,
 `symlink`, or `sync`. `compare` is `metadata`, `checksum`, or `null`. `delete`
-is a boolean or `null`. `symlinks` is `preserve` or `null`. `ignore` is an
-ordered array of operation-local path ignore patterns. `ignore_metadata` is an
-ordered array of canonical ignored metadata fields: `permissions`, `owner`, and
-`group`. Config input can use `ownership` as a shorthand, but normalized
-inspection output expands it to `owner` and `group`.
+is a boolean or `null`. `symlinks` is `preserve` or `null`. `include` is an
+ordered array of operation-local path include patterns. `ignore` is an ordered
+array of operation-local path ignore patterns. `ignore_metadata` is an ordered
+array of canonical ignored metadata fields: `permissions`, `owner`, and `group`.
+Config input can use `ownership` as a shorthand, but normalized inspection
+output expands it to `owner` and `group`.
 
 Command `name`, `cwd`, and `cwd_path` are strings or `null`. `env` is an object
 whose keys and values are strings. `command` is one of:
@@ -560,7 +569,8 @@ of the source TOML declaration:
 
 ### `treeboot check` JSON
 
-`treeboot check` emits the resolved context and the selected bootstrap action:
+`treeboot check` emits the resolved context, the selected bootstrap action, and
+non-fatal run-validation warnings:
 
 ```json
 {
@@ -572,9 +582,14 @@ of the source TOML declaration:
   "action": {
     "kind": "config",
     "path": "/repo-worktree/.treeboot.toml"
-  }
+  },
+  "warnings": []
 }
 ```
+
+`warnings` is an ordered array of human-readable warning strings produced by run
+validation, such as an include list that matches no source paths. It is empty
+when validation produces no warnings.
 
 `action` is one of:
 
@@ -922,8 +937,12 @@ exits successfully when parsing and normalization succeed. It does not discover
 or run init scripts, apply file operations, or execute configured commands.
 Invalid TOML, unknown fields, invalid enum values, missing required fields, and
 mutually exclusive command fields are config errors. If the same config would
-fail declarative run validation, the command prints a warning without changing
-the successful exit status.
+fail declarative run validation, the command prints a `treeboot: warning: ...`
+line to stderr without changing the successful exit status. Non-fatal
+run-validation warnings, such as an include list that matches no source paths,
+are printed the same way. `treeboot config` warnings go to stderr in every
+output format, so JSON and YAML stdout output stays parseable and the structured
+config shape is unchanged.
 
 ### JSON Schema
 
@@ -1030,17 +1049,18 @@ target = ".editorconfig"
 The verbose table-array name is singular `[[file]]` so it can coexist with the
 plural `files = [...]` list in the same TOML file.
 
-| File field        | Applies to          | Meaning                                                                                                                                                          |
-| ----------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `operation`       | `files`, `[[file]]` | Required for object entries; one of copy, symlink, or sync.                                                                                                      |
-| `source`          | all file operations | Required for object entries. Relative paths resolve from root path.                                                                                              |
-| `required`        | all file operations | Defaults to `false`. When true, a missing source is a failure instead of a skipped operation.                                                                    |
-| `target`          | all file operations | Optional; defaults to source. Relative paths resolve from worktree path.                                                                                         |
-| `compare`         | `sync`              | `metadata` by default; `checksum` for content checks.                                                                                                            |
-| `delete`          | `sync` directories  | Defaults to `false`; when true, deletes target-only files and directories.                                                                                       |
-| `symlinks`        | `copy`, `sync`      | Defaults to `preserve`; safe source symlinks are recreated as symlinks and unsafe symlinks are validation errors.                                                |
-| `ignore`          | `copy`, `sync`      | Optional list of operation-local path ignore patterns appended after top-level `default_ignore`.                                                                 |
-| `ignore_metadata` | `copy`, `sync`      | Optional list of metadata fields to ignore. Supported values are `permissions`, `owner`, `group`, and `ownership`. `ownership` is shorthand for owner and group. |
+| File field        | Applies to          | Meaning                                                                                                                                                                      |
+| ----------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `operation`       | `files`, `[[file]]` | Required for object entries; one of copy, symlink, or sync.                                                                                                                  |
+| `source`          | all file operations | Required for object entries. Relative paths resolve from root path.                                                                                                          |
+| `required`        | all file operations | Defaults to `false`. When true, a missing source is a failure instead of a skipped operation.                                                                                |
+| `target`          | all file operations | Optional; defaults to source. Relative paths resolve from worktree path.                                                                                                     |
+| `compare`         | `sync`              | `metadata` by default; `checksum` for content checks.                                                                                                                        |
+| `delete`          | `sync` directories  | Defaults to `false`; when true, deletes target-only files and directories.                                                                                                   |
+| `symlinks`        | `copy`, `sync`      | Defaults to `preserve`; safe source symlinks are recreated as symlinks and unsafe symlinks are validation errors.                                                            |
+| `include`         | `copy`, `sync`      | Optional list of operation-local path include patterns that narrow directory operations to matching source paths. A non-empty list cannot combine with sync `delete = true`. |
+| `ignore`          | `copy`, `sync`      | Optional list of operation-local path ignore patterns appended after top-level `default_ignore`.                                                                             |
+| `ignore_metadata` | `copy`, `sync`      | Optional list of metadata fields to ignore. Supported values are `permissions`, `owner`, `group`, and `ownership`. `ownership` is shorthand for owner and group.             |
 
 ### Command objects
 
@@ -1216,14 +1236,16 @@ config is missing or invalid.
 Manual file operation commands normalize to the same internal file operation
 shape as config entries. The subcommand supplies `operation`, each positional
 source supplies `source`, `--required` supplies `required = true`, and
-operation-specific flags supply `symlinks`, `compare`, `delete`, `ignore`, or
-`ignore_metadata`.
+operation-specific flags supply `symlinks`, `compare`, `delete`, `include`,
+`ignore`, or `ignore_metadata`.
 
 Manual normalization happens under the same resolved runtime policy as
 declarative file operations: defaults, then config top-level policy when a
 config is present, then environment overrides, then CLI strictness. For manual
 `copy` and `sync`, effective ignore rules are the loaded config's
-`default_ignore` patterns followed by repeated `--ignore` flags.
+`default_ignore` patterns followed by repeated `--ignore` flags. Effective
+include rules are the repeated `--include` flags alone; no config default is
+merged.
 
 If `--target` is omitted, each target defaults to its source value. If one
 source is passed, `--target` is that operation's target. If more than one source
@@ -1247,11 +1269,13 @@ from the source. Source symlinks are preserved by default when they are safe. By
 default, copy preserves the metadata described in
 [File metadata preservation](#file-metadata-preservation). Configure `ignore`,
 or use `--ignore`, to skip selected source paths during directory copies.
-Configure `ignore_metadata`, or use `--ignore-metadata`, to opt out of selected
-metadata fields.
+Configure `include`, or use `--include`, to narrow directory copies to selected
+source paths. Configure `ignore_metadata`, or use `--ignore-metadata`, to opt
+out of selected metadata fields.
 
-`treeboot copy` exposes `--target`, `--required`, `--symlinks`, `--ignore`,
-`--ignore-metadata`, `--dry-run`, `--verbose`, `--strict`, and `--force`.
+`treeboot copy` exposes `--target`, `--required`, `--symlinks`, `--include`,
+`--ignore`, `--ignore-metadata`, `--dry-run`, `--verbose`, `--strict`, and
+`--force`.
 
 ### Symlink
 
@@ -1269,12 +1293,14 @@ Checksum comparison must detect content changes even when size and modified time
 do not change. Sync also compares and repairs the metadata fields described in
 [File metadata preservation](#file-metadata-preservation), unless those fields
 are listed in `ignore_metadata`. Configure `ignore`, or use `--ignore`, to skip
-selected source and target paths during directory sync. Source symlinks are
+selected source and target paths during directory sync. Configure `include`, or
+use `--include`, to narrow directory sync to selected source paths; a non-empty
+`include` list cannot be combined with `delete = true`. Source symlinks are
 preserved by default when they are safe.
 
 `treeboot sync` exposes `--target`, `--required`, `--compare`, `--delete`,
-`--no-delete`, `--symlinks`, `--ignore`, `--ignore-metadata`, `--dry-run`,
-`--verbose`, `--strict`, and `--force`.
+`--no-delete`, `--symlinks`, `--include`, `--ignore`, `--ignore-metadata`,
+`--dry-run`, `--verbose`, `--strict`, and `--force`.
 
 ### Path ignore rules
 
@@ -1288,6 +1314,10 @@ matched by a non-negated pattern is ignored. A path matched by a later negated
 pattern is re-included. Because operation-local `ignore` patterns come after
 `default_ignore`, an operation-local `!` pattern can re-include a path ignored
 by the top-level defaults.
+
+A pattern that cannot be parsed as a glob is a file operation validation error,
+reported before any side effects. Unlike Git, treeboot does not silently skip
+malformed patterns.
 
 Normalized file operations expose the effective merged ignore list in their
 `ignore` field. Normalized config output also preserves `default_ignore` as a
@@ -1324,6 +1354,80 @@ For directory sync with `delete = true`, ignore rules also apply to target-only
 paths by evaluating the same operation-relative path under the sync target.
 Ignored target-only files and directories are preserved. Re-included target-only
 paths remain eligible for deletion.
+
+### Path include rules
+
+`include` is an ordered list of operation-local path patterns that narrows a
+`copy` or `sync` operation to matching source paths. When an operation's include
+list is empty or absent, no include filtering applies. When it is non-empty, a
+path below a directory source is in scope only when it matches at least one
+include pattern and is not ignored.
+
+Include and ignore are independent gates evaluated against the same
+source-relative paths. Include selects paths as a plain union: a path is
+included when any include pattern matches it, without last-match-wins ordering.
+Ignore rules then remove paths from that selection. A negated `!` ignore pattern
+only unwinds earlier ignore patterns; it cannot re-include a path that does not
+match the include rules.
+
+Include patterns use the same gitignore-style syntax as ignore patterns, except
+that every include entry must be an effective positive pattern. Patterns
+beginning with `!`, blank or whitespace-only patterns, and `#` comment lines are
+validation errors in include lists; exclusion belongs to `ignore`. The `\!` and
+`\#` escapes remain valid and match literal leading `!` or `#` characters in
+file names. As with ignore patterns, an include pattern that cannot be parsed as
+a glob is a file operation validation error. Because inert entries are rejected,
+a non-empty include list always filters.
+
+A directory that matches an include pattern includes its whole subtree, subject
+to ignore rules. A directory that matches no include pattern is still traversed
+when a descendant could match. Directories receive target actions only when the
+directory itself is included or its subtree contains an included path. Ancestor
+directories of included paths that are not ignored are created as target parent
+directories and keep their normal metadata comparison and repair behavior, even
+when every included descendant is unchanged. Ignored ancestors traversed only to
+reach in-scope descendants follow [Path ignore rules](#path-ignore-rules) and
+are not reported or repaired unless re-included. Directories with no included
+descendants that are not themselves included produce no target actions.
+
+Like ignore rules, include rules affect directory sources only. When a `copy` or
+`sync` source is a single file or a source symlink, treeboot validates the
+patterns but never filters the top-level source. Each operation's include list
+applies only within that operation's source tree; selecting which sources an
+invocation covers is done by listing them.
+
+Non-included source paths are skipped before copy/sync action planning and
+before unsafe source-symlink validation. Non-included unsafe symlinks are
+therefore not validation errors.
+
+`include` is rejected on `symlink` operations, like `ignore`. A `sync` operation
+with a non-empty `include` list cannot combine it with `delete = true`: config
+validation rejects the combination, and `--include` conflicts with `--delete` /
+`-D` for manual `treeboot sync`. Absent `include` and `include = []` do not
+conflict with deletion. To mirror a subtree with deletion, narrow the
+operation's source instead of using include patterns.
+
+There is no top-level `default_include`. Include rules come only from the
+operation's `include` field or repeated manual `--include` flags. For manual
+`copy` and `sync`, the effective include list is the repeated `--include` flags
+alone; the config `default_ignore` merging behavior has no include counterpart.
+
+An include list that matches no source paths is not an error. `run` performs the
+operation with no in-scope paths and stays silent. `treeboot check` and
+`treeboot config` surface one non-fatal warning, in operation order, for each
+`copy` or `sync` operation whose effective include list is non-empty, whose
+source exists and is a directory, and whose source tree contains no path
+matching the include rules before ignore filtering. Operations whose source is
+missing, a single file, or a source symlink do not produce zero-match include
+warnings.
+
+Implementations may prune directories that cannot contain included paths instead
+of traversing them. Because of this latitude, an unreadable directory that is
+outside include scope may or may not produce an error. Pruning must not
+otherwise change observable results.
+
+Normalized file operations expose the operation-local include list in their
+`include` field.
 
 ### Symlinks inside copy and sync
 
@@ -1384,7 +1488,8 @@ When the source is a directory, sync recurses through source and target. It
 copies new files and updates changed files. Target files or directories that do
 not exist in the source are preserved by default. Configure `delete = true` on a
 sync entry, or use `--delete` / `-D` for manual sync, to delete target-only
-files and directories.
+files and directories. Deletion cannot be combined with a non-empty `include`
+list; see [Path include rules](#path-include-rules).
 
 ### Operation order
 
