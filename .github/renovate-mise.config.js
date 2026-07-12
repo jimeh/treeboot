@@ -28,7 +28,7 @@ module.exports = {
       matchManagers: ["rust-toolchain"],
       postUpgradeTasks: {
         commands: ["mise lock rust"],
-        executionMode: "branch",
+        executionMode: "update",
         fileFilters: ["mise.lock"],
         installTools: {
           mise: {},

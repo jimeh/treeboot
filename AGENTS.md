@@ -231,11 +231,12 @@ work. Lefthook checks staged Markdown files through
   release bot GitHub App token and uses `.github/renovate-mise.config.js` as
   self-hosted/global config. Keep `allowedUnsafeExecutions = ["mise"]` for mise
   lockfile refreshes and the exact `mise lock rust` command allowlist so Rust
-  toolchain PRs update `mise.lock` with `rust-toolchain.toml`. Manual dispatch
-  sets `RENOVATE_BYPASS_SCHEDULE` so emergency runs bypass the internal Renovate
-  schedule as well as the GitHub Actions cron gate. Scheduled runs make three
-  attempts within the monthly update window so a concurrent default-branch
-  change does not delay maintenance for a month. Keep
+  toolchain PRs update `mise.lock` with `rust-toolchain.toml`. Keep that
+  package-rule task in `executionMode = "update"`; branch mode skips the task.
+  Manual dispatch sets `RENOVATE_BYPASS_SCHEDULE` so emergency runs bypass the
+  internal Renovate schedule as well as the GitHub Actions cron gate. Scheduled
+  runs make three attempts within the monthly update window so a concurrent
+  default-branch change does not delay maintenance for a month. Keep
   `:disableDependencyDashboard` in the Renovate preset list; with
   `config:recommended`, `dependencyDashboard: false` alone can still produce a
   Dependency Dashboard issue in this self-hosted flow. Renovate PR creation is
