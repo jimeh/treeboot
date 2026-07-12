@@ -9,10 +9,12 @@ use crate::file_system::copy_file_with_metadata;
 use crate::test_support::{symlink_dir, symlink_file};
 use crate::validation::PlannedFileOperationParts;
 use crate::{
-    ActionPlanOptions, Error, FileOperation, FileOperationKind, MetadataField, OutputEvent,
-    PlanOrigin, PlannedFileOperation, PlannedFileStatus, Reporter, SourceSpan, SyncCompare,
-    Worktree,
+    ActionPlanOptions, Error, FileOperation, FileOperationKind, OutputEvent, PlanOrigin,
+    PlannedFileOperation, PlannedFileStatus, Reporter, SourceSpan, SyncCompare, Worktree,
 };
+
+#[cfg(unix)]
+use crate::MetadataField;
 
 #[derive(Default)]
 struct VecReporter {

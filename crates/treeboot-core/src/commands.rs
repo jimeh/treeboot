@@ -731,6 +731,7 @@ mod tests {
             PlannedCommand::from_raw_parts_unchecked(self.parts.clone())
         }
 
+        #[cfg(unix)]
         fn with_allow_failure(mut self) -> Self {
             self.parts.allow_failure = true;
             self
@@ -743,6 +744,7 @@ mod tests {
             self
         }
 
+        #[cfg(unix)]
         fn with_env(mut self, key: &str, value: &str) -> Self {
             self.parts.env.insert(key.to_owned(), value.to_owned());
             self
@@ -844,6 +846,7 @@ mod tests {
     }
 
     impl Recorder {
+        #[cfg(unix)]
         fn messages(&self) -> Vec<String> {
             self.events.iter().map(OutputEvent::message).collect()
         }
