@@ -242,7 +242,9 @@ work. Lefthook checks staged Markdown files through
   with `config:recommended`, `dependencyDashboard: false` alone can still
   produce a Dependency Dashboard issue in this self-hosted flow. Renovate PR
   creation is intentionally `immediate` so mise updates behave like Dependabot
-  updates.
+  updates. The release bot token also needs commit-status write permission;
+  otherwise Renovate aborts while setting `renovate/stability-days` and reports
+  the misleading `repository-changed` branch error.
 - Mise-managed tools use a 7-day release-age cooldown and checked-in
   `mise.lock`; use a narrow override only for urgent security or CI-maintenance
   updates.
