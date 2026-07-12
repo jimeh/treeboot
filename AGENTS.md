@@ -272,6 +272,8 @@ work. Lefthook checks staged Markdown files through
 - CI test jobs install the configured Rust toolchain in one serial step before
   `mise run test`; the aggregate test task uses one Cargo invocation so shared
   test-profile compilation is not split across parallel package tasks.
+- CI runs Rust linting on both Ubuntu and Windows so platform-gated code is
+  checked with warnings denied.
 - Release-please and Renovate must use the repo's `RELEASE_BOT_CLIENT_ID`
   variable and `RELEASE_BOT_PRIVATE_KEY` secret so automation-created commits
   and PRs trigger the expected follow-up workflows.
