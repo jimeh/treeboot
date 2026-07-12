@@ -18,19 +18,10 @@ module.exports = {
   onboarding: false,
   packageRules: [
     {
-      enabled: false,
+      excludeCommitPaths: ["mise.toml"],
+      groupName: "mise tools",
+      groupSlug: "mise-tools",
       matchManagers: ["mise"],
-      matchUpdateTypes: [
-        "major",
-        "minor",
-        "patch",
-        "pin",
-        "pinDigest",
-        "digest",
-        "rollback",
-        "bump",
-        "replacement",
-      ],
     },
     {
       groupName: "Rust toolchain",
