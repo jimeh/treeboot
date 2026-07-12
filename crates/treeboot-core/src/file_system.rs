@@ -12,6 +12,8 @@ use crate::{
 
 #[cfg(unix)]
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
+#[cfg(windows)]
+use std::os::windows::fs::FileTypeExt;
 
 /// Identifies which side of a checksum comparison produced a read error so the
 /// caller can attribute it to the right path.
@@ -851,7 +853,23 @@ fn ensure_target_parent_exists(
 }
 
 fn remove_file(operation: FileOperationKind, path: &Path) -> Result<()> {
-    fs::remove_file(path).map_err(|source| Error::FileOperationIo {
+    #[cfg(windows)]
+    let removal = {
+        let metadata = fs::symlink_metadata(path).map_err(|source| Error::FileOperationIo {
+            operation: operation.as_str(),
+            path: path.to_path_buf(),
+            source,
+        })?;
+        if metadata.file_type().is_symlink_dir() {
+            fs::remove_dir(path)
+        } else {
+            fs::remove_file(path)
+        }
+    };
+    #[cfg(not(windows))]
+    let removal = fs::remove_file(path);
+
+    removal.map_err(|source| Error::FileOperationIo {
         operation: operation.as_str(),
         path: path.to_path_buf(),
         source,

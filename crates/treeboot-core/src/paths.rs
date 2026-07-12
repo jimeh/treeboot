@@ -60,6 +60,10 @@ pub(crate) fn normalize_lexical(path: &Path) -> PathBuf {
     normalized
 }
 
+pub(crate) fn is_within(path: &Path, boundary: &Path) -> bool {
+    path == boundary || path.starts_with(boundary)
+}
+
 pub(crate) fn resolve_path(base: &Path, path: &Path) -> Result<PathBuf, UnsupportedPath> {
     reject_unsupported_path(path)?;
 

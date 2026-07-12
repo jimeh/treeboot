@@ -293,7 +293,7 @@ file-operation execution._
 | `path_filter.rs`     | Compiling and matching copy/sync include and ignore path rules, include viability pruning, and include-oriented source scans.                                                    | Config parsing, validation policy, or filesystem mutation.                                                   |
 | `runtime.rs`         | Environment/config/CLI runtime policy precedence and conversion to validation options.                                                                                           | Config parsing, Git discovery, or side effects.                                                              |
 | `validation.rs`      | Pre-side-effect checks, path normalization, duplicate targets, strict sync rejection, include/ignore pattern validation, non-fatal plan warnings, command cwd/env checks.        | Parsing or filesystem mutation.                                                                              |
-| `commands.rs`        | Sequential configured command spawning and dry-run output.                                                                                                                       | Parsing command config or deciding command order.                                                            |
+| `commands.rs`        | Sequential configured command spawning, execution-time cwd boundary enforcement, and dry-run output.                                                                             | Parsing command config or deciding command order.                                                            |
 | `metadata.rs`        | Embedded config schema, spec version, and version metadata helpers.                                                                                                              | Generating source files or reading runtime files.                                                            |
 | `output.rs`          | Structured output events and message formatting.                                                                                                                                 | Choosing when events happen.                                                                                 |
 
@@ -363,13 +363,16 @@ variables.
 
 ### Execution
 
-`commands.rs` builds either a shell process (`sh -c` or `cmd /C`) or a direct
-program invocation, then runs it in sequence.
+`commands.rs` freshly resolves each command cwd and the worktree boundary after
+file operations and immediately before spawn. It rejects a live cwd escape, then
+builds either a shell process (`sh -c` or `cmd /C`) or a direct program
+invocation and runs it in sequence.
 
 ### Failure policy
 
-`allow_failure` turns spawn or non-zero exit failures into warning output.
-Otherwise failures become typed command errors and stop the run.
+`allow_failure` turns cwd resolution, cwd boundary, spawn, or non-zero exit
+failures into warning output. Otherwise failures become typed command errors and
+stop the run.
 
 ## Presentation: Output And Errors
 
