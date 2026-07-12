@@ -26,15 +26,17 @@ treeboot
 
 ## Install
 
-The recommended usage pattern is to make `treeboot` a project-local [mise][]
-tool, usually scoped to a bootstrap task:
+The recommended usage pattern is to make `treeboot` a project-wide [mise][] tool
+and provide a standard bootstrap task:
 
 [mise]: https://mise.jdx.dev/
 
 ```toml
+[tools]
+"github:jimeh/treeboot" = "latest"
+
 [tasks.treeboot]
 description = "Bootstrap the current worktree with treeboot"
-tools."github:jimeh/treeboot" = "latest"
 run = "treeboot"
 ```
 
