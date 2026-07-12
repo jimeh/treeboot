@@ -30,15 +30,3 @@ updates:
         patterns: ["*"]
     commit-message:
       prefix: "chore(deps)"
-
-  - package-ecosystem: "rust-toolchain"
-    directory: "/"
-    schedule:
-      interval: "monthly"
-    cooldown:
-      default-days: 7
-    groups:
-      rust-toolchain:
-        patterns: ["*"]
-    commit-message:
-      prefix: "chore(deps)"

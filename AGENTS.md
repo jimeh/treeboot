@@ -223,14 +223,19 @@ work. Lefthook checks staged Markdown files through
 - Do not require package-version literals in `docs/SPEC.md` examples to match
   Cargo package versions. Release-please does not update spec examples, and
   example version drift should not block release PRs.
-- Dependabot version updates use a 7-day cooldown. Security updates are not
-  affected by Dependabot cooldown and should stay alert-driven.
-- Renovate is scoped to monthly mise tool and lockfile maintenance only. It runs
-  from `.github/workflows/renovate-mise.yml` with the release bot GitHub App
-  token and uses `.github/renovate-mise.config.js` as self-hosted/global config
-  so `allowedUnsafeExecutions = ["mise"]` can permit `mise lock` refreshes.
-  Manual dispatch sets `RENOVATE_BYPASS_SCHEDULE` so emergency runs bypass the
-  internal Renovate schedule as well as the GitHub Actions cron gate. Keep
+- Dependabot Cargo and GitHub Actions version updates use a 7-day cooldown.
+  Security updates are not affected by Dependabot cooldown and should stay
+  alert-driven.
+- Renovate is scoped to monthly mise tool, lockfile, and Rust toolchain
+  maintenance. It runs from `.github/workflows/renovate-mise.yml` with the
+  release bot GitHub App token and uses `.github/renovate-mise.config.js` as
+  self-hosted/global config. Keep `allowedUnsafeExecutions = ["mise"]` for mise
+  lockfile refreshes and the exact `mise lock rust` command allowlist so Rust
+  toolchain PRs update `mise.lock` with `rust-toolchain.toml`. Manual dispatch
+  sets `RENOVATE_BYPASS_SCHEDULE` so emergency runs bypass the internal Renovate
+  schedule as well as the GitHub Actions cron gate. Scheduled runs make three
+  attempts within the monthly update window so a concurrent default-branch
+  change does not delay maintenance for a month. Keep
   `:disableDependencyDashboard` in the Renovate preset list; with
   `config:recommended`, `dependencyDashboard: false` alone can still produce a
   Dependency Dashboard issue in this self-hosted flow. Renovate PR creation is
@@ -251,9 +256,9 @@ work. Lefthook checks staged Markdown files through
 - Pre-commit hooks are managed by Lefthook and installed by `mise run setup`.
 - `mise.toml` pins `sccache` and sets `RUSTC_WRAPPER=sccache` so Cargo tasks use
   the project-managed compiler cache instead of relying on global shell setup.
-- Rust toolchain version and components live in `rust-toolchain.toml` so
-  Dependabot can update them. `mise.toml` enables Rust idiomatic version files
-  so mise consumes the same source.
+- Rust toolchain version and components live in `rust-toolchain.toml` so Rustup
+  and mise consume the same source. Renovate updates the toolchain and runs
+  `mise lock rust` in the same branch so locked installs remain usable.
 - CI sets `MISE_RUSTUP_HOME` so `mise-action` caches the rustup toolchains and
   components declared by the project; cross-OS test jobs use a workspace-local
   path instead of the Ubuntu-only default.
