@@ -383,6 +383,37 @@ mod tests {
     }
 
     #[test]
+    fn execute_commands_should_run_in_declared_in_worktree_symlink_cwd() {
+        let (temp, context) = context("in-worktree-symlink-cwd");
+        let real_cwd = temp.path().join("worktree/real-cwd");
+        let declared_cwd = temp.path().join("worktree/linked-cwd");
+        let marker = real_cwd.join("cwd-marker");
+        std::fs::create_dir_all(&real_cwd).expect("real cwd should be created");
+        symlink_dir(&real_cwd, &declared_cwd).expect("in-worktree cwd symlink should be created");
+        let command = planned_command(
+            None,
+            CommandKind::Shell {
+                run: "echo ran > cwd-marker".to_owned(),
+            },
+        )
+        .with_cwd(declared_cwd);
+        let plan = plan(context, vec![command]);
+
+        execute_commands(
+            &plan,
+            CommandExecutionOptions::default(),
+            &mut Recorder::default(),
+        )
+        .expect("in-worktree symlink cwd should run");
+
+        assert!(
+            std::fs::read_to_string(marker)
+                .expect("cwd marker should be readable")
+                .contains("ran")
+        );
+    }
+
+    #[test]
     fn execute_commands_should_treat_dangling_cwd_symlink_as_start_failure() {
         let (temp, context) = context("dangling-cwd-symlink");
         let cwd = temp.path().join("worktree/dangling");
@@ -397,6 +428,10 @@ mod tests {
         )
         .with_cwd(cwd);
         let plan = plan(context, vec![command]);
+
+        let resolver_error = resolve_command_cwd(&plan.commands()[0], plan.context())
+            .expect_err("resolver should reject dangling cwd");
+        assert_eq!(resolver_error.kind(), io::ErrorKind::NotFound);
 
         let error = execute_commands(
             &plan,
