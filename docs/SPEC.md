@@ -712,6 +712,11 @@ overridden.
 
 Current worktree root. File targets and command execution are anchored here.
 
+The current worktree path resolved from `git rev-parse --show-toplevel`
+preserves platform-native filesystem path data. On Unix, this includes non-UTF-8
+bytes and boundary whitespace. Only Git's single trailing LF delimiter is
+removed.
+
 ### Root Path Discovery
 
 The root path is the checkout used as the source for copy, symlink, and sync
