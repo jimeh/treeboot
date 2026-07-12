@@ -234,13 +234,15 @@ work. Lefthook checks staged Markdown files through
   toolchain PRs update `mise.lock` with `rust-toolchain.toml`. Keep that
   package-rule task in `executionMode = "update"`; branch mode skips the task.
   Manual dispatch sets `RENOVATE_BYPASS_SCHEDULE` so emergency runs bypass the
-  internal Renovate schedule as well as the GitHub Actions cron gate. Scheduled
-  runs make three attempts within the monthly update window so a concurrent
-  default-branch change does not delay maintenance for a month. Keep
-  `:disableDependencyDashboard` in the Renovate preset list; with
-  `config:recommended`, `dependencyDashboard: false` alone can still produce a
-  Dependency Dashboard issue in this self-hosted flow. Renovate PR creation is
-  intentionally `immediate` so mise updates behave like Dependabot updates.
+  internal Renovate schedule as well as the GitHub Actions cron gate, and
+  exposes an `info`/`debug` Renovate log-level choice for troubleshooting.
+  Scheduled runs default to `info` and make three attempts within the monthly
+  update window so a concurrent default-branch change does not delay maintenance
+  for a month. Keep `:disableDependencyDashboard` in the Renovate preset list;
+  with `config:recommended`, `dependencyDashboard: false` alone can still
+  produce a Dependency Dashboard issue in this self-hosted flow. Renovate PR
+  creation is intentionally `immediate` so mise updates behave like Dependabot
+  updates.
 - Mise-managed tools use a 7-day release-age cooldown and checked-in
   `mise.lock`; use a narrow override only for urgent security or CI-maintenance
   updates.

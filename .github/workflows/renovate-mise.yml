@@ -8,6 +8,13 @@ on:
           Run Renovate immediately instead of waiting for the monthly window
         type: boolean
         default: true
+      log-level:
+        description: Renovate log verbosity
+        type: choice
+        default: info
+        options:
+          - info
+          - debug
   schedule:
     - cron: "17 1,3,5 1 * *"
 
@@ -37,6 +44,7 @@ jobs:
 
       - uses: renovatebot/github-action@6d859fc95779be83a0335ca704879b47e5d79641 # v46.1.16
         env:
+          LOG_LEVEL: ${{ inputs['log-level'] || 'info' }}
           RENOVATE_BYPASS_SCHEDULE: ${{ inputs['bypass-schedule'] == true }}
           RENOVATE_REPOSITORIES: ${{ github.repository }}
         with:
