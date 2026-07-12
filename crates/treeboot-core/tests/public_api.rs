@@ -128,6 +128,52 @@ fn canonical_path(path: &Path) -> PathBuf {
 }
 
 #[cfg(unix)]
+#[test]
+fn public_api_worktree_discover_should_preserve_non_utf8_git_paths() {
+    use std::os::unix::ffi::OsStringExt;
+
+    let temp = TempDir::new().expect("tempdir should be created");
+    let root_path = temp.path().join(OsString::from_vec(b"main-\xff".to_vec()));
+    std::fs::create_dir(&root_path).expect("root should be created");
+    git(&["init"], &root_path);
+    git(&["config", "user.name", "treeboot"], &root_path);
+    git(
+        &["config", "user.email", "treeboot@example.invalid"],
+        &root_path,
+    );
+    git(&["config", "commit.gpgsign", "false"], &root_path);
+    write_file(&root_path.join("README.md"), "treeboot test repo\n");
+    git(&["add", "README.md"], &root_path);
+    git(&["commit", "-m", "Initial commit"], &root_path);
+
+    let linked_path = temp
+        .path()
+        .join(OsString::from_vec(b"linked-\xfe".to_vec()));
+    let output = Command::new("git")
+        .args(["worktree", "add", "-b", "non-utf8-path-test"])
+        .arg(&linked_path)
+        .current_dir(&root_path)
+        .output()
+        .expect("git should run");
+    assert!(
+        output.status.success(),
+        "git worktree add should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let worktree = Worktree::discover(WorktreeOptions {
+        cwd: Some(linked_path.clone()),
+        root: None,
+        environment: EnvironmentInput::empty(),
+    })
+    .expect("worktree should be discovered");
+
+    assert_eq!(worktree.root_path, canonical_path(&root_path));
+    assert_eq!(worktree.worktree_path, canonical_path(&linked_path));
+}
+
+#[cfg(unix)]
 fn make_executable(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
 

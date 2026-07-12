@@ -21,7 +21,7 @@ output events.
 flowchart LR
   CLI["crates/treeboot<br/>clap commands<br/>text/JSON/YAML output<br/>stdout/stderr reporting<br/>exit-code mapping"]
   API["treeboot_core public API<br/>run / inspect_* / check / diagnose<br/>init / run_file_operation<br/>Worktree / Config / ActionPlan<br/>OutputEvent / Reporter"]
-  GIT["Git boundary<br/>rev-parse<br/>worktree list<br/>origin/HEAD"]
+  GIT["Git boundary<br/>native path bytes<br/>NUL-delimited worktree list<br/>origin/HEAD"]
   FS["Filesystem boundary<br/>copy / symlink / sync<br/>read config<br/>write init files"]
   PROC["Process boundary<br/>init scripts<br/>configured commands"]
   OUT["Structured output<br/>OutputEvent values<br/>Reporter trait<br/>CLI text presentation"]
@@ -93,7 +93,7 @@ flowchart LR
   OPT["RunOptions<br/>cwd<br/>root override"]
   ENV["Environment<br/>TREEBOOT_ROOT_PATH<br/>compat aliases"]
   RES["context::resolve<br/>normalize current worktree<br/>discover root source<br/>build environment map"]
-  GIT["Git queries<br/>rev-parse --show-toplevel<br/>worktree list --porcelain<br/>origin/HEAD"]
+  GIT["Git queries<br/>rev-parse --show-toplevel<br/>worktree list --porcelain -z<br/>origin/HEAD"]
   WT["Worktree<br/>root_path / worktree_path<br/>default_branch / environment"]
 
   OPT --> RES
@@ -104,6 +104,12 @@ flowchart LR
 
 _Root source precedence is explicit `--root`, then treeboot-compatible
 environment aliases, then Git's main worktree._
+
+`git.rs` keeps Git-discovered filesystem paths in platform-native form. On Unix,
+path output remains raw bytes through parsing and conversion; only branch names
+and diagnostic stderr use ergonomic lossy text conversion. Main-worktree records
+use Git's NUL-delimited porcelain format so quoting and embedded newlines are
+unambiguous.
 
 ### Source root
 
