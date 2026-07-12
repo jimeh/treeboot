@@ -226,17 +226,18 @@ work. Lefthook checks staged Markdown files through
 - Dependabot Cargo and GitHub Actions version updates use a 7-day cooldown.
   Security updates are not affected by Dependabot cooldown and should stay
   alert-driven.
-- Renovate is scoped to monthly mise lockfile and Rust toolchain maintenance. It
-  runs from `.github/workflows/renovate-mise.yml` with the release bot GitHub
-  App token and uses `.github/renovate-mise.config.js` as self-hosted/global
-  config. Keep ordinary mise dependency updates disabled: humans own the
-  constraints in `mise.toml`, while lockfile maintenance refreshes `mise.lock`
-  within them. Keep `allowedUnsafeExecutions = ["mise"]` for mise lockfile
-  refreshes and exact allowlist entries for `mise trust mise.toml` and
-  `mise lock rust` so Rust toolchain PRs can trust the temporary checkout before
-  updating `mise.lock` with `rust-toolchain.toml`. Keep that package-rule task
-  in `executionMode = "update"`; branch mode skips the task. Manual dispatch
-  sets `RENOVATE_BYPASS_SCHEDULE` so emergency runs bypass the internal Renovate
+- Renovate is scoped to monthly mise tool, lockfile, and Rust toolchain
+  maintenance. It runs from `.github/workflows/renovate-mise.yml` with the
+  release bot GitHub App token and uses `.github/renovate-mise.config.js` as
+  self-hosted/global config. Humans own the constraints in `mise.toml`; keep it
+  in `excludeCommitPaths` for mise updates so Renovate can temporarily bump the
+  constraint to refresh `mise.lock` without committing the constraint change.
+  Keep `allowedUnsafeExecutions = ["mise"]` for mise lockfile refreshes and
+  exact allowlist entries for `mise trust mise.toml` and `mise lock rust` so
+  Rust toolchain PRs can trust the temporary checkout before updating
+  `mise.lock` with `rust-toolchain.toml`. Keep that package-rule task in
+  `executionMode = "update"`; branch mode skips the task. Manual dispatch sets
+  `RENOVATE_BYPASS_SCHEDULE` so emergency runs bypass the internal Renovate
   schedule as well as the GitHub Actions cron gate, and exposes an
   `info`/`debug` Renovate log-level choice for troubleshooting. Scheduled runs
   default to `info` and make three attempts within the monthly update window so
