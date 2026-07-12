@@ -26,8 +26,12 @@ pub struct CheckOptions {
 }
 
 /// Completed action for a `treeboot check` invocation.
+///
+/// New check outcomes may be added in future releases. Downstream matches must
+/// include a wildcard arm so they remain forward compatible.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum CheckAction {
     /// No config or executable init script was detected.
     MissingConfig,

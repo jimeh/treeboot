@@ -4,13 +4,14 @@ use std::process::Command;
 
 use tempfile::TempDir;
 use treeboot_core::{
-    ActionPlan, ActionPlanOptions, Config, ConfigOptions, DiagnosticStatus, Environment,
-    EnvironmentInput, Error, ExecuteOptions, Executor, FileOperation, FileOperationAction,
-    FileOperationCompletionOptions, FileOperationKind, FileOperationOptions, FileOperationSummary,
-    IgnoredInitScript, InitScriptDiscovery, InitScriptStatus, LoadedConfig,
-    ManualFileOperationOptions, OutputEvent, PlanOrigin, Reporter, RunAction, RunOptions,
-    SourceSpan, StatusOptions, SymlinkMode, Worktree, WorktreeOptions, check, config_schema_json,
-    diagnose, file_operation_source_candidates, inspect_config, inspect_env, inspect_status,
+    ActionPlan, ActionPlanOptions, CheckAction, CommandKind, Config, ConfigOptions,
+    DiagnosticStatus, Environment, EnvironmentInput, Error, ExecuteOptions, Executor,
+    FileOperation, FileOperationAction, FileOperationCompletionOptions, FileOperationKind,
+    FileOperationOptions, FileOperationSummary, IgnoredInitScript, InitKind, InitScriptDiscovery,
+    InitScriptStatus, LoadedConfig, ManualFileOperationOptions, MetadataField, OutputEvent,
+    PlanOrigin, PlannedFileStatus, Reporter, RunAction, RunOptions, SourceSpan, StatusOptions,
+    SymlinkMode, SyncCompare, Worktree, WorktreeOptions, check, config_schema_json, diagnose,
+    file_operation_source_candidates, inspect_config, inspect_env, inspect_status,
     inspect_status_snapshot, run, run_file_operation, treeboot_version_info, version_info,
 };
 
@@ -38,6 +39,151 @@ impl Reporter for VecReporter {
         self.events.push(event);
         Ok(())
     }
+}
+
+#[test]
+fn public_open_enums_should_support_forward_compatible_matches() {
+    fn error_kind(error: &Error) -> &'static str {
+        match error {
+            Error::NotGitWorktree => "git",
+            _ => "other",
+        }
+    }
+
+    fn event_kind(event: &OutputEvent) -> &'static str {
+        match event {
+            OutputEvent::NoConfigDetected => "missing",
+            _ => "other",
+        }
+    }
+
+    fn run_kind(action: &RunAction) -> &'static str {
+        match action {
+            RunAction::MissingConfig => "missing",
+            _ => "other",
+        }
+    }
+
+    fn check_kind(action: &CheckAction) -> &'static str {
+        match action {
+            CheckAction::MissingConfig => "missing",
+            _ => "other",
+        }
+    }
+
+    fn file_operation_kind(action: FileOperationAction) -> &'static str {
+        match action {
+            FileOperationAction::Applied => "applied",
+            _ => "other",
+        }
+    }
+
+    fn init_script_kind(status: &InitScriptStatus) -> &'static str {
+        match status {
+            InitScriptStatus::Skipped => "skipped",
+            _ => "other",
+        }
+    }
+
+    assert_eq!(error_kind(&Error::NotGitWorktree), "git");
+    assert_eq!(event_kind(&OutputEvent::NoConfigDetected), "missing");
+    assert_eq!(run_kind(&RunAction::MissingConfig), "missing");
+    assert_eq!(check_kind(&CheckAction::MissingConfig), "missing");
+    assert_eq!(file_operation_kind(FileOperationAction::Applied), "applied");
+    assert_eq!(init_script_kind(&InitScriptStatus::Skipped), "skipped");
+}
+
+#[test]
+fn public_enum_policy_should_keep_open_enums_non_exhaustive() {
+    fn assert_non_exhaustive(source: &str, name: &str) {
+        let declaration = format!("pub enum {name}");
+        let mut lines = source.lines();
+        let mut previous = lines.next();
+        let found = lines.any(|line| {
+            let matches = previous == Some("#[non_exhaustive]") && line.starts_with(&declaration);
+            previous = Some(line);
+            matches
+        });
+        assert!(found, "expected {name} to remain non-exhaustive");
+    }
+
+    assert_non_exhaustive("#[non_exhaustive]\r\npub enum Windows {}", "Windows");
+    assert_non_exhaustive(include_str!("../src/error.rs"), "Error");
+    assert_non_exhaustive(include_str!("../src/output.rs"), "OutputEvent");
+    assert_non_exhaustive(include_str!("../src/run.rs"), "RunAction");
+    assert_non_exhaustive(include_str!("../src/check.rs"), "CheckAction");
+    assert_non_exhaustive(include_str!("../src/manual.rs"), "FileOperationAction");
+    assert_non_exhaustive(include_str!("../src/status.rs"), "InitScriptStatus");
+    assert_non_exhaustive(include_str!("../src/validation.rs"), "PlanWarning");
+}
+
+#[test]
+fn public_closed_enums_should_support_exhaustive_matches() {
+    fn file_operation(value: FileOperationKind) {
+        match value {
+            FileOperationKind::Copy | FileOperationKind::Symlink | FileOperationKind::Sync => {}
+        }
+    }
+
+    fn sync_compare(value: SyncCompare) {
+        match value {
+            SyncCompare::Metadata | SyncCompare::Checksum => {}
+        }
+    }
+
+    fn symlink_mode(value: SymlinkMode) {
+        match value {
+            SymlinkMode::Preserve => {}
+        }
+    }
+
+    fn metadata_field(value: MetadataField) {
+        match value {
+            MetadataField::Permissions | MetadataField::Owner | MetadataField::Group => {}
+        }
+    }
+
+    fn command_kind(value: CommandKind) {
+        match value {
+            CommandKind::Shell { .. } | CommandKind::Direct { .. } => {}
+        }
+    }
+
+    fn diagnostic_status(value: DiagnosticStatus) {
+        match value {
+            DiagnosticStatus::Ok | DiagnosticStatus::Warning | DiagnosticStatus::Error => {}
+        }
+    }
+
+    fn init_kind(value: InitKind) {
+        match value {
+            InitKind::Config | InitKind::Script => {}
+        }
+    }
+
+    fn plan_origin(value: PlanOrigin) {
+        match value {
+            PlanOrigin::Manifest { .. } | PlanOrigin::Manual { .. } => {}
+        }
+    }
+
+    fn planned_file_status(value: PlannedFileStatus) {
+        match value {
+            PlannedFileStatus::Ready | PlannedFileStatus::SkippedMissingSource => {}
+        }
+    }
+
+    file_operation(FileOperationKind::Copy);
+    sync_compare(SyncCompare::Metadata);
+    symlink_mode(SymlinkMode::Preserve);
+    metadata_field(MetadataField::Permissions);
+    command_kind(CommandKind::Shell { run: String::new() });
+    diagnostic_status(DiagnosticStatus::Ok);
+    init_kind(InitKind::Config);
+    plan_origin(PlanOrigin::Manifest {
+        path: PathBuf::new(),
+    });
+    planned_file_status(PlannedFileStatus::Ready);
 }
 
 struct GitWorktree {

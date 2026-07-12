@@ -390,6 +390,17 @@ become stdout, stderr, and process status.
 file-operation lifecycle events intentionally return an empty message because
 they are structured presentation hooks for reporters rather than log lines.
 
+### Public enum evolution
+
+Public enums that represent extensible failures, lifecycle events, discovery
+states, or command outcomes are `#[non_exhaustive]`. Downstream callers must use
+wildcard match arms for `Error`, `OutputEvent`, `RunAction`, `CheckAction`,
+`FileOperationAction`, `InitScriptStatus`, and `PlanWarning`. Closed-domain
+vocabularies remain exhaustive when enumerating the complete set is useful API
+behavior: `FileOperationKind`, `SyncCompare`, `SymlinkMode`, `MetadataField`,
+`CommandKind`, `DiagnosticStatus`, `InitKind`, `PlanOrigin`, and
+`PlannedFileStatus`.
+
 ## Verification boundaries: Testing Architecture
 
 Tests are split by behavior layer. Use core unit tests for pure helpers and CLI

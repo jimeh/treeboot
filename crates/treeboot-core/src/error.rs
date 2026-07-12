@@ -2,7 +2,11 @@ use std::path::PathBuf;
 use std::process::ExitStatus;
 
 /// Error type for `treeboot-core` operations.
+///
+/// New error categories may be added in future releases. Downstream matches
+/// must include a wildcard arm so they remain forward compatible.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     /// The current working directory could not be read.
     #[error("failed to read current directory: {source}")]

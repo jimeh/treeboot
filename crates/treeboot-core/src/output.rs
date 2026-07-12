@@ -73,7 +73,12 @@ fn count_detail(count: usize, singular: &str, plural: &str) -> String {
 }
 
 /// A structured message produced during a treeboot operation.
+///
+/// New lifecycle and presentation events may be added in future releases.
+/// Downstream matches must include a wildcard arm so reporters remain forward
+/// compatible.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum OutputEvent {
     /// A non-executable script candidate was ignored.
     IgnoredInitScript {

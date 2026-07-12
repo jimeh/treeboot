@@ -33,7 +33,11 @@ pub struct RunOptions {
 }
 
 /// Completed action for a `treeboot run` invocation.
+///
+/// New run outcomes may be added in future releases. Downstream matches must
+/// include a wildcard arm so they remain forward compatible.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RunAction {
     /// No config or executable init script was detected.
     MissingConfig,
