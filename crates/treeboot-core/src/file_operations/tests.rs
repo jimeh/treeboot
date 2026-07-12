@@ -2231,6 +2231,50 @@ fn apply_file_operations_should_force_copy_file_over_existing_symlink() {
 }
 
 #[test]
+fn apply_file_operations_should_force_copy_file_over_directory_symlink_without_touching_target() {
+    let (root, worktree) = temp_workspace("force-copy-over-directory-symlink");
+    let linked_directory = worktree.join("old-dir");
+    fs::write(root.join(".env"), "new\n").expect("source should be written");
+    fs::create_dir_all(&linked_directory).expect("linked directory should be created");
+    fs::write(linked_directory.join("keep"), "keep\n")
+        .expect("linked directory content should be written");
+    symlink_dir(&linked_directory, worktree.join(".env"))
+        .expect("target directory symlink should be created");
+    let plan = run_plan(
+        &root,
+        &worktree,
+        vec![operation(
+            FileOperationKind::Copy,
+            &root,
+            &worktree,
+            ".env",
+            ".env",
+        )],
+    );
+    let mut reporter = VecReporter::default();
+
+    apply_file_operations(
+        &plan,
+        FileApplyOptions {
+            force: true,
+            ..FileApplyOptions::default()
+        },
+        &mut reporter,
+    )
+    .expect("force copy should replace target directory symlink");
+
+    assert_eq!(
+        fs::read_to_string(worktree.join(".env")).expect("target should be readable"),
+        "new\n"
+    );
+    assert_eq!(
+        fs::read_to_string(linked_directory.join("keep"))
+            .expect("linked directory content should remain readable"),
+        "keep\n"
+    );
+}
+
+#[test]
 fn apply_file_operations_should_reject_symlink_target_parent_before_copy() {
     let (root, worktree) = temp_workspace("copy-symlink-parent");
     let outside = worktree
