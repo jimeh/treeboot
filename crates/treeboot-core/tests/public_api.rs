@@ -7,13 +7,16 @@ use treeboot_core::{
     ActionPlan, ActionPlanOptions, CheckAction, CommandKind, Config, ConfigOptions,
     DiagnosticStatus, Environment, EnvironmentInput, Error, ExecuteOptions, Executor,
     FileOperation, FileOperationAction, FileOperationCompletionOptions, FileOperationKind,
-    FileOperationOptions, FileOperationSummary, IgnoredInitScript, InitKind, InitScriptDiscovery,
-    InitScriptStatus, LoadedConfig, ManualFileOperationOptions, MetadataField, OutputEvent,
-    PlanOrigin, PlannedFileStatus, Reporter, RunAction, RunOptions, SourceSpan, StatusOptions,
-    SymlinkMode, SyncCompare, Worktree, WorktreeOptions, check, config_schema_json, diagnose,
-    file_operation_source_candidates, inspect_config, inspect_env, inspect_status,
-    inspect_status_snapshot, run, run_file_operation, treeboot_version_info, version_info,
+    FileOperationOptions, FileOperationSummary, InitKind, InitScriptStatus, LoadedConfig,
+    ManualFileOperationOptions, MetadataField, OutputEvent, PlanOrigin, PlannedFileStatus,
+    Reporter, RunAction, RunOptions, SourceSpan, StatusOptions, SymlinkMode, SyncCompare, Worktree,
+    WorktreeOptions, check, config_schema_json, diagnose, file_operation_source_candidates,
+    inspect_config, inspect_env, inspect_status, inspect_status_snapshot, run, run_file_operation,
+    treeboot_version_info, version_info,
 };
+
+#[cfg(unix)]
+use treeboot_core::{IgnoredInitScript, InitScriptDiscovery};
 
 #[derive(Default)]
 struct VecReporter {

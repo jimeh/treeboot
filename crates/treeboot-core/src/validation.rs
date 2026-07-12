@@ -439,7 +439,7 @@ impl PlannedFileOperation {
         self
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn with_ignore_metadata(mut self, ignore_metadata: Vec<MetadataField>) -> Self {
         self.ignore_metadata = ignore_metadata;
         self

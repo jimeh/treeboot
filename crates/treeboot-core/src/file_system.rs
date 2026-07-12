@@ -6,10 +6,11 @@ use std::path::{Component, Path, PathBuf};
 use crate::file_actions::{MetadataPolicy, MetadataTarget};
 use crate::paths;
 use crate::{
-    ActionPlan, Error, FileOperationKind, OutputEvent, PlannedFileOperation, Reporter, Result,
-    SyncCompare,
+    ActionPlan, Error, FileOperationKind, PlannedFileOperation, Reporter, Result, SyncCompare,
 };
 
+#[cfg(unix)]
+use crate::OutputEvent;
 #[cfg(unix)]
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 #[cfg(windows)]
@@ -1087,6 +1088,7 @@ fn normalize_lexical(path: &Path) -> PathBuf {
     normalized
 }
 
+#[cfg(unix)]
 fn report(reporter: &mut dyn Reporter, event: OutputEvent) -> Result<()> {
     reporter
         .report(event)

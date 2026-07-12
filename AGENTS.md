@@ -264,7 +264,9 @@ work. Lefthook checks staged Markdown files through
 - `mise.toml` pins `sccache` and sets `RUSTC_WRAPPER=sccache` so Cargo tasks use
   the project-managed compiler cache instead of relying on global shell setup.
 - Rust toolchain version and components live in `rust-toolchain.toml` so Rustup
-  and mise consume the same source. Renovate updates the toolchain and runs
+  and mise consume the same source. Mise exports that version through
+  `RUSTUP_TOOLCHAIN`; CI install steps rely on it instead of duplicating the
+  version in workflow YAML. Renovate updates the toolchain and runs
   `mise lock rust` in the same branch so locked installs remain usable.
 - CI sets `MISE_RUSTUP_HOME` so `mise-action` caches the rustup toolchains and
   components declared by the project; cross-OS test jobs use a workspace-local
@@ -272,6 +274,8 @@ work. Lefthook checks staged Markdown files through
 - CI test jobs install the configured Rust toolchain in one serial step before
   `mise run test`; the aggregate test task uses one Cargo invocation so shared
   test-profile compilation is not split across parallel package tasks.
+- CI runs Rust linting on both Ubuntu and Windows so platform-gated code is
+  checked with warnings denied.
 - Release-please and Renovate must use the repo's `RELEASE_BOT_CLIENT_ID`
   variable and `RELEASE_BOT_PRIVATE_KEY` secret so automation-created commits
   and PRs trigger the expected follow-up workflows.

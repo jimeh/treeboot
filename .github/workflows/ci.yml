@@ -77,8 +77,21 @@ jobs:
           TREEBOOT_SPEC_BASE_REF: ${{ github.event.pull_request.base.sha }}
 
   lint:
-    runs-on: ubuntu-latest
+    name: lint (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
+    env:
+      MISE_RUSTUP_HOME: ${{ matrix.rustup-home }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            rustup-home: /home/runner/.local/share/mise/rustup
+            task: lint
+          - runner: windows-2025
+            rustup-home: ${{ github.workspace }}/.mise-rustup
+            task: lint:rust
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -87,7 +100,16 @@ jobs:
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           cache_key: mise-v2-${{ github.event_name }}-{{platform}}-{{file_hash}}
-      - run: mise run lint
+      - name: Install Rust toolchain
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          rustup toolchain install "${RUSTUP_TOOLCHAIN}" \
+            --component clippy \
+            --component rust-analyzer \
+            --component rust-src \
+            --component rustfmt
+      - run: mise run ${{ matrix.task }}
 
   msrv:
     runs-on: ubuntu-latest
