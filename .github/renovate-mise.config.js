@@ -3,7 +3,7 @@ const updateSchedule =
   process.env.RENOVATE_BYPASS_SCHEDULE === "true" ? null : monthlySchedule;
 
 module.exports = {
-  allowedCommands: ["^mise lock rust$"],
+  allowedCommands: ["^mise trust mise\\.toml$", "^mise lock rust$"],
   allowedUnsafeExecutions: ["mise"],
   branchPrefix: "renovate-mise/",
   dependencyDashboard: false,
@@ -27,7 +27,7 @@ module.exports = {
       groupSlug: "rust-toolchain",
       matchManagers: ["rust-toolchain"],
       postUpgradeTasks: {
-        commands: ["mise lock rust"],
+        commands: ["mise trust mise.toml", "mise lock rust"],
         executionMode: "update",
         fileFilters: ["mise.lock"],
         installTools: {
