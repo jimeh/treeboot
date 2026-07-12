@@ -53,6 +53,13 @@ PR titles as concise, user-facing changelog lines, not just branch summaries.
 Prefer conventional prefixes when they fit, and make the subject clear when read
 in a release note.
 
+## Pull Request Final Review
+
+Add the `coderabbit:review` label only when the PR is fully implemented,
+validated, and otherwise ready to merge. Treat the resulting CodeRabbit review
+as the final review gate: address its actionable feedback and wait for the gate
+to pass before merging.
+
 ## Repo Shape
 
 - `crates/treeboot` is the CLI package and should stay thin.
