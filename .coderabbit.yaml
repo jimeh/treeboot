@@ -8,8 +8,6 @@ reviews:
   high_level_summary_in_walkthrough: true
   in_progress_fortune: false
   poem: false
-  auto_review:
-    enabled: false
   finishing_touches:
     unit_tests:
       enabled: false
