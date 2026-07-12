@@ -141,7 +141,7 @@ url_api = "https://api.github.com/repos/evilmartians/lefthook/releases/assets/43
 provenance = "github-attestations"
 
 [[tools.markdownlint-cli2]]
-version = "0.22.1"
+version = "0.23.0"
 backend = "npm:markdownlint-cli2"
 
 [[tools.oxfmt]]
