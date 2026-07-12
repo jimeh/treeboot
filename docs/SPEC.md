@@ -1,4 +1,4 @@
-# treeboot Specification v1.15.0
+# treeboot Specification v1.16.0
 
 A portable worktree bootstrapper that lets every coding agent, editor, and
 orchestration tool run the same repo-local setup command.
@@ -13,6 +13,8 @@ default, script escape hatch, agent-tool aliases
 | Worktree path   | Current worktree root where operations execute             |
 | Conflict policy | Skip existing by default, strict validates, force replaces |
 | Primary file    | `.treeboot.toml`                                           |
+
+treeboot requires Git 2.36 or newer.
 
 ## Intent: One setup contract for many tools
 
@@ -710,6 +712,11 @@ overridden.
 
 Current worktree root. File targets and command execution are anchored here.
 
+The current worktree path resolved from `git rev-parse --show-toplevel`
+preserves platform-native filesystem path data. On Unix, this includes non-UTF-8
+bytes and boundary whitespace. Only Git's single trailing LF delimiter is
+removed.
+
 ### Root Path Discovery
 
 The root path is the checkout used as the source for copy, symlink, and sync
@@ -720,7 +727,12 @@ operations.
 3. Use `CODEX_SOURCE_TREE_PATH`, if set.
 4. Use `CONDUCTOR_ROOT_PATH`, if set.
 5. Use `SUPERSET_ROOT_PATH`, if set.
-6. Use Git's main worktree from `git worktree list --porcelain`.
+6. Use Git's main worktree from `git worktree list --porcelain -z`.
+
+Git-discovered worktree and root paths preserve platform-native filesystem path
+data. On Unix, this includes non-UTF-8 bytes and boundary whitespace. Git's
+NUL-delimited worktree output is parsed as bytes so path quoting and embedded
+newlines cannot change the discovered root path.
 
 If no root path can be determined, `treeboot run` fails with a clear error.
 

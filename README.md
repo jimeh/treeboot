@@ -125,6 +125,8 @@ can install from crates.io:
 cargo install treeboot
 ```
 
+Treeboot requires Git 2.36 or newer.
+
 After installing the binary, generate shell completion scripts with
 `treeboot completions <shell>` and install them according to your shell or
 package manager conventions.
@@ -338,7 +340,7 @@ Use `treeboot schema` to print the embedded schema from the installed binary, or
 ## Project Status
 
 `treeboot` is feature-complete for the core worktree bootstrap workflow in
-[spec v1.15.0](./docs/SPEC.md). It supports:
+[spec v1.16.0](./docs/SPEC.md). It supports:
 
 - `run`, `status`, `config`, `check`, `doctor`, `env`, `schema`, `version`,
   `init`, `copy`, `symlink`, `sync`, and `completions`

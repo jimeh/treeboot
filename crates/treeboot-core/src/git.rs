@@ -1,6 +1,11 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+#[cfg(unix)]
+use std::ffi::OsString;
+#[cfg(unix)]
+use std::os::unix::ffi::OsStringExt;
+
 use crate::{Error, Result};
 
 pub(crate) struct Git {
@@ -21,24 +26,21 @@ impl Git {
             return Err(Error::NotGitWorktree);
         }
 
-        Ok(PathBuf::from(trim_stdout(&output.stdout)))
+        Ok(path_from_git_bytes(strip_one_trailing_lf(&output.stdout)))
     }
 
     pub(crate) fn main_worktree_path(&self) -> Result<Option<PathBuf>> {
-        let output = self.output(&["worktree", "list", "--porcelain"])?;
+        let args = ["worktree", "list", "--porcelain", "-z"];
+        let output = self.output(&args)?;
 
         if !output.status.success() {
             return Err(Error::GitFailed {
-                command: command_label(&["worktree", "list", "--porcelain"]),
+                command: command_label(&args),
                 stderr: trim_stderr(&output.stderr),
             });
         }
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(stdout
-            .lines()
-            .find_map(|line| line.strip_prefix("worktree "))
-            .map(PathBuf::from))
+        Ok(parse_main_worktree_path(&output.stdout))
     }
 
     pub(crate) fn default_branch(&self) -> Result<String> {
@@ -79,4 +81,70 @@ fn trim_stdout(stdout: &[u8]) -> String {
 
 fn trim_stderr(stderr: &[u8]) -> String {
     String::from_utf8_lossy(stderr).trim().to_owned()
+}
+
+fn strip_one_trailing_lf(stdout: &[u8]) -> &[u8] {
+    stdout.strip_suffix(b"\n").unwrap_or(stdout)
+}
+
+fn parse_main_worktree_path(stdout: &[u8]) -> Option<PathBuf> {
+    stdout
+        .split(|byte| *byte == b'\0')
+        .find_map(|field| field.strip_prefix(b"worktree "))
+        .map(path_from_git_bytes)
+}
+
+#[cfg(unix)]
+fn path_from_git_bytes(bytes: &[u8]) -> PathBuf {
+    PathBuf::from(OsString::from_vec(bytes.to_vec()))
+}
+
+#[cfg(not(unix))]
+fn path_from_git_bytes(bytes: &[u8]) -> PathBuf {
+    PathBuf::from(String::from_utf8_lossy(bytes).into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strip_one_trailing_lf_should_preserve_boundary_whitespace() {
+        assert_eq!(strip_one_trailing_lf(b" /repo \n"), b" /repo ");
+    }
+
+    #[test]
+    fn strip_one_trailing_lf_should_remove_only_one_lf() {
+        assert_eq!(strip_one_trailing_lf(b"/repo\n\n"), b"/repo\n");
+    }
+
+    #[test]
+    fn parse_main_worktree_path_should_preserve_spaces_and_newlines() {
+        let output = b"worktree /repo/ main\ncheckout\0HEAD abc123\0branch refs/heads/main\0\0";
+
+        assert_eq!(
+            parse_main_worktree_path(output),
+            Some(PathBuf::from("/repo/ main\ncheckout"))
+        );
+    }
+
+    #[test]
+    fn parse_main_worktree_path_should_find_first_worktree_field() {
+        let output = b"worktree /main\0HEAD abc123\0\0worktree /linked\0HEAD def456\0\0";
+
+        assert_eq!(
+            parse_main_worktree_path(output),
+            Some(PathBuf::from("/main"))
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn path_from_git_bytes_should_preserve_non_utf8_bytes() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let path = path_from_git_bytes(b"/repo/\xff");
+
+        assert_eq!(path.as_os_str().as_bytes(), b"/repo/\xff");
+    }
 }
