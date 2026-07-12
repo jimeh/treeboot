@@ -111,8 +111,11 @@ fn build_command(command: &PlannedCommand, context: &Worktree) -> io::Result<Com
 }
 
 fn resolve_command_cwd(command: &PlannedCommand, context: &Worktree) -> io::Result<PathBuf> {
-    let worktree_path = paths::normalize_maybe_existing(&context.worktree_path)?;
-    let cwd_path = paths::normalize_maybe_existing(command.cwd_path())?;
+    let worktree_path = paths::canonicalize(&context.worktree_path)?;
+    let declared_cwd = command.cwd().unwrap_or(context.worktree_path.as_path());
+    let resolved_cwd = paths::resolve_path(&context.worktree_path, declared_cwd)
+        .map_err(|source| io::Error::new(io::ErrorKind::InvalidInput, source.reason()))?;
+    let cwd_path = paths::canonicalize(&resolved_cwd)?;
 
     if !paths::is_within(&cwd_path, &worktree_path) {
         return Err(io::Error::new(
@@ -174,6 +177,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::*;
+    use crate::test_support::symlink_dir;
     use crate::{ActionPlan, SourceSpan};
 
     #[test]
@@ -254,8 +258,7 @@ mod tests {
         )
         .with_cwd(cwd.clone());
         let plan = plan(context, vec![command]);
-        std::os::unix::fs::symlink(&outside, &cwd)
-            .expect("cwd symlink should be created after planning");
+        symlink_dir(&outside, &cwd).expect("cwd symlink should be created after planning");
 
         let error = execute_commands(
             &plan,
@@ -296,8 +299,7 @@ mod tests {
             },
         );
         let plan = plan(context, vec![escaping, later]);
-        std::os::unix::fs::symlink(&outside, &cwd)
-            .expect("cwd symlink should be created after planning");
+        symlink_dir(&outside, &cwd).expect("cwd symlink should be created after planning");
         let mut reporter = Recorder::default();
 
         execute_commands(&plan, CommandExecutionOptions::default(), &mut reporter)
@@ -342,6 +344,69 @@ mod tests {
                 .display()
                 .to_string()
         );
+    }
+
+    #[test]
+    fn execute_commands_should_reject_cwd_symlink_retargeted_after_planning() {
+        let (temp, context) = context("retargeted-cwd-symlink");
+        let safe = temp.path().join("worktree/safe");
+        let outside = temp.path().join("root/shared");
+        let cwd = temp.path().join("worktree/escape");
+        let marker = outside.join("marker");
+        std::fs::create_dir_all(&safe).expect("safe dir should be created");
+        std::fs::create_dir_all(&outside).expect("outside dir should be created");
+        symlink_dir(&safe, &cwd).expect("safe cwd symlink should be created before planning");
+        let command = planned_command(
+            None,
+            CommandKind::Shell {
+                run: format!("echo ran > {}", shell_path(&marker)),
+            },
+        )
+        .with_cwd(cwd.clone());
+        let plan = plan(context, vec![command]);
+        remove_dir_symlink(&cwd).expect("safe cwd symlink should be removed");
+        symlink_dir(&outside, &cwd).expect("cwd symlink should be retargeted after planning");
+
+        let error = execute_commands(
+            &plan,
+            CommandExecutionOptions::default(),
+            &mut Recorder::default(),
+        )
+        .expect_err("retargeted cwd escape should fail");
+
+        assert!(!marker.exists());
+        assert!(
+            error
+                .to_string()
+                .contains("command cwd resolves outside worktree")
+        );
+    }
+
+    #[test]
+    fn execute_commands_should_treat_dangling_cwd_symlink_as_start_failure() {
+        let (temp, context) = context("dangling-cwd-symlink");
+        let cwd = temp.path().join("worktree/dangling");
+        let marker = temp.path().join("worktree/marker");
+        symlink_dir(temp.path().join("worktree/missing"), &cwd)
+            .expect("dangling cwd symlink should be created");
+        let command = planned_command(
+            None,
+            CommandKind::Shell {
+                run: format!("echo ran > {}", shell_path(&marker)),
+            },
+        )
+        .with_cwd(cwd);
+        let plan = plan(context, vec![command]);
+
+        let error = execute_commands(
+            &plan,
+            CommandExecutionOptions::default(),
+            &mut Recorder::default(),
+        )
+        .expect_err("dangling cwd should fail to start");
+
+        assert!(!marker.exists());
+        assert!(matches!(error, Error::CommandIo { .. }));
     }
 
     #[cfg(unix)]
@@ -637,7 +702,9 @@ mod tests {
         }
 
         fn with_cwd(mut self, cwd: PathBuf) -> Self {
-            self.parts.cwd_path = cwd;
+            self.parts.cwd = Some(cwd.clone());
+            self.parts.cwd_path =
+                paths::normalize_maybe_existing(&cwd).expect("test command cwd should normalize");
             self
         }
 
@@ -724,6 +791,16 @@ mod tests {
 
     fn shell_path(path: &Path) -> String {
         path.display().to_string().replace('\'', "'\\''")
+    }
+
+    #[cfg(unix)]
+    fn remove_dir_symlink(path: &Path) -> io::Result<()> {
+        std::fs::remove_file(path)
+    }
+
+    #[cfg(windows)]
+    fn remove_dir_symlink(path: &Path) -> io::Result<()> {
+        std::fs::remove_dir(path)
     }
 
     #[derive(Default)]
