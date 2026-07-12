@@ -188,6 +188,33 @@ fn run_command_only_config_should_execute_from_worktree() {
     assert_eq!(pwd.trim(), worktree);
 }
 
+#[cfg(unix)]
+#[test]
+fn run_should_reject_command_cwd_escaped_by_preceding_symlink() {
+    let repo = git_worktree();
+    let shared = repo.root_path().join("shared");
+    let marker = shared.join("command-pwd");
+    std::fs::create_dir_all(&shared).expect("shared directory should be created");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"
+symlink = [{ source = "shared", target = "escape" }]
+commands = [{ program = "sh", args = ["-c", "pwd > command-pwd"], cwd = "escape" }]
+"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "command cwd resolves outside worktree",
+        ));
+
+    assert!(!marker.exists());
+}
+
 #[test]
 fn run_should_apply_configured_file_ignore_patterns() {
     let repo = git_worktree();

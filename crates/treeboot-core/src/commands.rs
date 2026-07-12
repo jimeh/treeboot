@@ -1,9 +1,11 @@
+use std::io;
+use std::path::PathBuf;
 use std::process::{Command, ExitStatus};
 
 #[cfg(test)]
 use crate::validation::PlannedCommandParts;
 use crate::{
-    ActionPlan, CommandKind, Error, OutputEvent, PlannedCommand, Reporter, Result, Worktree,
+    ActionPlan, CommandKind, Error, OutputEvent, PlannedCommand, Reporter, Result, Worktree, paths,
 };
 
 /// Options that affect command execution.
@@ -47,7 +49,7 @@ fn run_sequential(
         },
     )?;
 
-    let status = match build_command(command, context).status() {
+    let status = match build_command(command, context).and_then(|mut process| process.status()) {
         Ok(status) => status,
         Err(source) => {
             if command.allow_failure() {
@@ -90,7 +92,8 @@ fn report_allowed_failure(
     )
 }
 
-fn build_command(command: &PlannedCommand, context: &Worktree) -> Command {
+fn build_command(command: &PlannedCommand, context: &Worktree) -> io::Result<Command> {
+    let cwd_path = resolve_command_cwd(command, context)?;
     let mut process = match command.command() {
         CommandKind::Shell { run } => build_shell_command(run),
         CommandKind::Direct { program, args } => {
@@ -101,10 +104,24 @@ fn build_command(command: &PlannedCommand, context: &Worktree) -> Command {
     };
 
     process
-        .current_dir(command.cwd_path())
+        .current_dir(cwd_path)
         .envs(&context.environment)
         .envs(command.env());
-    process
+    Ok(process)
+}
+
+fn resolve_command_cwd(command: &PlannedCommand, context: &Worktree) -> io::Result<PathBuf> {
+    let worktree_path = paths::normalize_maybe_existing(&context.worktree_path)?;
+    let cwd_path = paths::normalize_maybe_existing(command.cwd_path())?;
+
+    if !paths::is_within(&cwd_path, &worktree_path) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "command cwd resolves outside worktree",
+        ));
+    }
+
+    Ok(cwd_path)
 }
 
 #[cfg(windows)]
@@ -217,6 +234,113 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(marker).expect("marker should be readable"),
             format!("{}:local", temp.path().join("root").display())
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn execute_commands_should_reject_live_cwd_symlink_escape_without_spawning() {
+        let (temp, context) = context("cwd-symlink-escape");
+        let outside = temp.path().join("root/shared");
+        let cwd = temp.path().join("worktree/escape");
+        let marker = outside.join("marker");
+        std::fs::create_dir_all(&outside).expect("outside dir should be created");
+        let command = planned_command(
+            None,
+            CommandKind::Direct {
+                program: "sh".to_owned(),
+                args: vec!["-c".to_owned(), format!("touch {}", shell_path(&marker))],
+            },
+        )
+        .with_cwd(cwd.clone());
+        let plan = plan(context, vec![command]);
+        std::os::unix::fs::symlink(&outside, &cwd)
+            .expect("cwd symlink should be created after planning");
+
+        let error = execute_commands(
+            &plan,
+            CommandExecutionOptions::default(),
+            &mut Recorder::default(),
+        )
+        .expect_err("live cwd escape should fail");
+
+        assert!(!marker.exists());
+        assert!(
+            error
+                .to_string()
+                .contains("command cwd resolves outside worktree")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn execute_commands_should_allow_live_cwd_escape_failure_and_continue() {
+        let (temp, context) = context("allowed-cwd-symlink-escape");
+        let outside = temp.path().join("root/shared");
+        let cwd = temp.path().join("worktree/escape");
+        let escaped_marker = outside.join("escaped-marker");
+        let later_marker = temp.path().join("worktree/later-marker");
+        std::fs::create_dir_all(&outside).expect("outside dir should be created");
+        let escaping = planned_command(
+            Some("optional escape"),
+            CommandKind::Shell {
+                run: format!("touch {}", shell_path(&escaped_marker)),
+            },
+        )
+        .with_cwd(cwd.clone())
+        .with_allow_failure();
+        let later = planned_command(
+            Some("later"),
+            CommandKind::Shell {
+                run: format!("touch {}", shell_path(&later_marker)),
+            },
+        );
+        let plan = plan(context, vec![escaping, later]);
+        std::os::unix::fs::symlink(&outside, &cwd)
+            .expect("cwd symlink should be created after planning");
+        let mut reporter = Recorder::default();
+
+        execute_commands(&plan, CommandExecutionOptions::default(), &mut reporter)
+            .expect("allowed cwd failure should continue");
+
+        assert!(!escaped_marker.exists());
+        assert!(later_marker.exists());
+        assert!(reporter.messages().iter().any(|message| {
+            message.contains("failed to start: command cwd resolves outside worktree")
+        }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn execute_commands_should_use_in_worktree_cwd_created_after_planning() {
+        let (temp, context) = context("cwd-created-after-plan");
+        let cwd = temp.path().join("worktree/generated");
+        let marker = cwd.join("pwd-marker");
+        let command = planned_command(
+            None,
+            CommandKind::Shell {
+                run: format!("pwd > {}", shell_path(&marker)),
+            },
+        )
+        .with_cwd(cwd.clone());
+        let plan = plan(context, vec![command]);
+        std::fs::create_dir_all(&cwd).expect("cwd should be created after planning");
+
+        execute_commands(
+            &plan,
+            CommandExecutionOptions::default(),
+            &mut Recorder::default(),
+        )
+        .expect("fresh in-worktree cwd should run");
+
+        assert_eq!(
+            std::fs::read_to_string(marker)
+                .expect("pwd marker should be readable")
+                .trim(),
+            paths::canonicalize(&cwd)
+                .expect("cwd should canonicalize")
+                .display()
+                .to_string()
         );
     }
 

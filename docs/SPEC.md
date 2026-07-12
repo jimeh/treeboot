@@ -1,4 +1,4 @@
-# treeboot Specification v1.16.0
+# treeboot Specification v1.16.1
 
 A portable worktree bootstrapper that lets every coding agent, editor, and
 orchestration tool run the same repo-local setup command.
@@ -1171,6 +1171,11 @@ outside the root path are validation errors by default.
 
 Command `cwd` values are normalized relative to `TREEBOOT_WORKTREE_PATH`. Paths
 may contain `..`, but the final resolved path must stay inside the worktree.
+Planning resolves each cwd before any side effect. After file operations finish,
+treeboot re-resolves the cwd and worktree boundary immediately before spawning
+each command and passes the freshly resolved cwd to the child process. If the
+live cwd no longer resolves inside the worktree, the command is not spawned and
+the failure follows the normal command-start `allow_failure` policy.
 
 | Rule                                                        | Behavior                                                        |
 | ----------------------------------------------------------- | --------------------------------------------------------------- |
@@ -1181,7 +1186,8 @@ may contain `..`, but the final resolved path must stay inside the worktree.
 | Source resolves outside the root path                       | Fail before any file operation or command runs.                 |
 | Required file operation source does not exist               | Fail before any file operation or command runs.                 |
 | Optional file operation source does not exist               | Skip that operation, make no target changes, and continue.      |
-| Command `cwd` resolves outside the worktree                 | Fail before any file operation or command runs.                 |
+| Command `cwd` resolves outside the worktree during planning | Fail before any file operation or command runs.                 |
+| Command `cwd` resolves outside the worktree before spawn    | Do not spawn it; fail or warn and continue per `allow_failure`. |
 | Command `env` overrides treeboot-owned variables            | Fail before any file operation or command runs.                 |
 | Copy or sync encounters an unsafe source symlink            | Fail before any file operation or command runs.                 |
 | Preserved copy or sync source symlink changes before apply  | Fail that operation before mutating the target.                 |
@@ -1644,6 +1650,8 @@ but does not attempt to infer whether they are safe.
 - Run after file operations complete successfully.
 - Run even if every file operation was skipped.
 - Commands run sequentially in declaration order.
+- Re-resolve each command cwd and the worktree boundary immediately before
+  spawn, after file operations, and reject a live cwd escape.
 - A command with `allow_failure = true` warns when it cannot be spawned or exits
   non-zero, then later commands continue.
 - Run from `TREEBOOT_WORKTREE_PATH` unless a command sets `cwd`.
@@ -1695,7 +1703,9 @@ Fatal command failures exit non-zero immediately and later commands do not run.
 If a command cannot be spawned, treeboot reports
 `treeboot: failed to run command <label>: <io-error>` to stderr and exits
 non-zero unless `allow_failure = true`. Allowed failures always emit a warning
-and do not make the run fail by themselves.
+and do not make the run fail by themselves. Execution-time cwd resolution or
+boundary failures use the same command-start failure behavior and prevent that
+command from spawning.
 
 ### Cross-platform contract
 

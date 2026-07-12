@@ -8,7 +8,7 @@ use crate::file_system::{TargetAncestorIssue, inspect_target_ancestors, matching
 use crate::path_filter::{
     PathIgnoreRules, PathIncludeRules, include_matches_any_source_path, invalid_include_pattern,
 };
-use crate::paths;
+use crate::paths::{self, is_within};
 use crate::{
     CommandKind, CommandOperation, Config, ConfigRuntimeOptions, Error, FileOperation,
     FileOperationKind, MetadataField, Result, SourceSpan, SymlinkMode, SyncCompare, Worktree,
@@ -1078,7 +1078,7 @@ fn plan_commands(
                 )
             })?;
 
-        if !is_within(&cwd_path, worktree_path) {
+        if !paths::is_within(&cwd_path, worktree_path) {
             return invalid_config(
                 path,
                 Some(command.declaration),
@@ -1409,10 +1409,6 @@ fn normalize_target_path(path: &Path) -> std::io::Result<PathBuf> {
     normalized.push(name);
 
     Ok(paths::normalize_lexical(&normalized))
-}
-
-fn is_within(path: &Path, boundary: &Path) -> bool {
-    path == boundary || path.starts_with(boundary)
 }
 
 #[cfg(test)]
