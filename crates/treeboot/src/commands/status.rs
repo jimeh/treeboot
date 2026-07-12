@@ -64,6 +64,7 @@ fn print_status_text(report: &StatusReport) -> std::io::Result<()> {
                 writeln!(handle, "ignored_init_script: {}", ignored.path.display())?;
             }
         }
+        _ => writeln!(handle, "init_script: (unknown)")?,
     }
 
     if let Some(path) = &report.config {

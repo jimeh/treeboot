@@ -197,7 +197,22 @@ impl FileOperationOptions {
 }
 
 /// Completed action for a manual file operation invocation.
+///
+/// New operation outcomes may be added in future releases. Downstream matches
+/// must include a wildcard arm so they remain forward compatible.
+///
+/// ```compile_fail
+/// use treeboot_core::FileOperationAction;
+///
+/// fn describe(action: FileOperationAction) -> &'static str {
+///     match action {
+///         FileOperationAction::RootWorktreeSkipped => "skipped",
+///         FileOperationAction::Applied => "applied",
+///     }
+/// }
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum FileOperationAction {
     /// The command started from the root checkout and had no work to do.
     RootWorktreeSkipped,

@@ -25,8 +25,12 @@ pub struct StatusOptions {
 }
 
 /// Init script discovery status for a worktree.
+///
+/// New discovery states may be added in future releases. Downstream matches
+/// must include a wildcard arm so they remain forward compatible.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum InitScriptStatus {
     /// Init script discovery was skipped by options.
     Skipped,
