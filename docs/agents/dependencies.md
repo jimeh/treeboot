@@ -39,6 +39,8 @@ dependencies for small wrappers around the standard library.
   dependency.
 - Mise-managed tools use a 7-day `minimum_release_age` cooldown and checked-in
   `mise.lock` to avoid adopting freshly published binaries by default.
+- Renovate owns Rust toolchain updates so each `rust-toolchain.toml` change is
+  paired with the corresponding `mise lock rust` refresh.
 
 ## Guidelines
 
