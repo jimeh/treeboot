@@ -226,11 +226,13 @@ work. Lefthook checks staged Markdown files through
 - Dependabot Cargo and GitHub Actions version updates use a 7-day cooldown.
   Security updates are not affected by Dependabot cooldown and should stay
   alert-driven.
-- Renovate is scoped to monthly mise tool, lockfile, and Rust toolchain
-  maintenance. It runs from `.github/workflows/renovate-mise.yml` with the
-  release bot GitHub App token and uses `.github/renovate-mise.config.js` as
-  self-hosted/global config. Keep `allowedUnsafeExecutions = ["mise"]` for mise
-  lockfile refreshes and exact allowlist entries for `mise trust mise.toml` and
+- Renovate is scoped to monthly mise lockfile and Rust toolchain maintenance. It
+  runs from `.github/workflows/renovate-mise.yml` with the release bot GitHub
+  App token and uses `.github/renovate-mise.config.js` as self-hosted/global
+  config. Keep ordinary mise dependency updates disabled: humans own the
+  constraints in `mise.toml`, while lockfile maintenance refreshes `mise.lock`
+  within them. Keep `allowedUnsafeExecutions = ["mise"]` for mise lockfile
+  refreshes and exact allowlist entries for `mise trust mise.toml` and
   `mise lock rust` so Rust toolchain PRs can trust the temporary checkout before
   updating `mise.lock` with `rust-toolchain.toml`. Keep that package-rule task
   in `executionMode = "update"`; branch mode skips the task. Manual dispatch
@@ -242,7 +244,7 @@ work. Lefthook checks staged Markdown files through
   Keep `:disableDependencyDashboard` in the Renovate preset list; with
   `config:recommended`, `dependencyDashboard: false` alone can still produce a
   Dependency Dashboard issue in this self-hosted flow. Renovate PR creation is
-  intentionally `immediate` so mise updates behave like Dependabot updates. The
+  intentionally `immediate` so updates behave like Dependabot updates. The
   release bot token also needs commit-status write permission; otherwise
   Renovate aborts while setting `renovate/stability-days` and reports the
   misleading `repository-changed` branch error.

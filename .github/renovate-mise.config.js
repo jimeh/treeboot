@@ -18,9 +18,19 @@ module.exports = {
   onboarding: false,
   packageRules: [
     {
-      groupName: "mise tools",
-      groupSlug: "mise-tools",
+      enabled: false,
       matchManagers: ["mise"],
+      matchUpdateTypes: [
+        "major",
+        "minor",
+        "patch",
+        "pin",
+        "pinDigest",
+        "digest",
+        "rollback",
+        "bump",
+        "replacement",
+      ],
     },
     {
       groupName: "Rust toolchain",
