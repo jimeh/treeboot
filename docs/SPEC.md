@@ -14,6 +14,8 @@ default, script escape hatch, agent-tool aliases
 | Conflict policy | Skip existing by default, strict validates, force replaces |
 | Primary file    | `.treeboot.toml`                                           |
 
+treeboot requires Git 2.36 or newer.
+
 ## Intent: One setup contract for many tools
 
 Agentic coding tools already create isolated Git worktrees. The repeated pain is

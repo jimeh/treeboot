@@ -125,6 +125,8 @@ can install from crates.io:
 cargo install treeboot
 ```
 
+Treeboot requires Git 2.36 or newer.
+
 After installing the binary, generate shell completion scripts with
 `treeboot completions <shell>` and install them according to your shell or
 package manager conventions.

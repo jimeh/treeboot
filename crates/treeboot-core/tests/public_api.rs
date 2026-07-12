@@ -127,7 +127,7 @@ fn canonical_path(path: &Path) -> PathBuf {
     dunce::canonicalize(path).expect("path should canonicalize")
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[test]
 fn public_api_worktree_discover_should_preserve_non_utf8_git_paths() {
     use std::os::unix::ffi::OsStringExt;
