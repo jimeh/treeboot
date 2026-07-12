@@ -243,9 +243,10 @@ work. Lefthook checks staged Markdown files through
 - Mise-managed tools use a 7-day release-age cooldown and checked-in
   `mise.lock`; use a narrow override only for urgent security or CI-maintenance
   updates.
-- `mise run treeboot` is the repo-local bootstrap entrypoint. It keeps the
-  released `treeboot` binary task-scoped so CI does not install it as a
-  top-level tool, then runs the declarative `.treeboot.toml` setup contract.
+- `mise run treeboot` is the repo-local bootstrap entrypoint. The released
+  `treeboot` binary is a project-wide mise tool so it is available to direct
+  commands and other tasks; the task runs the declarative `.treeboot.toml` setup
+  contract.
 - Coverage uses `cargo-llvm-cov` through `mise run coverage`; the first run may
   install `llvm-tools-preview` for the active Rust toolchain.
 - Keep optional heavyweight tools task-scoped in `mise.toml`; GitHub Actions
