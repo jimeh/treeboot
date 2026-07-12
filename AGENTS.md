@@ -230,21 +230,22 @@ work. Lefthook checks staged Markdown files through
   maintenance. It runs from `.github/workflows/renovate-mise.yml` with the
   release bot GitHub App token and uses `.github/renovate-mise.config.js` as
   self-hosted/global config. Keep `allowedUnsafeExecutions = ["mise"]` for mise
-  lockfile refreshes and the exact `mise lock rust` command allowlist so Rust
-  toolchain PRs update `mise.lock` with `rust-toolchain.toml`. Keep that
-  package-rule task in `executionMode = "update"`; branch mode skips the task.
-  Manual dispatch sets `RENOVATE_BYPASS_SCHEDULE` so emergency runs bypass the
-  internal Renovate schedule as well as the GitHub Actions cron gate, and
-  exposes an `info`/`debug` Renovate log-level choice for troubleshooting.
-  Scheduled runs default to `info` and make three attempts within the monthly
-  update window so a concurrent default-branch change does not delay maintenance
-  for a month. Keep `:disableDependencyDashboard` in the Renovate preset list;
-  with `config:recommended`, `dependencyDashboard: false` alone can still
-  produce a Dependency Dashboard issue in this self-hosted flow. Renovate PR
-  creation is intentionally `immediate` so mise updates behave like Dependabot
-  updates. The release bot token also needs commit-status write permission;
-  otherwise Renovate aborts while setting `renovate/stability-days` and reports
-  the misleading `repository-changed` branch error.
+  lockfile refreshes and exact allowlist entries for `mise trust mise.toml` and
+  `mise lock rust` so Rust toolchain PRs can trust the temporary checkout before
+  updating `mise.lock` with `rust-toolchain.toml`. Keep that package-rule task
+  in `executionMode = "update"`; branch mode skips the task. Manual dispatch
+  sets `RENOVATE_BYPASS_SCHEDULE` so emergency runs bypass the internal Renovate
+  schedule as well as the GitHub Actions cron gate, and exposes an
+  `info`/`debug` Renovate log-level choice for troubleshooting. Scheduled runs
+  default to `info` and make three attempts within the monthly update window so
+  a concurrent default-branch change does not delay maintenance for a month.
+  Keep `:disableDependencyDashboard` in the Renovate preset list; with
+  `config:recommended`, `dependencyDashboard: false` alone can still produce a
+  Dependency Dashboard issue in this self-hosted flow. Renovate PR creation is
+  intentionally `immediate` so mise updates behave like Dependabot updates. The
+  release bot token also needs commit-status write permission; otherwise
+  Renovate aborts while setting `renovate/stability-days` and reports the
+  misleading `repository-changed` branch error.
 - Mise-managed tools use a 7-day release-age cooldown and checked-in
   `mise.lock`; use a narrow override only for urgent security or CI-maintenance
   updates.
