@@ -96,7 +96,7 @@ jobs:
           cache_key: mise-v2-${{ github.event_name }}-${{ matrix.target }}-{{platform}}-{{file_hash}}
 
       - if: matrix.tool == 'cross'
-        uses: taiki-e/install-action@ace6ebe54a6a0c86dfb5f7764b17f793b6925bc3 # v2.82.3
+        uses: taiki-e/install-action@4684b8405694ae9dd42c9f39ba901a70ae83f4a3 # v2.82.9
         with:
           tool: cross
 
@@ -242,7 +242,7 @@ jobs:
           path: dist
 
       - name: Generate artifact attestations
-        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
         with:
           subject-path: |
             dist/config.schema.json
