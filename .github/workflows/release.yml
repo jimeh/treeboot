@@ -137,10 +137,17 @@ jobs:
           fi
 
       - if: matrix.smoke == 'cross'
+        name: Smoke-test CLI under Cross
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
-        run: cross run -p treeboot --locked --release --target "${TARGET}" -- --version
+        run: |
+          cross test \
+            -p treeboot \
+            --locked \
+            --release \
+            --target "${TARGET}" \
+            --test cli
 
       - if: matrix.smoke == 'native'
         shell: bash
