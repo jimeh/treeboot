@@ -51,43 +51,43 @@ url_api = "https://api.github.com/repos/rhysd/actionlint/releases/assets/3849249
 provenance = "github-attestations"
 
 [[tools."github:jimeh/treeboot"]]
-version = "0.7.0"
+version = "0.9.0"
 backend = "github:jimeh/treeboot"
 
 [tools."github:jimeh/treeboot"."platforms.linux-arm64"]
-checksum = "sha256:6b6ad72cd51d7a4bc8913c3fb79201888a2312f109b50bc1d75903421193f40e"
-url = "https://github.com/jimeh/treeboot/releases/download/v0.7.0/treeboot-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/459500161"
+checksum = "sha256:895da866ba763db358236029a45db5023675be241895900a505ee0f86020a72d"
+url = "https://github.com/jimeh/treeboot/releases/download/v0.9.0/treeboot-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/466447653"
 provenance = "github-attestations"
 
 [tools."github:jimeh/treeboot"."platforms.linux-x64"]
-checksum = "sha256:3dcfd1a9e1b2c346a7bc6248805637b3dd495e21b1f38f4ece50d97cd32ae479"
-url = "https://github.com/jimeh/treeboot/releases/download/v0.7.0/treeboot-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/459500180"
+checksum = "sha256:c8f6d8483173fce5813289782cc8d54f249459b3e175f85a1667d61a49f3f3dc"
+url = "https://github.com/jimeh/treeboot/releases/download/v0.9.0/treeboot-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/466447667"
 provenance = "github-attestations"
 
 [tools."github:jimeh/treeboot"."platforms.macos-arm64"]
-checksum = "sha256:4513ab3b20a7b00c2fcd57b9fad584545ef0f5129fce3876ac8ec73ff64cf935"
-url = "https://github.com/jimeh/treeboot/releases/download/v0.7.0/treeboot-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/459500146"
+checksum = "sha256:6b040d26fdb4bcd2e3dee57c291bb855601be010bd3ed48d69fcf6a8a5a854bf"
+url = "https://github.com/jimeh/treeboot/releases/download/v0.9.0/treeboot-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/466447632"
 provenance = "github-attestations"
 
 [tools."github:jimeh/treeboot"."platforms.macos-x64"]
-checksum = "sha256:7460b6b98bee49b1bffcc2c907648158ace8cc56f6a71583ab6b68b5f154545b"
-url = "https://github.com/jimeh/treeboot/releases/download/v0.7.0/treeboot-x86_64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/459500173"
+checksum = "sha256:d6bd948930b2243446f62fd2873da05500825e9af8e7c8ad1d4cebd0e809d8ad"
+url = "https://github.com/jimeh/treeboot/releases/download/v0.9.0/treeboot-x86_64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/466447662"
 provenance = "github-attestations"
 
 [tools."github:jimeh/treeboot"."platforms.windows-arm64"]
-checksum = "sha256:1810da516ce2b10bd055fcccf8bf4d8a7f39e82d939249ee555d608bbfbfbef8"
-url = "https://github.com/jimeh/treeboot/releases/download/v0.7.0/treeboot-aarch64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/459500156"
+checksum = "sha256:c75dfbfd51e4dad61cb8ab0a68accb05cbb070ff856c332580005967f58725f0"
+url = "https://github.com/jimeh/treeboot/releases/download/v0.9.0/treeboot-aarch64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/466447650"
 provenance = "github-attestations"
 
 [tools."github:jimeh/treeboot"."platforms.windows-x64"]
-checksum = "sha256:0d9a56f6d73b414d44aec5690c7f5627091771a8ac0ed85f1455a77faf1fabf4"
-url = "https://github.com/jimeh/treeboot/releases/download/v0.7.0/treeboot-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/459500175"
+checksum = "sha256:42a779b1d979fbb7605af863b2e0a508bf650bee2bdaf54b735900aa2da464bf"
+url = "https://github.com/jimeh/treeboot/releases/download/v0.9.0/treeboot-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/466447665"
 provenance = "github-attestations"
 
 [[tools.lefthook]]
@@ -141,11 +141,11 @@ url_api = "https://api.github.com/repos/evilmartians/lefthook/releases/assets/43
 provenance = "github-attestations"
 
 [[tools.markdownlint-cli2]]
-version = "0.22.1"
+version = "0.23.0"
 backend = "npm:markdownlint-cli2"
 
 [[tools.oxfmt]]
-version = "0.55.0"
+version = "0.57.0"
 backend = "npm:oxfmt"
 
 [[tools.pinact]]
