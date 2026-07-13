@@ -8,7 +8,6 @@ module.exports = {
   branchPrefix: "renovate-mise/",
   dependencyDashboard: false,
   enabledManagers: ["mise", "rust-toolchain"],
-  excludeCommitPaths: ["mise.toml"],
   extends: ["config:recommended", ":disableDependencyDashboard"],
   lockFileMaintenance: {
     enabled: true,
@@ -22,7 +21,6 @@ module.exports = {
       groupName: "mise tools",
       groupSlug: "mise-tools",
       matchManagers: ["mise"],
-      rangeStrategy: "pin",
     },
     {
       groupName: "Rust toolchain",

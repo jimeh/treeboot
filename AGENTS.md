@@ -229,19 +229,16 @@ work. Lefthook checks staged Markdown files through
 - Renovate is scoped to monthly mise tool, lockfile, and Rust toolchain
   maintenance. It runs from `.github/workflows/renovate-mise.yml` with the
   release bot GitHub App token and uses `.github/renovate-mise.config.js` as
-  self-hosted/global config. Humans own the constraints in `mise.toml`; keep it
-  in top-level `excludeCommitPaths` because a grouped package rule does not
-  carry that option into the final branch. Use `rangeStrategy = "pin"` for mise
-  updates so Renovate temporarily pins fuzzy constraints before `mise lock`;
-  otherwise mise preserves an existing lock version that still satisfies the
-  constraint. Together these settings refresh `mise.lock` without committing the
-  temporary constraint changes. Keep `allowedUnsafeExecutions = ["mise"]` for
-  mise lockfile refreshes and exact allowlist entries for `mise trust mise.toml`
-  and `mise lock rust` so Rust toolchain PRs can trust the temporary checkout
-  before updating `mise.lock` with `rust-toolchain.toml`. Keep that package-rule
-  task in `executionMode = "update"`; branch mode skips the task. Manual
-  dispatch sets `RENOVATE_BYPASS_SCHEDULE` so emergency runs bypass the internal
-  Renovate schedule as well as the GitHub Actions cron gate, and exposes an
+  self-hosted/global config. Mise tools use exact versions in `mise.toml` so
+  Renovate updates the constraints and `mise.lock` together; fuzzy constraints
+  preserve satisfying lock entries and prevent lock-only upgrades. Keep
+  `allowedUnsafeExecutions = ["mise"]` for mise lockfile refreshes and exact
+  allowlist entries for `mise trust mise.toml` and `mise lock rust` so Rust
+  toolchain PRs can trust the temporary checkout before updating `mise.lock`
+  with `rust-toolchain.toml`. Keep that package-rule task in
+  `executionMode = "update"`; branch mode skips the task. Manual dispatch sets
+  `RENOVATE_BYPASS_SCHEDULE` so emergency runs bypass the internal Renovate
+  schedule as well as the GitHub Actions cron gate, and exposes an
   `info`/`debug` Renovate log-level choice for troubleshooting. Scheduled runs
   default to `info` and make three attempts within the monthly update window so
   a concurrent default-branch change does not delay maintenance for a month.
