@@ -26,11 +26,11 @@ run_auto_install = true
 [tools]
 actionlint = "1.7.12"
 lefthook = "2.1.9"
-markdownlint-cli2 = "0.22.1"
-oxfmt = "0.55.0"
+markdownlint-cli2 = "0.23.0"
+oxfmt = "0.57.0"
 pinact = "4.1.0"
 sccache = "0.16.0"
-"github:jimeh/treeboot" = "0.7.0"
+"github:jimeh/treeboot" = "0.9.0"
 shellcheck = "0.11.0"
 zizmor = "1.26.1"
 
