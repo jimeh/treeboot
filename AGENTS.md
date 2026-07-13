@@ -285,6 +285,13 @@ work. Lefthook checks staged Markdown files through
 - Android release targets use the hosted runner's Android NDK clang linkers
   instead of `cross`; the cross Android images fail with Rust 1.96 due to
   missing `libunwind` during binary linking.
+- Musl release smoke tests run the `cli` integration test under `cross` instead
+  of forwarding `--version` through `cross run`. Cross 0.2.5 drops the binary
+  arguments in this path, causing treeboot's default command to run against the
+  image's unsupported Git 2.25.1.
+- When validating multiple `cross` targets locally, give each target a distinct
+  `CARGO_TARGET_DIR`. Reused host build scripts can require newer glibc than the
+  Ubuntu 20.04 cross images provide.
 - Android release asset names intentionally omit the Rust target triple's
   `linux` segment (`x86_64-android`, not `x86_64-linux-android`) so desktop
   Linux GitHub release installers such as mise do not pick Android archives.
