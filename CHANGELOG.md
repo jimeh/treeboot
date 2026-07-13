@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.10.0](https://github.com/jimeh/treeboot/compare/v0.9.0...v0.10.0) (2026-07-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* public operational enums in treeboot-core are now non-exhaustive. Downstream crates that exhaustively match these enums will no longer compile and must add a wildcard arm or otherwise handle unknown future variants. The CLI and configuration contract are unchanged.
+
+### Features
+
+* preserve public enum extensibility ([#92](https://github.com/jimeh/treeboot/issues/92)) ([0a72649](https://github.com/jimeh/treeboot/commit/0a726494ca40c77cf35d8cd08a4133434254ded7))
+
+
+### Bug Fixes
+
+* allow Renovate to complete Rust updates ([#101](https://github.com/jimeh/treeboot/issues/101)) ([6d62f86](https://github.com/jimeh/treeboot/commit/6d62f865747c43f60a551ccca8e4ef04c3a764b5))
+* keep musl release smoke tests runnable ([#113](https://github.com/jimeh/treeboot/issues/113)) ([0ca82fe](https://github.com/jimeh/treeboot/commit/0ca82fe881f554b21d1c23ade89e649e42c5be20))
+* keep Renovate from rewriting mise constraints ([#107](https://github.com/jimeh/treeboot/issues/107)) ([5ba2812](https://github.com/jimeh/treeboot/commit/5ba2812276374ffc92b408110a904ddbb995462d))
+* keep Rust toolchain lockfile updates in sync ([#98](https://github.com/jimeh/treeboot/issues/98)) ([ba6acf2](https://github.com/jimeh/treeboot/commit/ba6acf2a1a04233d0ba728fec8e8efb45d011f3a))
+* keep treeboot mise versions normalized ([#112](https://github.com/jimeh/treeboot/issues/112)) ([45b00ed](https://github.com/jimeh/treeboot/commit/45b00edec552d9d09afcdb6a53d6fef03c58c049))
+* let Renovate refresh the Rust lockfile ([#104](https://github.com/jimeh/treeboot/issues/104)) ([d3836a5](https://github.com/jimeh/treeboot/commit/d3836a580150d0774355217454321d5a30ee35d1))
+* make Renovate update mise tools reliably ([#111](https://github.com/jimeh/treeboot/issues/111)) ([3b25c08](https://github.com/jimeh/treeboot/commit/3b25c088ed679902397c92f005265bf0f8a4c752))
+* preserve native Git worktree paths ([#90](https://github.com/jimeh/treeboot/issues/90)) ([c05c814](https://github.com/jimeh/treeboot/commit/c05c8147a3d1b6be8f096ef649ffa6733599e037))
+* prevent command cwd escapes after file operations ([#91](https://github.com/jimeh/treeboot/issues/91)) ([cae33b6](https://github.com/jimeh/treeboot/commit/cae33b60c7ecf70434f6e2ed7f2ba66ad72fbce9))
+* update fuzzy mise locks without changing constraints ([#110](https://github.com/jimeh/treeboot/issues/110)) ([f74fea3](https://github.com/jimeh/treeboot/commit/f74fea346748643a453b5451fd40323f5d254e93))
+* update mise locks without rewriting constraints ([#108](https://github.com/jimeh/treeboot/issues/108)) ([efee101](https://github.com/jimeh/treeboot/commit/efee1016e048b9801c8f4bb4ca149bb885aa5430))
+
 ## [0.9.0](https://github.com/jimeh/treeboot/compare/v0.8.2...v0.9.0) (2026-07-04)
 
 
