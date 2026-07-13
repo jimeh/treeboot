@@ -231,8 +231,10 @@ work. Lefthook checks staged Markdown files through
   release bot GitHub App token and uses `.github/renovate-mise.config.js` as
   self-hosted/global config. Mise tools use exact versions in `mise.toml` so
   Renovate updates the constraints and `mise.lock` together; fuzzy constraints
-  preserve satisfying lock entries and prevent lock-only upgrades. Keep
-  `allowedUnsafeExecutions = ["mise"]` for mise lockfile refreshes and exact
+  preserve satisfying lock entries and prevent lock-only upgrades. Keep the
+  `github:jimeh/treeboot` `extractVersion` rule so GitHub release tags do not
+  reintroduce a `v` prefix into `mise.toml`. Keep
+  `allowedUnsafeExecutions = ["mise"]` for mise lockfile refreshes. Keep exact
   allowlist entries for `mise trust mise.toml` and `mise lock rust` so Rust
   toolchain PRs can trust the temporary checkout before updating `mise.lock`
   with `rust-toolchain.toml`. Keep that package-rule task in
