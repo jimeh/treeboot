@@ -23,6 +23,11 @@ module.exports = {
       matchManagers: ["mise"],
     },
     {
+      extractVersion: "^v?(?<version>.+)$",
+      matchDepNames: ["github:jimeh/treeboot"],
+      matchManagers: ["mise"],
+    },
+    {
       groupName: "Rust toolchain",
       groupSlug: "rust-toolchain",
       matchManagers: ["rust-toolchain"],
