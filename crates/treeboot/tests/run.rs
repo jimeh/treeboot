@@ -128,6 +128,46 @@ fn root_checkout_should_skip_config_detection() {
         .stdout(predicate::str::contains("treeboot: config detected").not());
 }
 
+#[cfg(unix)]
+#[test]
+fn root_checkout_should_ignore_legacy_scripts_and_skip_config() {
+    let repo = git_repo();
+    let script_output = repo.path().join("script.out");
+    let command_output = repo.path().join("command.out");
+    for relative in [".treeboot.sh", ".treebootrc", ".config/treeboot/init"] {
+        let script = repo.path().join(relative);
+        let parent = script.parent().expect("legacy script should have a parent");
+        std::fs::create_dir_all(parent).expect("legacy script parent should be created");
+        write_executable_script(
+            &script,
+            &format!(
+                "#!/bin/sh\nprintf 'script\\n' > {}\n",
+                script_output.display()
+            ),
+        );
+    }
+    write_file(
+        &repo.path().join(".treeboot.toml"),
+        &format!(
+            "commands = [{{ run = \"printf 'command\\n' > {}\" }}]\n",
+            toml_string_path(&command_output)
+        ),
+    );
+
+    treeboot()
+        .current_dir(repo.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "treeboot: This is not a work tree",
+        ))
+        .stdout(predicate::str::contains("treeboot: config detected").not())
+        .stdout(predicate::str::contains(".treeboot.sh").not());
+
+    assert!(!script_output.exists());
+    assert!(!command_output.exists());
+}
+
 #[test]
 fn run_outside_git_worktree_should_exit_with_runtime_failure() {
     let dir = TempDir::new().expect("tempdir should be created");
@@ -2205,7 +2245,6 @@ fn config_option_should_ignore_executable_legacy_script() {
     assert!(!marker.exists());
 }
 
-#[cfg(unix)]
 #[test]
 fn no_init_script_top_level_flag_should_be_usage_error() {
     let repo = git_worktree();
@@ -2217,7 +2256,6 @@ fn no_init_script_top_level_flag_should_be_usage_error() {
         .stderr(predicate::str::contains("unexpected argument"));
 }
 
-#[cfg(unix)]
 #[test]
 fn no_init_script_run_flag_should_be_usage_error() {
     let repo = git_worktree();
