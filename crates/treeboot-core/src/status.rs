@@ -4,10 +4,7 @@ use serde::Serialize;
 
 use crate::check::WorktreeSnapshot;
 use crate::context;
-use crate::{
-    Config, EnvironmentInput, IgnoredInitScript, InitScriptDiscovery, Result, Worktree,
-    WorktreeOptions,
-};
+use crate::{Config, EnvironmentInput, Result, Worktree, WorktreeOptions};
 
 /// Options for inspecting treeboot discovery status.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -20,30 +17,6 @@ pub struct StatusOptions {
     pub environment: EnvironmentInput,
     /// Uses one specific config file instead of config discovery.
     pub config: Option<PathBuf>,
-    /// Skips init script discovery.
-    pub no_init_script: bool,
-}
-
-/// Init script discovery status for a worktree.
-///
-/// New discovery states may be added in future releases. Downstream matches
-/// must include a wildcard arm so they remain forward compatible.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "status", rename_all = "snake_case")]
-#[non_exhaustive]
-pub enum InitScriptStatus {
-    /// Init script discovery was skipped by options.
-    Skipped,
-    /// No executable init script was found.
-    NotFound {
-        /// Existing init script paths that were ignored.
-        ignored: Vec<IgnoredInitScript>,
-    },
-    /// An executable init script was found.
-    Found {
-        /// Init script path.
-        path: PathBuf,
-    },
 }
 
 /// Result summary for a `treeboot status` invocation.
@@ -51,8 +24,6 @@ pub enum InitScriptStatus {
 pub struct StatusReport {
     /// Runtime context discovered for the current worktree.
     pub context: Worktree,
-    /// Init script discovery result.
-    pub init_script: InitScriptStatus,
     /// Selected config path, when one was requested or discovered.
     pub config: Option<PathBuf>,
 }
@@ -62,8 +33,6 @@ pub struct StatusReport {
 pub struct StatusSnapshotReport {
     /// Runtime context snapshot discovered for the current worktree.
     pub context: WorktreeSnapshot,
-    /// Init script discovery result.
-    pub init_script: InitScriptStatus,
     /// Selected config path, when one was requested or discovered.
     pub config: Option<PathBuf>,
 }
@@ -72,16 +41,14 @@ impl From<&StatusReport> for StatusSnapshotReport {
     fn from(report: &StatusReport) -> Self {
         Self {
             context: WorktreeSnapshot::from(&report.context),
-            init_script: report.init_script.clone(),
             config: report.config.clone(),
         }
     }
 }
 
-/// Inspects worktree, root, init script, and config discovery status.
+/// Inspects worktree, root, and config discovery status.
 ///
-/// This function does not execute init scripts, parse config, or run configured
-/// commands.
+/// This function does not parse config or run configured commands.
 ///
 /// # Errors
 ///
@@ -93,25 +60,15 @@ pub fn inspect_status(options: StatusOptions) -> Result<StatusReport> {
         root: options.root,
         environment: options.environment,
     })?;
-    let init_script = if options.no_init_script || options.config.is_some() {
-        InitScriptStatus::Skipped
-    } else {
-        inspect_init_script(&context)
-    };
     let config = Config::discover_path(&context, options.config.as_deref())?;
 
-    Ok(StatusReport {
-        context,
-        init_script,
-        config,
-    })
+    Ok(StatusReport { context, config })
 }
 
-/// Inspects worktree, root, init script, and config discovery status as a
-/// serializable snapshot.
+/// Inspects worktree, root, and config discovery status as a serializable
+/// snapshot.
 ///
-/// This function does not execute init scripts, parse config, or run configured
-/// commands.
+/// This function does not parse config or run configured commands.
 ///
 /// # Errors
 ///
@@ -119,16 +76,4 @@ pub fn inspect_status(options: StatusOptions) -> Result<StatusReport> {
 /// not exist.
 pub fn inspect_status_snapshot(options: StatusOptions) -> Result<StatusSnapshotReport> {
     inspect_status(options).map(|report| StatusSnapshotReport::from(&report))
-}
-
-fn inspect_init_script(context: &Worktree) -> InitScriptStatus {
-    let scripts = InitScriptDiscovery::discover(context);
-
-    if let Some(path) = scripts.executable {
-        InitScriptStatus::Found { path }
-    } else {
-        InitScriptStatus::NotFound {
-            ignored: scripts.ignored,
-        }
-    }
 }

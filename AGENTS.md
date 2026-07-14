@@ -92,7 +92,6 @@ commands:
   `version`, `init`, `copy`, `symlink`, `sync`, and `completions`
 - Git worktree/root/default-branch discovery
 - treeboot environment aliases
-- init script discovery and execution
 - declarative TOML config parsing and normalization
 - declarative TOML validation and action-plan construction
 - config/env/CLI runtime option precedence for declarative validation
@@ -108,7 +107,7 @@ commands:
 - side-effect-free check, doctor, env, schema, and version inspection commands
 - generated JSON Schema for the config file format
 - generated spec-version asset and embedded config schema accessors
-- starter config/script generation
+- starter config generation
 - shell completion generation with root-relative source completion for manual
   file operations
 - release-please version/changelog automation

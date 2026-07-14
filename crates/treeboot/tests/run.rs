@@ -130,13 +130,28 @@ fn root_checkout_should_skip_config_detection() {
 
 #[cfg(unix)]
 #[test]
-fn root_checkout_should_skip_executable_init_script() {
+fn root_checkout_should_ignore_legacy_scripts_and_skip_config() {
     let repo = git_repo();
-    let script = repo.path().join(".treeboot.sh");
-    let marker = repo.path().join("script.out");
-    write_executable_script(
-        &script,
-        &format!("#!/bin/sh\nprintf 'ran\\n' > {}\n", marker.display()),
+    let script_output = repo.path().join("script.out");
+    let command_output = repo.path().join("command.out");
+    for relative in [".treeboot.sh", ".treebootrc", ".config/treeboot/init"] {
+        let script = repo.path().join(relative);
+        let parent = script.parent().expect("legacy script should have a parent");
+        std::fs::create_dir_all(parent).expect("legacy script parent should be created");
+        write_executable_script(
+            &script,
+            &format!(
+                "#!/bin/sh\nprintf 'script\\n' > {}\n",
+                script_output.display()
+            ),
+        );
+    }
+    write_file(
+        &repo.path().join(".treeboot.toml"),
+        &format!(
+            "commands = [{{ run = \"printf 'command\\n' > {}\" }}]\n",
+            toml_string_path(&command_output)
+        ),
     );
 
     treeboot()
@@ -146,9 +161,11 @@ fn root_checkout_should_skip_executable_init_script() {
         .stdout(predicate::str::contains(
             "treeboot: This is not a work tree",
         ))
-        .stdout(predicate::str::contains("treeboot: run").not());
+        .stdout(predicate::str::contains("treeboot: config detected").not())
+        .stdout(predicate::str::contains(".treeboot.sh").not());
 
-    assert!(!marker.exists());
+    assert!(!script_output.exists());
+    assert!(!command_output.exists());
 }
 
 #[test]
@@ -1122,16 +1139,9 @@ symlink = [{{ source = "source", target = "{}" }}]
     assert!(target.is_dir());
 }
 
-#[cfg(unix)]
 #[test]
-fn run_invalid_boolean_env_should_fail_before_init_script() {
+fn run_invalid_boolean_env_should_fail_before_config_discovery() {
     let repo = git_worktree();
-    let script = repo.worktree_path().join(".treeboot.sh");
-    let marker = repo.worktree_path().join("script.out");
-    write_executable_script(
-        &script,
-        &format!("#!/bin/sh\nprintf 'ran\\n' > {}\n", marker.display()),
-    );
 
     treeboot()
         .env("TREEBOOT_STRICT", "sometimes")
@@ -1141,8 +1151,6 @@ fn run_invalid_boolean_env_should_fail_before_init_script() {
         .stderr(predicate::str::contains(
             "invalid boolean environment value for TREEBOOT_STRICT",
         ));
-
-    assert!(!marker.exists());
 }
 
 #[test]
@@ -2077,16 +2085,19 @@ sync = ["shared/config"]
 
 #[cfg(unix)]
 #[test]
-fn root_option_should_set_script_root_env() {
+fn root_option_should_set_configured_command_root_env() {
     let repo = git_worktree();
     let root = TempDir::new().expect("root tempdir should be created");
     let output = repo.worktree_path().join("root.out");
-    let script = repo.worktree_path().join(".treeboot.sh");
-    write_executable_script(
-        &script,
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
         &format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$TREEBOOT_ROOT_PATH\" > {}\n",
-            output.display()
+            r#"
+[[command]]
+program = "sh"
+args = ["-c", "printf '%s\n' \"$TREEBOOT_ROOT_PATH\" > {}"]
+"#,
+            toml_string_path(&output)
         ),
     );
 
@@ -2097,22 +2108,25 @@ fn root_option_should_set_script_root_env() {
         .assert()
         .success();
 
-    let script_output = std::fs::read_to_string(output).expect("script output should exist");
+    let command_output = std::fs::read_to_string(output).expect("command output should exist");
     let root_path = canonical_path(root.path());
-    assert_eq!(script_output, format!("{}\n", root_path.display()));
+    assert_eq!(command_output, format!("{}\n", root_path.display()));
 }
 
 #[cfg(unix)]
 #[test]
-fn conductor_default_branch_env_should_set_script_branch_env() {
+fn conductor_default_branch_env_should_set_configured_command_branch_env() {
     let repo = git_worktree();
     let output = repo.worktree_path().join("branch.out");
-    let script = repo.worktree_path().join(".treeboot.sh");
-    write_executable_script(
-        &script,
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
         &format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$TREEBOOT_DEFAULT_BRANCH\" > {}\n",
-            output.display()
+            r#"
+[[command]]
+program = "sh"
+args = ["-c", "printf '%s\n' \"$TREEBOOT_DEFAULT_BRANCH\" > {}"]
+"#,
+            toml_string_path(&output)
         ),
     );
 
@@ -2122,22 +2136,33 @@ fn conductor_default_branch_env_should_set_script_branch_env() {
         .assert()
         .success();
 
-    let script_output = std::fs::read_to_string(output).expect("script output should exist");
-    assert_eq!(script_output, "series-1.2\n");
+    let command_output = std::fs::read_to_string(output).expect("command output should exist");
+    assert_eq!(command_output, "series-1.2\n");
 }
 
 #[cfg(unix)]
 #[test]
-fn executable_init_script_should_win_over_missing_config() {
+fn executable_legacy_scripts_should_not_run_or_override_config() {
     let repo = git_worktree();
-    let script = repo.worktree_path().join(".treeboot.sh");
-    let output = repo.worktree_path().join("script.out");
-    write_executable_script(
-        &script,
+    let script_output = repo.worktree_path().join("script.out");
+    let command_output = repo.worktree_path().join("command.out");
+    for relative in [".treeboot.sh", ".treebootrc", ".config/treeboot/init"] {
+        let script = repo.worktree_path().join(relative);
+        let parent = script.parent().expect("legacy script should have a parent");
+        std::fs::create_dir_all(parent).expect("legacy script parent should be created");
+        write_executable_script(
+            &script,
+            &format!(
+                "#!/bin/sh\nprintf 'script\\n' > {}\n",
+                script_output.display()
+            ),
+        );
+    }
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
         &format!(
-            "#!/bin/sh\nprintf '%s:%s\\n' \"$TREEBOOT_ROOT_PATH\" \
-             \"$CODEX_WORKTREE_PATH\" > {}\n",
-            output.display()
+            "commands = [{{ run = \"printf 'command\\n' > {}\" }}]\n",
+            toml_string_path(&command_output)
         ),
     );
 
@@ -2145,18 +2170,19 @@ fn executable_init_script_should_win_over_missing_config() {
         .current_dir(repo.worktree_path())
         .assert()
         .success()
-        .stdout(predicate::str::contains("treeboot: run"));
+        .stdout(predicate::str::contains("treeboot: config detected"))
+        .stdout(predicate::str::contains(".treeboot.sh").not());
 
-    let script_output = std::fs::read_to_string(output).expect("script output should exist");
-    let root_path = canonical_path(repo.root_path());
-    let worktree_path = canonical_path(repo.worktree_path());
-    let expected = format!("{}:{}\n", root_path.display(), worktree_path.display());
-    assert_eq!(script_output, expected);
+    assert!(!script_output.exists());
+    assert_eq!(
+        std::fs::read_to_string(command_output).expect("command output should exist"),
+        "command\n"
+    );
 }
 
 #[cfg(unix)]
 #[test]
-fn dry_run_init_script_should_not_execute_script() {
+fn executable_legacy_script_only_repo_should_follow_missing_config_behavior() {
     let repo = git_worktree();
     let script = repo.worktree_path().join(".treeboot.sh");
     let output = repo.worktree_path().join("script.out");
@@ -2166,33 +2192,39 @@ fn dry_run_init_script_should_not_execute_script() {
     );
 
     treeboot()
-        .arg("-n")
         .current_dir(repo.worktree_path())
         .assert()
         .success()
-        .stdout(predicate::str::contains("treeboot: would run"));
+        .stdout(predicate::str::contains("treeboot: no config detected"))
+        .stdout(predicate::str::contains(".treeboot.sh").not());
 
     assert!(!output.exists());
 }
 
 #[cfg(unix)]
 #[test]
-fn failing_init_script_should_exit_with_runtime_failure() {
+fn executable_legacy_script_only_repo_should_fail_in_strict_mode() {
     let repo = git_worktree();
     let script = repo.worktree_path().join(".treeboot.sh");
-    write_executable_script(&script, "#!/bin/sh\nexit 7\n");
+    let output = repo.worktree_path().join("script.out");
+    write_executable_script(
+        &script,
+        &format!("#!/bin/sh\nprintf 'ran\\n' > {}\n", output.display()),
+    );
 
     treeboot()
+        .arg("--strict")
         .current_dir(repo.worktree_path())
         .assert()
         .code(1)
-        .stderr(predicate::str::contains("init script"))
-        .stderr(predicate::str::contains("failed"));
+        .stderr(predicate::str::contains("no config detected"));
+
+    assert!(!output.exists());
 }
 
 #[cfg(unix)]
 #[test]
-fn config_option_should_skip_executable_script_discovery() {
+fn config_option_should_ignore_executable_legacy_script() {
     let repo = git_worktree();
     let config = repo.worktree_path().join("custom.treeboot.toml");
     let script = repo.worktree_path().join(".treeboot.sh");
@@ -2213,44 +2245,27 @@ fn config_option_should_skip_executable_script_discovery() {
     assert!(!marker.exists());
 }
 
-#[cfg(unix)]
 #[test]
-fn no_init_script_should_skip_executable_script_and_discover_config() {
+fn no_init_script_top_level_flag_should_be_usage_error() {
     let repo = git_worktree();
-    let config = repo.worktree_path().join(".treeboot.toml");
-    let script = repo.worktree_path().join(".treeboot.sh");
-    let marker = repo.worktree_path().join("script.out");
-    write_file(&config, "commands = []\n");
-    write_executable_script(
-        &script,
-        &format!("#!/bin/sh\nprintf 'ran\\n' > {}\n", marker.display()),
-    );
-
     treeboot()
         .args(["--no-init-script"])
         .current_dir(repo.worktree_path())
         .assert()
-        .success()
-        .stdout(predicate::str::contains("treeboot: config detected"));
-
-    assert!(!marker.exists());
+        .code(2)
+        .stderr(predicate::str::contains("unexpected argument"));
 }
 
-#[cfg(unix)]
 #[test]
-fn non_executable_init_script_should_be_ignored() {
+fn no_init_script_run_flag_should_be_usage_error() {
     let repo = git_worktree();
-    write_file(
-        &repo.worktree_path().join(".treeboot.sh"),
-        "#!/bin/sh\nexit 1\n",
-    );
 
     treeboot()
+        .args(["run", "--no-init-script"])
         .current_dir(repo.worktree_path())
         .assert()
-        .success()
-        .stdout(predicate::str::contains("treeboot: ignore"))
-        .stdout(predicate::str::contains("treeboot: no config detected"));
+        .code(2)
+        .stderr(predicate::str::contains("unexpected argument"));
 }
 
 #[test]

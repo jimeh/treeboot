@@ -849,7 +849,7 @@ fn manual_cli_strict_should_override_env_and_config_false() {
 
 #[cfg(unix)]
 #[test]
-fn manual_commands_should_ignore_executable_init_script() {
+fn manual_commands_should_ignore_executable_legacy_script() {
     let repo = git_worktree();
     let marker = repo.worktree_path().join("script.out");
     write_file(&repo.root_path().join(".env"), "TOKEN=1\n");

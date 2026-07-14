@@ -21,14 +21,14 @@ pub struct EnvOptions {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
 pub struct EnvReport {
-    /// Environment variables passed to init scripts and configured commands.
+    /// Environment variables passed to configured commands.
     pub environment: BTreeMap<String, String>,
 }
 
 /// Inspects the treeboot child environment.
 ///
-/// This function does not discover init scripts, parse config, apply file
-/// operations, or execute commands.
+/// This function does not parse config, apply file operations, or execute
+/// commands.
 ///
 /// # Errors
 ///

@@ -7,9 +7,6 @@ use common::{
     treeboot, write_file,
 };
 
-#[cfg(unix)]
-use common::write_executable_script;
-
 #[test]
 fn status_should_report_worktree_root_and_config_without_parsing() {
     let repo = git_worktree();
@@ -34,7 +31,6 @@ fn status_should_report_worktree_root_and_config_without_parsing() {
             "root: {}",
             expected_root.display()
         )))
-        .stdout(predicate::str::contains("init_script: (none)"))
         .stdout(predicate::str::contains(format!(
             "config: {}",
             expected_config.display()
@@ -56,17 +52,11 @@ fn status_should_support_json_yaml_and_text_formats() {
         .stdout
         .clone();
     let json = parse_json(json, "status");
-    assert_json_object_keys(&json, &["config", "context", "init_script"]);
+    assert_json_object_keys(&json, &["config", "context"]);
     assert_context_shape(&json["context"]);
-    assert_json_object_keys(&json["init_script"], &["ignored", "status"]);
     assert_eq!(
         json["context"]["worktree_path"],
         expected_worktree.display().to_string()
-    );
-    assert_eq!(json["init_script"]["status"], "not_found");
-    assert_eq!(
-        json["init_script"]["ignored"],
-        serde_json::Value::Array(vec![])
     );
 
     treeboot()
@@ -76,7 +66,7 @@ fn status_should_support_json_yaml_and_text_formats() {
         .success()
         .stderr(predicate::str::is_empty())
         .stdout(predicate::str::contains("context:"))
-        .stdout(predicate::str::contains("init_script:"));
+        .stdout(predicate::str::contains("config:"));
 
     treeboot()
         .args(["status", "--format", "text"])
@@ -101,34 +91,15 @@ fn info_alias_should_report_status() {
 }
 
 #[test]
-fn status_no_init_script_should_report_skipped_init_script() {
+fn status_no_init_script_should_be_usage_error() {
     let repo = git_worktree();
 
     treeboot()
         .args(["status", "--no-init-script"])
         .current_dir(repo.worktree_path())
         .assert()
-        .success()
-        .stderr(predicate::str::is_empty())
-        .stdout(predicate::str::contains("init_script: (skipped)"));
-}
-
-#[test]
-fn status_no_init_script_json_should_report_skipped_init_script() {
-    let repo = git_worktree();
-
-    let json = treeboot()
-        .args(["status", "--no-init-script", "--json"])
-        .current_dir(repo.worktree_path())
-        .assert()
-        .success()
-        .stderr(predicate::str::is_empty())
-        .get_output()
-        .stdout
-        .clone();
-    let json = parse_json(json, "status");
-    assert_json_object_keys(&json["init_script"], &["status"]);
-    assert_eq!(json["init_script"]["status"], "skipped");
+        .code(2)
+        .stderr(predicate::str::contains("unexpected argument"));
 }
 
 #[test]
@@ -176,60 +147,10 @@ fn status_should_fail_outside_git_worktree() {
         .stderr(predicate::str::contains("not inside a Git worktree"));
 }
 
-#[cfg(unix)]
 #[test]
-fn status_should_report_ignored_non_executable_init_script() {
+fn status_config_option_should_report_requested_config() {
     let repo = git_worktree();
-    let script = repo.worktree_path().join(".treeboot.sh");
-    write_file(&script, "#!/bin/sh\n");
-    let expected_script = canonical_path(&script);
-
-    treeboot()
-        .arg("status")
-        .current_dir(repo.worktree_path())
-        .assert()
-        .success()
-        .stderr(predicate::str::is_empty())
-        .stdout(predicate::str::contains("init_script: (none)"))
-        .stdout(predicate::str::contains(format!(
-            "ignored_init_script: {}",
-            expected_script.display()
-        )));
-
-    let json = treeboot()
-        .args(["status", "--json"])
-        .current_dir(repo.worktree_path())
-        .assert()
-        .success()
-        .stderr(predicate::str::is_empty())
-        .get_output()
-        .stdout
-        .clone();
-    let json = parse_json(json, "status");
-    assert_json_object_keys(&json["init_script"], &["ignored", "status"]);
-    assert_eq!(json["init_script"]["status"], "not_found");
-    assert_json_object_keys(&json["init_script"]["ignored"][0], &["path", "reason"]);
-    assert_eq!(
-        json["init_script"]["ignored"][0]["path"],
-        expected_script.display().to_string()
-    );
-    assert_eq!(
-        json["init_script"]["ignored"][0]["reason"],
-        "not_executable"
-    );
-}
-
-#[cfg(unix)]
-#[test]
-fn status_config_option_should_skip_init_script_and_report_requested_config() {
-    let repo = git_worktree();
-    let script = repo.worktree_path().join(".treeboot.sh");
-    let marker = repo.worktree_path().join("script.out");
     let config = repo.worktree_path().join("custom.treeboot.toml");
-    write_executable_script(
-        &script,
-        &format!("#!/bin/sh\nprintf 'ran\\n' > {}\n", marker.display()),
-    );
     write_file(&config, "invalid toml = [\n");
     let expected_config = canonical_path(&config);
 
@@ -239,52 +160,18 @@ fn status_config_option_should_skip_init_script_and_report_requested_config() {
         .assert()
         .success()
         .stderr(predicate::str::is_empty())
-        .stdout(predicate::str::contains("init_script: (skipped)"))
         .stdout(predicate::str::contains(format!(
             "config: {}",
             expected_config.display()
         )));
-
-    assert!(!marker.exists());
 }
 
 #[cfg(unix)]
 #[test]
-fn status_should_report_executable_init_script_without_running_it() {
+fn status_json_should_ignore_legacy_script_file() {
     let repo = git_worktree();
     let script = repo.worktree_path().join(".treeboot.sh");
-    let marker = repo.worktree_path().join("script.out");
-    write_executable_script(
-        &script,
-        &format!("#!/bin/sh\nprintf 'ran\\n' > {}\n", marker.display()),
-    );
-    let expected_script = canonical_path(&script);
-
-    treeboot()
-        .arg("status")
-        .current_dir(repo.worktree_path())
-        .assert()
-        .success()
-        .stderr(predicate::str::is_empty())
-        .stdout(predicate::str::contains(format!(
-            "init_script: {}",
-            expected_script.display()
-        )));
-
-    assert!(!marker.exists());
-}
-
-#[cfg(unix)]
-#[test]
-fn status_json_should_report_executable_init_script_without_running_it() {
-    let repo = git_worktree();
-    let script = repo.worktree_path().join(".treeboot.sh");
-    let marker = repo.worktree_path().join("script.out");
-    write_executable_script(
-        &script,
-        &format!("#!/bin/sh\nprintf 'ran\\n' > {}\n", marker.display()),
-    );
-    let expected_script = canonical_path(&script);
+    write_file(&script, "#!/bin/sh\n");
 
     let json = treeboot()
         .args(["status", "--json"])
@@ -296,12 +183,5 @@ fn status_json_should_report_executable_init_script_without_running_it() {
         .stdout
         .clone();
     let json = parse_json(json, "status");
-    assert_json_object_keys(&json["init_script"], &["path", "status"]);
-    assert_eq!(json["init_script"]["status"], "found");
-    assert_eq!(
-        json["init_script"]["path"],
-        expected_script.display().to_string()
-    );
-
-    assert!(!marker.exists());
+    assert_json_object_keys(&json, &["config", "context"]);
 }

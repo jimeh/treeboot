@@ -4,9 +4,7 @@ use serde::Serialize;
 
 use crate::check::WorktreeSnapshot;
 use crate::context;
-use crate::{
-    ActionPlan, Config, EnvironmentInput, InitScriptDiscovery, RuntimePolicy, WorktreeOptions,
-};
+use crate::{ActionPlan, Config, EnvironmentInput, RuntimePolicy, WorktreeOptions};
 
 /// Options for diagnosing treeboot discovery and validation.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -17,10 +15,8 @@ pub struct DoctorOptions {
     pub root: Option<PathBuf>,
     /// Explicit environment input used for compatibility discovery and options.
     pub environment: EnvironmentInput,
-    /// Uses one specific config file and skips init script discovery.
+    /// Uses one specific config file instead of config discovery.
     pub config: Option<PathBuf>,
-    /// Skips init script discovery and uses declarative config discovery.
-    pub no_init_script: bool,
     /// Fails diagnostics for root checkouts, missing config, and stricter
     /// file-operation conflicts.
     pub strict: bool,
@@ -125,45 +121,12 @@ pub fn diagnose(options: DoctorOptions) -> DoctorReport {
         ));
     }
 
-    let config_selected = if !options.no_init_script && options.config.is_none() {
-        let scripts = InitScriptDiscovery::discover(&context);
-        if let Some(path) = scripts.executable {
-            diagnostics.push(ok(
-                "init_script",
-                format!("executable init script found: {}", path.display()),
-            ));
-            false
-        } else if scripts.ignored.is_empty() {
-            diagnostics.push(warning("init_script", "no executable init script found"));
-            true
-        } else {
-            diagnostics.push(warning(
-                "init_script",
-                format!(
-                    "no executable init script found; ignored {} non-executable path(s)",
-                    scripts.ignored.len()
-                ),
-            ));
-            true
+    match check_config(&options, &context, &runtime_policy) {
+        Ok(diagnostic) => diagnostics.push(diagnostic),
+        Err(diagnostic) => {
+            fatal = true;
+            diagnostics.push(diagnostic);
         }
-    } else {
-        diagnostics.push(ok("init_script", "init script discovery skipped"));
-        true
-    };
-
-    if config_selected {
-        match check_config(&options, &context, &runtime_policy) {
-            Ok(diagnostic) => diagnostics.push(diagnostic),
-            Err(diagnostic) => {
-                fatal = true;
-                diagnostics.push(diagnostic);
-            }
-        }
-    } else {
-        diagnostics.push(ok(
-            "config",
-            "config discovery skipped because an init script takes precedence",
-        ));
     }
 
     DoctorReport {

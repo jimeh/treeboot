@@ -23,7 +23,7 @@ flowchart LR
   API["treeboot_core public API<br/>run / inspect_* / check / diagnose<br/>init / run_file_operation<br/>Worktree / Config / ActionPlan<br/>OutputEvent / Reporter"]
   GIT["Git boundary<br/>native path bytes<br/>NUL-delimited worktree list<br/>origin/HEAD"]
   FS["Filesystem boundary<br/>copy / symlink / sync<br/>read config<br/>write init files"]
-  PROC["Process boundary<br/>init scripts<br/>configured commands"]
+  PROC["Process boundary<br/>configured commands"]
   OUT["Structured output<br/>OutputEvent values<br/>Reporter trait<br/>CLI text presentation"]
 
   CLI --> API
@@ -50,7 +50,7 @@ option structs and prints core output events._
 ### `treeboot-core` library crate
 
 - Discovers Git worktree context and repo root source.
-- Discovers init scripts and config files.
+- Discovers config files.
 - Parses and normalizes declarative TOML config.
 - Builds validated `ActionPlan` values.
 - Executes plans through `Executor`.
@@ -66,19 +66,19 @@ facade functions for full treeboot behavior, and composable primitives for
 callers that want to discover a `Worktree`, load a `LoadedConfig`, build an
 `ActionPlan`, and execute it themselves.
 
-| CLI command                        | Core API                                                                                                 | Primary modules                                                                                             | Side effects                                                                                                              |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `treeboot`, `treeboot run`         | `run(RunOptions, Reporter)`                                                                              | `run`, `runtime`, `context`, `discovery`, `config`, `validation`, `executor`, `file_operations`, `commands` | May execute init scripts, apply file operations, and run configured commands.                                             |
-| `treeboot status`, `info`          | `inspect_status(StatusOptions)`; `inspect_status_snapshot(StatusOptions)` for serializable callers       | `status`, `context`, `discovery`, `config`                                                                  | View-only. Reports worktree, root, config, and init-script discovery without parsing config.                              |
-| `treeboot version`                 | `treeboot_version_info()`, `version_info(...)`                                                           | `metadata`                                                                                                  | View-only. Reports package and implemented spec versions.                                                                 |
-| `treeboot copy`, `symlink`, `sync` | `run_file_operation(FileOperationOptions, Reporter)`                                                     | `manual`, `runtime`, `context`, `config`, `validation`, `executor`, `file_operations`                       | Applies one manual file-operation batch. Skips init scripts and configured actions, but loads config policy when present. |
-| `treeboot config`                  | `inspect_config(ConfigOptions)`                                                                          | `config`, `runtime`, `context`, `validation`                                                                | View-only. Prints normalized config and warns when run validation would fail.                                             |
-| `treeboot check`                   | `check(CheckOptions)`                                                                                    | `check`, `runtime`, `context`, `discovery`, `config`, `validation`                                          | View-only. Validates selected bootstrap behavior without running scripts or applying effects.                             |
-| `treeboot init`                    | `init(InitOptions, Reporter)`                                                                            | `init`, `context`, `output`                                                                                 | Writes a starter config or executable init script.                                                                        |
-| `treeboot schema`                  | `config_schema_json()`                                                                                   | `metadata`                                                                                                  | View-only unless `--output` is used. Prints or writes the bundled config schema.                                          |
-| `treeboot doctor`                  | `diagnose(DoctorOptions)`                                                                                | `doctor`, `runtime`, `context`, `discovery`, `config`, `validation`                                         | View-only. Reports diagnostic statuses for discovery and validation, including strict diagnostics when requested.         |
-| `treeboot env`                     | `inspect_env(EnvOptions)`                                                                                | `env`, `context`                                                                                            | View-only. Reports child environment variables passed to scripts and commands.                                            |
-| `treeboot completions`             | CLI-owned completion registration; `file_operation_source_candidates(...)` for dynamic source completion | `main.rs`, `commands/completions.rs`, `manual`                                                              | Prints shell registration. Dynamic source candidates delegate to core.                                                    |
+| CLI command                        | Core API                                                                                                 | Primary modules                                                                                             | Side effects                                                                                                      |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `treeboot`, `treeboot run`         | `run(RunOptions, Reporter)`                                                                              | `run`, `runtime`, `context`, `discovery`, `config`, `validation`, `executor`, `file_operations`, `commands` | May apply file operations and run configured commands.                                                            |
+| `treeboot status`, `info`          | `inspect_status(StatusOptions)`; `inspect_status_snapshot(StatusOptions)` for serializable callers       | `status`, `context`, `discovery`, `config`                                                                  | View-only. Reports worktree, root, and config discovery without parsing config.                                   |
+| `treeboot version`                 | `treeboot_version_info()`, `version_info(...)`                                                           | `metadata`                                                                                                  | View-only. Reports package and implemented spec versions.                                                         |
+| `treeboot copy`, `symlink`, `sync` | `run_file_operation(FileOperationOptions, Reporter)`                                                     | `manual`, `runtime`, `context`, `config`, `validation`, `executor`, `file_operations`                       | Applies one manual file-operation batch. Skips configured actions, but loads config policy when present.          |
+| `treeboot config`                  | `inspect_config(ConfigOptions)`                                                                          | `config`, `runtime`, `context`, `validation`                                                                | View-only. Prints normalized config and warns when run validation would fail.                                     |
+| `treeboot check`                   | `check(CheckOptions)`                                                                                    | `check`, `runtime`, `context`, `discovery`, `config`, `validation`                                          | View-only. Validates selected bootstrap behavior without applying effects.                                        |
+| `treeboot init`                    | `init(InitOptions, Reporter)`                                                                            | `init`, `context`, `output`                                                                                 | Writes a starter config.                                                                                          |
+| `treeboot schema`                  | `config_schema_json()`                                                                                   | `metadata`                                                                                                  | View-only unless `--output` is used. Prints or writes the bundled config schema.                                  |
+| `treeboot doctor`                  | `diagnose(DoctorOptions)`                                                                                | `doctor`, `runtime`, `context`, `discovery`, `config`, `validation`                                         | View-only. Reports diagnostic statuses for discovery and validation, including strict diagnostics when requested. |
+| `treeboot env`                     | `inspect_env(EnvOptions)`                                                                                | `env`, `context`                                                                                            | View-only. Reports child environment variables passed to configured commands.                                     |
+| `treeboot completions`             | CLI-owned completion registration; `file_operation_source_candidates(...)` for dynamic source completion | `main.rs`, `commands/completions.rs`, `manual`                                                              | Prints shell registration. Dynamic source candidates delegate to core.                                            |
 
 ## Anchors: Runtime Context
 
@@ -123,26 +123,20 @@ File operation targets and command working directories are anchored to
 
 ### Environment aliases
 
-Scripts and configured commands receive treeboot variables plus compatibility
-aliases for Codex, Conductor, and Superset flows.
+Configured commands receive treeboot variables plus compatibility aliases for
+Codex, Conductor, and Superset flows.
 
 ## Primary orchestration: `treeboot run` Flow
 
-Run mode first checks for root-checkout no-op behavior, then prefers executable
-init scripts unless a config file is explicit.
-
-The run flow resolves context, handles root checkout, runs an executable init
-script when present, or discovers config before planning file and command work.
+Run mode first checks for root-checkout no-op behavior, then discovers config
+before planning file and command work.
 
 ```mermaid
 flowchart TD
   CLI["CLI dispatch<br/>RunOptions"] --> CTX["Resolve context<br/>context::resolve"]
   CTX --> ROOT{"Root checkout?<br/>root == worktree"}
-  ROOT -->|no| INIT["Discover init<br/>unless --config supplied<br/>report ignored scripts"]
+  ROOT -->|no| CONFIG["Discover config<br/>requested or default path<br/>load TOML"]
   ROOT -->|yes| DONE["Report RootWorktreeDetected<br/>exit 0, or error under pre-config strict"]
-  INIT --> EXEC{"Executable?<br/>run or dry-run script"}
-  EXEC -->|yes| SCRIPT["Run init script<br/>or report dry-run<br/>skip config"]
-  EXEC -->|no| CONFIG["Discover config<br/>requested or default path<br/>load TOML"]
   CONFIG --> PLAN["Plan config<br/>ActionPlan"]
   PLAN --> FILES["Apply files<br/>copy / symlink / sync"]
   FILES --> CMDS["Run commands<br/>unless --skip-commands"]
@@ -218,10 +212,10 @@ flowchart LR
   MANUAL["manual.rs<br/>manual files"]
   CONFIG["config.rs<br/>parse + normalize"]
   RUNTIME["runtime.rs<br/>policy precedence"]
-  INIT["init.rs<br/>starter files"]
+  INIT["init.rs<br/>starter config"]
   META["metadata.rs<br/>version + schema"]
   CONTEXT["context.rs<br/>Worktree"]
-  DISC["discovery.rs<br/>scripts + config"]
+  DISC["discovery.rs<br/>config paths"]
   GIT["git.rs<br/>Git wrapper"]
   FILTER["path_filter.rs<br/>copy/sync include and<br/>ignore path rules"]
   EXEC["executor.rs<br/>plan execution"]
@@ -280,10 +274,10 @@ file-operation execution._
 | Module               | Owns                                                                                                                                                                             | Does not own                                                                                                 |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | `check.rs`           | Side-effect-free validation for run-like behavior.                                                                                                                               | User-facing output formatting or execution.                                                                  |
-| `context.rs`         | Git-derived root/worktree/default branch and env aliases.                                                                                                                        | Config parsing, script discovery, or side effects.                                                           |
+| `context.rs`         | Git-derived root/worktree/default branch and env aliases.                                                                                                                        | Config parsing or side effects.                                                                              |
 | `config.rs`          | TOML parsing, defaulting, normalized config data.                                                                                                                                | Boundary validation or execution.                                                                            |
 | `doctor.rs`          | Diagnostic aggregation across discovery and validation.                                                                                                                          | Fixing problems or applying effects.                                                                         |
-| `env.rs`             | Child environment inspection.                                                                                                                                                    | Script/config discovery beyond context resolution.                                                           |
+| `env.rs`             | Child environment inspection.                                                                                                                                                    | Config discovery beyond context resolution.                                                                  |
 | `executor.rs`        | Sequencing validated file and command execution.                                                                                                                                 | Validation or CLI policy.                                                                                    |
 | `file_actions.rs`    | Concrete file action model, grouped operation actions, summary construction, and cross-action symlink warnings.                                                                  | Filesystem traversal or mutation.                                                                            |
 | `file_operations.rs` | Operation-level file application facade, apply options/report types, planning lifecycle events, and planning/execution sequencing.                                               | Concrete planning decisions, action mutation details, or low-level filesystem helper implementation.         |
@@ -395,11 +389,10 @@ they are structured presentation hooks for reporters rather than log lines.
 Public enums that represent extensible failures, lifecycle events, discovery
 states, or command outcomes are `#[non_exhaustive]`. Downstream callers must use
 wildcard match arms for `Error`, `OutputEvent`, `RunAction`, `CheckAction`,
-`FileOperationAction`, `InitScriptStatus`, and `PlanWarning`. Closed-domain
-vocabularies remain exhaustive when enumerating the complete set is useful API
-behavior: `FileOperationKind`, `SyncCompare`, `SymlinkMode`, `MetadataField`,
-`CommandKind`, `DiagnosticStatus`, `InitKind`, `PlanOrigin`, and
-`PlannedFileStatus`.
+`FileOperationAction` and `PlanWarning`. Closed-domain vocabularies remain
+exhaustive when enumerating the complete set is useful API behavior:
+`FileOperationKind`, `SyncCompare`, `SymlinkMode`, `MetadataField`,
+`CommandKind`, `DiagnosticStatus`, `PlanOrigin`, and `PlannedFileStatus`.
 
 ## Verification boundaries: Testing Architecture
 

@@ -7,16 +7,13 @@ use treeboot_core::{
     ActionPlan, ActionPlanOptions, CheckAction, CommandKind, Config, ConfigOptions,
     DiagnosticStatus, Environment, EnvironmentInput, Error, ExecuteOptions, Executor,
     FileOperation, FileOperationAction, FileOperationCompletionOptions, FileOperationKind,
-    FileOperationOptions, FileOperationSummary, InitKind, InitScriptStatus, LoadedConfig,
+    FileOperationOptions, FileOperationSummary, InitOptions, LoadedConfig,
     ManualFileOperationOptions, MetadataField, OutputEvent, PlanOrigin, PlannedFileStatus,
     Reporter, RunAction, RunOptions, SourceSpan, StatusOptions, SymlinkMode, SyncCompare, Worktree,
-    WorktreeOptions, check, config_schema_json, diagnose, file_operation_source_candidates,
+    WorktreeOptions, check, config_schema_json, diagnose, file_operation_source_candidates, init,
     inspect_config, inspect_env, inspect_status, inspect_status_snapshot, run, run_file_operation,
     treeboot_version_info, version_info,
 };
-
-#[cfg(unix)]
-use treeboot_core::{IgnoredInitScript, InitScriptDiscovery};
 
 #[derive(Default)]
 struct VecReporter {
@@ -81,19 +78,11 @@ fn public_open_enums_should_support_forward_compatible_matches() {
         }
     }
 
-    fn init_script_kind(status: &InitScriptStatus) -> &'static str {
-        match status {
-            InitScriptStatus::Skipped => "skipped",
-            _ => "other",
-        }
-    }
-
     assert_eq!(error_kind(&Error::NotGitWorktree), "git");
     assert_eq!(event_kind(&OutputEvent::NoConfigDetected), "missing");
     assert_eq!(run_kind(&RunAction::MissingConfig), "missing");
     assert_eq!(check_kind(&CheckAction::MissingConfig), "missing");
     assert_eq!(file_operation_kind(FileOperationAction::Applied), "applied");
-    assert_eq!(init_script_kind(&InitScriptStatus::Skipped), "skipped");
 }
 
 #[test]
@@ -116,7 +105,6 @@ fn public_enum_policy_should_keep_open_enums_non_exhaustive() {
     assert_non_exhaustive(include_str!("../src/run.rs"), "RunAction");
     assert_non_exhaustive(include_str!("../src/check.rs"), "CheckAction");
     assert_non_exhaustive(include_str!("../src/manual.rs"), "FileOperationAction");
-    assert_non_exhaustive(include_str!("../src/status.rs"), "InitScriptStatus");
     assert_non_exhaustive(include_str!("../src/validation.rs"), "PlanWarning");
 }
 
@@ -158,12 +146,6 @@ fn public_closed_enums_should_support_exhaustive_matches() {
         }
     }
 
-    fn init_kind(value: InitKind) {
-        match value {
-            InitKind::Config | InitKind::Script => {}
-        }
-    }
-
     fn plan_origin(value: PlanOrigin) {
         match value {
             PlanOrigin::Manifest { .. } | PlanOrigin::Manual { .. } => {}
@@ -182,7 +164,6 @@ fn public_closed_enums_should_support_exhaustive_matches() {
     metadata_field(MetadataField::Permissions);
     command_kind(CommandKind::Shell { run: String::new() });
     diagnostic_status(DiagnosticStatus::Ok);
-    init_kind(InitKind::Config);
     plan_origin(PlanOrigin::Manifest {
         path: PathBuf::new(),
     });
@@ -321,20 +302,6 @@ fn public_api_worktree_discover_should_preserve_non_utf8_git_paths() {
     assert_eq!(worktree.root_path, canonical_path(&root_path));
     assert_eq!(worktree.worktree_path, canonical_path(&linked_path));
 }
-
-#[cfg(unix)]
-fn make_executable(path: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-
-    let mut permissions = std::fs::metadata(path)
-        .expect("script metadata should load")
-        .permissions();
-    permissions.set_mode(permissions.mode() | 0o111);
-    std::fs::set_permissions(path, permissions).expect("script permissions should update");
-}
-
-#[cfg(not(unix))]
-fn make_executable(_path: &Path) {}
 
 fn span() -> SourceSpan {
     SourceSpan {
@@ -487,7 +454,6 @@ fn public_api_diagnose_should_report_explicit_default_branch_as_resolved() {
             conductor_default_branch: Some(OsString::from("stable")),
             ..EnvironmentInput::empty()
         },
-        no_init_script: true,
         ..treeboot_core::DoctorOptions::default()
     });
     let diagnostic = report
@@ -540,7 +506,6 @@ fn public_api_should_expose_metadata_env_check_and_doctor() {
         root: None,
         environment: EnvironmentInput::empty(),
         config: None,
-        no_init_script: false,
         strict: false,
     })
     .expect("config should validate");
@@ -554,7 +519,6 @@ fn public_api_should_expose_metadata_env_check_and_doctor() {
         root: None,
         environment: EnvironmentInput::empty(),
         config: None,
-        no_init_script: false,
         strict: false,
     });
     assert!(!doctor.has_fatal());
@@ -609,51 +573,45 @@ fn public_api_should_error_when_requested_manifest_is_missing() {
     }
 }
 
-#[cfg(unix)]
 #[test]
-fn public_api_should_discover_executable_init_script_after_ignored_script() {
-    let (_temp, worktree) = temp_worktree("init-script-discovery");
-    let ignored = worktree.worktree_path.join(".treeboot.sh");
-    let executable = worktree.worktree_path.join(".treebootrc");
-    write_file(&ignored, "#!/bin/sh\n");
-    write_file(&executable, "#!/bin/sh\n");
-    make_executable(&executable);
+fn public_api_init_should_create_config_without_a_kind_selector() {
+    let dir = TempDir::new().expect("tempdir should be created");
+    let mut reporter = VecReporter::default();
 
-    let discovery = InitScriptDiscovery::discover(&worktree);
+    let report = init(
+        InitOptions {
+            cwd: Some(dir.path().to_path_buf()),
+            path: None,
+        },
+        &mut reporter,
+    )
+    .expect("starter config should be created");
 
-    assert_eq!(discovery.executable.as_deref(), Some(executable.as_path()));
-    assert_eq!(
-        discovery.ignored,
-        vec![IgnoredInitScript {
-            path: ignored,
-            reason: "not_executable",
-        }]
-    );
+    assert_eq!(report.path, dir.path().join(".treeboot.toml"));
 }
 
 #[test]
-fn public_api_run_should_report_init_script_in_dry_run() {
+fn public_api_run_should_apply_discovered_config() {
     let repo = git_worktree();
-    let script = repo.worktree_path().join(".treeboot.sh");
-    write_file(&script, "#!/usr/bin/env sh\nexit 0\n");
-    make_executable(&script);
-    let expected_script = canonical_path(&script);
-
+    let config_path = repo.worktree_path().join(".treeboot.toml");
+    write_file(&config_path, "commands = []\n");
     let mut reporter = VecReporter::default();
+
     let report = run(
         RunOptions {
             cwd: Some(repo.worktree_path().to_path_buf()),
-            dry_run: true,
             ..RunOptions::default()
         },
         &mut reporter,
     )
-    .expect("run should dry-run init script");
+    .expect("discovered config should run");
 
-    assert!(matches!(
+    assert_eq!(
         report.action,
-        RunAction::WouldRunInitScript { path } if path == expected_script
-    ));
+        RunAction::ConfigApplied {
+            path: canonical_path(&config_path),
+        }
+    );
 }
 
 #[test]
@@ -708,11 +666,6 @@ fn public_api_inspect_status_should_report_context_and_config_without_parsing() 
     assert_eq!(report.context.worktree_path, expected_worktree);
     assert_eq!(report.context.root_path, expected_root);
     assert_eq!(report.config.as_deref(), Some(expected_config.as_path()));
-    assert!(matches!(
-        report.init_script,
-        InitScriptStatus::NotFound { ref ignored } if ignored.is_empty()
-    ));
-
     let snapshot = inspect_status_snapshot(StatusOptions {
         cwd: Some(repo.worktree_path().to_path_buf()),
         ..StatusOptions::default()
@@ -721,70 +674,6 @@ fn public_api_inspect_status_should_report_context_and_config_without_parsing() 
     assert_eq!(snapshot.context.worktree_path, expected_worktree);
     assert_eq!(snapshot.context.root_path, expected_root);
     assert_eq!(snapshot.config.as_deref(), Some(expected_config.as_path()));
-}
-
-#[cfg(unix)]
-#[test]
-fn public_api_inspect_status_should_report_ignored_init_script_details() {
-    let repo = git_worktree();
-    let script = repo.worktree_path().join(".treeboot.sh");
-    write_file(&script, "#!/bin/sh\n");
-    let expected_script = canonical_path(&script);
-
-    let report = inspect_status(StatusOptions {
-        cwd: Some(repo.worktree_path().to_path_buf()),
-        ..StatusOptions::default()
-    })
-    .expect("status should inspect init script candidates");
-
-    let InitScriptStatus::NotFound { ignored } = report.init_script else {
-        panic!("expected not_found init script status");
-    };
-    assert_eq!(
-        ignored,
-        vec![IgnoredInitScript {
-            path: expected_script.clone(),
-            reason: "not_executable",
-        }]
-    );
-
-    let snapshot = inspect_status_snapshot(StatusOptions {
-        cwd: Some(repo.worktree_path().to_path_buf()),
-        ..StatusOptions::default()
-    })
-    .expect("status snapshot should inspect init script candidates");
-
-    let InitScriptStatus::NotFound { ignored } = snapshot.init_script else {
-        panic!("expected not_found init script status");
-    };
-    assert_eq!(
-        ignored,
-        vec![IgnoredInitScript {
-            path: expected_script,
-            reason: "not_executable",
-        }]
-    );
-}
-
-#[cfg(unix)]
-#[test]
-fn public_api_inspect_status_should_report_executable_init_script() {
-    let repo = git_worktree();
-    let script = repo.worktree_path().join(".treeboot.sh");
-    write_file(&script, "#!/bin/sh\n");
-    make_executable(&script);
-    let expected_script = canonical_path(&script);
-
-    let report = inspect_status(StatusOptions {
-        cwd: Some(repo.worktree_path().to_path_buf()),
-        ..StatusOptions::default()
-    })
-    .expect("status should inspect init script");
-
-    assert!(matches!(
-        report.init_script,
-        InitScriptStatus::Found { ref path } if path == &expected_script
-    ));
 }
 
 #[test]
@@ -800,7 +689,6 @@ fn public_api_inspect_status_should_use_explicit_environment_input() {
             conductor_default_branch: Some(OsString::from("release")),
             ..EnvironmentInput::empty()
         },
-        no_init_script: true,
         ..StatusOptions::default()
     })
     .expect("status should inspect with explicit environment");

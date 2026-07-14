@@ -4,8 +4,7 @@ use serde::Serialize;
 
 use crate::context;
 use crate::{
-    ActionPlan, Config, EnvironmentInput, Error, InitScriptDiscovery, Result, RuntimePolicy,
-    Worktree, WorktreeOptions,
+    ActionPlan, Config, EnvironmentInput, Error, Result, RuntimePolicy, Worktree, WorktreeOptions,
 };
 
 /// Options for checking treeboot bootstrap behavior.
@@ -17,10 +16,8 @@ pub struct CheckOptions {
     pub root: Option<PathBuf>,
     /// Explicit environment input used for compatibility discovery and options.
     pub environment: EnvironmentInput,
-    /// Uses one specific config file and skips init script discovery.
+    /// Uses one specific config file instead of config discovery.
     pub config: Option<PathBuf>,
-    /// Skips init script discovery and uses declarative config discovery.
-    pub no_init_script: bool,
     /// Fails on missing config and stricter file-operation conflicts.
     pub strict: bool,
 }
@@ -33,15 +30,10 @@ pub struct CheckOptions {
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum CheckAction {
-    /// No config or executable init script was detected.
+    /// No config was detected.
     MissingConfig,
     /// The check started from the root checkout and had no work to validate.
     RootWorktreeSkipped,
-    /// An init script would take precedence.
-    InitScript {
-        /// Script path.
-        path: PathBuf,
-    },
     /// Declarative config was validated.
     Config {
         /// Config file path.
@@ -109,18 +101,6 @@ pub fn check(options: CheckOptions) -> Result<CheckReport> {
             action: CheckAction::RootWorktreeSkipped,
             warnings: Vec::new(),
         });
-    }
-
-    if options.config.is_none() && !options.no_init_script {
-        let scripts = InitScriptDiscovery::discover(&context);
-
-        if let Some(path) = scripts.executable {
-            return Ok(CheckReport {
-                context: WorktreeSnapshot::from(&context),
-                action: CheckAction::InitScript { path },
-                warnings: Vec::new(),
-            });
-        }
     }
 
     match Config::discover_path(&context, options.config.as_deref())? {

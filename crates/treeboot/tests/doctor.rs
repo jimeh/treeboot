@@ -452,7 +452,7 @@ fn doctor_should_fail_outside_git_worktree() {
 
 #[cfg(unix)]
 #[test]
-fn doctor_should_report_init_script_without_running_it() {
+fn doctor_should_ignore_legacy_script_and_omit_script_diagnostic() {
     let repo = git_worktree();
     let script = repo.worktree_path().join(".treeboot.sh");
     let marker = repo.worktree_path().join("script.out");
@@ -460,21 +460,34 @@ fn doctor_should_report_init_script_without_running_it() {
         &script,
         &format!("#!/bin/sh\nprintf 'ran\\n' > {}\n", marker.display()),
     );
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        "commands = []\n",
+    );
 
-    treeboot()
-        .arg("doctor")
+    let json = treeboot()
+        .args(["doctor", "--json"])
         .current_dir(repo.worktree_path())
         .assert()
         .success()
         .stderr(predicate::str::is_empty())
-        .stdout(predicate::str::contains("ok: init_script: executable"));
+        .get_output()
+        .stdout
+        .clone();
+    let json = parse_json(json, "doctor");
+    let has_init_script_diagnostic = json["diagnostics"]
+        .as_array()
+        .expect("diagnostics should be an array")
+        .iter()
+        .any(|diagnostic| diagnostic["name"] == "init_script");
 
     assert!(!marker.exists());
+    assert!(!has_init_script_diagnostic);
 }
 
 #[cfg(unix)]
 #[test]
-fn doctor_strict_should_skip_config_when_init_script_takes_precedence() {
+fn doctor_strict_should_fail_for_legacy_script_only_repo() {
     let repo = git_worktree();
     let script = repo.worktree_path().join(".treeboot.sh");
     write_executable_script(&script, "#!/bin/sh\n");
@@ -483,44 +496,38 @@ fn doctor_strict_should_skip_config_when_init_script_takes_precedence() {
         .args(["doctor", "--strict", "--json"])
         .current_dir(repo.worktree_path())
         .assert()
-        .success()
-        .stderr(predicate::str::is_empty())
+        .code(1)
+        .stderr(predicate::str::contains("doctor found fatal issues"))
         .get_output()
         .stdout
         .clone();
 
     let json = parse_json(json, "doctor");
     assert_doctor_report_shape(&json);
-    assert_eq!(json["fatal"], false);
+    assert_eq!(json["fatal"], true);
     assert!(has_diagnostic(
         &json,
         "config",
-        "ok",
-        "config discovery skipped because an init script takes precedence"
+        "error",
+        "no config detected under strict mode"
     ));
 }
 
-#[cfg(unix)]
 #[test]
-fn doctor_should_report_ignored_non_executable_init_script() {
+fn doctor_no_init_script_flag_should_be_usage_error() {
     let repo = git_worktree();
-    let script = repo.worktree_path().join(".treeboot.sh");
-    write_file(&script, "#!/bin/sh\n");
 
     treeboot()
-        .arg("doctor")
+        .args(["doctor", "--no-init-script"])
         .current_dir(repo.worktree_path())
         .assert()
-        .success()
-        .stderr(predicate::str::is_empty())
-        .stdout(predicate::str::contains(
-            "warning: init_script: no executable init script found; ignored 1",
-        ));
+        .code(2)
+        .stderr(predicate::str::contains("unexpected argument"));
 }
 
 #[cfg(unix)]
 #[test]
-fn doctor_config_option_should_skip_init_script_and_validate_requested_config() {
+fn doctor_config_option_should_ignore_legacy_script_and_validate_requested_config() {
     let repo = git_worktree();
     let script = repo.worktree_path().join(".treeboot.sh");
     let marker = repo.worktree_path().join("script.out");
@@ -537,9 +544,6 @@ fn doctor_config_option_should_skip_init_script_and_validate_requested_config() 
         .assert()
         .success()
         .stderr(predicate::str::is_empty())
-        .stdout(predicate::str::contains(
-            "ok: init_script: init script discovery skipped",
-        ))
         .stdout(predicate::str::contains("ok: config: config is valid"));
 
     assert!(!marker.exists());

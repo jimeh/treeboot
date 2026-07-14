@@ -466,7 +466,7 @@ fn check_env_target_override_should_beat_config_target_override() {
 
 #[cfg(unix)]
 #[test]
-fn check_should_report_init_script_precedence_without_running_it() {
+fn check_should_ignore_executable_legacy_script_and_validate_config() {
     let repo = git_worktree();
     let script = repo.worktree_path().join(".treeboot.sh");
     let marker = repo.worktree_path().join("script.out");
@@ -476,7 +476,7 @@ fn check_should_report_init_script_precedence_without_running_it() {
     );
     write_file(
         &repo.worktree_path().join(".treeboot.toml"),
-        "invalid toml = [\n",
+        "commands = []\n",
     );
 
     let json = treeboot()
@@ -490,7 +490,7 @@ fn check_should_report_init_script_precedence_without_running_it() {
         .clone();
     let json = parse_json(json, "check");
     assert_json_object_keys(&json["action"], &["kind", "path"]);
-    assert_eq!(json["action"]["kind"], "init_script");
+    assert_eq!(json["action"]["kind"], "config");
     assert!(json["action"]["path"].is_string());
 
     assert!(!marker.exists());
@@ -498,7 +498,7 @@ fn check_should_report_init_script_precedence_without_running_it() {
 
 #[cfg(unix)]
 #[test]
-fn check_config_option_should_skip_init_script_and_validate_requested_config() {
+fn check_config_option_should_ignore_legacy_script_and_validate_requested_config() {
     let repo = git_worktree();
     let script = repo.worktree_path().join(".treeboot.sh");
     let marker = repo.worktree_path().join("script.out");
@@ -524,6 +524,18 @@ fn check_config_option_should_skip_init_script_and_validate_requested_config() {
     assert!(json["action"]["path"].is_string());
 
     assert!(!marker.exists());
+}
+
+#[test]
+fn check_no_init_script_flag_should_be_usage_error() {
+    let repo = git_worktree();
+
+    treeboot()
+        .args(["check", "--no-init-script"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("unexpected argument"));
 }
 
 #[test]
