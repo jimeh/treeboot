@@ -608,7 +608,9 @@ fn public_api_run_should_apply_discovered_config() {
 
     assert_eq!(
         report.action,
-        RunAction::ConfigApplied { path: config_path }
+        RunAction::ConfigApplied {
+            path: canonical_path(&config_path),
+        }
     );
 }
 
