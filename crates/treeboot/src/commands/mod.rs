@@ -43,7 +43,7 @@ pub(crate) struct Cli {
 enum Command {
     /// Run worktree bootstrap.
     Run(RunArgs),
-    /// Print worktree, root, config, and init script discovery status.
+    /// Print worktree, root, and config discovery status.
     #[command(alias = "info")]
     Status(StatusArgs),
     /// Print version metadata.
@@ -58,13 +58,13 @@ enum Command {
     Config(ConfigArgs),
     /// Validate bootstrap behavior without side effects.
     Check(CheckArgs),
-    /// Create a starter config or init script.
+    /// Create a starter config.
     Init(InitArgs),
     /// Print or write the bundled config JSON Schema.
     Schema(SchemaArgs),
     /// Diagnose treeboot discovery and validation.
     Doctor(DoctorArgs),
-    /// Print child environment variables passed to scripts and commands.
+    /// Print child environment variables passed to configured commands.
     Env(EnvArgs),
     /// Print shell completion scripts.
     Completions(CompletionsArgs),

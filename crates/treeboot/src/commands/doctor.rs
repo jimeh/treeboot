@@ -12,13 +12,9 @@ pub(crate) struct DoctorArgs {
     #[arg(short, long)]
     root: Option<PathBuf>,
 
-    /// Use one specific config file and skip init script discovery.
+    /// Use one specific config file instead of config discovery.
     #[arg(short, long)]
     config: Option<PathBuf>,
-
-    /// Skip init script discovery and use declarative config discovery.
-    #[arg(long)]
-    no_init_script: bool,
 
     /// Fail diagnostics on missing config and stricter file-operation conflicts.
     #[arg(short = 'S', long)]
@@ -63,7 +59,6 @@ impl From<DoctorArgs> for DoctorOptions {
             root: args.root,
             environment: environment_input(),
             config: args.config,
-            no_init_script: args.no_init_script,
             strict: args.strict,
         }
     }

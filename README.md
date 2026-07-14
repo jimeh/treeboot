@@ -164,7 +164,7 @@ Use the inspection commands before running an unfamiliar setup contract or when
 diagnosing discovery and validation problems:
 
 ```sh
-treeboot status        # Show the detected worktree, root, config, and script
+treeboot status        # Show the detected worktree, root, and config
 treeboot config        # Print normalized TOML config without executing it
 treeboot check         # Validate the setup plan without applying it
 treeboot doctor        # Run discovery and configuration diagnostics
@@ -175,8 +175,8 @@ treeboot run --dry-run # Preview file operations and commands
 `status`, `config`, `check`, `doctor`, `env`, and `version` support
 `--format text|json|yaml`, with `--json` and `--yaml` shortcuts.
 
-If no config or executable init script is found, `treeboot` prints an info
-message and exits successfully. Add `--strict` when that should be an error.
+If no config is found, `treeboot` prints an info message and exits successfully.
+Add `--strict` when that should be an error.
 
 ## Safety and trust
 
@@ -191,11 +191,10 @@ message and exits successfully. Add `--strict` when that should be an error.
 
 Setup files can run arbitrary project commands. Only run `treeboot` in
 repositories you trust. The trust boundary includes `.treeboot.toml`,
-`treeboot.toml`, `.config/treeboot/config.toml`, executable init scripts, and
-configured commands.
+`treeboot.toml`, `.config/treeboot/config.toml`, and configured commands.
 
 Use `treeboot config` to inspect declarative config without execution, or
-`treeboot run --no-init-script` to ignore executable init scripts.
+`treeboot run --skip-commands` to apply only configured file operations.
 
 ## CLI reference
 
@@ -220,9 +219,9 @@ treeboot sync shared/config --delete --dry-run
 treeboot init
 ```
 
-`treeboot init` creates `.treeboot.toml` by default. Use
-`treeboot init --script` to create `.treeboot.sh` instead. Existing targets,
-including symlinks, are never replaced.
+`treeboot init` creates `.treeboot.toml` by default. `treeboot init --config` is
+an explicit spelling of the same operation. Existing targets, including
+symlinks, are never replaced.
 
 ## Installation alternatives
 
@@ -243,29 +242,29 @@ cargo install treeboot
 
 Treeboot requires Git 2.36 or newer.
 
-## Init scripts
+## Custom scripts
 
-When declarative config is not enough, add an executable `.treeboot.sh`:
+Declarative commands can execute any custom project script:
 
-```sh
-#!/usr/bin/env sh
-set -eu
-
-root_path="$1"
-
-printf 'treeboot root directory: %s\n' "$root_path"
-printf 'treeboot worktree directory: %s\n' "$(pwd)"
-mise install
+```toml
+commands = [
+  { run = "./scripts/bootstrap-worktree.sh" },
+]
 ```
 
-The script runs from the worktree root and receives the root checkout path as
-its first argument. When an executable init script exists, `treeboot` runs it
-instead of declarative config. Use `treeboot run --no-init-script` to use normal
-config discovery instead.
+Configured commands run from the worktree root by default, inherit the
+`TREEBOOT_*` environment, and run after file operations. They receive no
+automatic positional `$1`; scripts should read `TREEBOOT_ROOT_PATH`, or the
+config should pass it explicitly. `--skip-commands` omits configured commands,
+and `--dry-run` reports them without execution.
+
+Legacy `.treeboot.sh`, `.treebootrc`, and `.config/treeboot/init` files have no
+special meaning and are treated as ordinary repository files. The former
+`--no-init-script` and `init --script` options are no longer accepted.
 
 ## Environment
 
-Init scripts and configured commands receive:
+Configured commands receive:
 
 - `TREEBOOT_ROOT_PATH`: root checkout used as the file-operation source.
 - `TREEBOOT_WORKTREE_PATH`: current worktree where setup is applied.
@@ -306,7 +305,7 @@ The command only prints the script; it does not install completion files.
 ## Project status
 
 `treeboot` is feature-complete for its core worktree bootstrap workflow. The
-current compatibility contract is [spec v1.16.1](./docs/SPEC.md); this README is
+current compatibility contract is [spec v2.0.0](./docs/SPEC.md); this README is
 the shorter, human-facing guide.
 
 The name `treeboot` means "worktree bootstrap."

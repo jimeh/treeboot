@@ -80,27 +80,7 @@ fn count_detail(count: usize, singular: &str, plural: &str) -> String {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum OutputEvent {
-    /// A non-executable script candidate was ignored.
-    IgnoredInitScript {
-        /// Script candidate path.
-        path: PathBuf,
-    },
-
-    /// A dry run would execute the given init script.
-    WouldRunInitScript {
-        /// Script path.
-        path: PathBuf,
-        /// Root checkout path passed as the script argument.
-        root_path: PathBuf,
-    },
-
-    /// An init script is about to run.
-    RunInitScript {
-        /// Script path.
-        path: PathBuf,
-    },
-
-    /// No script or config was found.
+    /// No config was found.
     NoConfigDetected,
 
     /// The run started from the root checkout instead of a separate worktree.
@@ -289,17 +269,6 @@ impl OutputEvent {
     #[must_use]
     pub fn message(&self) -> String {
         match self {
-            Self::IgnoredInitScript { path } => {
-                format!("treeboot: ignore {}; not executable", path.display())
-            }
-            Self::WouldRunInitScript { path, root_path } => format!(
-                "treeboot: would run {} {}",
-                path.display(),
-                root_path.display()
-            ),
-            Self::RunInitScript { path } => {
-                format!("treeboot: run {}", path.display())
-            }
             Self::NoConfigDetected => "treeboot: no config detected".to_owned(),
             Self::RootWorktreeDetected => "treeboot: This is not a work tree".to_owned(),
             Self::ConfigDetected { path } => {
@@ -495,28 +464,6 @@ mod tests {
 
     use super::*;
     use crate::FileOperationKind;
-
-    #[test]
-    fn message_should_format_ignored_init_script() {
-        let event = OutputEvent::IgnoredInitScript {
-            path: PathBuf::from(".treeboot.sh"),
-        };
-
-        assert_eq!(
-            event.message(),
-            "treeboot: ignore .treeboot.sh; not executable"
-        );
-    }
-
-    #[test]
-    fn message_should_format_dry_run_init_script() {
-        let event = OutputEvent::WouldRunInitScript {
-            path: PathBuf::from(".treeboot.sh"),
-            root_path: PathBuf::from("/repo"),
-        };
-
-        assert_eq!(event.message(), "treeboot: would run .treeboot.sh /repo");
-    }
 
     #[test]
     fn message_should_format_config_detected() {

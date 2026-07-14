@@ -35,12 +35,11 @@ mod validation;
 
 pub use check::{CheckAction, CheckOptions, CheckReport, WorktreeSnapshot, check};
 pub use context::{Environment, EnvironmentInput, Worktree, WorktreeOptions};
-pub use discovery::{IgnoredInitScript, InitScriptDiscovery};
 pub use doctor::{Diagnostic, DiagnosticStatus, DoctorOptions, DoctorReport, diagnose};
 pub use env::{EnvOptions, EnvReport, inspect_env};
 pub use error::Error;
 pub use executor::{ExecuteOptions, ExecutionReport, Executor};
-pub use init::{InitKind, InitOptions, InitReport, init};
+pub use init::{InitOptions, InitReport, init};
 pub use manual::{
     FileOperationAction, FileOperationCompletionOptions, FileOperationOptions, FileOperationReport,
     ManualFileOperationOptions, file_operation_source_candidates, run_file_operation,
@@ -53,8 +52,7 @@ pub use output::{FileOperationSummary, OutputEvent, Reporter};
 pub use run::{RunAction, RunOptions, RunReport, run};
 pub use runtime::{ResolvedRuntimePolicy, RuntimeOptionOverrides, RuntimePolicy};
 pub use status::{
-    InitScriptStatus, StatusOptions, StatusReport, StatusSnapshotReport, inspect_status,
-    inspect_status_snapshot,
+    StatusOptions, StatusReport, StatusSnapshotReport, inspect_status, inspect_status_snapshot,
 };
 pub use validation::{
     ActionPlan, ActionPlanOptions, PlanOrigin, PlanWarning, PlannedCommand, PlannedFileOperation,

@@ -5,9 +5,6 @@ mod common;
 
 use common::{treeboot, write_file};
 
-#[cfg(unix)]
-use common::write_executable_script;
-
 #[test]
 fn completions_supported_shells_should_emit_scripts() {
     for shell in ["bash", "zsh", "fish", "powershell", "elvish"] {
@@ -42,7 +39,7 @@ fn completions_should_include_current_subcommands_and_flags() {
         .stdout(predicate::str::contains("env"))
         .stdout(predicate::str::contains("--root"))
         .stdout(predicate::str::contains("--config"))
-        .stdout(predicate::str::contains("--no-init-script"))
+        .stdout(predicate::str::contains("--no-init-script").not())
         .stdout(predicate::str::contains("--dry-run"))
         .stdout(predicate::str::contains("--verbose"));
 }
@@ -61,6 +58,17 @@ fn dynamic_completions_should_include_manual_command_flags() {
         .stdout(predicate::str::contains("--no-delete"))
         .stdout(predicate::str::contains("--symlinks"))
         .stdout(predicate::str::contains("--verbose"));
+}
+
+#[test]
+fn completions_should_omit_removed_init_script_flag() {
+    treeboot()
+        .env("COMPLETE", "fish")
+        .args(["--", "treeboot", "init", "--"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--config"))
+        .stdout(predicate::str::contains("--script").not());
 }
 
 #[test]
@@ -87,26 +95,4 @@ fn completions_should_not_require_git_or_config_discovery() {
         .success()
         .stderr(predicate::str::is_empty())
         .stdout(predicate::str::contains("treeboot"));
-}
-
-#[cfg(unix)]
-#[test]
-fn completions_should_not_run_init_scripts() {
-    let dir = TempDir::new().expect("tempdir should be created");
-    let script = dir.path().join(".treeboot.sh");
-    let marker = dir.path().join("script.out");
-    write_executable_script(
-        &script,
-        &format!("#!/bin/sh\nprintf 'ran\\n' > {}\n", marker.display()),
-    );
-
-    treeboot()
-        .args(["completions", "zsh"])
-        .current_dir(dir.path())
-        .assert()
-        .success()
-        .stderr(predicate::str::is_empty())
-        .stdout(predicate::str::contains("treeboot"));
-
-    assert!(!marker.exists());
 }

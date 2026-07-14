@@ -156,25 +156,6 @@ pub enum Error {
         source: std::io::Error,
     },
 
-    /// An init script could not be spawned.
-    #[error("failed to run init script {path:?}: {source}")]
-    ScriptIo {
-        /// Script path.
-        path: PathBuf,
-        /// Source I/O error.
-        #[source]
-        source: std::io::Error,
-    },
-
-    /// An init script exited unsuccessfully.
-    #[error("init script {path:?} failed with {status}")]
-    ScriptFailed {
-        /// Script path.
-        path: PathBuf,
-        /// Script process status.
-        status: ExitStatus,
-    },
-
     /// Writing output failed.
     #[error("failed to write output: {source}")]
     Output {

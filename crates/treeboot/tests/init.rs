@@ -135,46 +135,25 @@ fn init_path_should_fail_when_parent_component_is_file() {
 }
 
 #[test]
-fn init_config_and_script_should_be_usage_error() {
+fn init_script_long_flag_should_be_usage_error() {
     let dir = TempDir::new().expect("tempdir should be created");
 
     treeboot()
-        .args(["init", "--config", "--script"])
+        .args(["init", "--script"])
         .current_dir(dir.path())
         .assert()
         .code(2)
-        .stderr(predicate::str::contains("cannot be used with"));
+        .stderr(predicate::str::contains("unexpected argument"));
 }
 
-#[cfg(unix)]
 #[test]
-fn init_script_should_create_executable_script() {
-    use std::os::unix::fs::PermissionsExt;
-
+fn init_script_short_flag_should_be_usage_error() {
     let dir = TempDir::new().expect("tempdir should be created");
 
     treeboot()
         .args(["init", "-s"])
         .current_dir(dir.path())
         .assert()
-        .success()
-        .stdout(predicate::str::contains("treeboot: created"));
-
-    let metadata = dir
-        .path()
-        .join(".treeboot.sh")
-        .metadata()
-        .expect("script should exist");
-    assert!(metadata.permissions().mode() & 0o111 != 0);
-    assert_eq!(
-        std::fs::read_to_string(dir.path().join(".treeboot.sh"))
-            .expect("script should be readable"),
-        concat!(
-            "#!/usr/bin/env sh\n",
-            "set -eu\n\n",
-            "root_path=\"$1\"\n\n",
-            "printf 'treeboot root directory: %s\\n' \"$root_path\"\n",
-            "printf 'treeboot worktree directory: %s\\n' \"$(pwd)\"\n",
-        )
-    );
+        .code(2)
+        .stderr(predicate::str::contains("unexpected argument"));
 }

@@ -14,9 +14,8 @@ Reusable Rust library for bootstrapping Git worktrees from a repo-local
 </div>
 
 This crate contains the public API used by the `treeboot` CLI. It handles Git
-worktree discovery, init script discovery, declarative config parsing,
-validation, action planning, file operation execution, command execution, and
-structured output events.
+worktree discovery, declarative config parsing, validation, action planning,
+file operation execution, command execution, and structured output events.
 
 This crate exposes the same workflow as typed Rust APIs for callers that want to
 embed treeboot behavior directly.

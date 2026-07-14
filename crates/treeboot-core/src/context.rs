@@ -17,7 +17,7 @@ const TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT: &str =
 const TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE: &str =
     "TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE";
 
-/// Environment variable map built for scripts and configured commands.
+/// Environment variable map built for configured commands.
 pub type Environment = BTreeMap<String, OsString>;
 
 /// Explicit environment variable input used while resolving treeboot behavior.

@@ -15,7 +15,6 @@ Scope:
 - `run` and `init` CLI surfaces
 - Git worktree/root/default-branch discovery
 - treeboot environment aliases
-- init script discovery and execution
 - config discovery with explicit not-yet-implemented handling
 - structured output events
 
@@ -147,7 +146,7 @@ Scope:
 - expose relevant operation flags: `--required`, `--symlinks`, `--compare`,
   `--delete`, and `--no-delete`
 - support shared `--root`, `--strict`, `--force`, and `--dry-run` behavior
-- skip config discovery, init script discovery, and configured commands
+- skip configured commands and actions while loading config policy when present
 
 Validation focus:
 
@@ -184,8 +183,7 @@ Scope:
 - add `treeboot schema` with stdout and `--output/-o` support
 - add `treeboot check` for side-effect-free run validation
 - add `treeboot doctor` for structured diagnostics
-- add `treeboot env` for the environment exposed to init scripts and configured
-  commands
+- add `treeboot env` for the environment exposed to configured commands
 - support `--format text|json|yaml`, `--json`, and `--yaml` for `status`,
   `config`, `version`, `check`, `doctor`, and `env`
 - expose core crate report functions for embedders that need command-shaped
@@ -195,8 +193,7 @@ Validation focus:
 
 - text output stays human-oriented and useful by default
 - JSON and YAML outputs are parseable and stable enough for automation
-- check and doctor perform no file, init script, or configured command side
-  effects
+- check and doctor perform no file or configured command side effects
 - generated schema and metadata freshness is enforced by
   `mise run generate:check`
 

@@ -2,7 +2,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use clap::Args;
-use treeboot_core::{Error, InitScriptStatus, StatusOptions, StatusReport, StatusSnapshotReport};
+use treeboot_core::{Error, StatusOptions, StatusReport, StatusSnapshotReport};
 
 use super::environment_input;
 use super::output::{OutputArgs, ReportFormat, write_structured};
@@ -13,13 +13,9 @@ pub(crate) struct StatusArgs {
     #[arg(short, long)]
     root: Option<PathBuf>,
 
-    /// Use one specific config file and skip init script discovery.
+    /// Use one specific config file instead of config discovery.
     #[arg(short, long)]
     config: Option<PathBuf>,
-
-    /// Skip init script discovery and use declarative config discovery.
-    #[arg(long)]
-    no_init_script: bool,
 
     #[command(flatten)]
     output: OutputArgs,
@@ -53,20 +49,6 @@ fn print_status_text(report: &StatusReport) -> std::io::Result<()> {
     };
     writeln!(handle, "default_branch: {default_branch}")?;
 
-    match &report.init_script {
-        InitScriptStatus::Skipped => writeln!(handle, "init_script: (skipped)")?,
-        InitScriptStatus::Found { path } => {
-            writeln!(handle, "init_script: {}", path.display())?;
-        }
-        InitScriptStatus::NotFound { ignored } => {
-            writeln!(handle, "init_script: (none)")?;
-            for ignored in ignored {
-                writeln!(handle, "ignored_init_script: {}", ignored.path.display())?;
-            }
-        }
-        _ => writeln!(handle, "init_script: (unknown)")?,
-    }
-
     if let Some(path) = &report.config {
         writeln!(handle, "config: {}", path.display())
     } else {
@@ -81,7 +63,6 @@ impl From<StatusArgs> for StatusOptions {
             root: args.root,
             environment: environment_input(),
             config: args.config,
-            no_init_script: args.no_init_script,
         }
     }
 }
