@@ -34,12 +34,12 @@ explicitly changing the behavior contract.
 
 - Git's main worktree is the default root source. Keep Git command behavior
   visible and testable.
-- Init scripts are unrestricted escape hatches; declarative config should be
-  validated before side effects.
+- Configured commands are the escape hatch for custom setup; declarative config
+  should be validated before side effects.
 - File-operation sources are root-anchored. Targets are worktree-anchored.
 - Declarative config and manual file commands must share validation and file
   execution semantics.
-- Commands and scripts receive the same treeboot environment aliases.
+- Configured commands receive the treeboot environment aliases.
 
 ## Testing Cues
 

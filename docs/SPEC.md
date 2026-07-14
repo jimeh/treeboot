@@ -419,7 +419,7 @@ The shared worktree context object has this shape:
 {
   "package": "treeboot",
   "version": "0.8.0",
-  "spec_version": "1.13.1"
+  "spec_version": "2.0.0"
 }
 ```
 

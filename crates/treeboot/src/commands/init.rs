@@ -6,7 +6,7 @@ use treeboot_core::InitOptions;
 #[derive(Debug, Args, Clone, Default)]
 pub(crate) struct InitArgs {
     /// Create a starter TOML config.
-    #[arg(long)]
+    #[arg(long = "config")]
     _config: bool,
 
     /// Output path for the generated file.

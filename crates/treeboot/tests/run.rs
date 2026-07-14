@@ -2102,18 +2102,22 @@ args = ["-c", "printf '%s\n' \"$TREEBOOT_DEFAULT_BRANCH\" > {}"]
 
 #[cfg(unix)]
 #[test]
-fn executable_legacy_script_should_not_run_or_override_config() {
+fn executable_legacy_scripts_should_not_run_or_override_config() {
     let repo = git_worktree();
-    let script = repo.worktree_path().join(".treeboot.sh");
     let script_output = repo.worktree_path().join("script.out");
     let command_output = repo.worktree_path().join("command.out");
-    write_executable_script(
-        &script,
-        &format!(
-            "#!/bin/sh\nprintf 'script\\n' > {}\n",
-            script_output.display()
-        ),
-    );
+    for relative in [".treeboot.sh", ".treebootrc", ".config/treeboot/init"] {
+        let script = repo.worktree_path().join(relative);
+        let parent = script.parent().expect("legacy script should have a parent");
+        std::fs::create_dir_all(parent).expect("legacy script parent should be created");
+        write_executable_script(
+            &script,
+            &format!(
+                "#!/bin/sh\nprintf 'script\\n' > {}\n",
+                script_output.display()
+            ),
+        );
+    }
     write_file(
         &repo.worktree_path().join(".treeboot.toml"),
         &format!(
