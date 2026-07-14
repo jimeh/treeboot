@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.11.0](https://github.com/jimeh/treeboot/compare/v0.10.0...v0.11.0) (2026-07-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* Treeboot no longer discovers or executes legacy init scripts such as `.treeboot.sh`, `.treebootrc`, or `.config/treeboot/init`; use declarative `.treeboot.toml` commands instead.
+
+### Features
+
+* make declarative config the only bootstrap mode ([#117](https://github.com/jimeh/treeboot/issues/117)) ([c41ac0a](https://github.com/jimeh/treeboot/commit/c41ac0afc44abf56cfdaba4da96e7a3b3f34f149))
+
 ## [0.10.0](https://github.com/jimeh/treeboot/compare/v0.9.0...v0.10.0) (2026-07-13)
 
 
