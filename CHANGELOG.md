@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.12.0](https://github.com/jimeh/treeboot/compare/v0.11.0...v0.12.0) (2026-07-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* The selected public normalized config structs and `Worktree` in `treeboot-core` are now `#[non_exhaustive]`. Downstream callers that construct them with struct literals or destructure them exhaustively must migrate to the documented constructors, defaults, and `..` patterns. This intentionally targets the next incompatible pre-1.0 minor release.
+
+### Features
+
+* add worktree teardown commands ([#119](https://github.com/jimeh/treeboot/issues/119)) ([edb0bcd](https://github.com/jimeh/treeboot/commit/edb0bcd338408909bdb4a848cebb8016fd8f9fed))
+
 ## [0.11.0](https://github.com/jimeh/treeboot/compare/v0.10.0...v0.11.0) (2026-07-14)
 
 
