@@ -13,8 +13,16 @@ fn schema_should_describe_both_teardown_command_forms() {
         serde_json::from_str(ROOT_SCHEMA_JSON).expect("schema should parse");
     let properties = &schema["properties"];
 
-    assert!(properties["teardown_commands"].is_object());
-    assert!(properties["teardown_command"].is_object());
+    assert_eq!(properties["teardown_commands"]["type"], "array");
+    assert_eq!(
+        properties["teardown_commands"]["items"]["$ref"],
+        "#/$defs/CommandEntry"
+    );
+    assert_eq!(properties["teardown_command"]["type"], "array");
+    assert_eq!(
+        properties["teardown_command"]["items"]["$ref"],
+        "#/$defs/CommandObject"
+    );
 }
 
 #[test]

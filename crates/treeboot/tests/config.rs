@@ -105,6 +105,7 @@ commands = [
     assert_eq!(config["default_ignore"], serde_json::json!([".DS_Store"]));
     assert_eq!(config["dangerously_allow_sources_outside_root"], false);
     assert_eq!(config["dangerously_allow_targets_outside_worktree"], false);
+    assert_eq!(config["teardown_commands"], serde_json::json!([]));
 
     let files = config["files"]
         .as_array()
