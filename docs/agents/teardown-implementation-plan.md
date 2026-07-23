@@ -1,6 +1,6 @@
 # Teardown Commands And Public Config Evolution Plan
 
-Status: proposed.
+Status: implemented.
 
 This plan adds an explicit worktree teardown phase while using the same
 compatibility boundary to make Treeboot's public normalized config structs

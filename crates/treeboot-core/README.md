@@ -88,20 +88,27 @@ use treeboot_core::{
 fn teardown(
     approved: bool,
     reporter: &mut dyn Reporter,
-) -> treeboot_core::Result<()> {
+) -> treeboot_core::Result<bool> {
     let prepared = prepare_teardown(TeardownOptions::default(), reporter)?;
+    let Some(plan) = prepared.plan() else {
+        return Ok(true);
+    };
 
-    if approved && let Some(plan) = prepared.plan() {
-        execute_teardown(
-            plan,
-            TeardownExecuteOptions::default(),
-            reporter,
-        )?;
+    if !approved {
+        return Ok(false);
     }
 
-    Ok(())
+    execute_teardown(
+        plan,
+        TeardownExecuteOptions::default(),
+        reporter,
+    )?;
+    Ok(true)
 }
 ```
+
+When this returns `Ok(false)`, embedding callers should report an unsuccessful
+status (for example, exit 1) and must not remove the worktree.
 
 Bootstrap `ActionPlan` and `TeardownPlan` keep separate phase contents while
 sharing command planning, cwd/environment validation, and command runtime

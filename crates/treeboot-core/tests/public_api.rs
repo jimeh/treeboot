@@ -135,15 +135,27 @@ fn public_config_struct_policy_should_keep_selected_types_non_exhaustive() {
 #[test]
 fn public_worktree_constructor_should_preserve_parts_and_detect_root() {
     let root = PathBuf::from("/repo");
-    let worktree = Worktree::from_parts(
+    let root_worktree = Worktree::from_parts(
         root.clone(),
         root.clone(),
         "main".to_owned(),
         Environment::new(),
     );
 
-    assert_eq!(worktree.root_path, root);
-    assert!(worktree.is_root());
+    assert_eq!(root_worktree.root_path, root);
+    assert!(root_worktree.is_root());
+
+    let linked_path = PathBuf::from("/repo-linked");
+    let linked_worktree = Worktree::from_parts(
+        root.clone(),
+        linked_path.clone(),
+        "main".to_owned(),
+        Environment::new(),
+    );
+
+    assert_eq!(linked_worktree.root_path, root);
+    assert_eq!(linked_worktree.worktree_path, linked_path);
+    assert!(!linked_worktree.is_root());
 }
 
 #[test]
