@@ -107,8 +107,8 @@ pub fn prepare_teardown(
         });
     };
 
-    let config = Config::load(&path, &context)?;
     report(reporter, OutputEvent::ConfigDetected { path: path.clone() })?;
+    let config = Config::load(&path, &context)?;
     let plan = TeardownPlan::from_manifest(&path, &config, &context)?;
     if plan.commands().is_empty() {
         report(reporter, OutputEvent::NoTeardownCommandsConfigured)?;

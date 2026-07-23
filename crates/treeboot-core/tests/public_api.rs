@@ -147,6 +147,54 @@ fn public_worktree_constructor_should_preserve_parts_and_detect_root() {
 }
 
 #[test]
+fn public_worktree_discovery_should_keep_main_identity_with_root_overrides() {
+    let repo = git_worktree();
+    let alternate_root = TempDir::new().expect("alternate root should be created");
+    let cwd = Some(repo.root_path().to_path_buf());
+    let expected_main = canonical_path(repo.root_path());
+    let expected_source_root = canonical_path(alternate_root.path());
+
+    let explicit = Worktree::discover(WorktreeOptions {
+        cwd: cwd.clone(),
+        root: Some(alternate_root.path().to_path_buf()),
+        environment: EnvironmentInput::empty(),
+    })
+    .expect("worktree should resolve with explicit root");
+    assert!(explicit.is_root());
+    assert_eq!(explicit.worktree_path, expected_main);
+    assert_eq!(explicit.root_path, expected_source_root);
+
+    for environment in [
+        EnvironmentInput {
+            treeboot_root_path: Some(OsString::from(alternate_root.path())),
+            ..EnvironmentInput::empty()
+        },
+        EnvironmentInput {
+            codex_source_tree_path: Some(OsString::from(alternate_root.path())),
+            ..EnvironmentInput::empty()
+        },
+        EnvironmentInput {
+            conductor_root_path: Some(OsString::from(alternate_root.path())),
+            ..EnvironmentInput::empty()
+        },
+        EnvironmentInput {
+            superset_root_path: Some(OsString::from(alternate_root.path())),
+            ..EnvironmentInput::empty()
+        },
+    ] {
+        let discovered = Worktree::discover(WorktreeOptions {
+            cwd: cwd.clone(),
+            root: None,
+            environment,
+        })
+        .expect("worktree should resolve with environment root");
+        assert!(discovered.is_root());
+        assert_eq!(discovered.worktree_path, expected_main);
+        assert_eq!(discovered.root_path, expected_source_root);
+    }
+}
+
+#[test]
 fn public_non_exhaustive_config_types_should_support_rest_destructuring() {
     let (temp, context) = temp_worktree("rest-destructuring");
     let config_path = temp.path().join(".treeboot.toml");

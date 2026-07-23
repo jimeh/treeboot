@@ -172,6 +172,10 @@ impl ActionPlan {
         self.commands.as_slice()
     }
 
+    pub(crate) const fn planned_commands(&self) -> &PlannedCommands {
+        &self.commands
+    }
+
     /// Builds a validated action plan from a parsed treeboot manifest.
     ///
     /// This does not apply file operations or execute commands. It normalizes
@@ -245,7 +249,7 @@ impl ActionPlan {
             origin,
             config_path,
             files,
-            commands: PlannedCommands::default(),
+            commands: PlannedCommands::empty(context.worktree_path.clone()),
             warnings,
         })
     }
@@ -258,23 +262,41 @@ impl ActionPlan {
         files: Vec<PlannedFileOperation>,
         commands: Vec<PlannedCommand>,
     ) -> Self {
+        let worktree_boundary = context.worktree_path.clone();
         Self {
             context,
             origin,
             config_path,
             files,
-            commands: PlannedCommands(commands),
+            commands: PlannedCommands {
+                commands,
+                worktree_boundary,
+            },
             warnings: Vec::new(),
         }
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct PlannedCommands(Vec<PlannedCommand>);
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PlannedCommands {
+    commands: Vec<PlannedCommand>,
+    worktree_boundary: PathBuf,
+}
 
 impl PlannedCommands {
     pub(crate) fn as_slice(&self) -> &[PlannedCommand] {
-        &self.0
+        &self.commands
+    }
+
+    pub(crate) fn worktree_boundary(&self) -> &Path {
+        &self.worktree_boundary
+    }
+
+    fn empty(worktree_boundary: PathBuf) -> Self {
+        Self {
+            commands: Vec::new(),
+            worktree_boundary,
+        }
     }
 }
 
@@ -1238,7 +1260,10 @@ fn plan_commands(
         });
     }
 
-    Ok(PlannedCommands(planned))
+    Ok(PlannedCommands {
+        commands: planned,
+        worktree_boundary: worktree_path.to_path_buf(),
+    })
 }
 
 fn validate_source_symlinks(
@@ -1588,15 +1613,12 @@ mod tests {
     }
 
     fn context(root_path: &Path, worktree_path: &Path) -> Worktree {
-        Worktree {
-            root_path: root_path.to_path_buf(),
-            worktree_path: worktree_path.to_path_buf(),
-            default_branch: "main".to_owned(),
-            environment: BTreeMap::from([(
-                "TREEBOOT_ROOT_PATH".to_owned(),
-                OsString::from(root_path),
-            )]),
-        }
+        Worktree::from_parts(
+            root_path.to_path_buf(),
+            worktree_path.to_path_buf(),
+            "main".to_owned(),
+            BTreeMap::from([("TREEBOOT_ROOT_PATH".to_owned(), OsString::from(root_path))]),
+        )
     }
 
     fn empty_config() -> Config {

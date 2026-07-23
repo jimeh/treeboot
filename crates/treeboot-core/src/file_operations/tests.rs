@@ -208,12 +208,12 @@ fn short_temp_workspace(name: &str) -> (PathBuf, PathBuf) {
 }
 
 fn context(root_path: &Path, worktree_path: &Path) -> Worktree {
-    Worktree {
-        root_path: root_path.to_path_buf(),
-        worktree_path: worktree_path.to_path_buf(),
-        default_branch: "main".to_owned(),
-        environment: BTreeMap::from([("TREEBOOT_ROOT_PATH".to_owned(), OsString::from(root_path))]),
-    }
+    Worktree::from_parts(
+        root_path.to_path_buf(),
+        worktree_path.to_path_buf(),
+        "main".to_owned(),
+        BTreeMap::from([("TREEBOOT_ROOT_PATH".to_owned(), OsString::from(root_path))]),
+    )
 }
 
 fn operation(

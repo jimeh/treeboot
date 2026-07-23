@@ -162,11 +162,10 @@ fn check_config(
         context,
         plan_options.into_action_plan_options(),
     );
-    let mut diagnostics = vec![ok("config", format!("config parsed: {}", path.display()))];
-    diagnostics.push(match phases.bootstrap() {
-        Ok(_) => ok("bootstrap_validation", "bootstrap config is valid"),
-        Err(error) => error_diag("bootstrap_validation", error.to_string()),
-    });
+    let mut diagnostics = vec![match phases.bootstrap() {
+        Ok(_) => ok("config", format!("config is valid: {}", path.display())),
+        Err(error) => error_diag("config_validation", error.to_string()),
+    }];
     diagnostics.push(match phases.teardown() {
         Ok(_) => ok("teardown_validation", "teardown config is valid"),
         Err(error) => error_diag("teardown_validation", error.to_string()),

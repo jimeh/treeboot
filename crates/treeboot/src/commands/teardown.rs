@@ -82,9 +82,14 @@ fn confirm(
     worktree: &std::path::Path,
     command_count: usize,
 ) -> Result<bool, CliError> {
+    let command_noun = if command_count == 1 {
+        "command"
+    } else {
+        "commands"
+    };
     writeln!(
         output,
-        "Run {command_count} teardown commands for {}?",
+        "Run {command_count} teardown {command_noun} for {}?",
         worktree.display()
     )
     .map_err(CliError::PromptIo)?;
@@ -160,6 +165,32 @@ mod tests {
                     2
                 )
                 .expect("prompt should succeed")
+            );
+        }
+    }
+
+    #[test]
+    fn confirmation_uses_singular_and_plural_command_grammar() {
+        for (count, expected) in [
+            (1, "Run 1 teardown command for /worktree?"),
+            (2, "Run 2 teardown commands for /worktree?"),
+        ] {
+            let mut input = io::Cursor::new(b"no\n");
+            let mut output = Vec::new();
+
+            assert!(
+                !confirm(
+                    &mut input,
+                    &mut output,
+                    std::path::Path::new("/worktree"),
+                    count,
+                )
+                .expect("prompt should succeed")
+            );
+            assert!(
+                String::from_utf8(output)
+                    .expect("prompt should be UTF-8")
+                    .contains(expected)
             );
         }
     }

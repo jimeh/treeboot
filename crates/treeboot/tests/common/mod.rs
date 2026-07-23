@@ -26,6 +26,10 @@ pub fn toml_string(value: &str) -> String {
 pub fn treeboot() -> Command {
     let mut command = Command::cargo_bin("treeboot").expect("treeboot binary should build");
     command
+        .env_remove("TREEBOOT_ROOT_PATH")
+        .env_remove("CODEX_SOURCE_TREE_PATH")
+        .env_remove("CONDUCTOR_ROOT_PATH")
+        .env_remove("SUPERSET_ROOT_PATH")
         .env_remove("TREEBOOT_STRICT")
         .env_remove("TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT")
         .env_remove("TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE");

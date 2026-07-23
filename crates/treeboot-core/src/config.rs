@@ -276,12 +276,13 @@ impl FileOperation {
         build_file_operation(
             operation,
             context,
-            source,
-            target,
+            &source,
+            &target,
             false,
             settings,
             &[],
             declaration,
+            FileOperationPathNormalization::ExistingAware,
         )
         .map_err(|error| Error::FileOperationInvalid {
             operation: operation.as_str(),
@@ -1097,47 +1098,59 @@ fn normalize_file_object(
     )
     .map_err(|invalid| invalid_config_error(path, content, span, invalid.config_message()))?;
 
+    let source = PathBuf::from(source);
+    let target = PathBuf::from(target);
     build_file_operation(
         operation,
         context,
-        PathBuf::from(source),
-        PathBuf::from(target),
+        &source,
+        &target,
         object.required,
         settings,
         default_ignore,
         span,
+        FileOperationPathNormalization::ExistingAware,
     )
     .map_err(|error| invalid_config_error(path, content, span, error.to_string()))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FileOperationPathNormalization {
+    ExistingAware,
+    PreserveIdentity,
 }
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_file_operation(
     operation: FileOperationKind,
     context: &Worktree,
-    source: PathBuf,
-    target: PathBuf,
+    source: &Path,
+    target: &Path,
     required: bool,
     settings: FileOperationSettings,
     default_ignore: &[String],
     declaration: SourceSpan,
+    path_normalization: FileOperationPathNormalization,
 ) -> std::result::Result<FileOperation, NormalizedFileOperationError> {
     let source_path = resolve_operation_path(
         FileOperationPathRole::Source,
         &context.root_path,
-        &source,
+        source,
         false,
+        path_normalization,
     )?;
     let target_path = resolve_operation_path(
         FileOperationPathRole::Target,
         &context.worktree_path,
-        &target,
+        target,
         true,
+        path_normalization,
     )?;
 
     Ok(FileOperation {
         operation,
-        source,
-        target,
+        source: source.to_path_buf(),
+        target: target.to_path_buf(),
         source_path,
         target_path,
         required,
@@ -1152,13 +1165,13 @@ pub(crate) fn build_file_operation(
 }
 
 #[derive(Debug, Clone, Copy)]
-enum FileOperationPathRole {
+pub(crate) enum FileOperationPathRole {
     Source,
     Target,
 }
 
 impl FileOperationPathRole {
-    const fn as_str(self) -> &'static str {
+    pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::Source => "source",
             Self::Target => "target",
@@ -1170,18 +1183,45 @@ impl FileOperationPathRole {
 pub(crate) struct NormalizedFileOperationError {
     role: FileOperationPathRole,
     path: PathBuf,
-    message: String,
+    issue: FileOperationPathIssue,
+}
+
+#[derive(Debug)]
+pub(crate) enum FileOperationPathIssue {
+    Unsupported(&'static str),
+    Normalize(std::io::Error),
+}
+
+impl NormalizedFileOperationError {
+    pub(crate) const fn role(&self) -> FileOperationPathRole {
+        self.role
+    }
+
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub(crate) const fn issue(&self) -> &FileOperationPathIssue {
+        &self.issue
+    }
 }
 
 impl fmt::Display for NormalizedFileOperationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "{} path `{}`: {}",
-            self.role.as_str(),
-            self.path.display(),
-            self.message
-        )
+        match &self.issue {
+            FileOperationPathIssue::Unsupported(reason) => write!(
+                formatter,
+                "{} path `{}`: unsupported path: {reason}",
+                self.role.as_str(),
+                self.path.display(),
+            ),
+            FileOperationPathIssue::Normalize(error) => write!(
+                formatter,
+                "{} path `{}`: failed to normalize: {error}",
+                self.role.as_str(),
+                self.path.display(),
+            ),
+        }
     }
 }
 
@@ -1190,19 +1230,23 @@ fn resolve_operation_path(
     base: &Path,
     path: &Path,
     preserve_final: bool,
+    path_normalization: FileOperationPathNormalization,
 ) -> std::result::Result<PathBuf, NormalizedFileOperationError> {
     let resolved =
         paths::resolve_path(base, path).map_err(|source| NormalizedFileOperationError {
             role,
             path: path.to_path_buf(),
-            message: format!("unsupported path: {}", source.reason()),
+            issue: FileOperationPathIssue::Unsupported(source.reason()),
         })?;
+    if path_normalization == FileOperationPathNormalization::PreserveIdentity {
+        return Ok(resolved);
+    }
     if !preserve_final {
         return paths::normalize_maybe_existing(&resolved).map_err(|source| {
             NormalizedFileOperationError {
                 role,
                 path: path.to_path_buf(),
-                message: format!("failed to normalize: {source}"),
+                issue: FileOperationPathIssue::Normalize(source),
             }
         });
     }
@@ -1212,7 +1256,7 @@ fn resolve_operation_path(
             NormalizedFileOperationError {
                 role,
                 path: path.to_path_buf(),
-                message: format!("failed to normalize: {source}"),
+                issue: FileOperationPathIssue::Normalize(source),
             }
         });
     };
@@ -1221,7 +1265,7 @@ fn resolve_operation_path(
         paths::normalize_maybe_existing(parent).map_err(|source| NormalizedFileOperationError {
             role,
             path: path.to_path_buf(),
-            message: format!("failed to normalize: {source}"),
+            issue: FileOperationPathIssue::Normalize(source),
         })?;
     normalized.push(name);
     Ok(paths::normalize_lexical(&normalized))
@@ -1607,15 +1651,12 @@ mod tests {
     use super::*;
 
     fn context() -> Worktree {
-        Worktree {
-            root_path: PathBuf::from("/repo"),
-            worktree_path: PathBuf::from("/repo-worktree"),
-            default_branch: "main".to_owned(),
-            environment: BTreeMap::from([(
-                "TREEBOOT_ROOT_PATH".to_owned(),
-                OsString::from("/repo"),
-            )]),
-        }
+        Worktree::from_parts(
+            PathBuf::from("/repo"),
+            PathBuf::from("/repo-worktree"),
+            "main".to_owned(),
+            BTreeMap::from([("TREEBOOT_ROOT_PATH".to_owned(), OsString::from("/repo"))]),
+        )
     }
 
     fn parse(content: &str) -> Config {
@@ -2003,12 +2044,12 @@ commands = [{{ program = "make", cwd = "{}" }}]
         symlink_dir(&root, &alias_root).expect("root alias should be created");
         symlink_dir(&worktree, &alias_worktree).expect("worktree alias should be created");
 
-        let context = Worktree {
-            root_path: alias_root,
-            worktree_path: alias_worktree,
-            default_branch: "main".to_owned(),
-            environment: BTreeMap::new(),
-        };
+        let context = Worktree::from_parts(
+            alias_root,
+            alias_worktree,
+            "main".to_owned(),
+            BTreeMap::new(),
+        );
         let config = parse_config(
             Path::new(".treeboot.toml"),
             r#"

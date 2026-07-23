@@ -98,9 +98,9 @@ environment aliases, and Git worktree queries build a `Worktree`.
 flowchart LR
   OPT["RunOptions<br/>cwd<br/>root override"]
   ENV["Environment<br/>TREEBOOT_ROOT_PATH<br/>compat aliases"]
-  RES["context::resolve<br/>normalize current worktree<br/>discover root source<br/>build environment map"]
+  RES["context::resolve<br/>normalize current + main worktrees<br/>discover root source<br/>build environment map"]
   GIT["Git queries<br/>rev-parse --show-toplevel<br/>worktree list --porcelain -z<br/>origin/HEAD"]
-  WT["Worktree<br/>root_path / worktree_path<br/>default_branch / environment"]
+  WT["Worktree<br/>root_path / worktree_path<br/>private main-worktree identity<br/>default_branch / environment"]
 
   OPT --> RES
   ENV --> RES
@@ -109,7 +109,9 @@ flowchart LR
 ```
 
 _Root source precedence is explicit `--root`, then treeboot-compatible
-environment aliases, then Git's main worktree._
+environment aliases, then Git's main worktree. Git's actual main-worktree
+identity is always discovered independently so source-root overrides cannot
+change root-target classification._
 
 `git.rs` keeps Git-discovered filesystem paths in platform-native form. On Unix,
 path output remains raw bytes through parsing and conversion; only branch names
@@ -126,9 +128,10 @@ or an explicit override.
 
 File operation targets and command working directories are anchored to
 `worktree_path`. `Worktree::is_root()` is the single root-checkout predicate
-used by run, manual operations, check, doctor, and teardown. Teardown rejects a
-root target in core preparation; inspection commands retain their existing
-strict/non-strict root behavior.
+used by run, manual operations, check, doctor, and teardown. It compares the
+target with Git's actual main-worktree identity, not the overridable source
+root. Teardown rejects a root target in core preparation; inspection commands
+retain their existing strict/non-strict root behavior.
 
 ### Environment aliases
 
@@ -143,7 +146,7 @@ before planning file and command work.
 ```mermaid
 flowchart TD
   CLI["CLI dispatch<br/>RunOptions"] --> CTX["Resolve context<br/>context::resolve"]
-  CTX --> ROOT{"Root checkout?<br/>root == worktree"}
+  CTX --> ROOT{"Root checkout?<br/>Git main == worktree"}
   ROOT -->|no| CONFIG["Discover config<br/>requested or default path<br/>load TOML"]
   ROOT -->|yes| DONE["Report RootWorktreeDetected<br/>exit 0, or error under pre-config strict"]
   CONFIG --> PLAN["Plan config<br/>ActionPlan"]
@@ -417,15 +420,19 @@ project-local task runners.
 `validation.rs` uses one command-slice planner for both phases. It resolves
 command cwd to the worktree, rejects cwd escapes, prevents command env entries
 from overriding treeboot-owned environment variables, and retains declaration
-attribution. `ActionPlan` and `TeardownPlan` each embed the resulting private
-`PlannedCommands`.
+attribution. The resulting `PlannedCommands` also retains the canonical worktree
+boundary established at planning time. `ActionPlan` and `TeardownPlan` each
+embed this private shared representation.
 
 ### Execution
 
-`commands.rs` freshly resolves each command cwd and the worktree boundary after
+`commands.rs` freshly resolves each command cwd and the live worktree root after
 file operations for bootstrap and immediately before every spawn in both phases.
-It rejects a live cwd escape, then builds either a shell process (`sh -c` or
-`cmd /C`) or a direct program invocation and runs it in sequence.
+It requires the live root to equal the planning-time boundary and then rejects a
+live cwd escape. This prevents a renamed worktree path replaced by an outside
+symlink from redefining both sides of the containment check. The runtime then
+builds either a shell process (`sh -c` or `cmd /C`) or a direct program
+invocation and runs it in sequence.
 
 `Executor` remains the bootstrap file-plus-command orchestrator and delegates
 its command phase to this runtime. `teardown.rs` calls the same runtime directly

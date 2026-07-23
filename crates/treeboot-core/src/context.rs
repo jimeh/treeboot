@@ -148,11 +148,15 @@ pub struct Worktree {
     pub default_branch: String,
     /// Canonical treeboot variables and compatibility aliases.
     pub environment: Environment,
+    main_worktree_path: PathBuf,
 }
 
 impl Worktree {
     /// Creates a resolved worktree context from supplied parts without
     /// performing discovery or filesystem validation.
+    ///
+    /// The supplied `root_path` is also treated as Git's main-worktree identity
+    /// for [`Self::is_root`].
     #[must_use]
     pub fn from_parts(
         root_path: PathBuf,
@@ -160,18 +164,20 @@ impl Worktree {
         default_branch: String,
         environment: Environment,
     ) -> Self {
+        let main_worktree_path = root_path.clone();
         Self {
             root_path,
             worktree_path,
             default_branch,
             environment,
+            main_worktree_path,
         }
     }
 
     /// Returns whether the selected worktree is the root checkout.
     #[must_use]
     pub fn is_root(&self) -> bool {
-        self.root_path == self.worktree_path
+        self.main_worktree_path == self.worktree_path
     }
 
     /// Discovers worktree metadata from the provided options.
@@ -193,7 +199,12 @@ pub(crate) fn resolve(options: &WorktreeOptions) -> Result<Worktree> {
     )?;
     let git = Git::new(&cwd);
     let worktree_path = normalize_existing_path(&git.worktree_path()?)?;
-    let root_path = discover_root_path(options, &cwd, &git)?;
+    let main_worktree_path = git
+        .main_worktree_path()?
+        .map(|path| normalize_existing_path(&path))
+        .transpose()?
+        .ok_or(Error::RootPathNotFound)?;
+    let root_path = discover_root_path(options, &cwd, &main_worktree_path)?;
     let default_branch = discover_default_branch(options, &git)?;
     let environment = build_environment(&root_path, &worktree_path, &default_branch);
 
@@ -202,10 +213,15 @@ pub(crate) fn resolve(options: &WorktreeOptions) -> Result<Worktree> {
         worktree_path,
         default_branch,
         environment,
+        main_worktree_path,
     })
 }
 
-fn discover_root_path(options: &WorktreeOptions, cwd: &Path, git: &Git) -> Result<PathBuf> {
+fn discover_root_path(
+    options: &WorktreeOptions,
+    cwd: &Path,
+    main_worktree_path: &Path,
+) -> Result<PathBuf> {
     if let Some(path) = &options.root {
         return normalize_existing_path(&resolve_input_path(cwd, path));
     }
@@ -214,10 +230,7 @@ fn discover_root_path(options: &WorktreeOptions, cwd: &Path, git: &Git) -> Resul
         return normalize_existing_path(&resolve_input_path(cwd, &PathBuf::from(value)));
     }
 
-    git.main_worktree_path()?
-        .map(|path| normalize_existing_path(&path))
-        .transpose()?
-        .ok_or(Error::RootPathNotFound)
+    Ok(main_worktree_path.to_path_buf())
 }
 
 fn discover_default_branch(options: &WorktreeOptions, git: &Git) -> Result<String> {

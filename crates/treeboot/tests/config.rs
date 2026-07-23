@@ -517,6 +517,27 @@ copy = [
 }
 
 #[test]
+fn config_command_should_warn_when_teardown_validation_would_fail() {
+    let repo = git_worktree();
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"teardown_commands = [{ run = "echo teardown", cwd = ".." }]"#,
+    );
+
+    treeboot()
+        .arg("config")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(
+            "treeboot: warning: teardown validation would fail:",
+        ))
+        .stderr(predicate::str::contains(
+            "command cwd resolves outside worktree",
+        ));
+}
+
+#[test]
 fn config_command_json_should_warn_when_run_validation_would_fail() {
     let repo = git_worktree();
     let config = repo.worktree_path().join(".treeboot.toml");

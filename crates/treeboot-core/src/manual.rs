@@ -2,7 +2,8 @@ use std::ffi::OsStr;
 use std::path::{Component, Path, PathBuf};
 
 use crate::config::{
-    Config, FileOperationSettings, FileOperationSettingsInput, RawMetadataField,
+    Config, FileOperationPathIssue, FileOperationPathNormalization, FileOperationSettings,
+    FileOperationSettingsInput, NormalizedFileOperationError, RawMetadataField,
     build_file_operation, effective_ignore_patterns, normalize_file_operation_settings,
 };
 use crate::context;
@@ -413,8 +414,8 @@ fn manual_operations(
             build_file_operation(
                 operation,
                 context,
-                source,
-                target,
+                &source,
+                &target,
                 required,
                 FileOperationSettings {
                     compare: settings.compare,
@@ -426,13 +427,37 @@ fn manual_operations(
                 },
                 &[],
                 manual_span(),
+                FileOperationPathNormalization::PreserveIdentity,
             )
             .map_err(|error| Error::FileOperationInvalid {
                 operation: operation.as_str(),
-                message: error.to_string(),
+                message: manual_path_error_message(&error, &source, &target),
             })
         })
         .collect()
+}
+
+fn manual_path_error_message(
+    error: &NormalizedFileOperationError,
+    source: &Path,
+    target: &Path,
+) -> String {
+    match error.issue() {
+        FileOperationPathIssue::Unsupported(reason) => format!(
+            "unsupported {} path `{}` for source `{}` target `{}`: {reason}",
+            error.role().as_str(),
+            error.path().display(),
+            source.display(),
+            target.display(),
+        ),
+        FileOperationPathIssue::Normalize(io_error) => format!(
+            "failed to normalize {} path `{}` for source `{}` target `{}`: {io_error}",
+            error.role().as_str(),
+            error.path().display(),
+            source.display(),
+            target.display(),
+        ),
+    }
 }
 
 fn manual_target(
@@ -572,15 +597,12 @@ mod tests {
     }
 
     fn context(root_path: &Path, worktree_path: &Path) -> Worktree {
-        Worktree {
-            root_path: root_path.to_path_buf(),
-            worktree_path: worktree_path.to_path_buf(),
-            default_branch: "main".to_owned(),
-            environment: BTreeMap::from([(
-                "TREEBOOT_ROOT_PATH".to_owned(),
-                OsString::from(root_path),
-            )]),
-        }
+        Worktree::from_parts(
+            root_path.to_path_buf(),
+            worktree_path.to_path_buf(),
+            "main".to_owned(),
+            BTreeMap::from([("TREEBOOT_ROOT_PATH".to_owned(), OsString::from(root_path))]),
+        )
     }
 
     fn options(operation: FileOperationKind, sources: &[&str]) -> ManualFileOperationOptions {
@@ -610,6 +632,27 @@ mod tests {
         assert_eq!(operations[0].target, PathBuf::from(".env"));
         assert_eq!(operations[0].source_path, root.join(".env"));
         assert_eq!(operations[0].target_path, worktree.join(".env"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn manual_operations_should_preserve_context_path_aliases() {
+        let (root, worktree) = temp_workspace("context-path-aliases");
+        let root_alias = root.with_file_name("root-alias");
+        let worktree_alias = worktree.with_file_name("worktree-alias");
+        std::os::unix::fs::symlink(&root, &root_alias).expect("root alias should be created");
+        std::os::unix::fs::symlink(&worktree, &worktree_alias)
+            .expect("worktree alias should be created");
+        let context = context(&root_alias, &worktree_alias);
+
+        let operations = FileOperation::from_manual_options(
+            &context,
+            options(FileOperationKind::Copy, &[".env"]),
+        )
+        .expect("operation should preserve context path identity");
+
+        assert_eq!(operations[0].source_path, root_alias.join(".env"));
+        assert_eq!(operations[0].target_path, worktree_alias.join(".env"));
     }
 
     #[test]

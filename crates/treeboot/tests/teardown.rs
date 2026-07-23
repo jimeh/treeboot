@@ -19,6 +19,46 @@ fn teardown_should_reject_root_checkout() {
 }
 
 #[test]
+fn teardown_should_reject_actual_root_with_explicit_source_root_override() {
+    let repo = git_worktree();
+    let alternate_root = tempfile::TempDir::new().expect("alternate root should be created");
+
+    treeboot()
+        .args(["teardown", "--root"])
+        .arg(alternate_root.path())
+        .arg("--dry-run")
+        .current_dir(repo.root_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "teardown is only valid for a linked worktree",
+        ));
+}
+
+#[test]
+fn teardown_should_reject_actual_root_with_source_root_environment_aliases() {
+    let repo = git_worktree();
+    let alternate_root = tempfile::TempDir::new().expect("alternate root should be created");
+
+    for variable in [
+        "TREEBOOT_ROOT_PATH",
+        "CODEX_SOURCE_TREE_PATH",
+        "CONDUCTOR_ROOT_PATH",
+        "SUPERSET_ROOT_PATH",
+    ] {
+        treeboot()
+            .args(["teardown", "--dry-run"])
+            .env(variable, alternate_root.path())
+            .current_dir(repo.root_path())
+            .assert()
+            .code(1)
+            .stderr(predicate::str::contains(
+                "teardown is only valid for a linked worktree",
+            ));
+    }
+}
+
+#[test]
 fn teardown_should_noop_when_discovered_config_is_missing() {
     let repo = git_worktree();
 
@@ -174,6 +214,29 @@ fn bootstrap_semantic_failure_should_not_block_teardown() {
     assert!(marker.exists());
 }
 
+#[cfg(unix)]
+#[test]
+fn bootstrap_command_cwd_escape_should_not_block_teardown() {
+    let repo = git_worktree();
+    let marker = repo.worktree_path().join("cleanup-after-cwd-error");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        &format!(
+            "commands = [{{ run = \"echo bootstrap\", cwd = \"..\" }}]\n\
+             teardown_commands = [\"touch {}\"]\n",
+            toml_string_path(&marker)
+        ),
+    );
+
+    treeboot()
+        .args(["teardown", "--yes"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    assert!(marker.exists());
+}
+
 #[test]
 fn whole_config_parse_failure_should_block_teardown() {
     let repo = git_worktree();
@@ -188,6 +251,7 @@ fn whole_config_parse_failure_should_block_teardown() {
         .current_dir(repo.worktree_path())
         .assert()
         .code(1)
+        .stdout(predicate::str::contains("treeboot: config detected"))
         .stderr(predicate::str::contains(
             "`run` and `program` are mutually exclusive",
         ));

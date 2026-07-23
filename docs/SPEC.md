@@ -648,12 +648,7 @@ when validation produces no warnings.
     {
       "name": "config",
       "status": "ok",
-      "message": "config parsed: /repo-worktree/.treeboot.toml"
-    },
-    {
-      "name": "bootstrap_validation",
-      "status": "ok",
-      "message": "bootstrap config is valid"
+      "message": "config is valid: /repo-worktree/.treeboot.toml"
     },
     {
       "name": "teardown_validation",
@@ -671,7 +666,10 @@ object or `null` when context discovery fails. Each diagnostic has a stable
 
 The diagnostic names defined by this spec are `environment_options`, `worktree`,
 `root`, `root_worktree`, `default_branch`, `environment`, `config`,
-`bootstrap_validation`, and `teardown_validation`.
+`config_validation`, and `teardown_validation`. Bootstrap validation preserves
+the spec-2.0 behavior: success uses `config` with `config is valid: <path>`,
+while failure uses `config_validation`. Teardown validation is reported
+separately as `teardown_validation`.
 
 The `default_branch` diagnostic is `ok` when a non-empty default branch was
 resolved and `warning` when default branch discovery falls back to the
@@ -755,14 +753,18 @@ data. On Unix, this includes non-UTF-8 bytes and boundary whitespace. Git's
 NUL-delimited worktree output is parsed as bytes so path quoting and embedded
 newlines cannot change the discovered root path.
 
+Treeboot always retains Git's discovered main-worktree path as a separate
+identity used for root-target checks. `--root` and environment aliases override
+the file-operation source root only; they cannot make the actual main worktree
+look like a linked worktree.
+
 If no root path can be determined, `treeboot run` fails with a clear error.
 
 ### Root Checkout No-op
 
-If the resolved root path and worktree path are the same, `treeboot run` is
-running from the source checkout rather than a separate worktree. There is no
-file or command bootstrap work to apply because sources and targets point at the
-same tree.
+If Git's actual main-worktree identity and the current worktree path are the
+same, `treeboot run` is running from the root checkout rather than a separate
+worktree. This classification is unchanged by source-root overrides.
 
 In the default mode, treeboot prints `This is not a work tree` and exits
 successfully before discovering config. In strict mode enabled by `--strict` or
@@ -865,9 +867,9 @@ Declarative config is the only bootstrap mode.
 
 1. **Confirm Git context**: Fail early if not inside a Git working tree.
 2. **Discover paths**: Resolve worktree path, root path, and default branch.
-3. **Skip root checkout**: If root path and worktree path match, print
-   `This is not a work tree` and exit before config; strict mode from CLI or
-   environment exits non-zero.
+3. **Skip root checkout**: If Git's actual main-worktree identity and the
+   current worktree path match, print `This is not a work tree` and exit before
+   config; strict mode from CLI or environment exits non-zero.
 4. **Build environment**: Set treeboot canonical variables and compatibility
    aliases.
 5. **Load config**: Discover TOML config unless a specific path is provided. If
@@ -888,9 +890,11 @@ Teardown is an explicitly approved, command-only phase for a linked worktree.
 2. **Discover paths**: Resolve the root checkout, default branch, and
    treeboot-owned environment for that target.
 3. **Reject root checkout**: Fail before config loading or confirmation when
-   root path and target worktree path are equal.
+   Git's actual main-worktree identity and target worktree path are equal.
+   Explicit and environment source-root overrides do not change this identity.
 4. **Load config**: Discover TOML config in the target worktree, or use only the
-   explicitly requested config path.
+   explicitly requested config path. Report `treeboot: config detected <path>`
+   after selecting the path and before reading or parsing it.
 5. **Normalize the whole document**: Parse all declarations and construct one
    normalized config. Any TOML syntax, type, unknown-field, declaration-shape,
    or declaration-normalization error anywhere in the document is fatal.
@@ -922,6 +926,9 @@ These commands may delete resources outside the worktree. [y/N]
 Only `y` and `yes`, case-insensitively after trimming whitespace, approve. Every
 other response, an empty line, and EOF decline. A decline runs nothing and exits
 with code `1`.
+
+The prompt uses `1 teardown command` for one command and
+`<count> teardown commands` for every other count.
 
 When stdin is not a terminal, teardown without `--yes` runs nothing, exits with
 code `1`, and tells the caller to rerun with `--yes`. Prompt read or write
@@ -1291,12 +1298,13 @@ outside the root path are validation errors by default.
 
 Bootstrap and teardown command `cwd` values are normalized relative to
 `TREEBOOT_WORKTREE_PATH`. Paths may contain `..`, but the final resolved path
-must stay inside the worktree. Planning resolves each cwd before any side
-effect. Immediately before spawning each command, treeboot re-resolves the cwd
-and worktree boundary and passes the freshly resolved cwd to the child process.
-For bootstrap this happens after file operations; teardown has no file phase. If
-the live cwd no longer resolves inside the worktree, the command is not spawned
-and the failure follows the normal command-start `allow_failure` policy.
+must stay inside the worktree. Planning resolves each cwd before any side effect
+and retains that canonical worktree boundary. Immediately before spawning each
+command, treeboot re-resolves the cwd and live worktree root. The live root must
+still equal the planning-time boundary, and the freshly resolved cwd must remain
+inside it. For bootstrap this happens after file operations; teardown has no
+file phase. A changed root or escaped cwd prevents the spawn and follows the
+normal command-start `allow_failure` policy.
 
 | Rule                                                        | Behavior                                                        |
 | ----------------------------------------------------------- | --------------------------------------------------------------- |
@@ -1308,6 +1316,7 @@ and the failure follows the normal command-start `allow_failure` policy.
 | Required file operation source does not exist               | Fail before any file operation or command runs.                 |
 | Optional file operation source does not exist               | Skip that operation, make no target changes, and continue.      |
 | Command `cwd` resolves outside the worktree during planning | Fail before any file operation or command runs.                 |
+| Live worktree root differs from its planned boundary        | Do not spawn it; fail or warn and continue per `allow_failure`. |
 | Command `cwd` resolves outside the worktree before spawn    | Do not spawn it; fail or warn and continue per `allow_failure`. |
 | Command `env` overrides treeboot-owned variables            | Fail before any file operation or command runs.                 |
 | Copy or sync encounters an unsafe source symlink            | Fail before any file operation or command runs.                 |
@@ -1774,8 +1783,9 @@ phase plans separate.
 - Teardown commands run without applying any file operation or bootstrap
   command.
 - Commands run sequentially in declaration order.
-- Re-resolve each command cwd and the worktree boundary immediately before spawn
-  and reject a live cwd escape.
+- Re-resolve each command cwd and the live worktree root immediately before
+  spawn, require the root to equal the planning-time boundary, and reject a live
+  cwd escape.
 - A command with `allow_failure = true` warns when it cannot be spawned or exits
   non-zero, then later commands continue.
 - Run from `TREEBOOT_WORKTREE_PATH` unless a command sets `cwd`.
