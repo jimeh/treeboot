@@ -80,7 +80,7 @@ pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport
         environment: options.environment.clone(),
     })?;
 
-    if context.root_path == context.worktree_path {
+    if context.is_root() {
         report(reporter, OutputEvent::RootWorktreeDetected)?;
 
         if pre_config_strict {

@@ -2,11 +2,11 @@ use std::ffi::OsStr;
 use std::path::{Component, Path, PathBuf};
 
 use crate::config::{
-    Config, FileOperationSettings, FileOperationSettingsInput, RawMetadataField,
-    effective_ignore_patterns, normalize_file_operation_settings,
+    Config, FileOperationPathIssue, FileOperationPathNormalization, FileOperationSettings,
+    FileOperationSettingsInput, NormalizedFileOperationError, RawMetadataField,
+    build_file_operation, effective_ignore_patterns, normalize_file_operation_settings,
 };
 use crate::context;
-use crate::paths::{self, UnsupportedPath};
 use crate::{
     ActionPlan, EnvironmentInput, Error, ExecuteOptions, Executor, FileOperation,
     FileOperationKind, MetadataField, OutputEvent, PlanOrigin, Reporter, Result, RuntimePolicy,
@@ -297,7 +297,7 @@ pub fn run_file_operation(
         environment,
     })?;
 
-    if context.root_path == context.worktree_path {
+    if context.is_root() {
         report(reporter, OutputEvent::RootWorktreeDetected)?;
 
         if pre_config_strict {
@@ -411,39 +411,53 @@ fn manual_operations(
         .into_iter()
         .map(|source| {
             let target = manual_target(operation, &source, target.as_deref(), multiple_sources)?;
-            let source_path = resolve_path(
+            build_file_operation(
                 operation,
-                &context.root_path,
-                &source,
-                &source,
-                &target,
-                ManualPathRole::Source,
-            )?;
-            let target_path = resolve_path(
-                operation,
-                &context.worktree_path,
-                &target,
+                context,
                 &source,
                 &target,
-                ManualPathRole::Target,
-            )?;
-            Ok(FileOperation {
-                operation,
-                source_path,
-                target_path,
-                source,
-                target,
                 required,
-                compare: settings.compare,
-                delete: settings.delete,
-                symlinks: settings.symlinks,
-                include: include.clone(),
-                ignore: ignore.clone(),
-                ignore_metadata: settings.ignore_metadata.clone(),
-                declaration: manual_span(),
+                FileOperationSettings {
+                    compare: settings.compare,
+                    delete: settings.delete,
+                    symlinks: settings.symlinks,
+                    include: include.clone(),
+                    ignore: ignore.clone(),
+                    ignore_metadata: settings.ignore_metadata.clone(),
+                },
+                &[],
+                manual_span(),
+                FileOperationPathNormalization::PreserveIdentity,
+            )
+            .map_err(|error| Error::FileOperationInvalid {
+                operation: operation.as_str(),
+                message: manual_path_error_message(&error, &source, &target),
             })
         })
         .collect()
+}
+
+fn manual_path_error_message(
+    error: &NormalizedFileOperationError,
+    source: &Path,
+    target: &Path,
+) -> String {
+    match error.issue() {
+        FileOperationPathIssue::Unsupported(reason) => format!(
+            "unsupported {} path `{}` for source `{}` target `{}`: {reason}",
+            error.role().as_str(),
+            error.path().display(),
+            source.display(),
+            target.display(),
+        ),
+        FileOperationPathIssue::Normalize(io_error) => format!(
+            "failed to normalize {} path `{}` for source `{}` target `{}`: {io_error}",
+            error.role().as_str(),
+            error.path().display(),
+            source.display(),
+            target.display(),
+        ),
+    }
 }
 
 fn manual_target(
@@ -541,59 +555,8 @@ impl From<MetadataField> for RawMetadataField {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-enum ManualPathRole {
-    Source,
-    Target,
-}
-
-impl ManualPathRole {
-    const fn label(self) -> &'static str {
-        match self {
-            Self::Source => "source",
-            Self::Target => "target",
-        }
-    }
-}
-
-fn resolve_path(
-    operation: FileOperationKind,
-    base: &Path,
-    path: &Path,
-    source_path: &Path,
-    target_path: &Path,
-    role: ManualPathRole,
-) -> Result<PathBuf> {
-    paths::resolve_path(base, path).map_err(|source| Error::FileOperationInvalid {
-        operation: operation.as_str(),
-        message: unsupported_path_message(path, source_path, target_path, role, source),
-    })
-}
-
-fn unsupported_path_message(
-    path: &Path,
-    source_path: &Path,
-    target_path: &Path,
-    role: ManualPathRole,
-    source: UnsupportedPath,
-) -> String {
-    format!(
-        "unsupported {} path `{}` for source `{}` target `{}`: {}",
-        role.label(),
-        path.display(),
-        source_path.display(),
-        target_path.display(),
-        source.reason()
-    )
-}
-
 const fn manual_span() -> SourceSpan {
-    SourceSpan {
-        start: 0,
-        end: 0,
-        line: 0,
-        column: 0,
-    }
+    SourceSpan::new(0, 0, 0, 0)
 }
 
 fn invalid_manual<T>(operation: FileOperationKind, message: impl Into<String>) -> Result<T> {
@@ -634,15 +597,12 @@ mod tests {
     }
 
     fn context(root_path: &Path, worktree_path: &Path) -> Worktree {
-        Worktree {
-            root_path: root_path.to_path_buf(),
-            worktree_path: worktree_path.to_path_buf(),
-            default_branch: "main".to_owned(),
-            environment: BTreeMap::from([(
-                "TREEBOOT_ROOT_PATH".to_owned(),
-                OsString::from(root_path),
-            )]),
-        }
+        Worktree::from_parts(
+            root_path.to_path_buf(),
+            worktree_path.to_path_buf(),
+            "main".to_owned(),
+            BTreeMap::from([("TREEBOOT_ROOT_PATH".to_owned(), OsString::from(root_path))]),
+        )
     }
 
     fn options(operation: FileOperationKind, sources: &[&str]) -> ManualFileOperationOptions {
@@ -672,6 +632,27 @@ mod tests {
         assert_eq!(operations[0].target, PathBuf::from(".env"));
         assert_eq!(operations[0].source_path, root.join(".env"));
         assert_eq!(operations[0].target_path, worktree.join(".env"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn manual_operations_should_preserve_context_path_aliases() {
+        let (root, worktree) = temp_workspace("context-path-aliases");
+        let root_alias = root.with_file_name("root-alias");
+        let worktree_alias = worktree.with_file_name("worktree-alias");
+        std::os::unix::fs::symlink(&root, &root_alias).expect("root alias should be created");
+        std::os::unix::fs::symlink(&worktree, &worktree_alias)
+            .expect("worktree alias should be created");
+        let context = context(&root_alias, &worktree_alias);
+
+        let operations = FileOperation::from_manual_options(
+            &context,
+            options(FileOperationKind::Copy, &[".env"]),
+        )
+        .expect("operation should preserve context path identity");
+
+        assert_eq!(operations[0].source_path, root_alias.join(".env"));
+        assert_eq!(operations[0].target_path, worktree_alias.join(".env"));
     }
 
     #[test]

@@ -180,6 +180,12 @@ work. Lefthook checks staged Markdown files through
   resolve that tag to the path and public `Error` at the caller boundary. If you
   are tempted to thread caller context into a helper only to preserve error
   attribution, treat that as the cue to reach for a tagged error instead.
+- Manual file-operation construction intentionally preserves lexical context
+  path identity. Do not canonicalize root or worktree aliases there; config and
+  standalone public constructors retain their existing-aware normalization.
+- Root-target checks use Git's discovered main-worktree identity, not the
+  overridable file-operation source root. Shared planned commands retain their
+  planning-time canonical worktree boundary and recheck it before every spawn.
 - Keep `crates/treeboot/src/main.rs` focused on argument parsing, reporting, and
   exit-code mapping.
 - Review [docs/agents/dependencies.md](docs/agents/dependencies.md) before

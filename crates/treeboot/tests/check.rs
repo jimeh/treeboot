@@ -99,6 +99,52 @@ fn check_should_fail_when_run_validation_fails() {
 }
 
 #[test]
+fn check_should_fail_when_teardown_validation_fails() {
+    let repo = git_worktree();
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"teardown_commands = [{ run = "echo teardown", cwd = ".." }]"#,
+    );
+
+    treeboot()
+        .arg("check")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("teardown:"))
+        .stderr(predicate::str::contains(
+            "command cwd resolves outside worktree",
+        ));
+}
+
+#[test]
+fn check_should_report_all_phase_validation_failures_in_order() {
+    let repo = git_worktree();
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        "commands = [{ run = \"echo bootstrap\", cwd = \"..\" }]\n\
+         teardown_commands = [{ run = \"echo teardown\", cwd = \"..\" }]\n",
+    );
+
+    let output = treeboot()
+        .arg("check")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .get_output()
+        .stderr
+        .clone();
+    let stderr = String::from_utf8(output).expect("stderr should be UTF-8");
+    let bootstrap = stderr
+        .find("bootstrap:")
+        .expect("bootstrap failure should be reported");
+    let teardown = stderr
+        .find("teardown:")
+        .expect("teardown failure should be reported");
+    assert!(bootstrap < teardown);
+}
+
+#[test]
 fn check_should_fail_for_invalid_ignore_patterns() {
     let repo = git_worktree();
     std::fs::create_dir_all(repo.root_path().join("shared"))

@@ -4,6 +4,7 @@ use std::process::{Command, ExitStatus};
 
 #[cfg(test)]
 use crate::validation::PlannedCommandParts;
+use crate::validation::PlannedCommands;
 use crate::{
     ActionPlan, CommandKind, Error, OutputEvent, PlannedCommand, Reporter, Result, Worktree, paths,
 };
@@ -15,21 +16,53 @@ pub(crate) struct CommandExecutionOptions {
     pub dry_run: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CommandPhase {
+    Bootstrap,
+    Teardown,
+}
+
 pub(crate) fn execute_commands(
     plan: &ActionPlan,
     options: CommandExecutionOptions,
     reporter: &mut dyn Reporter,
 ) -> Result<()> {
-    for command in plan.commands() {
+    execute_planned_commands(
+        plan.context(),
+        plan.planned_commands(),
+        CommandPhase::Bootstrap,
+        options,
+        reporter,
+    )
+}
+
+pub(crate) fn execute_teardown_commands(
+    context: &Worktree,
+    commands: &PlannedCommands,
+    options: CommandExecutionOptions,
+    reporter: &mut dyn Reporter,
+) -> Result<()> {
+    execute_planned_commands(context, commands, CommandPhase::Teardown, options, reporter)
+}
+
+fn execute_planned_commands(
+    context: &Worktree,
+    commands: &PlannedCommands,
+    phase: CommandPhase,
+    options: CommandExecutionOptions,
+    reporter: &mut dyn Reporter,
+) -> Result<()> {
+    for command in commands.as_slice() {
         if options.dry_run {
-            report(
-                reporter,
-                OutputEvent::CommandWouldRun {
-                    label: command_label(command),
-                },
-            )?;
+            report(reporter, command_would_run(phase, command_label(command)))?;
         } else {
-            run_sequential(command, plan.context(), reporter)?;
+            run_sequential(
+                command,
+                context,
+                commands.worktree_boundary(),
+                phase,
+                reporter,
+            )?;
         }
     }
 
@@ -39,21 +72,25 @@ pub(crate) fn execute_commands(
 fn run_sequential(
     command: &PlannedCommand,
     context: &Worktree,
+    worktree_boundary: &std::path::Path,
+    phase: CommandPhase,
     reporter: &mut dyn Reporter,
 ) -> Result<()> {
     let label = command_label(command);
-    report(
-        reporter,
-        OutputEvent::CommandStarted {
-            label: label.clone(),
-        },
-    )?;
+    report(reporter, command_started(phase, label.clone()))?;
 
-    let status = match build_command(command, context).and_then(|mut process| process.status()) {
+    let status = match build_command(command, context, worktree_boundary)
+        .and_then(|mut process| process.status())
+    {
         Ok(status) => status,
         Err(source) => {
             if command.allow_failure() {
-                report_allowed_failure(reporter, label, format!("failed to start: {source}"))?;
+                report_allowed_failure(
+                    reporter,
+                    phase,
+                    label,
+                    format!("failed to start: {source}"),
+                )?;
                 return Ok(());
             }
 
@@ -61,11 +98,12 @@ fn run_sequential(
         }
     };
 
-    handle_exit_status(command.allow_failure(), label, status, reporter)
+    handle_exit_status(command.allow_failure(), phase, label, status, reporter)
 }
 
 fn handle_exit_status(
     allow_failure: bool,
+    phase: CommandPhase,
     label: String,
     status: ExitStatus,
     reporter: &mut dyn Reporter,
@@ -75,7 +113,7 @@ fn handle_exit_status(
     }
 
     if allow_failure {
-        report_allowed_failure(reporter, label, format!("failed with {status}"))
+        report_allowed_failure(reporter, phase, label, format!("failed with {status}"))
     } else {
         Err(Error::CommandFailed { label, status })
     }
@@ -83,17 +121,40 @@ fn handle_exit_status(
 
 fn report_allowed_failure(
     reporter: &mut dyn Reporter,
+    phase: CommandPhase,
     label: String,
     reason: String,
 ) -> Result<()> {
-    report(
-        reporter,
-        OutputEvent::CommandAllowedFailure { label, reason },
-    )
+    report(reporter, command_allowed_failure(phase, label, reason))
 }
 
-fn build_command(command: &PlannedCommand, context: &Worktree) -> io::Result<Command> {
-    let cwd_path = resolve_command_cwd(command, context)?;
+fn command_started(phase: CommandPhase, label: String) -> OutputEvent {
+    match phase {
+        CommandPhase::Bootstrap => OutputEvent::CommandStarted { label },
+        CommandPhase::Teardown => OutputEvent::TeardownCommandStarted { label },
+    }
+}
+
+fn command_would_run(phase: CommandPhase, label: String) -> OutputEvent {
+    match phase {
+        CommandPhase::Bootstrap => OutputEvent::CommandWouldRun { label },
+        CommandPhase::Teardown => OutputEvent::TeardownCommandWouldRun { label },
+    }
+}
+
+fn command_allowed_failure(phase: CommandPhase, label: String, reason: String) -> OutputEvent {
+    match phase {
+        CommandPhase::Bootstrap => OutputEvent::CommandAllowedFailure { label, reason },
+        CommandPhase::Teardown => OutputEvent::TeardownCommandAllowedFailure { label, reason },
+    }
+}
+
+fn build_command(
+    command: &PlannedCommand,
+    context: &Worktree,
+    worktree_boundary: &std::path::Path,
+) -> io::Result<Command> {
+    let cwd_path = resolve_command_cwd(command, context, worktree_boundary)?;
     let mut process = match command.command() {
         CommandKind::Shell { run } => build_shell_command(run),
         CommandKind::Direct { program, args } => {
@@ -110,14 +171,24 @@ fn build_command(command: &PlannedCommand, context: &Worktree) -> io::Result<Com
     Ok(process)
 }
 
-fn resolve_command_cwd(command: &PlannedCommand, context: &Worktree) -> io::Result<PathBuf> {
+fn resolve_command_cwd(
+    command: &PlannedCommand,
+    context: &Worktree,
+    worktree_boundary: &std::path::Path,
+) -> io::Result<PathBuf> {
     let worktree_path = paths::canonicalize(&context.worktree_path)?;
+    if worktree_path != worktree_boundary {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "worktree root changed after command planning",
+        ));
+    }
     let declared_cwd = command.cwd().unwrap_or(context.worktree_path.as_path());
     let resolved_cwd = paths::resolve_path(&context.worktree_path, declared_cwd)
         .map_err(|source| io::Error::new(io::ErrorKind::InvalidInput, source.reason()))?;
     let cwd_path = paths::canonicalize(&resolved_cwd)?;
 
-    if !paths::is_within(&cwd_path, &worktree_path) {
+    if !paths::is_within(&cwd_path, worktree_boundary) {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
             "command cwd resolves outside worktree",
@@ -382,6 +453,84 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn command_runtime_should_reject_worktree_root_replacement_in_both_phases() {
+        for phase in [CommandPhase::Bootstrap, CommandPhase::Teardown] {
+            let (temp, context) = context("replaced-worktree-root");
+            let outside = temp.path().join("outside");
+            let marker = outside.join("marker");
+            std::fs::create_dir_all(&outside).expect("outside dir should be created");
+            let command = planned_command(
+                None,
+                CommandKind::Shell {
+                    run: format!("touch {}", shell_path(&marker)),
+                },
+            );
+            let plan = plan(context, vec![command]);
+            replace_worktree_root_with_symlink(plan.context(), &outside);
+
+            let error = execute_planned_commands(
+                plan.context(),
+                plan.planned_commands(),
+                phase,
+                CommandExecutionOptions::default(),
+                &mut Recorder::default(),
+            )
+            .expect_err("replaced worktree root should fail");
+
+            assert!(!marker.exists());
+            assert!(
+                error
+                    .to_string()
+                    .contains("worktree root changed after command planning")
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn command_runtime_should_allow_root_replacement_failure_in_both_phases() {
+        for phase in [CommandPhase::Bootstrap, CommandPhase::Teardown] {
+            let (temp, context) = context("allowed-replaced-worktree-root");
+            let outside = temp.path().join("outside");
+            let marker = outside.join("marker");
+            std::fs::create_dir_all(&outside).expect("outside dir should be created");
+            let command = planned_command(
+                Some("optional"),
+                CommandKind::Shell {
+                    run: format!("touch {}", shell_path(&marker)),
+                },
+            )
+            .with_allow_failure();
+            let plan = plan(context, vec![command]);
+            replace_worktree_root_with_symlink(plan.context(), &outside);
+            let mut reporter = Recorder::default();
+
+            execute_planned_commands(
+                plan.context(),
+                plan.planned_commands(),
+                phase,
+                CommandExecutionOptions::default(),
+                &mut reporter,
+            )
+            .expect("allowed root replacement failure should continue");
+
+            assert!(!marker.exists());
+            assert!(reporter.messages().iter().any(|message| {
+                message.contains("failed to start: worktree root changed after command planning")
+            }));
+            assert_eq!(
+                reporter.events.last(),
+                Some(&command_allowed_failure(
+                    phase,
+                    format!("optional: touch {}", marker.display()),
+                    "failed to start: worktree root changed after command planning".to_owned(),
+                ))
+            );
+        }
+    }
+
     #[test]
     fn execute_commands_should_run_in_declared_in_worktree_symlink_cwd() {
         let (temp, context) = context("in-worktree-symlink-cwd");
@@ -429,8 +578,12 @@ mod tests {
         .with_cwd(cwd);
         let plan = plan(context, vec![command]);
 
-        let resolver_error = resolve_command_cwd(&plan.commands()[0], plan.context())
-            .expect_err("resolver should reject dangling cwd");
+        let resolver_error = resolve_command_cwd(
+            &plan.commands()[0],
+            plan.context(),
+            plan.planned_commands().worktree_boundary(),
+        )
+        .expect_err("resolver should reject dangling cwd");
         assert_eq!(resolver_error.kind(), io::ErrorKind::NotFound);
 
         let error = execute_commands(
@@ -817,17 +970,20 @@ mod tests {
 
         (
             temp,
-            Worktree {
-                root_path: root,
-                worktree_path: worktree,
-                default_branch: format!("main-{name}"),
-                environment,
-            },
+            Worktree::from_parts(root, worktree, format!("main-{name}"), environment),
         )
     }
 
     fn shell_path(path: &Path) -> String {
         path.display().to_string().replace('\'', "'\\''")
+    }
+
+    #[cfg(unix)]
+    fn replace_worktree_root_with_symlink(context: &Worktree, outside: &Path) {
+        let moved = context.worktree_path.with_extension("moved");
+        std::fs::rename(&context.worktree_path, moved).expect("worktree should be moved");
+        symlink_dir(outside, &context.worktree_path)
+            .expect("worktree path should be replaced by a symlink");
     }
 
     #[cfg(unix)]

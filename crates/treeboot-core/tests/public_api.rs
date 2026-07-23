@@ -4,10 +4,10 @@ use std::process::Command;
 
 use tempfile::TempDir;
 use treeboot_core::{
-    ActionPlan, ActionPlanOptions, CheckAction, CommandKind, Config, ConfigOptions,
-    DiagnosticStatus, Environment, EnvironmentInput, Error, ExecuteOptions, Executor,
-    FileOperation, FileOperationAction, FileOperationCompletionOptions, FileOperationKind,
-    FileOperationOptions, FileOperationSummary, InitOptions, LoadedConfig,
+    ActionPlan, ActionPlanOptions, CheckAction, CommandKind, CommandOperation, Config,
+    ConfigOptions, ConfigRuntimeOptions, DiagnosticStatus, Environment, EnvironmentInput, Error,
+    ExecuteOptions, Executor, FileOperation, FileOperationAction, FileOperationCompletionOptions,
+    FileOperationKind, FileOperationOptions, FileOperationSummary, InitOptions, LoadedConfig,
     ManualFileOperationOptions, MetadataField, OutputEvent, PlanOrigin, PlannedFileStatus,
     Reporter, RunAction, RunOptions, SourceSpan, StatusOptions, SymlinkMode, SyncCompare, Worktree,
     WorktreeOptions, check, config_schema_json, diagnose, file_operation_source_candidates, init,
@@ -106,6 +106,145 @@ fn public_enum_policy_should_keep_open_enums_non_exhaustive() {
     assert_non_exhaustive(include_str!("../src/check.rs"), "CheckAction");
     assert_non_exhaustive(include_str!("../src/manual.rs"), "FileOperationAction");
     assert_non_exhaustive(include_str!("../src/validation.rs"), "PlanWarning");
+}
+
+#[test]
+fn public_config_struct_policy_should_keep_selected_types_non_exhaustive() {
+    fn assert_non_exhaustive(source: &str, name: &str) {
+        let declaration = format!("pub struct {name}");
+        let mut lines = source.lines();
+        let mut previous = lines.next();
+        let found = lines.any(|line| {
+            let matches = previous == Some("#[non_exhaustive]") && line.starts_with(&declaration);
+            previous = Some(line);
+            matches
+        });
+        assert!(found, "expected {name} to remain non-exhaustive");
+    }
+
+    let config = include_str!("../src/config.rs");
+    assert_non_exhaustive(config, "LoadedConfig");
+    assert_non_exhaustive(config, "Config");
+    assert_non_exhaustive(config, "ConfigRuntimeOptions");
+    assert_non_exhaustive(config, "FileOperation");
+    assert_non_exhaustive(config, "CommandOperation");
+    assert_non_exhaustive(config, "SourceSpan");
+    assert_non_exhaustive(include_str!("../src/context.rs"), "Worktree");
+}
+
+#[test]
+fn public_worktree_constructor_should_preserve_parts_and_detect_root() {
+    let root = PathBuf::from("/repo");
+    let root_worktree = Worktree::from_parts(
+        root.clone(),
+        root.clone(),
+        "main".to_owned(),
+        Environment::new(),
+    );
+
+    assert_eq!(root_worktree.root_path, root);
+    assert!(root_worktree.is_root());
+
+    let linked_path = PathBuf::from("/repo-linked");
+    let linked_worktree = Worktree::from_parts(
+        root.clone(),
+        linked_path.clone(),
+        "main".to_owned(),
+        Environment::new(),
+    );
+
+    assert_eq!(linked_worktree.root_path, root);
+    assert_eq!(linked_worktree.worktree_path, linked_path);
+    assert!(!linked_worktree.is_root());
+}
+
+#[test]
+fn public_worktree_discovery_should_keep_main_identity_with_root_overrides() {
+    let repo = git_worktree();
+    let alternate_root = TempDir::new().expect("alternate root should be created");
+    let cwd = Some(repo.root_path().to_path_buf());
+    let expected_main = canonical_path(repo.root_path());
+    let expected_source_root = canonical_path(alternate_root.path());
+
+    let explicit = Worktree::discover(WorktreeOptions {
+        cwd: cwd.clone(),
+        root: Some(alternate_root.path().to_path_buf()),
+        environment: EnvironmentInput::empty(),
+    })
+    .expect("worktree should resolve with explicit root");
+    assert!(explicit.is_root());
+    assert_eq!(explicit.worktree_path, expected_main);
+    assert_eq!(explicit.root_path, expected_source_root);
+
+    for environment in [
+        EnvironmentInput {
+            treeboot_root_path: Some(OsString::from(alternate_root.path())),
+            ..EnvironmentInput::empty()
+        },
+        EnvironmentInput {
+            codex_source_tree_path: Some(OsString::from(alternate_root.path())),
+            ..EnvironmentInput::empty()
+        },
+        EnvironmentInput {
+            conductor_root_path: Some(OsString::from(alternate_root.path())),
+            ..EnvironmentInput::empty()
+        },
+        EnvironmentInput {
+            superset_root_path: Some(OsString::from(alternate_root.path())),
+            ..EnvironmentInput::empty()
+        },
+    ] {
+        let discovered = Worktree::discover(WorktreeOptions {
+            cwd: cwd.clone(),
+            root: None,
+            environment,
+        })
+        .expect("worktree should resolve with environment root");
+        assert!(discovered.is_root());
+        assert_eq!(discovered.worktree_path, expected_main);
+        assert_eq!(discovered.root_path, expected_source_root);
+    }
+}
+
+#[test]
+fn public_non_exhaustive_config_types_should_support_rest_destructuring() {
+    let (temp, context) = temp_worktree("rest-destructuring");
+    let config_path = temp.path().join(".treeboot.toml");
+    std::fs::write(&config_path, "").expect("config should be written");
+    let loaded = Config::load_discovered(&context, Some(&config_path))
+        .expect("config should load")
+        .expect("requested config should exist");
+
+    let LoadedConfig {
+        context: loaded_context,
+        config,
+        ..
+    } = loaded;
+    let Config {
+        options,
+        teardown_commands,
+        ..
+    } = config;
+    let ConfigRuntimeOptions { strict, .. } = options;
+    let Worktree { root_path, .. } = loaded_context;
+    assert!(!strict);
+    assert!(teardown_commands.is_empty());
+    assert_eq!(root_path, context.root_path);
+
+    let operation = FileOperation::copy(&context, "source", "target", SourceSpan::new(0, 0, 1, 1))
+        .expect("operation should normalize");
+    let FileOperation {
+        operation: kind, ..
+    } = operation;
+    assert_eq!(kind, FileOperationKind::Copy);
+
+    let command = CommandOperation::shell("true", SourceSpan::new(0, 0, 1, 1));
+    let CommandOperation { allow_failure, .. } = command;
+    assert!(!allow_failure);
+
+    let span = SourceSpan::new(0, 1, 1, 1);
+    let SourceSpan { end, .. } = span;
+    assert_eq!(end, 1);
 }
 
 #[test]
@@ -239,12 +378,12 @@ fn temp_worktree(name: &str) -> (TempDir, Worktree) {
     std::fs::create_dir_all(&worktree).expect("worktree should be created");
     let root_env = root.as_os_str().to_os_string();
 
-    let context = Worktree {
-        root_path: root,
-        worktree_path: worktree,
-        default_branch: "main".to_owned(),
-        environment: Environment::from([("TREEBOOT_ROOT_PATH".to_owned(), root_env)]),
-    };
+    let context = Worktree::from_parts(
+        root,
+        worktree,
+        "main".to_owned(),
+        Environment::from([("TREEBOOT_ROOT_PATH".to_owned(), root_env)]),
+    );
 
     (temp, context)
 }
@@ -304,30 +443,11 @@ fn public_api_worktree_discover_should_preserve_non_utf8_git_paths() {
 }
 
 fn span() -> SourceSpan {
-    SourceSpan {
-        start: 0,
-        end: 0,
-        line: 1,
-        column: 1,
-    }
+    SourceSpan::new(0, 0, 1, 1)
 }
 
 fn copy_spec(context: &Worktree, source: &str, target: &str) -> FileOperation {
-    FileOperation {
-        operation: FileOperationKind::Copy,
-        source: PathBuf::from(source),
-        target: PathBuf::from(target),
-        source_path: context.root_path.join(source),
-        target_path: context.worktree_path.join(target),
-        required: false,
-        compare: None,
-        delete: None,
-        symlinks: Some(SymlinkMode::Preserve),
-        include: Vec::new(),
-        ignore: Vec::new(),
-        ignore_metadata: Vec::new(),
-        declaration: span(),
-    }
+    FileOperation::copy(context, source, target, span()).expect("copy operation should normalize")
 }
 
 #[test]

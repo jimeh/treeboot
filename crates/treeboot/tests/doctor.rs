@@ -283,6 +283,34 @@ fn doctor_should_apply_environment_strict_to_config_validation() {
 }
 
 #[test]
+fn doctor_should_report_teardown_validation_errors_separately() {
+    let repo = git_worktree();
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"teardown_commands = [{ run = "echo teardown", cwd = ".." }]"#,
+    );
+
+    let json = treeboot()
+        .args(["doctor", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("doctor found fatal issues"))
+        .get_output()
+        .stdout
+        .clone();
+
+    let json = parse_json(json, "doctor");
+    assert!(has_diagnostic(&json, "config", "ok", "config is valid:"));
+    assert!(has_diagnostic(
+        &json,
+        "teardown_validation",
+        "error",
+        "command cwd resolves outside worktree"
+    ));
+}
+
+#[test]
 fn doctor_should_support_text_format_and_yaml_shortcut() {
     let repo = git_worktree();
 
@@ -544,7 +572,10 @@ fn doctor_config_option_should_ignore_legacy_script_and_validate_requested_confi
         .assert()
         .success()
         .stderr(predicate::str::is_empty())
-        .stdout(predicate::str::contains("ok: config: config is valid"));
+        .stdout(predicate::str::contains("ok: config: config is valid:"))
+        .stdout(predicate::str::contains(
+            "ok: teardown_validation: teardown config is valid",
+        ));
 
     assert!(!marker.exists());
 }

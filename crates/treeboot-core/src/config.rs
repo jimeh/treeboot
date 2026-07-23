@@ -26,7 +26,17 @@ pub struct ConfigOptions {
 }
 
 /// Loaded treeboot config selected for a worktree.
+///
+/// ```compile_fail
+/// # use treeboot_core::{Config, LoadedConfig};
+/// let _ = LoadedConfig {
+///     context: todo!(),
+///     path: std::path::PathBuf::new(),
+///     config: Config::default(),
+/// };
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct LoadedConfig {
     /// Runtime context used while resolving config paths.
     pub context: Worktree,
@@ -40,7 +50,13 @@ pub struct LoadedConfig {
 pub type ConfigReport = LoadedConfig;
 
 /// Parsed and normalized treeboot config.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+///
+/// ```compile_fail
+/// # use treeboot_core::Config;
+/// let _ = Config { ..Config::default() };
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
 pub struct Config {
     /// Runtime options declared by the config.
     #[serde(flatten)]
@@ -49,6 +65,8 @@ pub struct Config {
     pub files: Vec<FileOperation>,
     /// Ordered command operations.
     pub commands: Vec<CommandOperation>,
+    /// Ordered teardown command operations.
+    pub teardown_commands: Vec<CommandOperation>,
 }
 
 impl Config {
@@ -125,7 +143,29 @@ impl Config {
 }
 
 /// A normalized file operation.
+///
+/// ```compile_fail
+/// # use treeboot_core::{
+/// #     FileOperation, FileOperationKind, SourceSpan, SymlinkMode,
+/// # };
+/// let _ = FileOperation {
+///     operation: FileOperationKind::Copy,
+///     source: "source".into(),
+///     target: "target".into(),
+///     source_path: "/root/source".into(),
+///     target_path: "/worktree/target".into(),
+///     required: false,
+///     compare: None,
+///     delete: None,
+///     symlinks: Some(SymlinkMode::Preserve),
+///     include: Vec::new(),
+///     ignore: Vec::new(),
+///     ignore_metadata: Vec::new(),
+///     declaration: SourceSpan::new(0, 0, 1, 1),
+/// };
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
 pub struct FileOperation {
     /// File operation kind.
     pub operation: FileOperationKind,
@@ -154,6 +194,223 @@ pub struct FileOperation {
     pub ignore_metadata: Vec<MetadataField>,
     /// Source location for the operation declaration.
     pub declaration: SourceSpan,
+}
+
+impl FileOperation {
+    /// Creates a normalized copy operation with operation defaults.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a declared path is unsupported or cannot be
+    /// normalized.
+    pub fn copy(
+        context: &Worktree,
+        source: impl Into<PathBuf>,
+        target: impl Into<PathBuf>,
+        declaration: SourceSpan,
+    ) -> Result<Self> {
+        Self::new(
+            FileOperationKind::Copy,
+            context,
+            source.into(),
+            target.into(),
+            declaration,
+        )
+    }
+
+    /// Creates a normalized symlink operation with operation defaults.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a declared path is unsupported or cannot be
+    /// normalized.
+    pub fn symlink(
+        context: &Worktree,
+        source: impl Into<PathBuf>,
+        target: impl Into<PathBuf>,
+        declaration: SourceSpan,
+    ) -> Result<Self> {
+        Self::new(
+            FileOperationKind::Symlink,
+            context,
+            source.into(),
+            target.into(),
+            declaration,
+        )
+    }
+
+    /// Creates a normalized sync operation with operation defaults.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a declared path is unsupported or cannot be
+    /// normalized.
+    pub fn sync(
+        context: &Worktree,
+        source: impl Into<PathBuf>,
+        target: impl Into<PathBuf>,
+        declaration: SourceSpan,
+    ) -> Result<Self> {
+        Self::new(
+            FileOperationKind::Sync,
+            context,
+            source.into(),
+            target.into(),
+            declaration,
+        )
+    }
+
+    fn new(
+        operation: FileOperationKind,
+        context: &Worktree,
+        source: PathBuf,
+        target: PathBuf,
+        declaration: SourceSpan,
+    ) -> Result<Self> {
+        let settings =
+            normalize_file_operation_settings(operation, FileOperationSettingsInput::default())
+                .map_err(|invalid| Error::FileOperationInvalid {
+                    operation: operation.as_str(),
+                    message: invalid.manual_message(),
+                })?;
+        build_file_operation(
+            operation,
+            context,
+            &source,
+            &target,
+            false,
+            settings,
+            &[],
+            declaration,
+            FileOperationPathNormalization::ExistingAware,
+        )
+        .map_err(|error| Error::FileOperationInvalid {
+            operation: operation.as_str(),
+            message: error.to_string(),
+        })
+    }
+
+    /// Sets whether a missing source is a validation error.
+    #[must_use]
+    pub const fn with_required(mut self, required: bool) -> Self {
+        self.required = required;
+        self
+    }
+
+    /// Sets sync comparison behavior.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when used on a non-sync operation.
+    pub fn with_compare(mut self, compare: SyncCompare) -> Result<Self> {
+        let mut input = self.settings_input();
+        input.compare = Some(compare);
+        self.apply_settings(input)?;
+        Ok(self)
+    }
+
+    /// Sets sync target deletion behavior.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when used on a non-sync operation or combined with a
+    /// non-empty include list.
+    pub fn with_delete(mut self, delete: bool) -> Result<Self> {
+        let mut input = self.settings_input();
+        input.delete = Some(delete);
+        self.apply_settings(input)?;
+        Ok(self)
+    }
+
+    /// Sets copy or sync source-symlink behavior.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when used on a symlink operation.
+    pub fn with_symlinks(mut self, symlinks: SymlinkMode) -> Result<Self> {
+        let mut input = self.settings_input();
+        input.symlinks = Some(symlinks);
+        self.apply_settings(input)?;
+        Ok(self)
+    }
+
+    /// Sets copy or sync include patterns.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an incompatible operation, invalid pattern, or
+    /// combination with sync deletion.
+    pub fn with_include(mut self, include: Vec<String>) -> Result<Self> {
+        let mut input = self.settings_input();
+        input.include = include;
+        self.apply_settings(input)?;
+        Ok(self)
+    }
+
+    /// Sets copy or sync ignore patterns.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when used on a symlink operation.
+    pub fn with_ignore(mut self, ignore: Vec<String>) -> Result<Self> {
+        let mut input = self.settings_input();
+        input.ignore = ignore;
+        self.apply_settings(input)?;
+        Ok(self)
+    }
+
+    /// Sets copy or sync ignored metadata fields.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when used on a symlink operation.
+    pub fn with_ignore_metadata(mut self, fields: Vec<MetadataField>) -> Result<Self> {
+        let mut input = self.settings_input();
+        input.ignore_metadata = fields.into_iter().map(raw_metadata_field).collect();
+        self.apply_settings(input)?;
+        Ok(self)
+    }
+
+    fn settings_input(&self) -> FileOperationSettingsInput {
+        FileOperationSettingsInput {
+            compare: self.compare,
+            delete: self.delete,
+            symlinks: self.symlinks,
+            include: self.include.clone(),
+            ignore: self.ignore.clone(),
+            ignore_metadata: self
+                .ignore_metadata
+                .iter()
+                .copied()
+                .map(raw_metadata_field)
+                .collect(),
+        }
+    }
+
+    fn apply_settings(&mut self, input: FileOperationSettingsInput) -> Result<()> {
+        let settings =
+            normalize_file_operation_settings(self.operation, input).map_err(|invalid| {
+                Error::FileOperationInvalid {
+                    operation: self.operation.as_str(),
+                    message: invalid.manual_message(),
+                }
+            })?;
+        self.compare = settings.compare;
+        self.delete = settings.delete;
+        self.symlinks = settings.symlinks;
+        self.include = settings.include;
+        self.ignore = settings.ignore;
+        self.ignore_metadata = settings.ignore_metadata;
+        Ok(())
+    }
+}
+
+const fn raw_metadata_field(field: MetadataField) -> RawMetadataField {
+    match field {
+        MetadataField::Permissions => RawMetadataField::Permissions,
+        MetadataField::Owner => RawMetadataField::Owner,
+        MetadataField::Group => RawMetadataField::Group,
+    }
 }
 
 /// File operation kind.
@@ -237,7 +494,21 @@ impl RawMetadataField {
 }
 
 /// A normalized command operation.
+///
+/// ```compile_fail
+/// # use treeboot_core::{CommandKind, CommandOperation, SourceSpan};
+/// let _ = CommandOperation {
+///     name: None,
+///     command: CommandKind::Shell { run: "true".into() },
+///     cwd: None,
+///     cwd_path: None,
+///     env: std::collections::BTreeMap::new(),
+///     allow_failure: false,
+///     declaration: SourceSpan::new(0, 0, 1, 1),
+/// };
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
 pub struct CommandOperation {
     /// Optional display name.
     pub name: Option<String>,
@@ -253,6 +524,72 @@ pub struct CommandOperation {
     pub allow_failure: bool,
     /// Source location for the command declaration.
     pub declaration: SourceSpan,
+}
+
+impl CommandOperation {
+    /// Creates a shell command operation with default metadata.
+    #[must_use]
+    pub fn shell(run: impl Into<String>, declaration: SourceSpan) -> Self {
+        Self {
+            name: None,
+            command: CommandKind::Shell { run: run.into() },
+            cwd: None,
+            cwd_path: None,
+            env: BTreeMap::new(),
+            allow_failure: false,
+            declaration,
+        }
+    }
+
+    /// Creates a direct command operation with default metadata.
+    #[must_use]
+    pub fn direct(
+        program: impl Into<String>,
+        args: impl IntoIterator<Item = impl Into<String>>,
+        declaration: SourceSpan,
+    ) -> Self {
+        Self {
+            name: None,
+            command: CommandKind::Direct {
+                program: program.into(),
+                args: args.into_iter().map(Into::into).collect(),
+            },
+            cwd: None,
+            cwd_path: None,
+            env: BTreeMap::new(),
+            allow_failure: false,
+            declaration,
+        }
+    }
+
+    /// Sets the optional display name.
+    #[must_use]
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    /// Sets both the declared and normalized working directory.
+    #[must_use]
+    pub fn with_cwd(mut self, cwd: impl Into<PathBuf>, cwd_path: impl Into<PathBuf>) -> Self {
+        self.cwd = Some(cwd.into());
+        self.cwd_path = Some(cwd_path.into());
+        self
+    }
+
+    /// Replaces the per-command environment.
+    #[must_use]
+    pub fn with_env(mut self, env: BTreeMap<String, String>) -> Self {
+        self.env = env;
+        self
+    }
+
+    /// Sets whether command failure is non-fatal.
+    #[must_use]
+    pub const fn with_allow_failure(mut self, allow_failure: bool) -> Self {
+        self.allow_failure = allow_failure;
+        self
+    }
 }
 
 /// Command invocation kind.
@@ -274,7 +611,15 @@ pub enum CommandKind {
 }
 
 /// Runtime options declared by a config file.
+///
+/// ```compile_fail
+/// # use treeboot_core::ConfigRuntimeOptions;
+/// let _ = ConfigRuntimeOptions {
+///     ..ConfigRuntimeOptions::default()
+/// };
+/// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
 pub struct ConfigRuntimeOptions {
     /// Enables strict declarative validation and conflict handling.
     pub strict: bool,
@@ -287,7 +632,18 @@ pub struct ConfigRuntimeOptions {
 }
 
 /// Byte and line location for a declaration in a config file.
+///
+/// ```compile_fail
+/// # use treeboot_core::SourceSpan;
+/// let _ = SourceSpan {
+///     start: 0,
+///     end: 0,
+///     line: 1,
+///     column: 1,
+/// };
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
 pub struct SourceSpan {
     /// Starting byte offset.
     pub start: usize,
@@ -299,7 +655,7 @@ pub struct SourceSpan {
     pub column: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct FileOperationSettingsInput {
     pub(crate) compare: Option<SyncCompare>,
     pub(crate) delete: Option<bool>,
@@ -593,6 +949,21 @@ fn parse_config(path: &Path, content: &str, context: &Worktree) -> Result<Config
     let mut commands = Vec::new();
     normalize_command_entries(path, content, context, &mut commands, raw.commands)?;
     normalize_command_tables(path, content, context, &mut commands, raw.command)?;
+    let mut teardown_commands = Vec::new();
+    normalize_command_entries(
+        path,
+        content,
+        context,
+        &mut teardown_commands,
+        raw.teardown_commands,
+    )?;
+    normalize_command_tables(
+        path,
+        content,
+        context,
+        &mut teardown_commands,
+        raw.teardown_command,
+    )?;
 
     Ok(Config {
         options: ConfigRuntimeOptions {
@@ -604,6 +975,7 @@ fn parse_config(path: &Path, content: &str, context: &Worktree) -> Result<Config
         },
         files,
         commands,
+        teardown_commands,
     })
 }
 
@@ -726,27 +1098,177 @@ fn normalize_file_object(
     )
     .map_err(|invalid| invalid_config_error(path, content, span, invalid.config_message()))?;
 
+    let source = PathBuf::from(source);
+    let target = PathBuf::from(target);
+    build_file_operation(
+        operation,
+        context,
+        &source,
+        &target,
+        object.required,
+        settings,
+        default_ignore,
+        span,
+        FileOperationPathNormalization::ExistingAware,
+    )
+    .map_err(|error| invalid_config_error(path, content, span, error.to_string()))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FileOperationPathNormalization {
+    ExistingAware,
+    PreserveIdentity,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_file_operation(
+    operation: FileOperationKind,
+    context: &Worktree,
+    source: &Path,
+    target: &Path,
+    required: bool,
+    settings: FileOperationSettings,
+    default_ignore: &[String],
+    declaration: SourceSpan,
+    path_normalization: FileOperationPathNormalization,
+) -> std::result::Result<FileOperation, NormalizedFileOperationError> {
+    let source_path = resolve_operation_path(
+        FileOperationPathRole::Source,
+        &context.root_path,
+        source,
+        false,
+        path_normalization,
+    )?;
+    let target_path = resolve_operation_path(
+        FileOperationPathRole::Target,
+        &context.worktree_path,
+        target,
+        true,
+        path_normalization,
+    )?;
+
     Ok(FileOperation {
         operation,
-        source_path: resolve_path(path, content, span, &context.root_path, Path::new(&source))?,
-        target_path: resolve_target_path(
-            path,
-            content,
-            span,
-            &context.worktree_path,
-            Path::new(&target),
-        )?,
-        source: PathBuf::from(source),
-        target: PathBuf::from(target),
-        required: object.required,
+        source: source.to_path_buf(),
+        target: target.to_path_buf(),
+        source_path,
+        target_path,
+        required,
         compare: settings.compare,
         delete: settings.delete,
         symlinks: settings.symlinks,
         include: settings.include,
         ignore: effective_ignore_patterns(operation, default_ignore, settings.ignore),
         ignore_metadata: settings.ignore_metadata,
-        declaration: span,
+        declaration,
     })
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum FileOperationPathRole {
+    Source,
+    Target,
+}
+
+impl FileOperationPathRole {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Source => "source",
+            Self::Target => "target",
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct NormalizedFileOperationError {
+    role: FileOperationPathRole,
+    path: PathBuf,
+    issue: FileOperationPathIssue,
+}
+
+#[derive(Debug)]
+pub(crate) enum FileOperationPathIssue {
+    Unsupported(&'static str),
+    Normalize(std::io::Error),
+}
+
+impl NormalizedFileOperationError {
+    pub(crate) const fn role(&self) -> FileOperationPathRole {
+        self.role
+    }
+
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub(crate) const fn issue(&self) -> &FileOperationPathIssue {
+        &self.issue
+    }
+}
+
+impl fmt::Display for NormalizedFileOperationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.issue {
+            FileOperationPathIssue::Unsupported(reason) => write!(
+                formatter,
+                "{} path `{}`: unsupported path: {reason}",
+                self.role.as_str(),
+                self.path.display(),
+            ),
+            FileOperationPathIssue::Normalize(error) => write!(
+                formatter,
+                "{} path `{}`: failed to normalize: {error}",
+                self.role.as_str(),
+                self.path.display(),
+            ),
+        }
+    }
+}
+
+fn resolve_operation_path(
+    role: FileOperationPathRole,
+    base: &Path,
+    path: &Path,
+    preserve_final: bool,
+    path_normalization: FileOperationPathNormalization,
+) -> std::result::Result<PathBuf, NormalizedFileOperationError> {
+    let resolved =
+        paths::resolve_path(base, path).map_err(|source| NormalizedFileOperationError {
+            role,
+            path: path.to_path_buf(),
+            issue: FileOperationPathIssue::Unsupported(source.reason()),
+        })?;
+    if path_normalization == FileOperationPathNormalization::PreserveIdentity {
+        return Ok(resolved);
+    }
+    if !preserve_final {
+        return paths::normalize_maybe_existing(&resolved).map_err(|source| {
+            NormalizedFileOperationError {
+                role,
+                path: path.to_path_buf(),
+                issue: FileOperationPathIssue::Normalize(source),
+            }
+        });
+    }
+
+    let Some(name) = resolved.file_name() else {
+        return paths::normalize_maybe_existing(&resolved).map_err(|source| {
+            NormalizedFileOperationError {
+                role,
+                path: path.to_path_buf(),
+                issue: FileOperationPathIssue::Normalize(source),
+            }
+        });
+    };
+    let parent = resolved.parent().unwrap_or_else(|| Path::new("."));
+    let mut normalized =
+        paths::normalize_maybe_existing(parent).map_err(|source| NormalizedFileOperationError {
+            role,
+            path: path.to_path_buf(),
+            issue: FileOperationPathIssue::Normalize(source),
+        })?;
+    normalized.push(name);
+    Ok(paths::normalize_lexical(&normalized))
 }
 
 fn required_operation(
@@ -892,46 +1414,6 @@ fn resolve_path(
     })
 }
 
-fn resolve_target_path(
-    config_path: &Path,
-    content: &str,
-    span: SourceSpan,
-    base: &Path,
-    path: &Path,
-) -> Result<PathBuf> {
-    let resolved = paths::resolve_path(base, path).map_err(|source| {
-        invalid_config_error(
-            config_path,
-            content,
-            span,
-            unsupported_path_message(path, source),
-        )
-    })?;
-
-    let Some(name) = resolved.file_name() else {
-        return paths::normalize_maybe_existing(&resolved).map_err(|source| {
-            invalid_config_error(
-                config_path,
-                content,
-                span,
-                normalize_path_message(path, source),
-            )
-        });
-    };
-    let parent = resolved.parent().unwrap_or_else(|| Path::new("."));
-    let mut normalized = paths::normalize_maybe_existing(parent).map_err(|source| {
-        invalid_config_error(
-            config_path,
-            content,
-            span,
-            normalize_path_message(path, source),
-        )
-    })?;
-    normalized.push(name);
-
-    Ok(paths::normalize_lexical(&normalized))
-}
-
 fn unsupported_path_message(path: &Path, source: UnsupportedPath) -> String {
     format!("unsupported path `{}`: {}", path.display(), source.reason())
 }
@@ -982,6 +1464,17 @@ fn location_suffix(content: &str, range: &std::ops::Range<usize>) -> String {
 }
 
 impl SourceSpan {
+    /// Creates source attribution from byte and line coordinates.
+    #[must_use]
+    pub const fn new(start: usize, end: usize, line: usize, column: usize) -> Self {
+        Self {
+            start,
+            end,
+            line,
+            column,
+        }
+    }
+
     fn from_range(content: &str, range: std::ops::Range<usize>) -> Self {
         let (line, column) = line_column(content, range.start);
 
@@ -1024,6 +1517,8 @@ struct RawConfig {
     file: Vec<Spanned<RawFileObject>>,
     commands: Vec<Spanned<RawCommandEntry>>,
     command: Vec<Spanned<RawCommandObject>>,
+    teardown_commands: Vec<Spanned<RawCommandEntry>>,
+    teardown_command: Vec<Spanned<RawCommandObject>>,
 }
 
 #[derive(Debug)]
@@ -1156,15 +1651,12 @@ mod tests {
     use super::*;
 
     fn context() -> Worktree {
-        Worktree {
-            root_path: PathBuf::from("/repo"),
-            worktree_path: PathBuf::from("/repo-worktree"),
-            default_branch: "main".to_owned(),
-            environment: BTreeMap::from([(
-                "TREEBOOT_ROOT_PATH".to_owned(),
-                OsString::from("/repo"),
-            )]),
-        }
+        Worktree::from_parts(
+            PathBuf::from("/repo"),
+            PathBuf::from("/repo-worktree"),
+            "main".to_owned(),
+            BTreeMap::from([("TREEBOOT_ROOT_PATH".to_owned(), OsString::from("/repo"))]),
+        )
     }
 
     fn parse(content: &str) -> Config {
@@ -1552,12 +2044,12 @@ commands = [{{ program = "make", cwd = "{}" }}]
         symlink_dir(&root, &alias_root).expect("root alias should be created");
         symlink_dir(&worktree, &alias_worktree).expect("worktree alias should be created");
 
-        let context = Worktree {
-            root_path: alias_root,
-            worktree_path: alias_worktree,
-            default_branch: "main".to_owned(),
-            environment: BTreeMap::new(),
-        };
+        let context = Worktree::from_parts(
+            alias_root,
+            alias_worktree,
+            "main".to_owned(),
+            BTreeMap::new(),
+        );
         let config = parse_config(
             Path::new(".treeboot.toml"),
             r#"
@@ -1643,6 +2135,85 @@ allow_failure = true
                     .expect("expected cwd should normalize")
             )
         );
+    }
+
+    #[test]
+    fn parse_config_should_normalize_teardown_command_forms_in_order() {
+        let config = parse(
+            r#"
+teardown_commands = [
+  "mise run stop",
+  { name = "Drop database", program = "mise", args = ["run", "db:drop"] },
+]
+
+[[teardown_command]]
+run = "rm -f marker"
+allow_failure = true
+"#,
+        );
+
+        assert!(config.commands.is_empty());
+        assert_eq!(config.teardown_commands.len(), 3);
+        assert_eq!(
+            config.teardown_commands[0].command,
+            CommandKind::Shell {
+                run: "mise run stop".to_owned()
+            }
+        );
+        assert_eq!(
+            config.teardown_commands[1].name.as_deref(),
+            Some("Drop database")
+        );
+        assert!(config.teardown_commands[2].allow_failure);
+    }
+
+    #[test]
+    fn parse_config_should_default_teardown_commands_to_empty() {
+        assert!(parse("").teardown_commands.is_empty());
+    }
+
+    #[test]
+    fn config_default_should_be_empty() {
+        let config = Config::default();
+        assert_eq!(config.options, ConfigRuntimeOptions::default());
+        assert!(config.files.is_empty());
+        assert!(config.commands.is_empty());
+        assert!(config.teardown_commands.is_empty());
+    }
+
+    #[test]
+    fn stable_operation_constructors_should_install_defaults() {
+        let context = context();
+        let span = SourceSpan::new(0, 0, 1, 1);
+        let copy =
+            FileOperation::copy(&context, "source", "target", span).expect("copy should normalize");
+        let symlink = FileOperation::symlink(&context, "source", "target", span)
+            .expect("symlink should normalize");
+        let sync =
+            FileOperation::sync(&context, "source", "target", span).expect("sync should normalize");
+
+        assert_eq!(copy.symlinks, Some(SymlinkMode::Preserve));
+        assert_eq!(symlink.symlinks, None);
+        assert_eq!(sync.compare, Some(SyncCompare::Metadata));
+        assert_eq!(sync.delete, Some(false));
+    }
+
+    #[test]
+    fn stable_command_constructors_should_apply_modifiers() {
+        let command =
+            CommandOperation::direct("mise", ["run", "db:drop"], SourceSpan::new(0, 0, 1, 1))
+                .with_name("Drop database")
+                .with_cwd("app", "/repo-worktree/app")
+                .with_env(BTreeMap::from([("MODE".to_owned(), "test".to_owned())]))
+                .with_allow_failure(true);
+
+        assert_eq!(command.name.as_deref(), Some("Drop database"));
+        assert_eq!(command.cwd.as_deref(), Some(Path::new("app")));
+        assert_eq!(
+            command.cwd_path.as_deref(),
+            Some(Path::new("/repo-worktree/app"))
+        );
+        assert!(command.allow_failure);
     }
 
     #[test]

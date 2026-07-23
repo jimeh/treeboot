@@ -4,7 +4,7 @@
 
 # treeboot
 
-Bootstrap new Git worktrees from one repo-local setup file.
+Bootstrap Git worktrees and run pre-removal teardown from one setup file.
 
 [![crates.io](https://img.shields.io/crates/v/treeboot?logo=rust&label=crates.io)](https://crates.io/crates/treeboot)
 [![License](https://img.shields.io/github/license/jimeh/treeboot?label=License)](https://github.com/jimeh/treeboot/blob/main/LICENSE)
@@ -83,6 +83,11 @@ commands = [
   "bundle install",
   "pnpm install",
 ]
+
+teardown_commands = [
+  { name = "Stop services", run = "docker compose down" },
+  { name = "Drop database", run = "mise run db:drop" },
+]
 ```
 
 After creating a new worktree, run:
@@ -101,9 +106,21 @@ can safely list several local-only files.
 Commands always run, so they should be idempotent or otherwise safe and fast to
 run repeatedly.
 
-`treeboot` and `treeboot run` are equivalent. The CLI also includes `status`,
-`config`, `check`, `doctor`, `env`, `schema`, `version`, `init`, `copy`,
-`symlink`, `sync`, and `completions` subcommands.
+Before another tool removes the linked worktree, preview and run its teardown
+commands:
+
+```sh
+treeboot teardown --dry-run
+treeboot teardown
+```
+
+Teardown requires terminal confirmation or long-only `--yes`, runs only
+`teardown_commands`, and never removes the worktree or branch itself. It uses
+the same command `cwd`, `env`, and `allow_failure` semantics as bootstrap.
+
+`treeboot` and `treeboot run` are equivalent. The CLI also includes `teardown`,
+`status`, `config`, `check`, `doctor`, `env`, `schema`, `version`, `init`,
+`copy`, `symlink`, `sync`, and `completions` subcommands.
 
 See the [repository](https://github.com/jimeh/treeboot) for project details.
 

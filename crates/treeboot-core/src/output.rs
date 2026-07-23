@@ -92,6 +92,9 @@ pub enum OutputEvent {
         path: PathBuf,
     },
 
+    /// A valid config contains no teardown commands.
+    NoTeardownCommandsConfigured,
+
     /// Planning started for a top-level file operation.
     FileOperationPlanningStarted {
         /// File operation kind.
@@ -254,6 +257,26 @@ pub enum OutputEvent {
         reason: String,
     },
 
+    /// A teardown command is about to run.
+    TeardownCommandStarted {
+        /// Human-readable command label.
+        label: String,
+    },
+
+    /// A dry run would execute a teardown command.
+    TeardownCommandWouldRun {
+        /// Human-readable command label.
+        label: String,
+    },
+
+    /// A teardown command failure was allowed and execution will continue.
+    TeardownCommandAllowedFailure {
+        /// Human-readable command label.
+        label: String,
+        /// Failure detail.
+        reason: String,
+    },
+
     /// An init file was created.
     InitCreated {
         /// Created file path.
@@ -273,6 +296,9 @@ impl OutputEvent {
             Self::RootWorktreeDetected => "treeboot: This is not a work tree".to_owned(),
             Self::ConfigDetected { path } => {
                 format!("treeboot: config detected {}", path.display())
+            }
+            Self::NoTeardownCommandsConfigured => {
+                "treeboot: no teardown commands configured".to_owned()
             }
             Self::FileOperationPlanningStarted { .. }
             | Self::FileOperationPlanningFinished { .. }
@@ -357,6 +383,15 @@ impl OutputEvent {
             }
             Self::CommandAllowedFailure { label, reason } => {
                 format!("treeboot: warning: command {label} {reason}")
+            }
+            Self::TeardownCommandStarted { label } => {
+                format!("treeboot: teardown run {label}")
+            }
+            Self::TeardownCommandWouldRun { label } => {
+                format!("treeboot: teardown would run {label}")
+            }
+            Self::TeardownCommandAllowedFailure { label, reason } => {
+                format!("treeboot: warning: teardown command {label} {reason}")
             }
             Self::InitCreated { path } => {
                 format!("treeboot: created {}", path.display())

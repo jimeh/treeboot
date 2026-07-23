@@ -93,7 +93,7 @@ pub struct ActionPlan {
     /// Planned file operations.
     files: Vec<PlannedFileOperation>,
     /// Planned command operations.
-    commands: Vec<PlannedCommand>,
+    commands: PlannedCommands,
     /// Non-fatal warnings produced while building the plan.
     warnings: Vec<PlanWarning>,
 }
@@ -169,6 +169,10 @@ impl ActionPlan {
     /// Returns the planned command operations.
     #[must_use]
     pub fn commands(&self) -> &[PlannedCommand] {
+        self.commands.as_slice()
+    }
+
+    pub(crate) const fn planned_commands(&self) -> &PlannedCommands {
         &self.commands
     }
 
@@ -245,7 +249,7 @@ impl ActionPlan {
             origin,
             config_path,
             files,
-            commands: Vec::new(),
+            commands: PlannedCommands::empty(&context.worktree_path),
             warnings,
         })
     }
@@ -258,14 +262,163 @@ impl ActionPlan {
         files: Vec<PlannedFileOperation>,
         commands: Vec<PlannedCommand>,
     ) -> Self {
+        let worktree_boundary = normalize_existing_or_original(&context.worktree_path);
         Self {
             context,
             origin,
             config_path,
             files,
-            commands,
+            commands: PlannedCommands {
+                commands,
+                worktree_boundary,
+            },
             warnings: Vec::new(),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PlannedCommands {
+    commands: Vec<PlannedCommand>,
+    worktree_boundary: PathBuf,
+}
+
+impl PlannedCommands {
+    pub(crate) fn as_slice(&self) -> &[PlannedCommand] {
+        &self.commands
+    }
+
+    pub(crate) fn worktree_boundary(&self) -> &Path {
+        &self.worktree_boundary
+    }
+
+    fn empty(worktree_boundary: &Path) -> Self {
+        Self {
+            commands: Vec::new(),
+            worktree_boundary: normalize_existing_or_original(worktree_boundary),
+        }
+    }
+}
+
+impl std::ops::Deref for PlannedCommands {
+    type Target = [PlannedCommand];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
+
+/// A validated teardown command plan ready for execution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TeardownPlan {
+    context: Worktree,
+    config_path: PathBuf,
+    commands: PlannedCommands,
+}
+
+/// Independent bootstrap and teardown validation outcomes for one config.
+#[derive(Debug)]
+pub struct ConfigPhaseValidation {
+    bootstrap: Result<ActionPlan>,
+    teardown: Result<TeardownPlan>,
+}
+
+impl ConfigPhaseValidation {
+    /// Returns the bootstrap validation outcome.
+    pub fn bootstrap(&self) -> std::result::Result<&ActionPlan, &Error> {
+        self.bootstrap.as_ref()
+    }
+
+    /// Returns the teardown validation outcome.
+    pub fn teardown(&self) -> std::result::Result<&TeardownPlan, &Error> {
+        self.teardown.as_ref()
+    }
+
+    /// Converts all phase failures into one deterministic typed error.
+    ///
+    /// # Errors
+    ///
+    /// Returns an aggregate error when either phase failed validation.
+    pub fn require_valid(&self) -> Result<()> {
+        let mut failures = Vec::new();
+        if let Err(error) = &self.bootstrap {
+            failures.push(format!("bootstrap: {error}"));
+        }
+        if let Err(error) = &self.teardown {
+            failures.push(format!("teardown: {error}"));
+        }
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(Error::ConfigPhaseValidation {
+                message: failures.join("; "),
+            })
+        }
+    }
+}
+
+/// Independently validates both semantic phases of a parsed config.
+#[must_use]
+pub fn validate_config_phases(
+    path: &Path,
+    config: &Config,
+    context: &Worktree,
+    bootstrap_options: ActionPlanOptions,
+) -> ConfigPhaseValidation {
+    ConfigPhaseValidation {
+        bootstrap: ActionPlan::from_manifest(path, config, context, bootstrap_options),
+        teardown: TeardownPlan::from_manifest(path, config, context),
+    }
+}
+
+impl TeardownPlan {
+    /// Builds a validated teardown plan from a parsed manifest.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when command cwd or environment validation fails.
+    pub fn from_manifest(path: &Path, manifest: &Config, context: &Worktree) -> Result<Self> {
+        let worktree_path = normalize_existing(&context.worktree_path).map_err(|source| {
+            invalid_config_error(
+                path,
+                None,
+                format!("failed to resolve worktree path: {source}"),
+            )
+        })?;
+        let commands = plan_commands(
+            path,
+            &manifest.teardown_commands,
+            context,
+            worktree_path.as_path(),
+        )?;
+
+        Ok(Self {
+            context: context.clone(),
+            config_path: path.to_path_buf(),
+            commands,
+        })
+    }
+
+    /// Returns the resolved worktree context.
+    #[must_use]
+    pub const fn context(&self) -> &Worktree {
+        &self.context
+    }
+
+    /// Returns the source manifest path.
+    #[must_use]
+    pub fn config_path(&self) -> &Path {
+        &self.config_path
+    }
+
+    /// Returns the validated teardown commands.
+    #[must_use]
+    pub fn commands(&self) -> &[PlannedCommand] {
+        self.commands.as_slice()
+    }
+
+    pub(crate) const fn planned_commands(&self) -> &PlannedCommands {
+        &self.commands
     }
 }
 
@@ -1059,7 +1212,7 @@ fn plan_commands(
     commands: &[CommandOperation],
     context: &Worktree,
     worktree_path: &Path,
-) -> Result<Vec<PlannedCommand>> {
+) -> Result<PlannedCommands> {
     let mut planned = Vec::with_capacity(commands.len());
 
     for command in commands {
@@ -1107,7 +1260,10 @@ fn plan_commands(
         });
     }
 
-    Ok(planned)
+    Ok(PlannedCommands {
+        commands: planned,
+        worktree_boundary: worktree_path.to_path_buf(),
+    })
 }
 
 fn validate_source_symlinks(
@@ -1395,6 +1551,10 @@ fn normalize_existing(path: &Path) -> std::io::Result<PathBuf> {
     paths::canonicalize(path)
 }
 
+fn normalize_existing_or_original(path: &Path) -> PathBuf {
+    normalize_existing(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
 fn normalize_maybe_existing(path: &Path) -> std::io::Result<PathBuf> {
     paths::normalize_maybe_existing(path)
 }
@@ -1457,15 +1617,12 @@ mod tests {
     }
 
     fn context(root_path: &Path, worktree_path: &Path) -> Worktree {
-        Worktree {
-            root_path: root_path.to_path_buf(),
-            worktree_path: worktree_path.to_path_buf(),
-            default_branch: "main".to_owned(),
-            environment: BTreeMap::from([(
-                "TREEBOOT_ROOT_PATH".to_owned(),
-                OsString::from(root_path),
-            )]),
-        }
+        Worktree::from_parts(
+            root_path.to_path_buf(),
+            worktree_path.to_path_buf(),
+            "main".to_owned(),
+            BTreeMap::from([("TREEBOOT_ROOT_PATH".to_owned(), OsString::from(root_path))]),
+        )
     }
 
     fn empty_config() -> Config {
@@ -1473,6 +1630,7 @@ mod tests {
             options: Default::default(),
             files: Vec::new(),
             commands: Vec::new(),
+            teardown_commands: Vec::new(),
         }
     }
 
@@ -1546,6 +1704,7 @@ mod tests {
                 &["docs/**"],
             )],
             commands: Vec::new(),
+            teardown_commands: Vec::new(),
         };
 
         let plan = plan(&config, &root, &worktree).expect("plan should build");
@@ -1576,6 +1735,7 @@ mod tests {
             options: Default::default(),
             files: vec![operation],
             commands: Vec::new(),
+            teardown_commands: Vec::new(),
         };
 
         let plan = plan(&config, &root, &worktree).expect("plan should build");
@@ -1606,6 +1766,7 @@ mod tests {
                 ),
             ],
             commands: Vec::new(),
+            teardown_commands: Vec::new(),
         };
 
         let plan = plan(&config, &root, &worktree).expect("plan should build");
@@ -1631,6 +1792,7 @@ mod tests {
                 &["nomatch/**"],
             )],
             commands: Vec::new(),
+            teardown_commands: Vec::new(),
         };
 
         let plan = plan(&config, &root, &worktree).expect("plan should build");
@@ -1660,6 +1822,7 @@ mod tests {
                 &["docs/**"],
             )],
             commands: Vec::new(),
+            teardown_commands: Vec::new(),
         };
         plan(&filtered, &root, &worktree)
             .expect("non-included unsafe symlink should not fail validation");
@@ -1674,6 +1837,7 @@ mod tests {
                 "shared",
             )],
             commands: Vec::new(),
+            teardown_commands: Vec::new(),
         };
         let error = plan(&unfiltered, &root, &worktree)
             .expect_err("unfiltered unsafe symlink should fail validation");
@@ -1764,6 +1928,7 @@ mod tests {
                 declaration: span(),
             }],
             commands: Vec::new(),
+            teardown_commands: Vec::new(),
         };
 
         let plan = ActionPlan::from_manifest(
@@ -1794,6 +1959,7 @@ mod tests {
                 ".env",
             )],
             commands: Vec::new(),
+            teardown_commands: Vec::new(),
         };
 
         let plan = plan(&config, &root, &worktree).expect("file should plan");
@@ -1825,6 +1991,7 @@ mod tests {
                 sync,
             ],
             commands: Vec::new(),
+            teardown_commands: Vec::new(),
         };
 
         let error = plan(&config, &root, &worktree).expect_err("overlapping targets should fail");
@@ -1890,6 +2057,7 @@ mod tests {
                 allow_failure: true,
                 declaration: span(),
             }],
+            teardown_commands: Vec::new(),
         };
 
         let plan = plan(&config, &root, &worktree).expect("command should plan");
@@ -1931,6 +2099,7 @@ mod tests {
                 declaration: span(),
             }],
             commands: Vec::new(),
+            teardown_commands: Vec::new(),
         };
 
         let plan = ActionPlan::from_manifest(
@@ -1967,6 +2136,7 @@ mod tests {
                     "nested/config/source",
                 )],
                 commands: Vec::new(),
+                teardown_commands: Vec::new(),
             };
 
             let plan = plan(&config, &root, &worktree)
@@ -1995,6 +2165,7 @@ mod tests {
                 "config/master.key",
             )],
             commands: Vec::new(),
+            teardown_commands: Vec::new(),
         };
 
         let plan = plan(&config, &root, &worktree)
@@ -2030,6 +2201,7 @@ mod tests {
                     "config/source",
                 )],
                 commands: Vec::new(),
+                teardown_commands: Vec::new(),
             };
 
             let error = match plan(&config, &root, &worktree) {
@@ -2069,6 +2241,7 @@ mod tests {
                     "config/source",
                 )],
                 commands: Vec::new(),
+                teardown_commands: Vec::new(),
             };
 
             let error = match plan(&config, &root, &worktree) {
@@ -2104,6 +2277,7 @@ mod tests {
                 "config/source",
             )],
             commands: Vec::new(),
+            teardown_commands: Vec::new(),
         };
 
         let error = plan(&config, &alias_root, &alias_worktree)
@@ -2132,6 +2306,7 @@ mod tests {
                 "config/source",
             )],
             commands: Vec::new(),
+            teardown_commands: Vec::new(),
         };
 
         let error = plan(&config, &alias_root, &alias_worktree)
@@ -2166,6 +2341,7 @@ mod tests {
             options: Default::default(),
             files: vec![operation],
             commands: Vec::new(),
+            teardown_commands: Vec::new(),
         };
 
         let error = plan(&config, &alias_root, &alias_worktree)
@@ -2198,6 +2374,7 @@ mod tests {
             options: Default::default(),
             files: vec![operation],
             commands: Vec::new(),
+            teardown_commands: Vec::new(),
         };
 
         let error = plan(&config, &root, &worktree)
@@ -2219,6 +2396,50 @@ mod tests {
         .expect("empty plan should build");
 
         assert_eq!(plan.context().root_path, alias_root);
+        assert_eq!(plan.context().worktree_path, alias_worktree);
+    }
+
+    #[test]
+    fn unchecked_action_plan_should_canonicalize_aliased_worktree_boundary() {
+        let (_root, worktree, alias_root, alias_worktree) =
+            aliased_workspace("unchecked-context-alias");
+        let context = context(&alias_root, &alias_worktree);
+        let plan = ActionPlan::from_parts_unchecked(
+            context,
+            PlanOrigin::Manifest {
+                path: alias_worktree.join(".treeboot.toml"),
+            },
+            Some(alias_worktree.join(".treeboot.toml")),
+            Vec::new(),
+            Vec::new(),
+        );
+
+        assert_eq!(
+            plan.planned_commands().worktree_boundary(),
+            normalize_existing(&worktree).expect("real worktree should canonicalize"),
+        );
+        assert_eq!(plan.context().worktree_path, alias_worktree);
+    }
+
+    #[test]
+    fn manual_action_plan_should_canonicalize_aliased_worktree_boundary() {
+        let (_root, worktree, alias_root, alias_worktree) =
+            aliased_workspace("manual-context-alias");
+        let context = context(&alias_root, &alias_worktree);
+        let plan = ActionPlan::from_file_operations(
+            &context,
+            PlanOrigin::Manual {
+                operation: FileOperationKind::Copy,
+            },
+            &[],
+            ActionPlanOptions::default(),
+        )
+        .expect("empty manual plan should build");
+
+        assert_eq!(
+            plan.planned_commands().worktree_boundary(),
+            normalize_existing(&worktree).expect("real worktree should canonicalize"),
+        );
         assert_eq!(plan.context().worktree_path, alias_worktree);
     }
 
@@ -2290,6 +2511,7 @@ mod tests {
                 "shared",
             )],
             commands: Vec::new(),
+            teardown_commands: Vec::new(),
         };
 
         let plan = plan(&config, &root, &worktree).expect("directory source should plan");
@@ -2315,6 +2537,7 @@ mod tests {
             options: Default::default(),
             files: vec![operation],
             commands: Vec::new(),
+            teardown_commands: Vec::new(),
         };
 
         let plan = plan(&config, &root, &worktree).expect("sync should plan");
@@ -2340,6 +2563,7 @@ mod tests {
                 "link",
             )],
             commands: Vec::new(),
+            teardown_commands: Vec::new(),
         };
 
         let plan = plan(&config, &root, &worktree).expect("safe symlink should plan");
@@ -2362,6 +2586,7 @@ mod tests {
                 "link",
             )],
             commands: Vec::new(),
+            teardown_commands: Vec::new(),
         };
 
         let error = plan(&config, &root, &worktree).expect_err("broken symlink should fail");
@@ -2390,6 +2615,7 @@ mod tests {
                 allow_failure: false,
                 declaration: span(),
             }],
+            teardown_commands: Vec::new(),
         };
 
         let plan = ActionPlan::from_manifest(
@@ -2404,5 +2630,85 @@ mod tests {
             plan.commands[0].cwd_path,
             paths::canonicalize(&worktree).expect("worktree should canonicalize")
         );
+    }
+
+    #[test]
+    fn teardown_plan_should_ignore_bootstrap_operations_and_commands() {
+        let (root, worktree) = temp_workspace("teardown-independent");
+        let context = context(&root, &worktree);
+        let mut required = file_operation(
+            FileOperationKind::Copy,
+            &root,
+            &worktree,
+            "missing",
+            "missing",
+        );
+        required.required = true;
+        let config = Config {
+            options: ConfigRuntimeOptions::default(),
+            files: vec![required],
+            commands: vec![CommandOperation::shell("bootstrap", span())],
+            teardown_commands: vec![CommandOperation::shell("teardown", span())],
+        };
+
+        let phases = validate_config_phases(
+            Path::new(".treeboot.toml"),
+            &config,
+            &context,
+            ActionPlanOptions::default(),
+        );
+
+        assert!(phases.bootstrap().is_err());
+        let teardown = phases
+            .teardown()
+            .expect("teardown should remain independently valid");
+        assert_eq!(teardown.commands().len(), 1);
+        assert_eq!(
+            teardown.commands()[0].command(),
+            &CommandKind::Shell {
+                run: "teardown".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn complete_phase_validation_should_preserve_both_errors_in_order() {
+        let (root, worktree) = temp_workspace("phase-errors");
+        let context = context(&root, &worktree);
+        let mut required = file_operation(
+            FileOperationKind::Copy,
+            &root,
+            &worktree,
+            "missing",
+            "missing",
+        );
+        required.required = true;
+        let config = Config {
+            options: ConfigRuntimeOptions::default(),
+            files: vec![required],
+            commands: Vec::new(),
+            teardown_commands: vec![CommandOperation::shell("teardown", span()).with_env(
+                BTreeMap::from([("TREEBOOT_ROOT_PATH".to_owned(), "override".to_owned())]),
+            )],
+        };
+
+        let phases = validate_config_phases(
+            Path::new(".treeboot.toml"),
+            &config,
+            &context,
+            ActionPlanOptions::default(),
+        );
+        let message = phases
+            .require_valid()
+            .expect_err("both phases should fail")
+            .to_string();
+
+        let bootstrap = message
+            .find("bootstrap:")
+            .expect("bootstrap label should exist");
+        let teardown = message
+            .find("teardown:")
+            .expect("teardown label should exist");
+        assert!(bootstrap < teardown);
     }
 }
