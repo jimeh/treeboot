@@ -1,10 +1,10 @@
-# treeboot Specification v2.0.0
+# treeboot Specification v2.1.0
 
-A portable worktree bootstrapper that lets every coding agent, editor, and
-orchestration tool run the same repo-local setup command.
+A portable worktree lifecycle helper that lets every coding agent, editor, and
+orchestration tool run the same repo-local bootstrap and teardown commands.
 
 **Tags:** compatibility contract, Rust executable, TOML config, idempotent
-default, configured commands, agent-tool aliases
+default, configured commands, teardown commands, agent-tool aliases
 
 | Term            | Description                                                |
 | --------------- | ---------------------------------------------------------- |
@@ -13,6 +13,7 @@ default, configured commands, agent-tool aliases
 | Worktree path   | Current worktree root where operations execute             |
 | Conflict policy | Skip existing by default, strict validates, force replaces |
 | Primary file    | `.treeboot.toml`                                           |
+| Teardown        | Explicit commands run before an external worktree removal  |
 
 treeboot requires Git 2.36 or newer.
 
@@ -28,12 +29,15 @@ dependency caches, and per-worktree setup commands.
 - Avoid duplicate setup files across agent tools.
 - Make common copy, symlink, and sync operations declarative.
 - Allow custom setup through configured commands.
+- Allow explicit cleanup before another tool removes a linked worktree.
 - Be safe and idempotent by default.
 - Ship as a small, portable executable.
 
 ### Non-goals
 
 - Create Git worktrees.
+- Remove Git worktrees or branches.
+- Install or enforce hooks around `git worktree remove`.
 - Manage long-running dev servers.
 - Allocate per-worktree ports.
 - Replace tool-specific setup systems entirely.
@@ -42,15 +46,16 @@ dependency caches, and per-worktree setup commands.
 ### Design rule
 
 treeboot should be boring to run repeatedly. File operations are idempotent by
-default. Commands always run, so users must make configured commands safe to
-rerun when that matters.
+default. Bootstrap and teardown commands always run when their phase is
+executed, so users must make configured commands safe to rerun when that
+matters.
 
 ### Implementation bar
 
 The first implementation should target the full documented behavior in this
 spec.
 
-## CLI surface: Thirteen subcommands, one default path
+## CLI surface: Fourteen subcommands, one default path
 
 The common integration point is intentionally short: `treeboot`. Tool-specific
 setup hooks only need to invoke the declarative treeboot config.
@@ -71,6 +76,37 @@ treeboot run --root /path/to/root-checkout
 treeboot run --config .treeboot.toml
 treeboot run --skip-commands
 ```
+
+### `treeboot teardown`
+
+Runs configured teardown commands for a linked worktree without removing the
+worktree itself.
+
+```sh
+treeboot teardown
+treeboot teardown --dry-run
+treeboot teardown --yes
+treeboot teardown --worktree ../feature-branch
+treeboot teardown --worktree ../feature-branch --yes
+treeboot teardown --root /path/to/root-checkout
+treeboot teardown --config .treeboot.toml
+```
+
+The target defaults to the process working directory. `--worktree <path>` may
+point anywhere inside another linked worktree and resolves to that worktree's
+Git top level. Teardown rejects Git's main/root checkout before prompting.
+
+`--yes` is long-only and grants non-interactive approval. Without `--yes`,
+teardown prompts only when stdin is a terminal. `--dry-run` validates and
+reports every teardown command without prompting, requiring `--yes`, or spawning
+a process.
+
+Teardown is command-only. It never applies configured file operations, runs
+bootstrap `commands`, removes a worktree, or deletes a branch.
+
+Teardown does not accept `--force` or `--strict`. `--force` remains the
+file-replacement option, and teardown has no file conflict policy. Use
+`--config` when teardown must require a specific config.
 
 ### `treeboot status`
 
@@ -112,7 +148,7 @@ treeboot -V
 Human-readable output is a compact, flag-like summary:
 
 ```text
-treeboot 0.10.0 (spec 2.0.0)
+treeboot 0.10.0 (spec 2.1.0)
 ```
 
 JSON and YAML output are defined in
@@ -120,8 +156,8 @@ JSON and YAML output are defined in
 
 ### `treeboot config`
 
-Parses the selected TOML config and prints the normalized file and command
-operations without executing them.
+Parses the selected TOML config and prints the normalized file, bootstrap
+command, and teardown command operations without executing them.
 
 ```sh
 treeboot config
@@ -138,13 +174,14 @@ parsing behavior; editing config values is out of scope.
 Human-readable text output lists normalized source and target values plus
 behavior-affecting normalized fields such as `required`, `compare`, `delete`,
 `symlinks`, `include`, `ignore`, `allow_failure`, `cwd`, and command `env`
-values when present. JSON and YAML output emit the full normalized config
-structure.
+values when present. It labels bootstrap and teardown command collections
+separately and prints `(none)` for an empty collection. JSON and YAML output
+emit the full normalized config structure.
 
 ### `treeboot check`
 
-Validates the selected bootstrap contract without applying file operations or
-running configured commands.
+Validates the complete selected config contract without applying file operations
+or running bootstrap or teardown commands.
 
 ```sh
 treeboot check
@@ -158,12 +195,14 @@ treeboot check --yaml
 ```
 
 `check` resolves the same worktree context and config selection rules as `run`,
-parses and normalizes declarative config, resolves runtime policy, and builds
-the same action plan used by `run`.
+parses and normalizes declarative config, resolves bootstrap runtime policy, and
+independently validates the bootstrap and teardown plans.
 
-When declarative config is selected, config parse, normalization, and run
-validation errors are fatal. Unlike `config`, `check` must exit non-zero when
-the selected config would fail `run` validation.
+When declarative config is selected, config parse and normalization errors are
+fatal to the whole contract. After normalization, bootstrap and teardown
+semantic validation are independent. `check` evaluates both, preserves both
+failures when both phases are invalid, reports them in bootstrap-then-teardown
+order, and exits non-zero when either phase fails.
 
 On success, human-readable output prints:
 
@@ -281,9 +320,10 @@ treeboot doctor --yaml
 
 `doctor` checks Git availability, worktree discovery, root path discovery,
 default branch discovery, child environment construction, config discovery, and
-config validation when config is selected. It is intended for human
-troubleshooting. Warnings do not fail the command, but fatal discovery or config
-errors exit non-zero.
+both bootstrap and teardown validation when config is selected. It reports
+separate phase diagnostics from the same complete-config validation result used
+by `check`. It is intended for human troubleshooting. Warnings do not fail the
+command, but fatal discovery or config errors exit non-zero.
 
 `--strict` makes doctor report missing config, root-checkout execution context,
 and strict file-operation validation failures as fatal diagnostics while still
@@ -330,9 +370,9 @@ commands.
 
 After worktree/root context checks, manual file operation commands discover and
 parse config when one is present only to load top-level runtime policy. They
-ignore the config's file operations and commands. If config parsing is reached
-and the config is invalid, the manual command fails before applying file
-operations.
+ignore the config's file operations, bootstrap commands, and teardown commands.
+If config parsing is reached and the config is invalid, the manual command fails
+before applying file operations.
 
 With one source, `--target` is the exact target path. With multiple sources,
 `--target` is a directory or path prefix joined with each source value. For
@@ -350,30 +390,32 @@ Operation-specific flags are valid only on the commands listed in the option
 table. For example, using `--compare` on `copy` or `--symlinks` on `symlink` is
 a CLI usage error and exits with code `2`.
 
-| Option                                                     | Scope                                                | Behavior                                                                                                                                                                                                                                                                    |
-| ---------------------------------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `-r`, `--root <path>`                                      | run/status/config/check/copy/symlink/sync/doctor/env | Overrides the root checkout used for discovery and file-operation context.                                                                                                                                                                                                  |
-| `-c`, `--config <path>`                                    | run/status/config/check/doctor                       | Uses one specific config file and skips config discovery.                                                                                                                                                                                                                   |
-| `-o`, `--format <text\|json\|yaml>`                        | status/version/config/check/doctor/env               | Selects human-readable, JSON, or YAML output. Defaults to `text`.                                                                                                                                                                                                           |
-| `-J`, `--json`                                             | status/version/config/check/doctor/env               | Shortcut for `--format json`. Conflicts with `--format` and `--yaml`.                                                                                                                                                                                                       |
-| `-Y`, `--yaml`                                             | status/version/config/check/doctor/env               | Shortcut for `--format yaml`. Conflicts with `--format` and `--json`.                                                                                                                                                                                                       |
-| `-V`, `--version`                                          | global                                               | Prints package and spec version details and exits before command validation.                                                                                                                                                                                                |
-| `-o`, `--output <path>`                                    | schema                                               | Writes the bundled config schema to a file instead of stdout.                                                                                                                                                                                                               |
-| `-S`, `--strict`                                           | run/check/copy/symlink/sync/doctor                   | Fails if a copy/symlink target exists; rejects sync operations; exits non-zero when run from the root checkout. Declarative config can also enable strict mode with top-level `strict = true`. For doctor, strict failures are reported as fatal diagnostics when possible. |
-| `-f`, `--force`                                            | run/copy/symlink/sync                                | Replaces existing file-operation targets where supported.                                                                                                                                                                                                                   |
-| `-n`, `--dry-run`                                          | run/copy/symlink/sync                                | Prints planned work without writing files or running commands.                                                                                                                                                                                                              |
-| `-v`, `--verbose`                                          | run/copy/symlink/sync                                | Prints detailed file-operation actions instead of compact summaries. Interactive progress is disabled in verbose mode.                                                                                                                                                      |
-| `--skip-commands`                                          | run                                                  | Runs file operations only.                                                                                                                                                                                                                                                  |
-| `-t`, `--target <path>`                                    | copy/symlink/sync                                    | Overrides the target. With multiple sources, acts as the target path prefix for each source.                                                                                                                                                                                |
-| `--required`                                               | copy/symlink/sync                                    | Fails when any requested source does not exist.                                                                                                                                                                                                                             |
-| `--symlinks <preserve>`                                    | copy/sync                                            | Selects how source symlinks are handled. The initial supported value is `preserve`.                                                                                                                                                                                         |
-| `--include <pattern>`                                      | copy/sync                                            | Repeats to narrow directory operations to source paths matching operation-local include patterns. Patterns use gitignore-style syntax without `!` negation and are not read from `.gitignore` files. Conflicts with `--delete` / `-D`.                                      |
-| `--ignore <pattern>`                                       | copy/sync                                            | Repeats to skip source paths matching operation-local ignore patterns. Patterns use gitignore-style syntax and are not read from `.gitignore` files.                                                                                                                        |
-| `--ignore-metadata <permissions\|owner\|group\|ownership>` | copy/sync                                            | Repeats to opt out of metadata comparison and preservation. `ownership` means owner and group.                                                                                                                                                                              |
-| `--compare <metadata\|checksum>`                           | sync                                                 | Selects sync comparison behavior.                                                                                                                                                                                                                                           |
-| `-D`, `--delete` / `--no-delete`                           | sync                                                 | Controls whether sync deletes target-only files. Defaults to `--no-delete`.                                                                                                                                                                                                 |
-| `--config`                                                 | init                                                 | Creates a starter TOML config. This intentionally has no short alias so `-c` can consistently mean config path for run/config.                                                                                                                                              |
-| `-p`, `--path <path>`                                      | init                                                 | Writes the generated init output to a custom path.                                                                                                                                                                                                                          |
+| Option                                                     | Scope                                                         | Behavior                                                                                                                                                                                                                                                                    |
+| ---------------------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-r`, `--root <path>`                                      | run/teardown/status/config/check/copy/symlink/sync/doctor/env | Overrides the root checkout used for discovery and file-operation context.                                                                                                                                                                                                  |
+| `-c`, `--config <path>`                                    | run/teardown/status/config/check/doctor                       | Uses one specific config file and skips config discovery. For teardown, relative paths resolve from the selected worktree.                                                                                                                                                  |
+| `--worktree <path>`                                        | teardown                                                      | Selects the linked worktree to tear down. Defaults to the process working directory; a path inside a worktree resolves to its Git top level.                                                                                                                                |
+| `-o`, `--format <text\|json\|yaml>`                        | status/version/config/check/doctor/env                        | Selects human-readable, JSON, or YAML output. Defaults to `text`.                                                                                                                                                                                                           |
+| `-J`, `--json`                                             | status/version/config/check/doctor/env                        | Shortcut for `--format json`. Conflicts with `--format` and `--yaml`.                                                                                                                                                                                                       |
+| `-Y`, `--yaml`                                             | status/version/config/check/doctor/env                        | Shortcut for `--format yaml`. Conflicts with `--format` and `--json`.                                                                                                                                                                                                       |
+| `-V`, `--version`                                          | global                                                        | Prints package and spec version details and exits before command validation.                                                                                                                                                                                                |
+| `-o`, `--output <path>`                                    | schema                                                        | Writes the bundled config schema to a file instead of stdout.                                                                                                                                                                                                               |
+| `-S`, `--strict`                                           | run/check/copy/symlink/sync/doctor                            | Fails if a copy/symlink target exists; rejects sync operations; exits non-zero when run from the root checkout. Declarative config can also enable strict mode with top-level `strict = true`. For doctor, strict failures are reported as fatal diagnostics when possible. |
+| `-f`, `--force`                                            | run/copy/symlink/sync                                         | Replaces existing file-operation targets where supported.                                                                                                                                                                                                                   |
+| `-n`, `--dry-run`                                          | run/teardown/copy/symlink/sync                                | Prints planned work without writing files or running commands. Teardown does not prompt or require `--yes`.                                                                                                                                                                 |
+| `-v`, `--verbose`                                          | run/copy/symlink/sync                                         | Prints detailed file-operation actions instead of compact summaries. Interactive progress is disabled in verbose mode.                                                                                                                                                      |
+| `--skip-commands`                                          | run                                                           | Runs file operations only.                                                                                                                                                                                                                                                  |
+| `--yes`                                                    | teardown                                                      | Long-only explicit approval that suppresses the terminal confirmation prompt. It does not bypass discovery, parsing, or validation.                                                                                                                                         |
+| `-t`, `--target <path>`                                    | copy/symlink/sync                                             | Overrides the target. With multiple sources, acts as the target path prefix for each source.                                                                                                                                                                                |
+| `--required`                                               | copy/symlink/sync                                             | Fails when any requested source does not exist.                                                                                                                                                                                                                             |
+| `--symlinks <preserve>`                                    | copy/sync                                                     | Selects how source symlinks are handled. The initial supported value is `preserve`.                                                                                                                                                                                         |
+| `--include <pattern>`                                      | copy/sync                                                     | Repeats to narrow directory operations to source paths matching operation-local include patterns. Patterns use gitignore-style syntax without `!` negation and are not read from `.gitignore` files. Conflicts with `--delete` / `-D`.                                      |
+| `--ignore <pattern>`                                       | copy/sync                                                     | Repeats to skip source paths matching operation-local ignore patterns. Patterns use gitignore-style syntax and are not read from `.gitignore` files.                                                                                                                        |
+| `--ignore-metadata <permissions\|owner\|group\|ownership>` | copy/sync                                                     | Repeats to opt out of metadata comparison and preservation. `ownership` means owner and group.                                                                                                                                                                              |
+| `--compare <metadata\|checksum>`                           | sync                                                          | Selects sync comparison behavior.                                                                                                                                                                                                                                           |
+| `-D`, `--delete` / `--no-delete`                           | sync                                                          | Controls whether sync deletes target-only files. Defaults to `--no-delete`.                                                                                                                                                                                                 |
+| `--config`                                                 | init                                                          | Creates a starter TOML config. This intentionally has no short alias so `-c` can consistently mean config path for run/teardown/config.                                                                                                                                     |
+| `-p`, `--path <path>`                                      | init                                                          | Writes the generated init output to a custom path.                                                                                                                                                                                                                          |
 
 ## Structured output formats
 
@@ -419,7 +461,7 @@ The shared worktree context object has this shape:
 {
   "package": "treeboot",
   "version": "0.8.0",
-  "spec_version": "2.0.0"
+  "spec_version": "2.1.0"
 }
 ```
 
@@ -478,19 +520,39 @@ The shared worktree context object has this shape:
           "column": 1
         }
       }
+    ],
+    "teardown_commands": [
+      {
+        "name": "Drop database",
+        "command": {
+          "kind": "shell",
+          "run": "mise run db:drop"
+        },
+        "cwd": null,
+        "cwd_path": null,
+        "env": {},
+        "allow_failure": false,
+        "declaration": {
+          "start": 52,
+          "end": 98,
+          "line": 5,
+          "column": 1
+        }
+      }
     ]
   }
 }
 ```
 
-`files` and `commands` are ordered arrays. File `operation` is `copy`,
-`symlink`, or `sync`. `compare` is `metadata`, `checksum`, or `null`. `delete`
-is a boolean or `null`. `symlinks` is `preserve` or `null`. `include` is an
-ordered array of operation-local path include patterns. `ignore` is an ordered
-array of operation-local path ignore patterns. `ignore_metadata` is an ordered
-array of canonical ignored metadata fields: `permissions`, `owner`, and `group`.
-Config input can use `ownership` as a shorthand, but normalized inspection
-output expands it to `owner` and `group`.
+`files`, `commands`, and `teardown_commands` are ordered arrays. Omitted
+collections normalize to empty arrays. File `operation` is `copy`, `symlink`, or
+`sync`. `compare` is `metadata`, `checksum`, or `null`. `delete` is a boolean or
+`null`. `symlinks` is `preserve` or `null`. `include` is an ordered array of
+operation-local path include patterns. `ignore` is an ordered array of
+operation-local path ignore patterns. `ignore_metadata` is an ordered array of
+canonical ignored metadata fields: `permissions`, `owner`, and `group`. Config
+input can use `ownership` as a shorthand, but normalized inspection output
+expands it to `owner` and `group`.
 
 Command `name`, `cwd`, and `cwd_path` are strings or `null`. `env` is an object
 whose keys and values are strings. `command` is one of:
@@ -586,7 +648,17 @@ when validation produces no warnings.
     {
       "name": "config",
       "status": "ok",
-      "message": "config is valid: /repo-worktree/.treeboot.toml"
+      "message": "config parsed: /repo-worktree/.treeboot.toml"
+    },
+    {
+      "name": "bootstrap_validation",
+      "status": "ok",
+      "message": "bootstrap config is valid"
+    },
+    {
+      "name": "teardown_validation",
+      "status": "ok",
+      "message": "teardown config is valid"
     }
   ]
 }
@@ -598,8 +670,8 @@ object or `null` when context discovery fails. Each diagnostic has a stable
 `message`.
 
 The diagnostic names defined by this spec are `environment_options`, `worktree`,
-`root`, `root_worktree`, `default_branch`, `environment`, `config`, and
-`config_validation`.
+`root`, `root_worktree`, `default_branch`, `environment`, `config`,
+`bootstrap_validation`, and `teardown_validation`.
 
 The `default_branch` diagnostic is `ok` when a non-empty default branch was
 resolved and `warning` when default branch discovery falls back to the
@@ -640,9 +712,10 @@ output flags. The schema payload is defined by `schemas/treeboot.schema.json`.
 
 ### Commands without structured output
 
-`treeboot run`, `treeboot init`, `treeboot copy`, `treeboot symlink`,
-`treeboot sync`, and `treeboot completions` do not support `--format`, `--json`,
-or `--yaml`. Their output is text-only and follows the command sections plus
+`treeboot run`, `treeboot teardown`, `treeboot init`, `treeboot copy`,
+`treeboot symlink`, `treeboot sync`, and `treeboot completions` do not support
+`--format`, `--json`, or `--yaml`. Their output is text-only and follows the
+command sections plus
 [Operator experience](#operator-experience-output-and-exit-codes).
 
 ## Path model: Root path feeds the worktree path
@@ -702,6 +775,11 @@ operations. In strict mode they exit non-zero before applying file operations.
 `treeboot doctor` reports root-checkout strictness as a fatal `root_worktree`
 diagnostic instead of exiting before printing the diagnostics report.
 
+`treeboot teardown` has no root-checkout no-op. It rejects the main/root
+checkout with exit code `1` before loading config or reading confirmation input.
+Teardown is only valid for a linked worktree. Bootstrap strictness does not
+change this rule.
+
 ### Default Branch Discovery
 
 `TREEBOOT_DEFAULT_BRANCH` is best effort. treeboot uses an existing
@@ -717,21 +795,28 @@ aliases for common setup-script ecosystems.
 
 ### Scope
 
-treeboot builds one environment variable set per run and applies it when
-executing commands from declarative config.
+treeboot builds one environment variable set for the resolved worktree and
+applies it when executing bootstrap or teardown commands from declarative
+config.
 
 ### Config option environment overrides
 
-treeboot also reads environment variables for config-level boolean options.
-Values `1`, `true`, `yes`, and `on` enable an option; `0`, `false`, `no`, and
-`off` disable it. Invalid values are errors before file operations or commands
-run.
+Bootstrap and manual file-operation flows read environment variables for
+config-level boolean options. Values `1`, `true`, `yes`, and `on` enable an
+option; `0`, `false`, `no`, and `off` disable it. Invalid values are errors
+before bootstrap file operations or commands run.
 
 ```text
 TREEBOOT_STRICT
 TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT
 TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE
 ```
+
+These variables affect bootstrap file planning and manual file operations.
+Command-only teardown does not parse or resolve bootstrap runtime policy, so
+even invalid values do not fail teardown. They do not make a missing discovered
+teardown config fatal, permit teardown of the root checkout, or change teardown
+command planning.
 
 ### Canonical
 
@@ -794,6 +879,65 @@ Declarative config is the only bootstrap mode.
 8. **Apply files, then commands**: Run file operations first; commands run
    afterward.
 
+## Execution: Teardown flow
+
+Teardown is an explicitly approved, command-only phase for a linked worktree.
+
+1. **Select target**: Resolve `--worktree`, or the process working directory,
+   through Git worktree discovery to a canonical worktree top level.
+2. **Discover paths**: Resolve the root checkout, default branch, and
+   treeboot-owned environment for that target.
+3. **Reject root checkout**: Fail before config loading or confirmation when
+   root path and target worktree path are equal.
+4. **Load config**: Discover TOML config in the target worktree, or use only the
+   explicitly requested config path.
+5. **Normalize the whole document**: Parse all declarations and construct one
+   normalized config. Any TOML syntax, type, unknown-field, declaration-shape,
+   or declaration-normalization error anywhere in the document is fatal.
+6. **Plan teardown**: Validate only the teardown command collection. Bootstrap
+   file and command semantic planning failures do not prevent a valid teardown.
+7. **Approve**: Skip approval for no-op and dry-run outcomes. Otherwise require
+   `--yes` or affirmative terminal confirmation.
+8. **Execute the prepared plan**: Run the exact validated command set that was
+   approved. Do not reload or reparse config after confirmation.
+
+The preparation result distinguishes missing discovered config, a valid config
+with no teardown commands, and a ready teardown plan. Missing discovered config
+prints `treeboot: no config detected` and exits successfully. An explicitly
+requested missing config is an error. An empty teardown plan prints
+`treeboot: no teardown commands configured` and exits successfully. Neither
+no-op prompts.
+
+### Teardown confirmation
+
+Confirmation occurs only after discovery, parsing, normalization, and teardown
+planning succeed. The prompt is written to stderr and flushed before reading
+stdin:
+
+```text
+Run 2 teardown commands for /repo/worktrees/feature?
+These commands may delete resources outside the worktree. [y/N]
+```
+
+Only `y` and `yes`, case-insensitively after trimming whitespace, approve. Every
+other response, an empty line, and EOF decline. A decline runs nothing and exits
+with code `1`.
+
+When stdin is not a terminal, teardown without `--yes` runs nothing, exits with
+code `1`, and tells the caller to rerun with `--yes`. Prompt read or write
+failures also run nothing and exit with code `1`. `--yes` suppresses the prompt
+but does not bypass discovery, parsing, normalization, or validation.
+`--dry-run` never prompts and never requires `--yes`.
+
+The unsuccessful decline contract makes this composition safe:
+
+```sh
+treeboot teardown --worktree "$path" &&
+  git worktree remove "$path"
+```
+
+Treeboot itself never performs the removal.
+
 ## Migration from legacy init scripts
 
 treeboot does not discover or execute `.treeboot.sh`, `.treebootrc`, or
@@ -840,7 +984,13 @@ is used. Relative config paths resolve from `TREEBOOT_WORKTREE_PATH`.
 `treeboot init` creates `.treeboot.toml` by default. `treeboot init --config` is
 an explicit spelling of the same config output. The command never prompts
 interactively and fails if the output path already exists, including when that
-path is a symlink.
+path is a symlink. The starter config includes an empty `teardown_commands = []`
+declaration.
+
+```toml
+teardown_commands = [
+]
+```
 
 ### Missing config
 
@@ -849,19 +999,26 @@ If no config file is detected, treeboot prints an info message such as
 successfully. With either one, it exits non-zero. Config-level `strict` cannot
 affect missing-config behavior because no config has been loaded.
 
+For `treeboot teardown`, missing discovered config is always a successful no-op.
+Teardown does not resolve bootstrap strictness. An explicitly selected missing
+config remains an error.
+
 ### Config inspection
 
 `treeboot config` uses the same config discovery rules as run mode, parses the
-selected TOML file, normalizes file and command declarations, and exits
-successfully when parsing and normalization succeed. It does not apply file
-operations or execute configured commands. Invalid TOML, unknown fields, invalid
-enum values, missing required fields, and mutually exclusive command fields are
-config errors. If the same config would fail declarative run validation, the
-command prints a `treeboot: warning: ...` line to stderr without changing the
-successful exit status. Non-fatal run-validation warnings, such as an include
-list that matches no source paths, are printed the same way. `treeboot config`
-warnings go to stderr in every output format, so JSON and YAML stdout output
-stays parseable and the structured config shape is unchanged.
+selected TOML file, normalizes file, bootstrap command, and teardown command
+declarations, and exits successfully when parsing and normalization succeed. It
+does not apply file operations or execute configured commands. Invalid TOML,
+unknown fields, invalid enum values, missing required fields, and mutually
+exclusive command fields are config errors.
+
+After normalization, config inspection independently validates bootstrap and
+teardown semantics. It prints phase-labelled `treeboot: warning: ...` lines for
+each invalid phase without changing the successful parse-only exit status.
+Non-fatal bootstrap validation warnings, such as an include list that matches no
+source paths, are printed the same way. Warnings go to stderr in every output
+format, so JSON and YAML stdout output stays parseable and the structured config
+shape is unchanged.
 
 ### JSON Schema
 
@@ -900,6 +1057,11 @@ commands = [
   { name = "Install dependencies", run = "mise run setup" },
 ]
 
+teardown_commands = [
+  { name = "Stop services", run = "docker compose down" },
+  { name = "Drop database", run = "mise run db:drop" },
+]
+
 files = [
   { operation = "copy", source = ".npmrc", target = ".npmrc" },
   { operation = "symlink", source = "shared/bin", target = "bin" },
@@ -909,9 +1071,11 @@ files = [
 
 ### Top-level options
 
-Top-level options are project defaults for declarative config execution.
+Top-level options are project defaults for declarative bootstrap execution.
 Environment variables override matching config values. CLI flags override both
-where an equivalent flag exists.
+where an equivalent flag exists. The normalized config still carries these
+values during teardown, but command-only teardown does not resolve or apply
+them.
 
 | Option                                       | Environment                                           | Meaning                                                                                                                                                 |
 | -------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -987,10 +1151,22 @@ plural `files = [...]` list in the same TOML file.
 shorthand for objects with a `run` field. For longer command definitions, use
 verbose `[[command]]` entries.
 
+`teardown_commands` and verbose `[[teardown_command]]` entries accept the same
+fields and defaults. Compact teardown entries run before verbose teardown
+entries, matching the bootstrap `commands` then `[[command]]` ordering.
+Bootstrap and teardown normalize into separate ordered collections. An omitted
+teardown declaration normalizes to an empty collection, so existing config files
+remain valid. Older treeboot versions reject configs using the new keys because
+unknown config fields are deliberately denied.
+
 ```toml
 commands = [
   "mise install",
   { run = "mise run setup", env = { NODE_ENV = "development" } },
+]
+
+teardown_commands = [
+  { name = "Stop services", run = "docker compose down" },
 ]
 
 [[command]]
@@ -1005,6 +1181,12 @@ NODE_ENV = "development"
 name = "Install dependencies without a shell"
 program = "npm"
 args = ["install"]
+
+[[teardown_command]]
+name = "Drop database"
+program = "mise"
+args = ["run", "db:drop"]
+allow_failure = false
 ```
 
 | Command field      | Meaning                                                                                                                     |
@@ -1015,17 +1197,48 @@ args = ["install"]
 | `env`              | Extra environment variables merged into the treeboot env set. Treeboot-owned variables and aliases cannot be overridden.    |
 | `allow_failure`    | Defaults to `false`. When true, non-zero exit is not fatal.                                                                 |
 
+Exactly one of `run` or `program` is required. `args` is valid only with
+`program`. The parser rejects unknown fields in both bootstrap and teardown
+command declarations.
+
 ## Before execution: Operation validation
 
 treeboot should catch surprising or self-conflicting file operations before it
 starts changing the worktree.
 
+### Whole-document and phase boundary
+
+Config loading parses and normalizes the whole TOML document before any
+bootstrap or teardown semantic plan is built. A syntax, type, unknown-field,
+declaration-shape, mutually exclusive field, or path-normalization error in any
+declaration makes config loading fail for every command.
+
+After a normalized config exists, bootstrap and teardown semantic planning are
+independent:
+
+- `treeboot run` validates and builds only the bootstrap plan.
+- `treeboot teardown` validates and builds only the teardown plan.
+- a missing required bootstrap source, strict sync conflict, bootstrap command
+  cwd escape, or bootstrap owned-environment override does not block valid
+  teardown planning
+- an invalid teardown cwd or owned-environment override does not block bootstrap
+  planning
+- `treeboot check`, `treeboot doctor`, and `treeboot config` independently
+  evaluate both phase outcomes from one complete-config validation pass
+
+Complete-config validation orders bootstrap before teardown deterministically
+and preserves both errors when both phases fail. `check` returns one fatal
+aggregate error containing every failed phase. `doctor` reports separate phase
+diagnostics. `config` reports phase-labelled warnings while preserving its
+successful parse-only status.
+
 ### Normalize first
 
 Config parsing should normalize `copy`, `symlink`, `sync`, `files`, and
 `[[file]]` into one ordered list of file operations with resolved source and
-target paths. Manual `copy`, `symlink`, and `sync` commands should produce the
-same normalized operation shape.
+target paths. It normalizes bootstrap and teardown declarations into separate
+ordered command collections. Manual `copy`, `symlink`, and `sync` commands
+should produce the same normalized operation shape.
 
 Relative file-operation source paths resolve from `TREEBOOT_ROOT_PATH`. Relative
 file-operation target paths and command `cwd` paths resolve from
@@ -1076,13 +1289,14 @@ outside the root path are validation errors by default.
 
 ### Command boundary
 
-Command `cwd` values are normalized relative to `TREEBOOT_WORKTREE_PATH`. Paths
-may contain `..`, but the final resolved path must stay inside the worktree.
-Planning resolves each cwd before any side effect. After file operations finish,
-treeboot re-resolves the cwd and worktree boundary immediately before spawning
-each command and passes the freshly resolved cwd to the child process. If the
-live cwd no longer resolves inside the worktree, the command is not spawned and
-the failure follows the normal command-start `allow_failure` policy.
+Bootstrap and teardown command `cwd` values are normalized relative to
+`TREEBOOT_WORKTREE_PATH`. Paths may contain `..`, but the final resolved path
+must stay inside the worktree. Planning resolves each cwd before any side
+effect. Immediately before spawning each command, treeboot re-resolves the cwd
+and worktree boundary and passes the freshly resolved cwd to the child process.
+For bootstrap this happens after file operations; teardown has no file phase. If
+the live cwd no longer resolves inside the worktree, the command is not spawned
+and the failure follows the normal command-start `allow_failure` policy.
 
 | Rule                                                        | Behavior                                                        |
 | ----------------------------------------------------------- | --------------------------------------------------------------- |
@@ -1432,11 +1646,13 @@ explicit.
 
 ### Trusted setup inputs
 
-`treeboot run` is intended for repositories whose setup contract the user
-trusts. The trust boundary includes declarative config files and configured
-commands, which can run arbitrary project setup code. Use `treeboot config` to
-inspect TOML without execution, or `treeboot run --skip-commands` to apply only
-configured file operations.
+`treeboot run` and `treeboot teardown` are intended for repositories whose setup
+contract the user trusts. The trust boundary includes declarative config files
+and configured commands, which can run arbitrary code and may modify or delete
+resources outside the worktree. Use `treeboot config` to inspect TOML without
+execution, `treeboot run --skip-commands` to apply only configured file
+operations, and `treeboot teardown --dry-run` to inspect teardown command
+execution.
 
 Dry-run reports the same file-operation decision that treeboot would take
 without mutating files. Default text output reports one compact line per
@@ -1545,18 +1761,21 @@ File-operation warnings remain visible in compact mode. If a warning is emitted
 while progress is active, progress must be cleared or suspended before printing
 the warning so terminal output remains readable.
 
-## After files: Command runtime
+## Command phases: Shared runtime
 
-Commands are arbitrary project setup commands. treeboot runs them predictably,
-but does not attempt to infer whether they are safe.
+Bootstrap and teardown commands are arbitrary project commands. treeboot plans
+and runs both collections through the same command semantics while keeping the
+phase plans separate.
 
 ### Execution rules
 
-- Run after file operations complete successfully.
-- Run even if every file operation was skipped.
+- Bootstrap commands run after file operations complete successfully and run
+  even if every file operation was skipped.
+- Teardown commands run without applying any file operation or bootstrap
+  command.
 - Commands run sequentially in declaration order.
-- Re-resolve each command cwd and the worktree boundary immediately before
-  spawn, after file operations, and reject a live cwd escape.
+- Re-resolve each command cwd and the worktree boundary immediately before spawn
+  and reject a live cwd escape.
 - A command with `allow_failure = true` warns when it cannot be spawned or exits
   non-zero, then later commands continue.
 - Run from `TREEBOOT_WORKTREE_PATH` unless a command sets `cwd`.
@@ -1564,9 +1783,11 @@ but does not attempt to infer whether they are safe.
   [Environment variables](#compatibility-environment-variables).
 - Per-command `env` values are merged into that environment for that command
   only.
-- Skip only when `--skip-commands` is provided.
-- In `--dry-run`, report planned file operations and commands without spawning
-  any configured command process.
+- Bootstrap commands skip only when `treeboot run --skip-commands` is provided.
+- In run `--dry-run`, report planned file operations and bootstrap commands
+  without spawning any configured command process.
+- In teardown `--dry-run`, report teardown commands without prompting or
+  spawning any configured command process.
 
 ### Shells
 
@@ -1588,9 +1809,14 @@ setup work should delegate to one project-local task, such as `mise run setup`,
 
 ### Lifecycle output
 
-treeboot reports `treeboot: run <label>` before spawning each command. In
-dry-run it reports `treeboot: would run <label>` instead. A successful command
-does not produce a separate success event.
+For bootstrap, treeboot reports `treeboot: run <label>` before spawning each
+command. In dry-run it reports `treeboot: would run <label>` instead.
+
+For teardown, treeboot reports `treeboot: teardown run <label>` before spawning
+each command. In dry-run it reports `treeboot: teardown would run <label>`
+instead.
+
+A successful command in either phase does not produce a separate success event.
 
 ### Command labels
 
@@ -1605,12 +1831,22 @@ Commands inherit stdout and stderr directly.
 ### Failures
 
 Fatal command failures exit non-zero immediately and later commands do not run.
-If a command cannot be spawned, treeboot reports
+In either phase, a command that cannot be spawned reports
 `treeboot: failed to run command <label>: <io-error>` to stderr and exits
-non-zero unless `allow_failure = true`. Allowed failures always emit a warning
-and do not make the run fail by themselves. Execution-time cwd resolution or
-boundary failures use the same command-start failure behavior and prevent that
-command from spawning.
+non-zero unless `allow_failure = true`.
+
+Allowed failures always emit a phase-labelled warning and do not make the
+command fail by themselves:
+
+```text
+treeboot: warning: command optional lint: npm run lint failed with exit status: 1
+treeboot: warning: teardown command Stop services: docker compose down failed with exit status 1
+```
+
+Execution-time cwd resolution or boundary failures use the same phase-specific
+command-start failure behavior and prevent that command from spawning. Under
+`allow_failure = false` the failure is fatal; under `allow_failure = true` it
+warns and later commands continue.
 
 ### Cross-platform contract
 
@@ -1631,6 +1867,7 @@ treeboot: sync shared/config -> .config
 treeboot: sync metadata shared/editor/settings.json -> .editor/settings.json
 treeboot: sync shared -> shared (4 changed, 1 deleted)
 treeboot: run Install packages: npm install
+treeboot: teardown run Stop services: docker compose down
 treeboot: warning: could not preserve ownership shared/cache: operation not permitted
 treeboot: warning: command optional lint: npm run lint failed with exit status: 1
 ```
@@ -1662,17 +1899,34 @@ spawn failures are reported as
 are reported as
 `treeboot: warning: command <label> failed to start: <io-error>`.
 
+Teardown command start lines use `treeboot: teardown run <label>`. Teardown
+dry-run uses `treeboot: teardown would run <label>`. Teardown allowed-failure
+messages identify the teardown phase. Discovery output remains shared:
+
+```text
+treeboot: config detected /repo/worktrees/feature/.treeboot.toml
+treeboot: teardown run Stop services: docker compose down
+treeboot: teardown run Drop database: mise run db:drop
+```
+
+No-op output is durable:
+
+```text
+treeboot: no config detected
+treeboot: no teardown commands configured
+```
+
 Manual file operation validation errors should identify the CLI operation,
 source, and target involved. They must not report synthetic config file paths,
 TOML line numbers, or TOML column numbers for command-line arguments. Config
 parse or normalization errors found while loading manual command policy still
 report the real config path and TOML location.
 
-| Exit | Meaning                                                               |
-| ---- | --------------------------------------------------------------------- |
-| `0`  | Success.                                                              |
-| `1`  | Runtime failure, config error, operation failure, or command failure. |
-| `2`  | CLI usage error.                                                      |
+| Exit | Meaning                                                                                                             |
+| ---- | ------------------------------------------------------------------------------------------------------------------- |
+| `0`  | Success, including missing discovered config or no teardown commands.                                               |
+| `1`  | Runtime failure, config error, operation or command failure, teardown decline, or missing non-interactive approval. |
+| `2`  | CLI usage error.                                                                                                    |
 
 ## Distribution: Install and releases
 
@@ -1763,6 +2017,9 @@ idempotency, compatibility env vars, and real Git worktree behavior.
 - String and object file parsing.
 - Sync comparison and explicit delete behavior.
 - String and object command parsing.
+- Compact and verbose teardown command parsing and declaration order.
+- Whole-document normalization failure before phase planning.
+- Independent bootstrap and teardown semantic validation.
 - Discovery order.
 - Environment variable construction.
 - Conflict mode behavior.
@@ -1774,12 +2031,20 @@ idempotency, compatibility env vars, and real Git worktree behavior.
 - Create a temporary Git repository.
 - Create a linked worktree.
 - Run treeboot from the linked worktree.
+- Prepare and execute teardown for the current and an explicitly selected linked
+  worktree.
 - Run manual copy, symlink, and sync operations.
-- Verify files, symlinks, commands, and env vars.
+- Verify files, symlinks, bootstrap and teardown commands, and env vars.
+- Revalidate command cwd immediately before both bootstrap and teardown spawn.
 
 ### CLI tests
 
 - `treeboot` equals `treeboot run`.
+- `teardown` requires approval, rejects the root checkout, and never removes a
+  worktree.
+- `teardown --dry-run` neither prompts nor spawns.
+- missing discovered config and empty teardown commands are no-op successes.
+- non-terminal teardown requires `--yes`; refusal exits `1`.
 - `status` reports discovery paths without execution.
 - `init` creates config by default.
 - `init --config` creates config.

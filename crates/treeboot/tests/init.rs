@@ -32,6 +32,9 @@ fn init_config_should_create_starter_config() {
             "\n",
             "commands = [\n",
             "]\n",
+            "\n",
+            "teardown_commands = [\n",
+            "]\n",
         )
     );
 }

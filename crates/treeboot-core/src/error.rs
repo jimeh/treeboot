@@ -105,6 +105,17 @@ pub enum Error {
     #[error("This is not a work tree")]
     RootWorktreeStrict,
 
+    /// Teardown was requested for the root checkout.
+    #[error("teardown is only valid for a linked worktree")]
+    RootWorktreeTeardown,
+
+    /// Complete config validation failed for one or more phases.
+    #[error("config phase validation failed: {message}")]
+    ConfigPhaseValidation {
+        /// Ordered phase-labelled validation failures.
+        message: String,
+    },
+
     /// A configured command could not be spawned.
     #[error("failed to run command {label}: {source}")]
     CommandIo {

@@ -215,7 +215,7 @@ fn doctor_strict_should_validate_config_with_strict_policy() {
     assert_eq!(json["fatal"], true);
     assert!(has_diagnostic(
         &json,
-        "config_validation",
+        "bootstrap_validation",
         "error",
         "strict mode cannot be used with sync"
     ));
@@ -276,7 +276,7 @@ fn doctor_should_apply_environment_strict_to_config_validation() {
     assert_eq!(json["fatal"], true);
     assert!(has_diagnostic(
         &json,
-        "config_validation",
+        "bootstrap_validation",
         "error",
         "strict mode cannot be used with sync"
     ));
@@ -544,7 +544,12 @@ fn doctor_config_option_should_ignore_legacy_script_and_validate_requested_confi
         .assert()
         .success()
         .stderr(predicate::str::is_empty())
-        .stdout(predicate::str::contains("ok: config: config is valid"));
+        .stdout(predicate::str::contains(
+            "ok: bootstrap_validation: bootstrap config is valid",
+        ))
+        .stdout(predicate::str::contains(
+            "ok: teardown_validation: teardown config is valid",
+        ));
 
     assert!(!marker.exists());
 }

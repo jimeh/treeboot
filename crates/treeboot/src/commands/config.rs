@@ -45,20 +45,24 @@ pub(crate) fn run_config_command(args: ConfigArgs) -> treeboot_core::Result<()> 
 
     // Warnings go to stderr in every output format so JSON and YAML stdout
     // output stays parseable.
-    match treeboot_core::ActionPlan::from_manifest(
+    let phases = treeboot_core::validate_config_phases(
         &report.path,
         &report.config,
         &report.context,
         plan_options.into_action_plan_options(),
-    ) {
+    );
+    match phases.bootstrap() {
         Ok(plan) => {
             for warning in plan.warnings() {
                 eprintln!("treeboot: warning: {warning}");
             }
         }
         Err(error) => {
-            eprintln!("treeboot: warning: run validation would fail: {error}");
+            eprintln!("treeboot: warning: bootstrap validation would fail: {error}");
         }
+    }
+    if let Err(error) = phases.teardown() {
+        eprintln!("treeboot: warning: teardown validation would fail: {error}");
     }
 
     Ok(())
@@ -81,6 +85,15 @@ fn print_config_text(report: &ConfigReport) -> std::io::Result<()> {
         println!("  (none)");
     } else {
         for command in &report.config.commands {
+            println!("  {}", command_summary(command));
+        }
+    }
+    println!();
+    println!("teardown commands:");
+    if report.config.teardown_commands.is_empty() {
+        println!("  (none)");
+    } else {
+        for command in &report.config.teardown_commands {
             println!("  {}", command_summary(command));
         }
     }

@@ -4,7 +4,7 @@
 
 # treeboot
 
-**Bootstrap new Git worktrees from one repo-local setup file.**
+**Bootstrap Git worktrees and run pre-removal teardown from one setup file.**
 
 [![GitHub Release](https://img.shields.io/github/v/release/jimeh/treeboot?logo=github&label=Release)](https://github.com/jimeh/treeboot/releases/latest)
 [![crates.io](https://img.shields.io/crates/v/treeboot?logo=rust&label=crates.io)](https://crates.io/crates/treeboot)
@@ -19,6 +19,10 @@ New Git worktrees often need the same local setup: copy environment overrides,
 link shared tooling, install dependencies, and run project setup commands.
 `treeboot` puts those steps in one repo-local contract that works for people,
 coding agents, editors, and orchestration tools.
+
+Projects can also declare teardown commands for resources that belong to one
+worktree, such as databases, containers, or preview environments. Run those
+commands explicitly before another tool removes the worktree.
 
 Instead of maintaining separate setup instructions for every tool, add
 `.treeboot.toml` to the repository and use one command:
@@ -73,6 +77,11 @@ commands = [
   "bundle install",
   "pnpm install",
 ]
+
+teardown_commands = [
+  { name = "Stop services", run = "docker compose down" },
+  { name = "Drop database", run = "mise run db:drop" },
+]
 ```
 
 ### 3. Bootstrap each new worktree
@@ -112,12 +121,13 @@ a target with its source.
 
 The default config file is `.treeboot.toml`. Its main operations are:
 
-| Key        | Behavior                                                         |
-| ---------- | ---------------------------------------------------------------- |
-| `copy`     | Copy a file or directory once, leaving an existing target alone. |
-| `symlink`  | Create a relative link back to the root checkout.                |
-| `sync`     | Reconcile a target with its source on every run.                 |
-| `commands` | Run setup commands sequentially after file operations.           |
+| Key                 | Behavior                                                         |
+| ------------------- | ---------------------------------------------------------------- |
+| `copy`              | Copy a file or directory once, leaving an existing target alone. |
+| `symlink`           | Create a relative link back to the root checkout.                |
+| `sync`              | Reconcile a target with its source on every run.                 |
+| `commands`          | Run setup commands sequentially after file operations.           |
+| `teardown_commands` | Run explicitly approved commands before external removal.        |
 
 A more complete config can mix short string entries with objects:
 
@@ -145,6 +155,10 @@ commands = [
   "mise install",
   { name = "Set up the project", run = "mise run setup" },
 ]
+
+teardown_commands = [
+  { name = "Drop database", run = "mise run db:drop" },
+]
 ```
 
 String file entries use the same source and target path. Object entries can use
@@ -153,6 +167,10 @@ preserves target-only files by default; set `delete = true` to remove them.
 
 Commands run in declaration order. For parallel setup, put the parallel work
 behind one task-runner command such as `mise run setup`.
+
+Teardown commands use the same shell/direct command fields, `cwd`, `env`, and
+`allow_failure` behavior. They run only through `treeboot teardown`; bootstrap
+never runs them.
 
 The [JSON Schema](#schema) provides editor completion and documents all config
 fields. The full observable behavior is defined by the
@@ -166,17 +184,19 @@ diagnosing discovery and validation problems:
 ```sh
 treeboot status        # Show the detected worktree, root, and config
 treeboot config        # Print normalized TOML config without executing it
-treeboot check         # Validate the setup plan without applying it
+treeboot check         # Validate bootstrap and teardown plans
 treeboot doctor        # Run discovery and configuration diagnostics
 treeboot env           # Print treeboot-owned command environment variables
 treeboot run --dry-run # Preview file operations and commands
+treeboot teardown --dry-run # Preview teardown commands without prompting
 ```
 
 `status`, `config`, `check`, `doctor`, `env`, and `version` support
 `--format text|json|yaml`, with `--json` and `--yaml` shortcuts.
 
 If no config is found, `treeboot` prints an info message and exits successfully.
-Add `--strict` when that should be an error.
+Add `--strict` to bootstrap when that should be an error. Missing discovered
+config is always a teardown no-op; an explicit `--config` must exist.
 
 ## Safety and trust
 
@@ -191,10 +211,22 @@ Add `--strict` when that should be an error.
 
 Setup files can run arbitrary project commands. Only run `treeboot` in
 repositories you trust. The trust boundary includes `.treeboot.toml`,
-`treeboot.toml`, `.config/treeboot/config.toml`, and configured commands.
+`treeboot.toml`, `.config/treeboot/config.toml`, and configured bootstrap and
+teardown commands. Teardown commands may delete resources outside the worktree.
 
 Use `treeboot config` to inspect declarative config without execution, or
-`treeboot run --skip-commands` to apply only configured file operations.
+`treeboot run --skip-commands` to apply only configured file operations. Use
+`treeboot teardown --dry-run` to inspect teardown commands.
+
+`treeboot teardown` never removes a Git worktree or branch. It requires terminal
+confirmation or the long-only `--yes` flag before execution. A refusal or
+non-interactive run without `--yes` exits unsuccessfully, so it can safely guard
+an external removal:
+
+```sh
+treeboot teardown --worktree "$path" --yes &&
+  git worktree remove "$path"
+```
 
 ## CLI reference
 
@@ -203,6 +235,7 @@ Use `treeboot config` to inspect declarative config without execution, or
 | Purpose         | Commands                                     |
 | --------------- | -------------------------------------------- |
 | Bootstrap       | `run`                                        |
+| Teardown        | `teardown`                                   |
 | Inspect         | `status`, `config`, `check`, `doctor`, `env` |
 | File operations | `copy`, `symlink`, `sync`                    |
 | Utilities       | `init`, `schema`, `version`, `completions`   |
@@ -214,6 +247,8 @@ treeboot run --dry-run
 treeboot run --strict
 treeboot run --force
 treeboot run --root /path/to/root-checkout
+treeboot teardown --dry-run
+treeboot teardown --worktree ../feature --yes
 treeboot copy .env.local mise.local.toml --target local
 treeboot sync shared/config --delete --dry-run
 treeboot init
@@ -244,19 +279,25 @@ Treeboot requires Git 2.36 or newer.
 
 ## Custom scripts
 
-Declarative commands can execute any custom project script:
+Declarative bootstrap and teardown commands can execute any custom project
+script:
 
 ```toml
 commands = [
   { run = "./scripts/bootstrap-worktree.sh" },
 ]
+
+teardown_commands = [
+  { run = "./scripts/teardown-worktree.sh" },
+]
 ```
 
 Configured commands run from the worktree root by default, inherit the
-`TREEBOOT_*` environment, and run after file operations. They receive no
-automatic positional `$1`; scripts should read `TREEBOOT_ROOT_PATH`, or the
-config should pass it explicitly. `--skip-commands` omits configured commands,
-and `--dry-run` reports them without execution.
+`TREEBOOT_*` environment, and receive no automatic positional `$1`; scripts
+should read `TREEBOOT_ROOT_PATH`, or the config should pass it explicitly.
+Bootstrap commands run after file operations; `--skip-commands` omits them.
+Teardown commands run only through `treeboot teardown` after approval. Both
+commands support `--dry-run` reporting without execution.
 
 Legacy `.treeboot.sh`, `.treebootrc`, and `.config/treeboot/init` files have no
 special meaning and are treated as ordinary repository files. The former
@@ -272,7 +313,8 @@ Configured commands receive:
 
 Configuration defaults can be overridden with `TREEBOOT_STRICT`,
 `TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT`, and
-`TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE`.
+`TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE`. These affect bootstrap
+file planning, not command-only teardown.
 
 Use `treeboot env` to print the effective treeboot-owned environment.
 
@@ -304,9 +346,9 @@ The command only prints the script; it does not install completion files.
 
 ## Project status
 
-`treeboot` is feature-complete for its core worktree bootstrap workflow. The
-current compatibility contract is [spec v2.0.0](./docs/SPEC.md); this README is
-the shorter, human-facing guide.
+`treeboot` supports its core worktree bootstrap and explicit teardown workflows.
+The current compatibility contract is [spec v2.1.0](./docs/SPEC.md); this README
+is the shorter, human-facing guide.
 
 The name `treeboot` means "worktree bootstrap."
 

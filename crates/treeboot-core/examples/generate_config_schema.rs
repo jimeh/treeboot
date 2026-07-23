@@ -45,6 +45,13 @@ struct TreebootConfig {
     /// Verbose command entries. TOML uses this as [[command]].
     #[serde(skip_serializing_if = "Option::is_none")]
     command: Option<Vec<CommandObject>>,
+    /// Teardown command entries. Entries run before verbose
+    /// [[teardown_command]] entries.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    teardown_commands: Option<Vec<CommandEntry>>,
+    /// Verbose teardown entries. TOML uses this as [[teardown_command]].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    teardown_command: Option<Vec<CommandObject>>,
 }
 
 #[derive(JsonSchema, Serialize)]

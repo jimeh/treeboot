@@ -4,6 +4,7 @@ use std::process::{Command, ExitStatus};
 
 #[cfg(test)]
 use crate::validation::PlannedCommandParts;
+use crate::validation::PlannedCommands;
 use crate::{
     ActionPlan, CommandKind, Error, OutputEvent, PlannedCommand, Reporter, Result, Worktree, paths,
 };
@@ -15,21 +16,53 @@ pub(crate) struct CommandExecutionOptions {
     pub dry_run: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CommandPhase {
+    Bootstrap,
+    Teardown,
+}
+
 pub(crate) fn execute_commands(
     plan: &ActionPlan,
     options: CommandExecutionOptions,
     reporter: &mut dyn Reporter,
 ) -> Result<()> {
-    for command in plan.commands() {
+    execute_planned_commands(
+        plan.context(),
+        plan.commands(),
+        CommandPhase::Bootstrap,
+        options,
+        reporter,
+    )
+}
+
+pub(crate) fn execute_teardown_commands(
+    context: &Worktree,
+    commands: &PlannedCommands,
+    options: CommandExecutionOptions,
+    reporter: &mut dyn Reporter,
+) -> Result<()> {
+    execute_planned_commands(
+        context,
+        commands.as_slice(),
+        CommandPhase::Teardown,
+        options,
+        reporter,
+    )
+}
+
+fn execute_planned_commands(
+    context: &Worktree,
+    commands: &[PlannedCommand],
+    phase: CommandPhase,
+    options: CommandExecutionOptions,
+    reporter: &mut dyn Reporter,
+) -> Result<()> {
+    for command in commands {
         if options.dry_run {
-            report(
-                reporter,
-                OutputEvent::CommandWouldRun {
-                    label: command_label(command),
-                },
-            )?;
+            report(reporter, command_would_run(phase, command_label(command)))?;
         } else {
-            run_sequential(command, plan.context(), reporter)?;
+            run_sequential(command, context, phase, reporter)?;
         }
     }
 
@@ -39,21 +72,22 @@ pub(crate) fn execute_commands(
 fn run_sequential(
     command: &PlannedCommand,
     context: &Worktree,
+    phase: CommandPhase,
     reporter: &mut dyn Reporter,
 ) -> Result<()> {
     let label = command_label(command);
-    report(
-        reporter,
-        OutputEvent::CommandStarted {
-            label: label.clone(),
-        },
-    )?;
+    report(reporter, command_started(phase, label.clone()))?;
 
     let status = match build_command(command, context).and_then(|mut process| process.status()) {
         Ok(status) => status,
         Err(source) => {
             if command.allow_failure() {
-                report_allowed_failure(reporter, label, format!("failed to start: {source}"))?;
+                report_allowed_failure(
+                    reporter,
+                    phase,
+                    label,
+                    format!("failed to start: {source}"),
+                )?;
                 return Ok(());
             }
 
@@ -61,11 +95,12 @@ fn run_sequential(
         }
     };
 
-    handle_exit_status(command.allow_failure(), label, status, reporter)
+    handle_exit_status(command.allow_failure(), phase, label, status, reporter)
 }
 
 fn handle_exit_status(
     allow_failure: bool,
+    phase: CommandPhase,
     label: String,
     status: ExitStatus,
     reporter: &mut dyn Reporter,
@@ -75,7 +110,7 @@ fn handle_exit_status(
     }
 
     if allow_failure {
-        report_allowed_failure(reporter, label, format!("failed with {status}"))
+        report_allowed_failure(reporter, phase, label, format!("failed with {status}"))
     } else {
         Err(Error::CommandFailed { label, status })
     }
@@ -83,13 +118,32 @@ fn handle_exit_status(
 
 fn report_allowed_failure(
     reporter: &mut dyn Reporter,
+    phase: CommandPhase,
     label: String,
     reason: String,
 ) -> Result<()> {
-    report(
-        reporter,
-        OutputEvent::CommandAllowedFailure { label, reason },
-    )
+    report(reporter, command_allowed_failure(phase, label, reason))
+}
+
+fn command_started(phase: CommandPhase, label: String) -> OutputEvent {
+    match phase {
+        CommandPhase::Bootstrap => OutputEvent::CommandStarted { label },
+        CommandPhase::Teardown => OutputEvent::TeardownCommandStarted { label },
+    }
+}
+
+fn command_would_run(phase: CommandPhase, label: String) -> OutputEvent {
+    match phase {
+        CommandPhase::Bootstrap => OutputEvent::CommandWouldRun { label },
+        CommandPhase::Teardown => OutputEvent::TeardownCommandWouldRun { label },
+    }
+}
+
+fn command_allowed_failure(phase: CommandPhase, label: String, reason: String) -> OutputEvent {
+    match phase {
+        CommandPhase::Bootstrap => OutputEvent::CommandAllowedFailure { label, reason },
+        CommandPhase::Teardown => OutputEvent::TeardownCommandAllowedFailure { label, reason },
+    }
 }
 
 fn build_command(command: &PlannedCommand, context: &Worktree) -> io::Result<Command> {

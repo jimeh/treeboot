@@ -221,3 +221,40 @@ Validation focus:
 - pruned directories are never read
 - ancestor metadata repair with unchanged included descendants
 - warning output shapes across text, JSON, and YAML
+
+## Milestone 12: Teardown And Public Config Evolution
+
+Status: implemented.
+
+Scope:
+
+- add compact `teardown_commands` and verbose `[[teardown_command]]`
+  declarations using the existing command fields and normalization
+- add `treeboot teardown` with linked-worktree targeting, dry-run, terminal
+  confirmation, and long-only `--yes`
+- keep worktree and branch removal outside treeboot
+- separate reporter-aware teardown preparation from binary-owned confirmation
+  and execution of the already approved immutable plan
+- keep bootstrap and teardown semantic plans independent after whole-config
+  parsing and normalization
+- share one command planner, runtime, live cwd boundary check, and failure
+  policy across bootstrap and teardown
+- validate both phase outcomes once for `check`, `doctor`, and `config`
+- consolidate normalized file-operation construction across config, manual, and
+  public entry points
+- mark the normalized public config graph and resolved `Worktree` context
+  non-exhaustive, with stable replacement constructors
+
+Validation focus:
+
+- teardown command parsing, schema parity, normalized config output, and starter
+  config
+- root-checkout rejection, target selection, missing/empty no-ops, confirmation,
+  non-terminal refusal, and dry-run
+- bootstrap/teardown phase independence and deterministic aggregate inspection
+  failures
+- equivalent command planning/execution behavior across phases, including live
+  cwd retargeting and `allow_failure`
+- compile-time non-exhaustive policy and positive constructor coverage
+- explicit proof that teardown never applies bootstrap actions or removes the
+  worktree

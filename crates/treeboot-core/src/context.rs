@@ -127,7 +127,18 @@ pub struct WorktreeOptions {
 }
 
 /// Resolved Git worktree metadata used by treeboot operations.
+///
+/// ```compile_fail
+/// # use treeboot_core::Worktree;
+/// let _ = Worktree {
+///     root_path: "/repo".into(),
+///     worktree_path: "/repo/worktree".into(),
+///     default_branch: "main".into(),
+///     environment: Default::default(),
+/// };
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Worktree {
     /// Source checkout used for file operations.
     pub root_path: PathBuf,
@@ -140,6 +151,29 @@ pub struct Worktree {
 }
 
 impl Worktree {
+    /// Creates a resolved worktree context from supplied parts without
+    /// performing discovery or filesystem validation.
+    #[must_use]
+    pub fn from_parts(
+        root_path: PathBuf,
+        worktree_path: PathBuf,
+        default_branch: String,
+        environment: Environment,
+    ) -> Self {
+        Self {
+            root_path,
+            worktree_path,
+            default_branch,
+            environment,
+        }
+    }
+
+    /// Returns whether the selected worktree is the root checkout.
+    #[must_use]
+    pub fn is_root(&self) -> bool {
+        self.root_path == self.worktree_path
+    }
+
     /// Discovers worktree metadata from the provided options.
     ///
     /// # Errors

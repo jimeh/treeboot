@@ -29,6 +29,7 @@ mod paths;
 mod run;
 mod runtime;
 mod status;
+mod teardown;
 #[cfg(test)]
 mod test_support;
 mod validation;
@@ -54,9 +55,13 @@ pub use runtime::{ResolvedRuntimePolicy, RuntimeOptionOverrides, RuntimePolicy};
 pub use status::{
     StatusOptions, StatusReport, StatusSnapshotReport, inspect_status, inspect_status_snapshot,
 };
+pub use teardown::{
+    PreparedTeardown, TeardownAction, TeardownExecuteOptions, TeardownOptions, TeardownReport,
+    execute_teardown, prepare_teardown,
+};
 pub use validation::{
-    ActionPlan, ActionPlanOptions, PlanOrigin, PlanWarning, PlannedCommand, PlannedFileOperation,
-    PlannedFileStatus,
+    ActionPlan, ActionPlanOptions, ConfigPhaseValidation, PlanOrigin, PlanWarning, PlannedCommand,
+    PlannedFileOperation, PlannedFileStatus, TeardownPlan, validate_config_phases,
 };
 
 /// Convenient result type used by `treeboot-core`.

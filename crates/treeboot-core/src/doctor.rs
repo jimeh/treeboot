@@ -4,7 +4,7 @@ use serde::Serialize;
 
 use crate::check::WorktreeSnapshot;
 use crate::context;
-use crate::{ActionPlan, Config, EnvironmentInput, RuntimePolicy, WorktreeOptions};
+use crate::{Config, EnvironmentInput, RuntimePolicy, WorktreeOptions, validate_config_phases};
 
 /// Options for diagnosing treeboot discovery and validation.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -113,7 +113,7 @@ pub fn diagnose(options: DoctorOptions) -> DoctorReport {
     };
     let context_snapshot = WorktreeSnapshot::from(&context);
 
-    if context.root_path == context.worktree_path && runtime_policy.pre_config_strict() {
+    if context.is_root() && runtime_policy.pre_config_strict() {
         fatal = true;
         diagnostics.push(error_diag(
             "root_worktree",
@@ -121,12 +121,9 @@ pub fn diagnose(options: DoctorOptions) -> DoctorReport {
         ));
     }
 
-    match check_config(&options, &context, &runtime_policy) {
-        Ok(diagnostic) => diagnostics.push(diagnostic),
-        Err(diagnostic) => {
-            fatal = true;
-            diagnostics.push(diagnostic);
-        }
+    for diagnostic in check_config(&options, &context, &runtime_policy) {
+        fatal |= diagnostic.status == DiagnosticStatus::Error;
+        diagnostics.push(diagnostic);
     }
 
     DoctorReport {
@@ -140,30 +137,42 @@ fn check_config(
     options: &DoctorOptions,
     context: &crate::Worktree,
     runtime_policy: &RuntimePolicy,
-) -> std::result::Result<Diagnostic, Diagnostic> {
-    let path = Config::discover_path(context, options.config.as_deref())
-        .map_err(|error| error_diag("config", error.to_string()))?;
+) -> Vec<Diagnostic> {
+    let path = match Config::discover_path(context, options.config.as_deref()) {
+        Ok(path) => path,
+        Err(error) => return vec![error_diag("config", error.to_string())],
+    };
 
     let Some(path) = path else {
         if runtime_policy.pre_config_strict() {
-            return Err(error_diag("config", "no config detected under strict mode"));
+            return vec![error_diag("config", "no config detected under strict mode")];
         }
 
-        return Ok(warning("config", "no config detected"));
+        return vec![warning("config", "no config detected")];
     };
 
-    let config =
-        Config::load(&path, context).map_err(|error| error_diag("config", error.to_string()))?;
+    let config = match Config::load(&path, context) {
+        Ok(config) => config,
+        Err(error) => return vec![error_diag("config", error.to_string())],
+    };
     let plan_options = runtime_policy.resolve(&config.options);
-    ActionPlan::from_manifest(
+    let phases = validate_config_phases(
         &path,
         &config,
         context,
         plan_options.into_action_plan_options(),
-    )
-    .map_err(|error| error_diag("config_validation", error.to_string()))?;
+    );
+    let mut diagnostics = vec![ok("config", format!("config parsed: {}", path.display()))];
+    diagnostics.push(match phases.bootstrap() {
+        Ok(_) => ok("bootstrap_validation", "bootstrap config is valid"),
+        Err(error) => error_diag("bootstrap_validation", error.to_string()),
+    });
+    diagnostics.push(match phases.teardown() {
+        Ok(_) => ok("teardown_validation", "teardown config is valid"),
+        Err(error) => error_diag("teardown_validation", error.to_string()),
+    });
 
-    Ok(ok("config", format!("config is valid: {}", path.display())))
+    diagnostics
 }
 
 fn ok(name: &'static str, message: impl Into<String>) -> Diagnostic {

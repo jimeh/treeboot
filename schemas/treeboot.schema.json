@@ -488,6 +488,20 @@
         "$ref": "#/$defs/SyncEntry"
       },
       "type": "array"
+    },
+    "teardown_command": {
+      "description": "Verbose teardown entries. TOML uses this as [[teardown_command]].",
+      "items": {
+        "$ref": "#/$defs/CommandObject"
+      },
+      "type": "array"
+    },
+    "teardown_commands": {
+      "description": "Teardown command entries. Entries run before verbose\n[[teardown_command]] entries.",
+      "items": {
+        "$ref": "#/$defs/CommandEntry"
+      },
+      "type": "array"
     }
   },
   "title": "TreebootConfig",

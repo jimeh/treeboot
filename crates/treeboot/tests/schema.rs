@@ -8,6 +8,16 @@ use common::treeboot;
 const ROOT_SCHEMA_JSON: &str = include_str!("../../../schemas/treeboot.schema.json");
 
 #[test]
+fn schema_should_describe_both_teardown_command_forms() {
+    let schema: serde_json::Value =
+        serde_json::from_str(ROOT_SCHEMA_JSON).expect("schema should parse");
+    let properties = &schema["properties"];
+
+    assert!(properties["teardown_commands"].is_object());
+    assert!(properties["teardown_command"].is_object());
+}
+
+#[test]
 fn schema_should_print_or_write_embedded_schema() {
     treeboot()
         .arg("schema")

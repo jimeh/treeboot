@@ -3,10 +3,9 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::config::{
     Config, FileOperationSettings, FileOperationSettingsInput, RawMetadataField,
-    effective_ignore_patterns, normalize_file_operation_settings,
+    build_file_operation, effective_ignore_patterns, normalize_file_operation_settings,
 };
 use crate::context;
-use crate::paths::{self, UnsupportedPath};
 use crate::{
     ActionPlan, EnvironmentInput, Error, ExecuteOptions, Executor, FileOperation,
     FileOperationKind, MetadataField, OutputEvent, PlanOrigin, Reporter, Result, RuntimePolicy,
@@ -297,7 +296,7 @@ pub fn run_file_operation(
         environment,
     })?;
 
-    if context.root_path == context.worktree_path {
+    if context.is_root() {
         report(reporter, OutputEvent::RootWorktreeDetected)?;
 
         if pre_config_strict {
@@ -411,36 +410,26 @@ fn manual_operations(
         .into_iter()
         .map(|source| {
             let target = manual_target(operation, &source, target.as_deref(), multiple_sources)?;
-            let source_path = resolve_path(
+            build_file_operation(
                 operation,
-                &context.root_path,
-                &source,
-                &source,
-                &target,
-                ManualPathRole::Source,
-            )?;
-            let target_path = resolve_path(
-                operation,
-                &context.worktree_path,
-                &target,
-                &source,
-                &target,
-                ManualPathRole::Target,
-            )?;
-            Ok(FileOperation {
-                operation,
-                source_path,
-                target_path,
+                context,
                 source,
                 target,
                 required,
-                compare: settings.compare,
-                delete: settings.delete,
-                symlinks: settings.symlinks,
-                include: include.clone(),
-                ignore: ignore.clone(),
-                ignore_metadata: settings.ignore_metadata.clone(),
-                declaration: manual_span(),
+                FileOperationSettings {
+                    compare: settings.compare,
+                    delete: settings.delete,
+                    symlinks: settings.symlinks,
+                    include: include.clone(),
+                    ignore: ignore.clone(),
+                    ignore_metadata: settings.ignore_metadata.clone(),
+                },
+                &[],
+                manual_span(),
+            )
+            .map_err(|error| Error::FileOperationInvalid {
+                operation: operation.as_str(),
+                message: error.to_string(),
             })
         })
         .collect()
@@ -541,59 +530,8 @@ impl From<MetadataField> for RawMetadataField {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-enum ManualPathRole {
-    Source,
-    Target,
-}
-
-impl ManualPathRole {
-    const fn label(self) -> &'static str {
-        match self {
-            Self::Source => "source",
-            Self::Target => "target",
-        }
-    }
-}
-
-fn resolve_path(
-    operation: FileOperationKind,
-    base: &Path,
-    path: &Path,
-    source_path: &Path,
-    target_path: &Path,
-    role: ManualPathRole,
-) -> Result<PathBuf> {
-    paths::resolve_path(base, path).map_err(|source| Error::FileOperationInvalid {
-        operation: operation.as_str(),
-        message: unsupported_path_message(path, source_path, target_path, role, source),
-    })
-}
-
-fn unsupported_path_message(
-    path: &Path,
-    source_path: &Path,
-    target_path: &Path,
-    role: ManualPathRole,
-    source: UnsupportedPath,
-) -> String {
-    format!(
-        "unsupported {} path `{}` for source `{}` target `{}`: {}",
-        role.label(),
-        path.display(),
-        source_path.display(),
-        target_path.display(),
-        source.reason()
-    )
-}
-
 const fn manual_span() -> SourceSpan {
-    SourceSpan {
-        start: 0,
-        end: 0,
-        line: 0,
-        column: 0,
-    }
+    SourceSpan::new(0, 0, 0, 0)
 }
 
 fn invalid_manual<T>(operation: FileOperationKind, message: impl Into<String>) -> Result<T> {

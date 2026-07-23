@@ -4,7 +4,8 @@ use serde::Serialize;
 
 use crate::context;
 use crate::{
-    ActionPlan, Config, EnvironmentInput, Error, Result, RuntimePolicy, Worktree, WorktreeOptions,
+    Config, EnvironmentInput, Error, Result, RuntimePolicy, Worktree, WorktreeOptions,
+    validate_config_phases,
 };
 
 /// Options for checking treeboot bootstrap behavior.
@@ -91,7 +92,7 @@ pub fn check(options: CheckOptions) -> Result<CheckReport> {
         environment: options.environment.clone(),
     })?;
 
-    if context.root_path == context.worktree_path {
+    if context.is_root() {
         if pre_config_strict {
             return Err(Error::RootWorktreeStrict);
         }
@@ -107,17 +108,21 @@ pub fn check(options: CheckOptions) -> Result<CheckReport> {
         Some(path) => {
             let config = Config::load(&path, &context)?;
             let plan_options = runtime_policy.resolve(&config.options);
-            let plan = ActionPlan::from_manifest(
+            let phases = validate_config_phases(
                 &path,
                 &config,
                 &context,
                 plan_options.into_action_plan_options(),
-            )?;
+            );
+            phases.require_valid()?;
 
             Ok(CheckReport {
                 context: WorktreeSnapshot::from(&context),
                 action: CheckAction::Config { path },
-                warnings: plan.warnings().iter().map(ToString::to_string).collect(),
+                warnings: phases.bootstrap().map_or_else(
+                    |_| Vec::new(),
+                    |plan| plan.warnings().iter().map(ToString::to_string).collect(),
+                ),
             })
         }
         None => {

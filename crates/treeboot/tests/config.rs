@@ -39,6 +39,23 @@ commands = ["mise install"]
 }
 
 #[test]
+fn config_command_should_print_teardown_commands() {
+    let repo = git_worktree();
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"teardown_commands = [{ name = "Cleanup", run = "mise run clean" }]"#,
+    );
+
+    treeboot()
+        .arg("config")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("teardown commands:"))
+        .stdout(predicate::str::contains("run \"mise run clean\""));
+}
+
+#[test]
 fn config_command_json_should_print_normalized_config() {
     let repo = git_worktree();
     let config = repo.worktree_path().join(".treeboot.toml");
@@ -81,6 +98,7 @@ commands = [
             "default_ignore",
             "files",
             "strict",
+            "teardown_commands",
         ],
     );
     assert_eq!(config["strict"], false);

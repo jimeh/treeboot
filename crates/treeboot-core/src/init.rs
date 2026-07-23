@@ -17,6 +17,9 @@ symlink = [
 
 commands = [
 ]
+
+teardown_commands = [
+]
 "#;
 
 /// Options for `treeboot init`.
