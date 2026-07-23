@@ -262,7 +262,8 @@ impl ActionPlan {
         files: Vec<PlannedFileOperation>,
         commands: Vec<PlannedCommand>,
     ) -> Self {
-        let worktree_boundary = context.worktree_path.clone();
+        let worktree_boundary = normalize_existing(&context.worktree_path)
+            .unwrap_or_else(|_| context.worktree_path.clone());
         Self {
             context,
             origin,
@@ -2392,6 +2393,28 @@ mod tests {
         .expect("empty plan should build");
 
         assert_eq!(plan.context().root_path, alias_root);
+        assert_eq!(plan.context().worktree_path, alias_worktree);
+    }
+
+    #[test]
+    fn unchecked_action_plan_should_canonicalize_aliased_worktree_boundary() {
+        let (_root, worktree, alias_root, alias_worktree) =
+            aliased_workspace("unchecked-context-alias");
+        let context = context(&alias_root, &alias_worktree);
+        let plan = ActionPlan::from_parts_unchecked(
+            context,
+            PlanOrigin::Manifest {
+                path: alias_worktree.join(".treeboot.toml"),
+            },
+            Some(alias_worktree.join(".treeboot.toml")),
+            Vec::new(),
+            Vec::new(),
+        );
+
+        assert_eq!(
+            plan.planned_commands().worktree_boundary(),
+            normalize_existing(&worktree).expect("real worktree should canonicalize"),
+        );
         assert_eq!(plan.context().worktree_path, alias_worktree);
     }
 
