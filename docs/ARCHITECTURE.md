@@ -184,8 +184,9 @@ and never removes the worktree._
 
 `PreparedTeardown` exposes the resolved context, `TeardownAction`, and a ready
 plan when present. `TeardownAction` distinguishes `MissingConfig`, `NoCommands`,
-and `Ready(TeardownPlan)`. `execute_teardown` accepts only a `TeardownPlan`, so
-callers cannot accidentally execute a no-op preparation result.
+and `Ready(Box<TeardownPlan>)`. `execute_teardown` accepts only a
+`TeardownPlan`, so callers cannot accidentally execute a no-op preparation
+result.
 
 ## Normalized data: Config And Manual Pipelines
 

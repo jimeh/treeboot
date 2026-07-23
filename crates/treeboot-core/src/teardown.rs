@@ -29,7 +29,7 @@ pub enum TeardownAction {
     /// The selected config has no teardown commands.
     NoCommands,
     /// A validated teardown plan is ready for approval and execution.
-    Ready(TeardownPlan),
+    Ready(Box<TeardownPlan>),
 }
 
 /// A prepared teardown request.
@@ -54,9 +54,9 @@ impl PreparedTeardown {
 
     /// Returns the ready plan, when teardown commands were configured.
     #[must_use]
-    pub const fn plan(&self) -> Option<&TeardownPlan> {
+    pub fn plan(&self) -> Option<&TeardownPlan> {
         match &self.action {
-            TeardownAction::Ready(plan) => Some(plan),
+            TeardownAction::Ready(plan) => Some(plan.as_ref()),
             TeardownAction::MissingConfig | TeardownAction::NoCommands => None,
         }
     }
@@ -120,7 +120,7 @@ pub fn prepare_teardown(
 
     Ok(PreparedTeardown {
         context,
-        action: TeardownAction::Ready(plan),
+        action: TeardownAction::Ready(Box::new(plan)),
     })
 }
 

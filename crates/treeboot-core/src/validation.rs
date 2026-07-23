@@ -249,7 +249,7 @@ impl ActionPlan {
             origin,
             config_path,
             files,
-            commands: PlannedCommands::empty(context.worktree_path.clone()),
+            commands: PlannedCommands::empty(&context.worktree_path),
             warnings,
         })
     }
@@ -262,8 +262,7 @@ impl ActionPlan {
         files: Vec<PlannedFileOperation>,
         commands: Vec<PlannedCommand>,
     ) -> Self {
-        let worktree_boundary = normalize_existing(&context.worktree_path)
-            .unwrap_or_else(|_| context.worktree_path.clone());
+        let worktree_boundary = normalize_existing_or_original(&context.worktree_path);
         Self {
             context,
             origin,
@@ -293,10 +292,10 @@ impl PlannedCommands {
         &self.worktree_boundary
     }
 
-    fn empty(worktree_boundary: PathBuf) -> Self {
+    fn empty(worktree_boundary: &Path) -> Self {
         Self {
             commands: Vec::new(),
-            worktree_boundary,
+            worktree_boundary: normalize_existing_or_original(worktree_boundary),
         }
     }
 }
@@ -1552,6 +1551,10 @@ fn normalize_existing(path: &Path) -> std::io::Result<PathBuf> {
     paths::canonicalize(path)
 }
 
+fn normalize_existing_or_original(path: &Path) -> PathBuf {
+    normalize_existing(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
 fn normalize_maybe_existing(path: &Path) -> std::io::Result<PathBuf> {
     paths::normalize_maybe_existing(path)
 }
@@ -2410,6 +2413,28 @@ mod tests {
             Vec::new(),
             Vec::new(),
         );
+
+        assert_eq!(
+            plan.planned_commands().worktree_boundary(),
+            normalize_existing(&worktree).expect("real worktree should canonicalize"),
+        );
+        assert_eq!(plan.context().worktree_path, alias_worktree);
+    }
+
+    #[test]
+    fn manual_action_plan_should_canonicalize_aliased_worktree_boundary() {
+        let (_root, worktree, alias_root, alias_worktree) =
+            aliased_workspace("manual-context-alias");
+        let context = context(&alias_root, &alias_worktree);
+        let plan = ActionPlan::from_file_operations(
+            &context,
+            PlanOrigin::Manual {
+                operation: FileOperationKind::Copy,
+            },
+            &[],
+            ActionPlanOptions::default(),
+        )
+        .expect("empty manual plan should build");
 
         assert_eq!(
             plan.planned_commands().worktree_boundary(),
