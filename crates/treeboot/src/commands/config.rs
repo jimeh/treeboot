@@ -2,11 +2,14 @@ use std::path::PathBuf;
 
 use clap::Args;
 use treeboot_core::{
-    CommandKind, CommandOperation, ConfigOptions, ConfigReport, Error, FileOperation, RuntimePolicy,
+    CommandKind, CommandOperation, ConfigOptions, ConfigReport, Environment, Error, FileOperation,
+    RuntimePolicy,
 };
 
 use super::environment_input;
 use super::output::{OutputArgs, ReportFormat, write_structured};
+
+const WORKTREE_ID_ENV: &str = "TREEBOOT_WORKTREE_ID";
 
 #[derive(Debug, Args, Clone, Default)]
 pub(crate) struct ConfigArgs {
@@ -29,12 +32,21 @@ pub(crate) fn run_config_command(args: ConfigArgs) -> treeboot_core::Result<()> 
     // to warn whether run validation would fail.
     let runtime_policy = RuntimePolicy::from_environment(&options.environment, false)?;
     let report = treeboot_core::inspect_config(options)?;
+    let worktree_id =
+        effective_worktree_id(&report.context.environment).ok_or_else(|| Error::Output {
+            source: std::io::Error::other(format!(
+                "resolved command environment is missing {WORKTREE_ID_ENV}"
+            )),
+        })?;
 
     match format {
-        ReportFormat::Text => print_config_text(&report).map_err(|source| Error::Output { source }),
+        ReportFormat::Text => {
+            print_config_text(&report, &worktree_id).map_err(|source| Error::Output { source })
+        }
         format => {
             let output = serde_json::json!({
                 "path": report.path,
+                "worktree_id": worktree_id,
                 "config": report.config,
             });
             write_structured(&output, format)
@@ -68,8 +80,17 @@ pub(crate) fn run_config_command(args: ConfigArgs) -> treeboot_core::Result<()> 
     Ok(())
 }
 
-fn print_config_text(report: &ConfigReport) -> std::io::Result<()> {
+fn print_config_text(report: &ConfigReport, worktree_id: &str) -> std::io::Result<()> {
     println!("treeboot: config {}", report.path.display());
+    println!();
+    println!("worktree id:");
+    println!("  value: {worktree_id}");
+    println!("  max_length: {}", report.config.worktree_id.max_length());
+    println!("  hash_length: {}", report.config.worktree_id.hash_length());
+    println!(
+        "  separator: {:?}",
+        report.config.worktree_id.separator().to_string()
+    );
     println!();
     println!("files:");
     if report.config.files.is_empty() {
@@ -99,6 +120,13 @@ fn print_config_text(report: &ConfigReport) -> std::io::Result<()> {
     }
 
     Ok(())
+}
+
+fn effective_worktree_id(environment: &Environment) -> Option<String> {
+    environment
+        .get(WORKTREE_ID_ENV)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string_lossy().into_owned())
 }
 
 fn file_operation_summary(operation: &FileOperation) -> String {
@@ -189,5 +217,27 @@ impl From<ConfigArgs> for ConfigOptions {
             environment: environment_input(),
             config: args.config,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use treeboot_core::Environment;
+
+    use super::effective_worktree_id;
+
+    #[test]
+    fn effective_worktree_id_should_require_a_non_empty_managed_value() {
+        let mut environment = Environment::new();
+        assert_eq!(effective_worktree_id(&environment), None);
+
+        environment.insert("TREEBOOT_WORKTREE_ID".to_owned(), "".into());
+        assert_eq!(effective_worktree_id(&environment), None);
+
+        environment.insert("TREEBOOT_WORKTREE_ID".to_owned(), "linked-a1b2c3".into());
+        assert_eq!(
+            effective_worktree_id(&environment).as_deref(),
+            Some("linked-a1b2c3")
+        );
     }
 }

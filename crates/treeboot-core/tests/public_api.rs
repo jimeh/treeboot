@@ -5,14 +5,15 @@ use std::process::Command;
 use tempfile::TempDir;
 use treeboot_core::{
     ActionPlan, ActionPlanOptions, CheckAction, CommandKind, CommandOperation, Config,
-    ConfigOptions, ConfigRuntimeOptions, DiagnosticStatus, Environment, EnvironmentInput, Error,
-    ExecuteOptions, Executor, FileOperation, FileOperationAction, FileOperationCompletionOptions,
-    FileOperationKind, FileOperationOptions, FileOperationSummary, InitOptions, LoadedConfig,
-    ManualFileOperationOptions, MetadataField, OutputEvent, PlanOrigin, PlannedFileStatus,
-    Reporter, RunAction, RunOptions, SourceSpan, StatusOptions, SymlinkMode, SyncCompare, Worktree,
-    WorktreeOptions, check, config_schema_json, diagnose, file_operation_source_candidates, init,
-    inspect_config, inspect_env, inspect_status, inspect_status_snapshot, run, run_file_operation,
-    treeboot_version_info, version_info,
+    ConfigOptions, ConfigRuntimeOptions, DiagnosticStatus, EnvOptions, Environment,
+    EnvironmentInput, Error, ExecuteOptions, Executor, FileOperation, FileOperationAction,
+    FileOperationCompletionOptions, FileOperationKind, FileOperationOptions, FileOperationSummary,
+    InitOptions, LoadedConfig, ManualFileOperationOptions, MetadataField, OutputEvent, PlanOrigin,
+    PlannedFileStatus, Reporter, RunAction, RunOptions, SourceSpan, StatusOptions, SymlinkMode,
+    SyncCompare, TeardownOptions, Worktree, WorktreeIdConfig, WorktreeOptions, check,
+    config_schema_json, diagnose, file_operation_source_candidates, init, inspect_config,
+    inspect_env, inspect_status, inspect_status_snapshot, prepare_teardown, run,
+    run_file_operation, treeboot_version_info, version_info,
 };
 
 #[derive(Default)]
@@ -109,7 +110,7 @@ fn public_enum_policy_should_keep_open_enums_non_exhaustive() {
 }
 
 #[test]
-fn public_config_struct_policy_should_keep_selected_types_non_exhaustive() {
+fn public_struct_policy_should_keep_selected_types_non_exhaustive() {
     fn assert_non_exhaustive(source: &str, name: &str) {
         let declaration = format!("pub struct {name}");
         let mut lines = source.lines();
@@ -130,6 +131,7 @@ fn public_config_struct_policy_should_keep_selected_types_non_exhaustive() {
     assert_non_exhaustive(config, "CommandOperation");
     assert_non_exhaustive(config, "SourceSpan");
     assert_non_exhaustive(include_str!("../src/context.rs"), "Worktree");
+    assert_non_exhaustive(include_str!("../src/env.rs"), "EnvOptions");
 }
 
 #[test]
@@ -610,12 +612,10 @@ fn public_api_should_expose_metadata_env_check_and_doctor() {
     assert_eq!(treeboot_version.spec_version, treeboot_core::SPEC_VERSION);
     assert!(config_schema_json().contains("\"$defs\""));
 
-    let env = inspect_env(treeboot_core::EnvOptions {
-        cwd: Some(repo.worktree_path().to_path_buf()),
-        root: None,
-        environment: EnvironmentInput::empty(),
-    })
-    .expect("environment should inspect");
+    let mut env_options = EnvOptions::default();
+    env_options.cwd = Some(repo.worktree_path().to_path_buf());
+    env_options.environment = EnvironmentInput::empty();
+    let env = inspect_env(env_options).expect("environment should inspect");
     assert!(env.environment.contains_key("TREEBOOT_ROOT_PATH"));
     let env_json = serde_json::to_value(&env).expect("env should serialize");
     assert!(env_json.get("environment").is_none());
@@ -714,7 +714,10 @@ fn public_api_init_should_create_config_without_a_kind_selector() {
 fn public_api_run_should_apply_discovered_config() {
     let repo = git_worktree();
     let config_path = repo.worktree_path().join(".treeboot.toml");
-    write_file(&config_path, "commands = []\n");
+    write_file(
+        &config_path,
+        "worktree_id = { hash_length = 9, separator = \"_\" }\ncommands = []\n",
+    );
     let mut reporter = VecReporter::default();
 
     let report = run(
@@ -731,6 +734,46 @@ fn public_api_run_should_apply_discovered_config() {
         RunAction::ConfigApplied {
             path: canonical_path(&config_path),
         }
+    );
+    let identifier = report
+        .context
+        .environment
+        .get("TREEBOOT_WORKTREE_ID")
+        .expect("run report should carry effective identifier")
+        .to_string_lossy();
+    assert_eq!(
+        identifier.rsplit_once('_').map(|(_, hash)| hash.len()),
+        Some(9)
+    );
+}
+
+#[test]
+fn public_api_prepared_teardown_should_carry_effective_identifier_without_commands() {
+    let repo = git_worktree();
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        "worktree_id = { hash_length = 10, separator = \"_\" }\n",
+    );
+    let mut reporter = VecReporter::default();
+
+    let prepared = prepare_teardown(
+        TeardownOptions {
+            cwd: Some(repo.worktree_path().to_path_buf()),
+            ..TeardownOptions::default()
+        },
+        &mut reporter,
+    )
+    .expect("teardown should prepare");
+    let identifier = prepared
+        .context()
+        .environment
+        .get("TREEBOOT_WORKTREE_ID")
+        .expect("prepared teardown should carry effective identifier")
+        .to_string_lossy();
+
+    assert_eq!(
+        identifier.rsplit_once('_').map(|(_, hash)| hash.len()),
+        Some(10)
     );
 }
 
@@ -1041,4 +1084,15 @@ fn public_api_config_load_should_report_io_errors() {
         } => assert_eq!(error_path, path),
         other => panic!("expected config I/O error, got {other:?}"),
     }
+}
+
+#[test]
+fn public_worktree_identifier_config_should_require_checked_construction() {
+    let config = WorktreeIdConfig::new(64, 10, '_').expect("settings should be valid");
+    let error = WorktreeIdConfig::new(8, 10, '_').expect_err("insufficient maximum should fail");
+
+    assert_eq!(config.max_length(), 64);
+    assert_eq!(config.hash_length(), 10);
+    assert_eq!(config.separator(), '_');
+    assert!(error.to_string().contains("max_length must be at least 12"));
 }

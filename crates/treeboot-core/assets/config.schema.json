@@ -416,6 +416,36 @@
         "source"
       ],
       "type": "object"
+    },
+    "WorktreeIdConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "hash_length": {
+          "description": "Number of lowercase Crockford base32 digest characters.",
+          "format": "uint",
+          "maximum": 52,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "max_length": {
+          "description": "Maximum length of the complete identifier.",
+          "format": "uint",
+          "minimum": 3,
+          "type": "integer"
+        },
+        "separator": {
+          "$ref": "#/$defs/WorktreeIdSeparator",
+          "description": "Separator used inside the readable name and before the hash."
+        }
+      },
+      "type": "object"
+    },
+    "WorktreeIdSeparator": {
+      "enum": [
+        "-",
+        "_"
+      ],
+      "type": "string"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -502,6 +532,10 @@
         "$ref": "#/$defs/CommandEntry"
       },
       "type": "array"
+    },
+    "worktree_id": {
+      "$ref": "#/$defs/WorktreeIdConfig",
+      "description": "Stable worktree identifier presentation settings."
     }
   },
   "title": "TreebootConfig",

@@ -33,6 +33,7 @@ mod teardown;
 #[cfg(test)]
 mod test_support;
 mod validation;
+mod worktree_id;
 
 pub use check::{CheckAction, CheckOptions, CheckReport, WorktreeSnapshot, check};
 pub use context::{Environment, EnvironmentInput, Worktree, WorktreeOptions};
@@ -69,7 +70,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub use config::{
     CommandKind, CommandOperation, Config, ConfigOptions, ConfigReport, ConfigRuntimeOptions,
     FileOperation, FileOperationKind, LoadedConfig, MetadataField, SourceSpan, SymlinkMode,
-    SyncCompare, inspect_config,
+    SyncCompare, WorktreeIdConfig, WorktreeIdConfigError, inspect_config,
 };
 
 /// Parsed treeboot manifest.

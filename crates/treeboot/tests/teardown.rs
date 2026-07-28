@@ -2,6 +2,8 @@ use predicates::prelude::*;
 
 mod common;
 
+#[cfg(unix)]
+use common::git;
 use common::{git_repo, git_worktree, toml_string_path, treeboot, write_file};
 
 #[test]
@@ -169,6 +171,70 @@ fn teardown_yes_should_run_only_teardown_commands() {
 
 #[cfg(unix)]
 #[test]
+fn bootstrap_and_teardown_shell_and_direct_commands_should_share_identifier_after_branch_rename() {
+    let repo = git_worktree();
+    let bootstrap_shell = repo.worktree_path().join("bootstrap-shell.out");
+    let bootstrap_direct = repo.worktree_path().join("bootstrap-direct.out");
+    let teardown_shell = repo.worktree_path().join("teardown-shell.out");
+    let teardown_direct = repo.worktree_path().join("teardown-direct.out");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        &format!(
+            r#"
+worktree_id = {{ max_length = 32, hash_length = 8, separator = "_" }}
+commands = [
+  {{ run = "printf '%s' \"$TREEBOOT_WORKTREE_ID\" > {}" }},
+  {{ program = "sh", args = ["-c", "printf '%s' \"$TREEBOOT_WORKTREE_ID\" > {}"] }},
+]
+teardown_commands = [
+  {{ run = "printf '%s' \"$TREEBOOT_WORKTREE_ID\" > {}" }},
+  {{ program = "sh", args = ["-c", "printf '%s' \"$TREEBOOT_WORKTREE_ID\" > {}"] }},
+]
+"#,
+            toml_string_path(&bootstrap_shell),
+            toml_string_path(&bootstrap_direct),
+            toml_string_path(&teardown_shell),
+            toml_string_path(&teardown_direct),
+        ),
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+    git(
+        &["branch", "-m", "renamed-after-bootstrap"],
+        repo.worktree_path(),
+    );
+    treeboot()
+        .args(["teardown", "--yes"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success();
+
+    let expected =
+        std::fs::read_to_string(bootstrap_shell).expect("bootstrap shell output should exist");
+    assert_eq!(
+        std::fs::read_to_string(bootstrap_direct).expect("bootstrap direct output should exist"),
+        expected
+    );
+    assert_eq!(
+        std::fs::read_to_string(teardown_shell).expect("teardown shell output should exist"),
+        expected
+    );
+    assert_eq!(
+        std::fs::read_to_string(teardown_direct).expect("teardown direct output should exist"),
+        expected
+    );
+    assert_eq!(
+        expected.rsplit_once('_').map(|(_, hash)| hash.len()),
+        Some(8)
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn teardown_can_target_linked_worktree_from_root() {
     let repo = git_worktree();
     let marker = repo.worktree_path().join("targeted-marker");
@@ -255,6 +321,37 @@ fn whole_config_parse_failure_should_block_teardown() {
         .stderr(predicate::str::contains(
             "`run` and `program` are mutually exclusive",
         ));
+}
+
+#[test]
+fn teardown_worktree_identifier_override_should_fail_before_any_command() {
+    let repo = git_worktree();
+    let marker = repo.worktree_path().join("should-not-run");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        &format!(
+            r#"
+teardown_commands = [
+  {{ run = "touch {}", env = {{ TREEBOOT_WORKTREE_ID = "override" }} }},
+  {{ run = "touch {}" }},
+]
+"#,
+            toml_string_path(&marker),
+            toml_string_path(&marker),
+        ),
+    );
+
+    treeboot()
+        .args(["teardown", "--yes"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("TREEBOOT_WORKTREE_ID"))
+        .stderr(predicate::str::contains(
+            "overrides treeboot-owned variable",
+        ));
+
+    assert!(!marker.exists());
 }
 
 #[test]

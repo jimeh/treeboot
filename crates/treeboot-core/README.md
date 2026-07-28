@@ -114,17 +114,24 @@ Bootstrap `ActionPlan` and `TeardownPlan` keep separate phase contents while
 sharing command planning, cwd/environment validation, and command runtime
 semantics.
 
-## Public Config Construction
+Resolved contexts include the default path-derived `TREEBOOT_WORKTREE_ID`.
+Manifest plan constructors refine it from the parsed `WorktreeIdConfig` before
+validating owned command environment variables. This also applies when an
+embedding supplies an empty environment through `Worktree::from_parts`.
 
-The normalized config graph and resolved `Worktree` context are
-`#[non_exhaustive]`. Downstream code can read their public fields, but must use
-`..` when destructuring and cannot construct them with struct literals. This
-lets future treeboot releases add fields without breaking exhaustive downstream
-patterns.
+## Public Struct Construction
+
+The normalized config graph, resolved `Worktree` context, and extensible
+`EnvOptions` input are `#[non_exhaustive]`. Downstream code can read their
+public fields, but must use `..` when destructuring and cannot construct them
+with struct literals. This lets future treeboot releases add fields without
+breaking exhaustive downstream patterns.
 
 Use the stable construction paths instead:
 
+- `EnvOptions::default()` for environment inspection options
 - `Config::default()` for an empty normalized config
+- `WorktreeIdConfig::new(...)` for checked identifier presentation settings
 - `Worktree::from_parts(...)` for a synthetic resolved context
 - `SourceSpan::new(...)` for source attribution
 - `CommandOperation::shell(...)` or `CommandOperation::direct(...)`

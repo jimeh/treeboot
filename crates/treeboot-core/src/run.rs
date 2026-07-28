@@ -115,7 +115,7 @@ pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport
             .execute(&plan, reporter)?;
 
             Ok(RunReport {
-                context,
+                context: plan.context().clone(),
                 action: RunAction::ConfigApplied { path },
             })
         }

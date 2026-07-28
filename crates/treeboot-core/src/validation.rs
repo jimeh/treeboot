@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::fmt;
 
 use crate::config::include_with_delete_message;
+use crate::context;
 use crate::file_system::{TargetAncestorIssue, inspect_target_ancestors, matching_target_anchor};
 use crate::path_filter::{
     PathIgnoreRules, PathIncludeRules, include_matches_any_source_path, invalid_include_pattern,
@@ -191,6 +192,7 @@ impl ActionPlan {
         context: &Worktree,
         options: ActionPlanOptions,
     ) -> Result<Self> {
+        let context = context::with_worktree_id_config(context, &manifest.worktree_id);
         let worktree_path = normalize_existing(&context.worktree_path).map_err(|source| {
             invalid_config_error(
                 path,
@@ -201,13 +203,13 @@ impl ActionPlan {
         let (files, warnings) = plan_file_operations(
             FilePlanOrigin::Config(path),
             &manifest.files,
-            context,
+            &context,
             options,
         )?;
-        let commands = plan_commands(path, &manifest.commands, context, worktree_path.as_path())?;
+        let commands = plan_commands(path, &manifest.commands, &context, worktree_path.as_path())?;
 
         Ok(Self {
-            context: context.clone(),
+            context,
             origin: PlanOrigin::Manifest {
                 path: path.to_path_buf(),
             },
@@ -378,6 +380,7 @@ impl TeardownPlan {
     ///
     /// Returns an error when command cwd or environment validation fails.
     pub fn from_manifest(path: &Path, manifest: &Config, context: &Worktree) -> Result<Self> {
+        let context = context::with_worktree_id_config(context, &manifest.worktree_id);
         let worktree_path = normalize_existing(&context.worktree_path).map_err(|source| {
             invalid_config_error(
                 path,
@@ -388,12 +391,12 @@ impl TeardownPlan {
         let commands = plan_commands(
             path,
             &manifest.teardown_commands,
-            context,
+            &context,
             worktree_path.as_path(),
         )?;
 
         Ok(Self {
-            context: context.clone(),
+            context,
             config_path: path.to_path_buf(),
             commands,
         })
@@ -1627,6 +1630,7 @@ mod tests {
 
     fn empty_config() -> Config {
         Config {
+            worktree_id: Default::default(),
             options: Default::default(),
             files: Vec::new(),
             commands: Vec::new(),
@@ -1695,6 +1699,7 @@ mod tests {
         std::fs::create_dir_all(root.join("shared")).expect("source should be created");
         std::fs::write(root.join("shared/file.txt"), "data\n").expect("file should be written");
         let config = Config {
+            worktree_id: Default::default(),
             options: Default::default(),
             files: vec![include_operation(
                 FileOperationKind::Copy,
@@ -1732,6 +1737,7 @@ mod tests {
         // matched source paths, so no zero-match warning is emitted.
         operation.ignore = vec!["docs/**".to_owned()];
         let config = Config {
+            worktree_id: Default::default(),
             options: Default::default(),
             files: vec![operation],
             commands: Vec::new(),
@@ -1748,6 +1754,7 @@ mod tests {
         let (root, worktree) = temp_workspace("include-no-warning-sources");
         std::fs::write(root.join(".env"), "TOKEN=1\n").expect("file should be written");
         let config = Config {
+            worktree_id: Default::default(),
             options: Default::default(),
             files: vec![
                 include_operation(
@@ -1783,6 +1790,7 @@ mod tests {
         symlink_dir(root.join("real"), root.join("linked"))
             .expect("source symlink should be created");
         let config = Config {
+            worktree_id: Default::default(),
             options: Default::default(),
             files: vec![include_operation(
                 FileOperationKind::Copy,
@@ -1813,6 +1821,7 @@ mod tests {
             .expect("unsafe symlink should be created");
 
         let filtered = Config {
+            worktree_id: Default::default(),
             options: Default::default(),
             files: vec![include_operation(
                 FileOperationKind::Copy,
@@ -1828,6 +1837,7 @@ mod tests {
             .expect("non-included unsafe symlink should not fail validation");
 
         let unfiltered = Config {
+            worktree_id: Default::default(),
             options: Default::default(),
             files: vec![file_operation(
                 FileOperationKind::Copy,
@@ -1911,6 +1921,7 @@ mod tests {
     fn action_plan_from_manifest_should_mark_optional_missing_sources_skipped() {
         let (root, worktree) = temp_workspace("missing-source");
         let config = Config {
+            worktree_id: Default::default(),
             options: Default::default(),
             files: vec![FileOperation {
                 operation: FileOperationKind::Copy,
@@ -1950,6 +1961,7 @@ mod tests {
         let (root, worktree) = temp_workspace("ready-file");
         std::fs::write(root.join(".env"), "TOKEN=1\n").expect("source should be written");
         let config = Config {
+            worktree_id: Default::default(),
             options: Default::default(),
             files: vec![file_operation(
                 FileOperationKind::Copy,
@@ -1979,6 +1991,7 @@ mod tests {
         );
         sync.delete = Some(true);
         let config = Config {
+            worktree_id: Default::default(),
             options: Default::default(),
             files: vec![
                 file_operation(
@@ -2043,6 +2056,7 @@ mod tests {
         let app_dir = worktree.join("app");
         std::fs::create_dir_all(&app_dir).expect("command cwd should be created");
         let config = Config {
+            worktree_id: Default::default(),
             options: Default::default(),
             files: Vec::new(),
             commands: vec![CommandOperation {
@@ -2082,6 +2096,7 @@ mod tests {
             .join("outside-target");
         std::fs::write(&outside_source, "shared\n").expect("outside source should be written");
         let config = Config {
+            worktree_id: Default::default(),
             options: Default::default(),
             files: vec![FileOperation {
                 operation: FileOperationKind::Copy,
@@ -2127,6 +2142,7 @@ mod tests {
             let (root, worktree) = temp_workspace(&format!("missing-target-parent-{operation}"));
             std::fs::write(root.join("source"), "value\n").expect("source should be written");
             let config = Config {
+                worktree_id: Default::default(),
                 options: Default::default(),
                 files: vec![file_operation(
                     operation,
@@ -2156,6 +2172,7 @@ mod tests {
         std::fs::write(&source, "secret\n").expect("source should be written");
         symlink_file(&source, &target).expect("target symlink should be created");
         let config = Config {
+            worktree_id: Default::default(),
             options: Default::default(),
             files: vec![file_operation(
                 FileOperationKind::Symlink,
@@ -2192,6 +2209,7 @@ mod tests {
             symlink_dir(&linked, worktree.join("config"))
                 .expect("target parent symlink should be created");
             let config = Config {
+                worktree_id: Default::default(),
                 options: Default::default(),
                 files: vec![file_operation(
                     operation,
@@ -2232,6 +2250,7 @@ mod tests {
             std::fs::write(worktree.join("config"), "not a directory\n")
                 .expect("target parent file should be written");
             let config = Config {
+                worktree_id: Default::default(),
                 options: Default::default(),
                 files: vec![file_operation(
                     operation,
@@ -2268,6 +2287,7 @@ mod tests {
         std::fs::write(alias_worktree.join("config"), "not a directory\n")
             .expect("target parent file should be written");
         let config = Config {
+            worktree_id: Default::default(),
             options: Default::default(),
             files: vec![file_operation(
                 FileOperationKind::Copy,
@@ -2297,6 +2317,7 @@ mod tests {
         symlink_dir(&linked, alias_worktree.join("config"))
             .expect("target parent symlink should be created");
         let config = Config {
+            worktree_id: Default::default(),
             options: Default::default(),
             files: vec![file_operation(
                 FileOperationKind::Copy,
@@ -2338,6 +2359,7 @@ mod tests {
         operation.target = target_path.clone();
         operation.target_path = target_path;
         let config = Config {
+            worktree_id: Default::default(),
             options: Default::default(),
             files: vec![operation],
             commands: Vec::new(),
@@ -2371,6 +2393,7 @@ mod tests {
         operation.target = target_path.clone();
         operation.target_path = target_path;
         let config = Config {
+            worktree_id: Default::default(),
             options: Default::default(),
             files: vec![operation],
             commands: Vec::new(),
@@ -2502,6 +2525,7 @@ mod tests {
         std::fs::create_dir_all(&source_dir).expect("source dir should be created");
         std::fs::write(source_dir.join("config"), "value\n").expect("nested source should exist");
         let config = Config {
+            worktree_id: Default::default(),
             options: Default::default(),
             files: vec![file_operation(
                 FileOperationKind::Copy,
@@ -2534,6 +2558,7 @@ mod tests {
         operation.delete = Some(true);
 
         let config = Config {
+            worktree_id: Default::default(),
             options: Default::default(),
             files: vec![operation],
             commands: Vec::new(),
@@ -2554,6 +2579,7 @@ mod tests {
         symlink_file(root.join("source"), root.join("link"))
             .expect("safe source symlink should be created");
         let config = Config {
+            worktree_id: Default::default(),
             options: Default::default(),
             files: vec![file_operation(
                 FileOperationKind::Copy,
@@ -2577,6 +2603,7 @@ mod tests {
         symlink_file(root.join("missing"), root.join("link"))
             .expect("broken source symlink should be created");
         let config = Config {
+            worktree_id: Default::default(),
             options: Default::default(),
             files: vec![file_operation(
                 FileOperationKind::Copy,
@@ -2602,6 +2629,7 @@ mod tests {
     fn action_plan_from_manifest_should_default_command_cwd_to_worktree() {
         let (root, worktree) = temp_workspace("command-cwd");
         let config = Config {
+            worktree_id: Default::default(),
             options: Default::default(),
             files: Vec::new(),
             commands: vec![CommandOperation {
@@ -2645,6 +2673,7 @@ mod tests {
         );
         required.required = true;
         let config = Config {
+            worktree_id: Default::default(),
             options: ConfigRuntimeOptions::default(),
             files: vec![required],
             commands: vec![CommandOperation::shell("bootstrap", span())],
@@ -2684,6 +2713,7 @@ mod tests {
         );
         required.required = true;
         let config = Config {
+            worktree_id: Default::default(),
             options: ConfigRuntimeOptions::default(),
             files: vec![required],
             commands: Vec::new(),
@@ -2710,5 +2740,75 @@ mod tests {
             .find("teardown:")
             .expect("teardown label should exist");
         assert!(bootstrap < teardown);
+    }
+
+    #[test]
+    fn manifest_plans_should_refine_empty_from_parts_environment_for_both_phases() {
+        let (root, worktree) = temp_workspace("identifier-from-parts");
+        let context = Worktree::from_parts(root, worktree, "main".to_owned(), BTreeMap::new());
+        let config = Config {
+            worktree_id: crate::WorktreeIdConfig::new(32, 8, '_')
+                .expect("identifier config should be valid"),
+            teardown_commands: vec![CommandOperation::shell("true", span())],
+            ..empty_config()
+        };
+
+        let bootstrap = ActionPlan::from_manifest(
+            Path::new(".treeboot.toml"),
+            &config,
+            &context,
+            ActionPlanOptions::default(),
+        )
+        .expect("bootstrap plan should build");
+        let teardown = TeardownPlan::from_manifest(Path::new(".treeboot.toml"), &config, &context)
+            .expect("teardown plan should build");
+
+        let bootstrap_id = bootstrap
+            .context()
+            .environment
+            .get("TREEBOOT_WORKTREE_ID")
+            .expect("bootstrap identifier should exist");
+        let teardown_id = teardown
+            .context()
+            .environment
+            .get("TREEBOOT_WORKTREE_ID")
+            .expect("teardown identifier should exist");
+        assert_eq!(bootstrap_id, teardown_id);
+        assert!(bootstrap_id.to_string_lossy().len() <= 32);
+        assert_eq!(
+            bootstrap_id
+                .to_string_lossy()
+                .rsplit_once('_')
+                .map(|(_, hash)| hash.len()),
+            Some(8)
+        );
+    }
+
+    #[test]
+    fn manifest_plans_should_reject_worktree_identifier_override_from_empty_context() {
+        let (root, worktree) = temp_workspace("identifier-owned");
+        let context = Worktree::from_parts(root, worktree, "main".to_owned(), BTreeMap::new());
+        let command = CommandOperation::shell("true", span()).with_env(BTreeMap::from([(
+            "TREEBOOT_WORKTREE_ID".to_owned(),
+            "override".to_owned(),
+        )]));
+        let config = Config {
+            commands: vec![command.clone()],
+            teardown_commands: vec![command],
+            ..empty_config()
+        };
+
+        let bootstrap = ActionPlan::from_manifest(
+            Path::new(".treeboot.toml"),
+            &config,
+            &context,
+            ActionPlanOptions::default(),
+        )
+        .expect_err("bootstrap override should fail");
+        let teardown = TeardownPlan::from_manifest(Path::new(".treeboot.toml"), &config, &context)
+            .expect_err("teardown override should fail");
+
+        assert!(bootstrap.to_string().contains("TREEBOOT_WORKTREE_ID"));
+        assert!(teardown.to_string().contains("TREEBOOT_WORKTREE_ID"));
     }
 }

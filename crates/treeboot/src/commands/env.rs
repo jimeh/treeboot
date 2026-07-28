@@ -12,6 +12,10 @@ pub(crate) struct EnvArgs {
     #[arg(short, long)]
     root: Option<PathBuf>,
 
+    /// Use one specific config file and skip config discovery.
+    #[arg(short, long)]
+    config: Option<PathBuf>,
+
     #[command(flatten)]
     output: OutputArgs,
 }
@@ -33,10 +37,10 @@ pub(crate) fn run_env_command(args: EnvArgs) -> treeboot_core::Result<()> {
 
 impl From<EnvArgs> for EnvOptions {
     fn from(args: EnvArgs) -> Self {
-        Self {
-            cwd: None,
-            root: args.root,
-            environment: environment_input(),
-        }
+        let mut options = Self::default();
+        options.root = args.root;
+        options.environment = environment_input();
+        options.config = args.config;
+        options
     }
 }

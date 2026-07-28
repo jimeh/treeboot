@@ -20,6 +20,10 @@ dependencies for small wrappers around the standard library.
   boundary checks compare paths consistently across platforms.
 - `serde` and `toml` belong in `treeboot-core` for declarative config parsing
   and normalized model serialization.
+- `sha2` belongs in `treeboot-core` for the versioned `TREEBOOT_WORKTREE_ID`
+  SHA-256 contract. A stable cross-implementation identifier cannot use Rust's
+  non-contractual `DefaultHasher`; the small lowercase Crockford base32 encoder
+  remains dependency-free.
 - `ignore` belongs in `treeboot-core` for operation-local gitignore-style path
   matching. Use `ignore::gitignore::GitignoreBuilder` with explicit `add_line`
   patterns only; do not load ambient `.gitignore`, `.ignore`, `.rgignore`, Git
