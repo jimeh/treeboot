@@ -177,8 +177,9 @@ behavior-affecting normalized fields such as `required`, `compare`, `delete`,
 values when present. Before those collections it prints the effective worktree
 identifier and normalized `max_length`, `hash_length`, and `separator` settings.
 It labels bootstrap and teardown command collections separately and prints
-`(none)` for an empty collection. JSON and YAML output emit the full normalized
-config structure, including the fully defaulted `worktree_id` object.
+`(none)` for an empty collection. JSON and YAML output emit the effective
+identifier as the top-level `worktree_id` string and the full normalized config
+structure, including its fully defaulted `worktree_id` settings object.
 
 ### `treeboot check`
 
@@ -481,6 +482,7 @@ The shared worktree context object has this shape:
 ```json
 {
   "path": "/repo-worktree/.treeboot.toml",
+  "worktree_id": "repo-worktree-a1b2c3",
   "config": {
     "strict": false,
     "default_ignore": [],
@@ -554,6 +556,10 @@ The shared worktree context object has this shape:
   }
 }
 ```
+
+The top-level `worktree_id` string is the effective identifier for the selected
+worktree. `config.worktree_id` contains the normalized settings used to produce
+it.
 
 `files`, `commands`, and `teardown_commands` are ordered arrays. Omitted
 collections normalize to empty arrays. File `operation` is `copy`, `symlink`, or
@@ -727,6 +733,14 @@ output flags. The schema payload is defined by `schemas/treeboot.schema.json`.
 `--format`, `--json`, or `--yaml`. Their output is text-only and follows the
 command sections plus
 [Operator experience](#operator-experience-output-and-exit-codes).
+
+## Public library compatibility
+
+`EnvOptions` is non-exhaustive because environment inspection can gain optional
+inputs over time. Downstream callers must construct it through
+`EnvOptions::default()` and then assign the public fields they need. Direct
+`EnvOptions` struct literals are not supported. This allows future optional
+environment-inspection inputs to be added without breaking downstream source.
 
 ## Path model: Root path feeds the worktree path
 

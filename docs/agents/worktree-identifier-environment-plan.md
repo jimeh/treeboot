@@ -1,6 +1,6 @@
 # Worktree Identifier Environment Plan
 
-Status: implemented.
+Status: implemented; retained as the approved design and implementation record.
 
 This plan adds a stable, human-readable identifier for the current Git worktree.
 Treeboot will expose it to every configured bootstrap and teardown command as
@@ -11,10 +11,11 @@ path. Its readable portion uses a concise, stable label selected from the path
 according to known worktree-manager layouts; its hash portion distinguishes
 identical-looking labels in different locations.
 
-The observable behavior in this plan must be incorporated into
-[`docs/SPEC.md`](../SPEC.md) before implementation is complete. Implementation
-placement and public API structure must remain consistent with
-[`docs/ARCHITECTURE.md`](../ARCHITECTURE.md).
+The implemented observable contract is canonical in
+[`docs/SPEC.md`](../SPEC.md), and the current placement and public API structure
+are canonical in [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md). This plan retains
+the approved rationale and implementation workflow that produced those
+documents; if they differ, follow the canonical documents.
 
 ## Recommendation At A Glance
 
@@ -143,8 +144,7 @@ examples. In TOML, a table header remains active for following keys, so placing
 other lists is easy to get wrong. One inline value keeps the settings grouped
 without changing the scope of later declarations.
 
-Normalized `Config` and structured `treeboot config` output always contain the
-fully defaulted object:
+Normalized `Config` always contains the fully defaulted object:
 
 ```json
 {
@@ -155,6 +155,9 @@ fully defaulted object:
   }
 }
 ```
+
+Structured `treeboot config` output also includes the resulting identifier as
+the top-level `worktree_id` string.
 
 Human-readable `treeboot config` output should show both the normalized settings
 and the resulting value for the selected worktree:
@@ -545,7 +548,7 @@ decision and migration consideration.
    - Render the new value in text, JSON, and YAML.
 6. **Update config presentation and generated schema**
    - Show normalized settings and effective value in text config output.
-   - Add the normalized object to structured output.
+   - Add the effective value and normalized object to structured output.
    - Regenerate and compare both schema assets.
 7. **Finish user and architecture documentation**
    - Update README, architecture, dependency guidance, and public core API docs.
@@ -651,7 +654,7 @@ Cover:
 - missing explicit config fails;
 - invalid discovered config fails instead of printing a misleading default;
 - `treeboot config` text shows settings and value;
-- structured config output includes the normalized object;
+- structured config output includes the effective value and normalized object;
 - `treeboot env` and `treeboot config` produce the expected identifier when
   invoked from the root checkout;
 - end-to-end bootstrap and teardown commands can write the value to disk;
@@ -692,11 +695,10 @@ Before handoff:
 ```sh
 mise run coverage:missing
 mise run check
+mise run verify
 cargo tree -p treeboot-core
+cargo tree -p treeboot
 ```
-
-Use `mise run verify` as well if implementation changes the broader harness or
-generated-asset workflow beyond the expected schema/spec refresh.
 
 ## Alternatives Considered
 
@@ -789,5 +791,6 @@ from the spec.
 14. Path hashing uses Treeboot's canonical native representation without
     additional case folding.
 
-These user-facing decisions are approved. Implementation may proceed when
-requested.
+These user-facing decisions were approved and are implemented. The resulting
+behavior and current architecture are canonical in `docs/SPEC.md` and
+`docs/ARCHITECTURE.md`.

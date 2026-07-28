@@ -127,6 +127,17 @@ commands = [
 "#,
     );
 
+    let env = treeboot()
+        .args(["env", "--json"])
+        .current_dir(repo.worktree_path())
+        .output()
+        .expect("env command should run");
+    assert!(env.status.success(), "env command should succeed");
+    let env = parse_json(env.stdout, "worktree env");
+    let identifier = env["TREEBOOT_WORKTREE_ID"]
+        .as_str()
+        .expect("identifier should be a string");
+
     let json = treeboot()
         .args(["config", "--format", "json"])
         .current_dir(repo.worktree_path())
@@ -137,8 +148,9 @@ commands = [
         .stdout
         .clone();
     let json = parse_json(json, "config");
-    assert_json_object_keys(&json, &["config", "path"]);
+    assert_json_object_keys(&json, &["config", "path", "worktree_id"]);
     assert!(json["path"].is_string());
+    assert_eq!(json["worktree_id"], identifier);
 
     let config = &json["config"];
     assert_json_object_keys(
@@ -283,12 +295,25 @@ fn config_command_yaml_should_print_normalized_config() {
     let repo = git_worktree();
     let config = repo.worktree_path().join(".treeboot.toml");
     write_file(&config, "commands = [\"mise install\"]\n");
+    let env = treeboot()
+        .args(["env", "--json"])
+        .current_dir(repo.worktree_path())
+        .output()
+        .expect("env command should run");
+    assert!(env.status.success(), "env command should succeed");
+    let env = parse_json(env.stdout, "worktree env");
+    let identifier = env["TREEBOOT_WORKTREE_ID"]
+        .as_str()
+        .expect("identifier should be a string");
 
     treeboot()
         .args(["config", "--format", "yaml"])
         .current_dir(repo.worktree_path())
         .assert()
         .success()
+        .stdout(predicate::str::contains(format!(
+            "worktree_id: {identifier}"
+        )))
         .stdout(predicate::str::contains("commands:"))
         .stdout(predicate::str::contains("run: mise install"));
 }
@@ -715,6 +740,6 @@ fn config_command_json_should_stay_parseable_with_include_warnings() {
         .clone();
     let json = parse_json(output, "config");
 
-    assert_json_object_keys(&json, &["config", "path"]);
+    assert_json_object_keys(&json, &["config", "path", "worktree_id"]);
     assert_eq!(json["config"]["files"][0]["include"][0], "docs/**");
 }

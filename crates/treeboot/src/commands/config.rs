@@ -35,6 +35,7 @@ pub(crate) fn run_config_command(args: ConfigArgs) -> treeboot_core::Result<()> 
         format => {
             let output = serde_json::json!({
                 "path": report.path,
+                "worktree_id": effective_worktree_id(&report),
                 "config": report.config,
             });
             write_structured(&output, format)
@@ -72,12 +73,7 @@ fn print_config_text(report: &ConfigReport) -> std::io::Result<()> {
     println!("treeboot: config {}", report.path.display());
     println!();
     println!("worktree id:");
-    let value = report
-        .context
-        .environment
-        .get("TREEBOOT_WORKTREE_ID")
-        .map_or_else(String::new, |value| value.to_string_lossy().into_owned());
-    println!("  value: {value}");
+    println!("  value: {}", effective_worktree_id(report));
     println!("  max_length: {}", report.config.worktree_id.max_length());
     println!("  hash_length: {}", report.config.worktree_id.hash_length());
     println!(
@@ -113,6 +109,14 @@ fn print_config_text(report: &ConfigReport) -> std::io::Result<()> {
     }
 
     Ok(())
+}
+
+fn effective_worktree_id(report: &ConfigReport) -> String {
+    report
+        .context
+        .environment
+        .get("TREEBOOT_WORKTREE_ID")
+        .map_or_else(String::new, |value| value.to_string_lossy().into_owned())
 }
 
 fn file_operation_summary(operation: &FileOperation) -> String {
