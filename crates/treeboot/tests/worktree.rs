@@ -403,7 +403,8 @@ fn worktree_list_should_skip_stale_registered_paths() {
         .stdout(predicate::str::contains(root));
 }
 
-#[cfg(unix)]
+// Git on macOS rejects non-UTF-8 worktree administrative directory names.
+#[cfg(target_os = "linux")]
 #[test]
 fn worktree_text_paths_should_preserve_native_bytes_and_structured_fail_atomically() {
     use std::ffi::OsString;
@@ -533,7 +534,7 @@ fn worktree_path_should_report_missing_and_ambiguous_ids_without_stdout() {
     let stderr = String::from_utf8(output).expect("stderr should be UTF-8");
     for path in &collision_paths {
         assert!(
-            stderr.contains(&canonical_path(path).display().to_string()),
+            stderr.contains(&format!("{:?}", canonical_path(path))),
             "stderr should report colliding path"
         );
     }
@@ -575,9 +576,10 @@ fn malformed_sibling_config_should_fail_atomically_with_candidate_path() {
             .assert()
             .failure()
             .stdout(predicate::str::is_empty())
-            .stderr(predicate::str::contains(
-                canonical_path(&sibling.path).display().to_string(),
-            ))
+            .stderr(predicate::str::contains(format!(
+                "{:?}",
+                canonical_path(&sibling.path)
+            )))
             .stderr(predicate::str::contains("hash_length"));
     }
 }
