@@ -165,6 +165,92 @@ fn public_worktree_inspection_api_should_resolve_current_list_and_path() {
 }
 
 #[test]
+fn public_worktree_path_lookup_should_be_case_sensitive_and_typed() {
+    let repo = git_worktree();
+    let mut options = WorktreeInspectionOptions::default();
+    options.cwd = Some(repo.worktree_path().to_path_buf());
+    let current = inspect_worktree_id(options.clone()).expect("current ID should resolve");
+    let changed = current.id.to_ascii_uppercase();
+    assert_ne!(changed, current.id);
+
+    let error =
+        inspect_worktree_path(&changed, options).expect_err("case-changed ID should not match");
+
+    match error {
+        Error::WorktreeIdNotFound { id } => assert_eq!(id, changed),
+        other => panic!("expected typed missing-ID error, got {other:?}"),
+    }
+}
+
+#[test]
+fn public_worktree_path_lookup_should_report_every_ambiguous_path() {
+    let repo = git_worktree();
+    let parent = TempDir::new().expect("collision parent should be created");
+    let mut by_id = std::collections::BTreeMap::<String, Vec<PathBuf>>::new();
+    let (collision_id, mut expected_paths) = (0..33)
+        .find_map(|index| {
+            let name = format!("collision-{index}");
+            let path = add_git_worktree(repo.root_path(), parent.path(), &name);
+            write_file(
+                &path.join(".treeboot.toml"),
+                "worktree_id = { max_length = 3, hash_length = 1 }\n",
+            );
+            let mut options = WorktreeInspectionOptions::default();
+            options.cwd = Some(path.clone());
+            let id = inspect_worktree_id(options)
+                .expect("collision candidate ID should resolve")
+                .id;
+            let paths = by_id.entry(id.clone()).or_default();
+            paths.push(canonical_path(&path));
+            (paths.len() > 1).then(|| (id, paths.clone()))
+        })
+        .expect("33 one-character hashes with one prefix must collide");
+    expected_paths.sort();
+
+    let mut options = WorktreeInspectionOptions::default();
+    options.cwd = Some(repo.worktree_path().to_path_buf());
+    let error = inspect_worktree_path(&collision_id, options)
+        .expect_err("colliding complete IDs should be ambiguous");
+
+    match error {
+        Error::WorktreeIdAmbiguous { id, mut paths } => {
+            paths.sort();
+            assert_eq!(id, collision_id);
+            assert_eq!(paths, expected_paths);
+        }
+        other => panic!("expected typed ambiguous-ID error, got {other:?}"),
+    }
+}
+
+#[test]
+fn public_worktree_list_should_attribute_malformed_candidate_config() {
+    let repo = git_worktree();
+    let parent = TempDir::new().expect("malformed parent should be created");
+    let malformed = add_git_worktree(repo.root_path(), parent.path(), "malformed");
+    write_file(
+        &malformed.join(".treeboot.toml"),
+        "worktree_id = { hash_length = 0 }\n",
+    );
+    let malformed = canonical_path(&malformed);
+    let mut options = WorktreeInspectionOptions::default();
+    options.cwd = Some(repo.worktree_path().to_path_buf());
+
+    let error =
+        inspect_worktree_list(options).expect_err("malformed candidate config should fail listing");
+
+    match error {
+        Error::WorktreeInspection { path, source } => {
+            assert_eq!(path, malformed);
+            assert!(
+                matches!(*source, Error::ConfigInvalid { .. }),
+                "candidate source should retain its typed config error"
+            );
+        }
+        other => panic!("expected attributed candidate error, got {other:?}"),
+    }
+}
+
+#[test]
 fn public_worktree_constructor_should_preserve_parts_and_detect_root() {
     let root = PathBuf::from("/repo");
     let root_worktree = Worktree::from_parts(
@@ -400,6 +486,21 @@ fn git_worktree() -> GitWorktree {
         _worktree_parent: worktree_parent,
         worktree_path,
     }
+}
+
+fn add_git_worktree(root: &Path, parent: &Path, name: &str) -> PathBuf {
+    let path = parent.join(name);
+    git(
+        &[
+            "worktree",
+            "add",
+            "-b",
+            &format!("treeboot-core-{name}"),
+            path.to_str().expect("worktree path should be valid UTF-8"),
+        ],
+        root,
+    );
+    path
 }
 
 fn temp_worktree(name: &str) -> (TempDir, Worktree) {
