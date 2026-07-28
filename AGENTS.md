@@ -23,6 +23,11 @@ requirements, update the spec instead of leaving those details only in
 implementation plans or roadmap notes. Keep implementation tactics in
 `docs/agents/` planning docs.
 
+Keep implementation plans focused on sequencing, placement, and behavior/test
+closure. Link to settled behavior in [docs/SPEC.md](docs/SPEC.md) and current
+architecture in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) instead of
+duplicating either contract in a planning document.
+
 When changing the observable contract in [docs/SPEC.md](docs/SPEC.md), bump the
 visible spec version in that file and keep the README's referenced spec version
 in sync.
@@ -213,6 +218,9 @@ work. Lefthook checks staged Markdown files through
   and required inputs, strict/force/dry-run behavior, conflict handling,
   non-mutation on failure, user-visible output, and platform-specific paths when
   relevant.
+- For inspection and reporting commands, cover text, JSON, and YAML output
+  parity. Structured serialization failures must occur before stdout is written
+  so automation never receives a partial document.
 - For bug fixes, add a regression test that fails without the fix unless the
   scenario cannot be reproduced in the local harness.
 - Use CLI integration tests for user-visible command behavior.
