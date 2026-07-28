@@ -43,9 +43,7 @@ pub(crate) fn write_structured<T>(value: &T, format: ReportFormat) -> treeboot_c
 where
     T: Serialize,
 {
-    let stdout = std::io::stdout();
-    let mut handle = stdout.lock();
-
+    let mut output = Vec::new();
     match format {
         ReportFormat::Text => {
             return Err(Error::Output {
@@ -53,17 +51,20 @@ where
             });
         }
         ReportFormat::Json => {
-            serde_json::to_writer_pretty(&mut handle, value).map_err(|source| Error::Output {
+            serde_json::to_writer_pretty(&mut output, value).map_err(|source| Error::Output {
                 source: std::io::Error::other(source),
             })?;
-            writeln!(handle).map_err(|source| Error::Output { source })?;
+            output.push(b'\n');
         }
         ReportFormat::Yaml => {
-            yaml_serde::to_writer(&mut handle, value).map_err(|source| Error::Output {
+            yaml_serde::to_writer(&mut output, value).map_err(|source| Error::Output {
                 source: std::io::Error::other(source),
             })?;
         }
     }
 
-    Ok(())
+    std::io::stdout()
+        .lock()
+        .write_all(&output)
+        .map_err(|source| Error::Output { source })
 }

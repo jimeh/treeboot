@@ -1,4 +1,4 @@
-# treeboot Specification v2.2.0
+# treeboot Specification v2.3.0
 
 A portable worktree lifecycle helper that lets every coding agent, editor, and
 orchestration tool run the same repo-local bootstrap and teardown commands.
@@ -55,7 +55,7 @@ matters.
 The first implementation should target the full documented behavior in this
 spec.
 
-## CLI surface: Fourteen subcommands, one default path
+## CLI surface: Fifteen subcommands, one default path
 
 The common integration point is intentionally short: `treeboot`. Tool-specific
 setup hooks only need to invoke the declarative treeboot config.
@@ -148,7 +148,7 @@ treeboot -V
 Human-readable output is a compact, flag-like summary:
 
 ```text
-treeboot 0.10.0 (spec 2.2.0)
+treeboot 0.10.0 (spec 2.3.0)
 ```
 
 JSON and YAML output are defined in
@@ -367,6 +367,55 @@ JSON and YAML output are defined in
 the full process environment, per-command `env` overlays, or the config option
 override variables that treeboot reads from its parent environment.
 
+### `treeboot worktree`
+
+Inspects the stable Treeboot identifiers of worktrees registered in the current
+Git repository.
+
+```sh
+treeboot worktree id
+treeboot worktree path feature-login-k7m2qx
+treeboot worktree list
+treeboot worktree id --json
+treeboot worktree path feature-login-k7m2qx --yaml
+treeboot worktree list --format json
+```
+
+`worktree id` discovers and fully parses the current worktree's config using the
+same rules as `treeboot env`. Text output is the complete effective identifier
+followed by a newline.
+
+`worktree path <ID>` enumerates all of the current repository's registered,
+non-bare worktrees whose paths still exist. Every candidate path is
+canonicalized, then that candidate's discovered config is fully parsed. The
+complete effective identifier is compared exactly and case-sensitively. The main
+worktree participates. Text output is the matching canonical absolute path
+followed by a newline.
+
+No match exits non-zero. Multiple matches are a distinct error that reports
+every matching canonical path. Lookup always scans every candidate before
+succeeding so a later collision cannot be missed.
+
+`worktree list` uses the same candidate discovery and identifier generation.
+Text output is an `ID` and `PATH` table. The main worktree is first and
+remaining entries are sorted by canonical path. Duplicate identifiers remain
+visible and do not make listing fail. On Unix, `worktree path` and
+`worktree list` text output preserve native path bytes exactly.
+
+Missing registered paths are stale and skipped without changing Git metadata.
+Bare records are excluded from inventory and reverse lookup, but a bare primary
+repository remains the Git main-worktree identity used to resolve linked
+worktree context. An existing candidate that cannot be canonicalized,
+discovered, or fully parsed makes the complete operation fail. A candidate that
+disappears during inspection is skipped only when the failure is a not-found I/O
+error; other failures are fatal and attributed to the candidate path. Reports
+are collected before rendering, so a candidate failure does not leave partial
+standard output.
+
+Ambient recognized Treeboot environment inputs remain honored. These commands do
+not accept `--root` or `--config`; explicit cross-candidate override semantics
+are not defined.
+
 ### Manual file operation commands
 
 `copy`, `symlink`, and `sync` expose the same file operation engine used by
@@ -402,9 +451,9 @@ a CLI usage error and exits with code `2`.
 | `-r`, `--root <path>`                                      | run/teardown/status/config/check/copy/symlink/sync/doctor/env | Overrides the root checkout used for discovery and file-operation context.                                                                                                                                                                                                  |
 | `-c`, `--config <path>`                                    | run/teardown/status/config/check/doctor/env                   | Uses one specific config file and skips config discovery. For teardown and env, relative paths resolve from the selected worktree.                                                                                                                                          |
 | `--worktree <path>`                                        | teardown                                                      | Selects the linked worktree to tear down. Defaults to the process working directory; a path inside a worktree resolves to its Git top level.                                                                                                                                |
-| `-o`, `--format <text\|json\|yaml>`                        | status/version/config/check/doctor/env                        | Selects human-readable, JSON, or YAML output. Defaults to `text`.                                                                                                                                                                                                           |
-| `-J`, `--json`                                             | status/version/config/check/doctor/env                        | Shortcut for `--format json`. Conflicts with `--format` and `--yaml`.                                                                                                                                                                                                       |
-| `-Y`, `--yaml`                                             | status/version/config/check/doctor/env                        | Shortcut for `--format yaml`. Conflicts with `--format` and `--json`.                                                                                                                                                                                                       |
+| `-o`, `--format <text\|json\|yaml>`                        | status/version/config/check/doctor/env/worktree leaves        | Selects human-readable, JSON, or YAML output. Defaults to `text`.                                                                                                                                                                                                           |
+| `-J`, `--json`                                             | status/version/config/check/doctor/env/worktree leaves        | Shortcut for `--format json`. Conflicts with `--format` and `--yaml`.                                                                                                                                                                                                       |
+| `-Y`, `--yaml`                                             | status/version/config/check/doctor/env/worktree leaves        | Shortcut for `--format yaml`. Conflicts with `--format` and `--json`.                                                                                                                                                                                                       |
 | `-V`, `--version`                                          | global                                                        | Prints package and spec version details and exits before command validation.                                                                                                                                                                                                |
 | `-o`, `--output <path>`                                    | schema                                                        | Writes the bundled config schema to a file instead of stdout.                                                                                                                                                                                                               |
 | `-S`, `--strict`                                           | run/check/copy/symlink/sync/doctor                            | Fails if a copy/symlink target exists; rejects sync operations; exits non-zero when run from the root checkout. Declarative config can also enable strict mode with top-level `strict = true`. For doctor, strict failures are reported as fatal diagnostics when possible. |
@@ -432,6 +481,10 @@ output uses the same field names, values, and nesting as JSON. Path values are
 strings. Optional values are `null` when absent. Tagged enum values are
 lowercase `snake_case` strings. JSON object member order is not part of the
 contract.
+
+Structured path values require valid UTF-8. If any path cannot be represented by
+the JSON/YAML string schema, serialization fails before stdout is written. Use
+text output when native non-UTF-8 Unix path bytes must be preserved.
 
 The shared worktree context object has this shape:
 
@@ -468,7 +521,7 @@ The shared worktree context object has this shape:
 {
   "package": "treeboot",
   "version": "0.8.0",
-  "spec_version": "2.2.0"
+  "spec_version": "2.3.0"
 }
 ```
 
@@ -720,6 +773,44 @@ Keys are variable names and values are strings. The object excludes the parent
 process environment, per-command config overlays, and config option override
 variables that treeboot reads from the parent environment.
 
+### `treeboot worktree` JSON
+
+`treeboot worktree id` emits:
+
+```json
+{
+  "id": "repo-worktree-nw67nj"
+}
+```
+
+`treeboot worktree path <ID>` emits:
+
+```json
+{
+  "id": "repo-worktree-nw67nj",
+  "path": "/repo-worktree"
+}
+```
+
+`treeboot worktree list` emits:
+
+```json
+{
+  "worktrees": [
+    {
+      "id": "repo-a1b2c3",
+      "path": "/repo"
+    },
+    {
+      "id": "repo-worktree-nw67nj",
+      "path": "/repo-worktree"
+    }
+  ]
+}
+```
+
+The YAML forms have the same fields and nesting.
+
 ### `treeboot schema` JSON
 
 `treeboot schema` emits the bundled config JSON Schema document directly. It is
@@ -736,11 +827,11 @@ command sections plus
 
 ## Public library compatibility
 
-`EnvOptions` is non-exhaustive because environment inspection can gain optional
-inputs over time. Downstream callers must construct it through
-`EnvOptions::default()` and then assign the public fields they need. Direct
-`EnvOptions` struct literals are not supported. This allows future optional
-environment-inspection inputs to be added without breaking downstream source.
+`EnvOptions` and `WorktreeInspectionOptions` are non-exhaustive because
+inspection can gain optional inputs over time. Downstream callers must construct
+them through `Default` and then assign the public fields they need. Worktree
+inspection report and entry structs are also non-exhaustive so reports can gain
+additive metadata without breaking downstream source.
 
 ## Path model: Root path feeds the worktree path
 

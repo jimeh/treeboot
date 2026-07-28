@@ -216,6 +216,9 @@ work. Lefthook checks staged Markdown files through
   lines in touched modules, and add high-value tests for reachable branches. Do
   not chase brittle coverage for OS permission quirks, platform-only code, or
   defensive I/O error arms unless the behavior is important and testable.
+- Git on macOS rejects non-UTF-8 worktree administrative directory names with
+  `Illegal byte sequence`; keep filesystem-backed non-UTF-8 worktree fixtures
+  Linux-gated while retaining platform-independent native-path coverage.
 - Put reusable CLI integration helpers in `crates/treeboot/tests/common/`.
 - Run `mise run check` before handoff for ordinary code changes.
 - Run `mise run verify` for broad harness, CI, release, or architecture changes.

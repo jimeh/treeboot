@@ -38,11 +38,35 @@ fn completions_should_include_current_subcommands_and_flags() {
         .stdout(predicate::str::contains("doctor"))
         .stdout(predicate::str::contains("env"))
         .stdout(predicate::str::contains("teardown"))
+        .stdout(predicate::str::contains("worktree"))
         .stdout(predicate::str::contains("--root"))
         .stdout(predicate::str::contains("--config"))
         .stdout(predicate::str::contains("--no-init-script").not())
         .stdout(predicate::str::contains("--dry-run"))
         .stdout(predicate::str::contains("--verbose"));
+}
+
+#[test]
+fn dynamic_completions_should_include_nested_worktree_commands_and_formats() {
+    treeboot()
+        .env("COMPLETE", "fish")
+        .args(["--", "treeboot", "worktree", ""])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("id"))
+        .stdout(predicate::str::contains("path"))
+        .stdout(predicate::str::contains("list"));
+
+    for command in ["id", "path", "list"] {
+        treeboot()
+            .env("COMPLETE", "fish")
+            .args(["--", "treeboot", "worktree", command, "--"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("--format"))
+            .stdout(predicate::str::contains("--json"))
+            .stdout(predicate::str::contains("--yaml"));
+    }
 }
 
 #[test]
