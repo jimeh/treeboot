@@ -19,14 +19,9 @@ use crate::{Config, EnvironmentInput, Result, WorktreeOptions};
 /// ```
 ///
 /// ```compile_fail
-/// use treeboot_core::{EnvOptions, EnvironmentInput};
+/// use treeboot_core::EnvOptions;
 ///
-/// let _ = EnvOptions {
-///     cwd: None,
-///     root: None,
-///     environment: EnvironmentInput::empty(),
-///     config: None,
-/// };
+/// let _ = EnvOptions { ..EnvOptions::default() };
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]

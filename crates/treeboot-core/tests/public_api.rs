@@ -110,7 +110,7 @@ fn public_enum_policy_should_keep_open_enums_non_exhaustive() {
 }
 
 #[test]
-fn public_config_struct_policy_should_keep_selected_types_non_exhaustive() {
+fn public_struct_policy_should_keep_selected_types_non_exhaustive() {
     fn assert_non_exhaustive(source: &str, name: &str) {
         let declaration = format!("pub struct {name}");
         let mut lines = source.lines();
@@ -131,6 +131,7 @@ fn public_config_struct_policy_should_keep_selected_types_non_exhaustive() {
     assert_non_exhaustive(config, "CommandOperation");
     assert_non_exhaustive(config, "SourceSpan");
     assert_non_exhaustive(include_str!("../src/context.rs"), "Worktree");
+    assert_non_exhaustive(include_str!("../src/env.rs"), "EnvOptions");
 }
 
 #[test]
