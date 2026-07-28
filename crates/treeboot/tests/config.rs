@@ -60,6 +60,7 @@ fn config_command_should_show_effective_identifier_in_root_checkout() {
     let identifier = env["TREEBOOT_WORKTREE_ID"]
         .as_str()
         .expect("identifier should be a string");
+    assert!(!identifier.is_empty(), "identifier should not be empty");
     let basename = repo
         .path()
         .file_name()
@@ -137,6 +138,7 @@ commands = [
     let identifier = env["TREEBOOT_WORKTREE_ID"]
         .as_str()
         .expect("identifier should be a string");
+    assert!(!identifier.is_empty(), "identifier should not be empty");
 
     let json = treeboot()
         .args(["config", "--format", "json"])
@@ -305,6 +307,7 @@ fn config_command_yaml_should_print_normalized_config() {
     let identifier = env["TREEBOOT_WORKTREE_ID"]
         .as_str()
         .expect("identifier should be a string");
+    assert!(!identifier.is_empty(), "identifier should not be empty");
 
     treeboot()
         .args(["config", "--format", "yaml"])
