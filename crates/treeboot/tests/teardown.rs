@@ -2,7 +2,9 @@ use predicates::prelude::*;
 
 mod common;
 
-use common::{git, git_repo, git_worktree, toml_string_path, treeboot, write_file};
+#[cfg(unix)]
+use common::git;
+use common::{git_repo, git_worktree, toml_string_path, treeboot, write_file};
 
 #[test]
 fn teardown_should_reject_root_checkout() {

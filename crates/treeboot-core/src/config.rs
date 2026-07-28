@@ -1093,7 +1093,17 @@ fn normalize_worktree_id_config(
     let max_length = raw.max_length.unwrap_or(defaults.max_length());
     let hash_length = raw.hash_length.unwrap_or(defaults.hash_length());
     let separator = match raw.separator.as_deref() {
-        Some(value) => single_char(value).unwrap_or('\0'),
+        Some(value) => match single_char(value) {
+            Some(separator) if matches!(separator, '-' | '_') => separator,
+            _ => {
+                return Err(invalid_config_error(
+                    path,
+                    content,
+                    span,
+                    format!("`worktree_id.separator` must be exactly `-` or `_`, got {value:?}"),
+                ));
+            }
+        },
         None => defaults.separator(),
     };
 
@@ -1896,11 +1906,33 @@ mod tests {
     #[test]
     fn parse_config_should_reject_invalid_worktree_id_separators() {
         for separator in ["", "--", "x", ".", "é"] {
-            assert_parse_error_contains(
-                &format!("worktree_id = {{ separator = {separator:?} }}"),
-                "must be exactly `-` or `_`",
+            let error = parse_error(&format!("worktree_id = {{ separator = {separator:?} }}"));
+
+            assert!(
+                error.contains("must be exactly `-` or `_`"),
+                "unexpected error: {error}"
             );
+            assert!(
+                error.contains(&format!("got {separator:?}")),
+                "expected actual separator value in {error:?}"
+            );
+            assert!(error.contains("line 1, column 1"), "{error}");
         }
+    }
+
+    #[test]
+    fn parse_config_should_locate_invalid_worktree_id_table_declaration() {
+        let error = parse_error(
+            r#"strict = true
+commands = ["mise install"]
+
+[worktree_id]
+separator = "--"
+"#,
+        );
+
+        assert!(error.contains(r#"got "--""#), "{error}");
+        assert!(error.contains("line 4, column 1"), "{error}");
     }
 
     #[test]

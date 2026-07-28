@@ -2,9 +2,11 @@ use predicates::prelude::*;
 
 mod common;
 
+#[cfg(unix)]
+use common::symlink_dir;
 use common::{
-    assert_json_object_keys, canonical_path, git, git_repo, git_worktree, parse_json, symlink_dir,
-    treeboot, write_file,
+    assert_json_object_keys, canonical_path, git, git_repo, git_worktree, parse_json, treeboot,
+    write_file,
 };
 
 const ENV_KEYS: &[&str] = &[
@@ -75,7 +77,10 @@ fn env_should_print_child_environment_as_text_json_and_yaml() {
         .assert()
         .success()
         .stderr(predicate::str::is_empty())
-        .stdout(predicate::str::contains("TREEBOOT_ROOT_PATH:"));
+        .stdout(predicate::str::contains("TREEBOOT_ROOT_PATH:"))
+        .stdout(predicate::str::contains(format!(
+            "TREEBOOT_WORKTREE_ID: {identifier}"
+        )));
 }
 
 #[test]

@@ -98,10 +98,14 @@ fn readable_source(path: &Path) -> Vec<&OsStr> {
     }
     if let Some(index) = components
         .windows(2)
-        .rposition(|window| {
-            window[0] == OsStr::new(".superset") && window[1] == OsStr::new("worktrees")
+        .enumerate()
+        .rev()
+        .find_map(|(index, window)| {
+            (window[0] == OsStr::new(".superset")
+                && window[1] == OsStr::new("worktrees")
+                && index + 3 < len)
+                .then_some(index)
         })
-        .filter(|index| index + 3 < len)
     {
         return components[index + 3..].to_vec();
     }
@@ -268,13 +272,35 @@ mod tests {
 
     #[test]
     fn identifier_should_use_generic_name_for_recognizer_near_miss() {
-        let value = default_id(
+        let conductor = default_id(
             "/home/a/conductor2/workspaces/payments/london",
             "/home/a/project",
         );
+        let t3 = default_id(
+            "/home/a/.t3/worktrees/payments/feature-auth",
+            "/home/a/project",
+        );
+        let superset = default_id(
+            "/home/a/.superset2/worktrees/payments/owner/feature-auth",
+            "/home/a/project",
+        );
 
-        assert!(value.starts_with("london-"));
-        assert!(!value.starts_with("payments-london-"));
+        assert!(conductor.starts_with("london-"));
+        assert!(!conductor.starts_with("payments-london-"));
+        assert!(t3.starts_with("feature-auth-"));
+        assert!(!t3.starts_with("payments-"));
+        assert!(superset.starts_with("feature-auth-"));
+        assert!(!superset.starts_with("owner-feature-auth-"));
+    }
+
+    #[test]
+    fn identifier_should_use_earlier_complete_superset_marker() {
+        let value = default_id(
+            "/a/.superset/worktrees/proj/ws/.superset/worktrees/x",
+            "/a/proj",
+        );
+
+        assert!(value.starts_with("ws-superset-worktrees-x-"), "{value}");
     }
 
     #[test]

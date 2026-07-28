@@ -148,7 +148,7 @@ treeboot -V
 Human-readable output is a compact, flag-like summary:
 
 ```text
-treeboot 0.10.0 (spec 2.1.0)
+treeboot 0.10.0 (spec 2.2.0)
 ```
 
 JSON and YAML output are defined in
@@ -467,7 +467,7 @@ The shared worktree context object has this shape:
 {
   "package": "treeboot",
   "version": "0.8.0",
-  "spec_version": "2.1.0"
+  "spec_version": "2.2.0"
 }
 ```
 
