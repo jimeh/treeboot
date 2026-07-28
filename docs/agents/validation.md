@@ -25,9 +25,15 @@ tasks also run doctests so compile-fail public API contracts stay enforced.
 `format` applies Rust and Markdown formatting, while `format:check` is
 non-mutating.
 
+During a correction loop, classify the delta as production behavior, public
+contract/API coverage, tests or CI fixtures, or documentation. Run the affected
+targeted tasks and any mutation evidence required by the changed behavior.
+Preserve prior broad validation when the correction cannot invalidate it; do not
+restart `check` or `verify` after every narrow correction.
+
 ### Check
 
-Use before handoff for most code changes:
+Use once on the intended handoff head for most code changes:
 
 ```sh
 mise run check
@@ -38,7 +44,8 @@ Markdown linting, and repo harness invariants, then tests.
 
 ### Verify
 
-Use for broad, CI-facing, release-facing, or harness changes:
+Use once on the intended final local head for broad, CI-facing, release-facing,
+or harness changes:
 
 ```sh
 mise run verify
@@ -63,6 +70,21 @@ GitHub Actions runs these mise tasks:
 The full test suite runs once on each supported GitHub Actions host platform:
 Linux x64/ARM64, macOS x64/ARM64, and Windows x64/ARM64. The local `mise run ci`
 task mirrors the task set, but only on the current host platform.
+
+## Cross-platform Preflight
+
+For filesystem, path, CLI-output, or platform-gated test changes:
+
+- Audit `cfg` gates and fixture assumptions against every supported CI host.
+- Do not assume a filesystem fixture constructible on Linux is constructible on
+  macOS or Windows.
+- Make path assertions match the production rendering contract, including the
+  choice between `Display`, `Debug`, and structured serialization and the
+  resulting Windows escaping.
+- When a filesystem fixture is impossible on one platform, gate that fixture
+  narrowly and retain platform-independent coverage of the underlying behavior.
+- Treat local `mise run ci` as evidence for the current host only; use the final
+  GitHub Actions matrix for cross-platform confirmation.
 
 ## Coverage
 
