@@ -23,6 +23,11 @@ requirements, update the spec instead of leaving those details only in
 implementation plans or roadmap notes. Keep implementation tactics in
 `docs/agents/` planning docs.
 
+Keep implementation plans focused on sequencing, placement, and behavior/test
+closure. Link to settled behavior in [docs/SPEC.md](docs/SPEC.md) and current
+architecture in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) instead of
+duplicating either contract in a planning document.
+
 When changing the observable contract in [docs/SPEC.md](docs/SPEC.md), bump the
 visible spec version in that file and keep the README's referenced spec version
 in sync.
@@ -55,10 +60,15 @@ in a release note.
 
 ## Pull Request Final Review
 
-Add the `coderabbit:review` label only when the PR is fully implemented,
-validated, and otherwise ready to merge. Treat the resulting CodeRabbit review
-as the final review gate: address its actionable feedback and wait for the gate
-to pass before merging.
+After implementation, dual review, final-head CI, and local handback pass, mark
+the PR ready and then add the `coderabbit:review` label. A CodeRabbit status
+reported while the PR is still draft does not satisfy the gate. Require the
+resulting review or check to cover the exact final head.
+
+Treat CodeRabbit as the final merge gate: address its actionable feedback and
+wait for the gate to pass before merging. If its findings require changes,
+return the PR to draft while correcting them, then repeat affected validation
+and final-head review.
 
 ## Repo Shape
 
@@ -89,7 +99,8 @@ milestone 9 release packaging, plus milestone 10 inspection and metadata
 commands:
 
 - CLI parsing for `run`, `status`, `config`, `check`, `doctor`, `env`, `schema`,
-  `version`, `init`, `copy`, `symlink`, `sync`, and `completions`
+  `version`, `init`, `copy`, `symlink`, `sync`, `completions`, and the
+  `worktree id`, `worktree path`, and `worktree list` inspection commands
 - Git worktree/root/default-branch discovery
 - treeboot environment aliases
 - stable config-refined `TREEBOOT_WORKTREE_ID` command environments
@@ -101,12 +112,12 @@ commands:
   re-inclusion
 - operation-local copy/sync path include rules with viability pruning, lazy
   directory materialization, and non-fatal zero-match warnings in check/config
-- public Worktree/Manifest/ActionPlan/Executor API surface, with command-shaped
-  workflow facades for full treeboot behavior
+- public Worktree/Manifest/ActionPlan/Executor and worktree-inspection API
+  surfaces, with command-shaped workflow facades for full treeboot behavior
 - view-only discovery status inspection
 - view-only normalized config inspection
-- side-effect-free check, doctor, config-aware env, schema, and version
-  inspection commands
+- side-effect-free check, doctor, config-aware env, worktree ID/path/list,
+  schema, and version inspection commands
 - generated JSON Schema for the config file format
 - generated spec-version asset and embedded config schema accessors
 - starter config generation
@@ -199,10 +210,17 @@ work. Lefthook checks staged Markdown files through
 
 - Treat tests as part of the implementation, not a follow-up. Do not hand off
   feature work until the new behavior has focused coverage at the right layer.
+- For non-trivial behavior changes, treat the frozen plan's behavior/test matrix
+  as a completion checklist. Before the initial push, map every specified happy,
+  failure, boundary, regression, and platform case to a named test or explicit
+  non-goal.
 - For behavior changes, cover the happy path plus edge cases: missing optional
   and required inputs, strict/force/dry-run behavior, conflict handling,
   non-mutation on failure, user-visible output, and platform-specific paths when
   relevant.
+- For inspection and reporting commands, cover text, JSON, and YAML output
+  parity. Structured serialization failures must occur before stdout is written
+  so automation never receives a partial document.
 - For bug fixes, add a regression test that fails without the fix unless the
   scenario cannot be reproduced in the local harness.
 - Use CLI integration tests for user-visible command behavior.
@@ -220,8 +238,12 @@ work. Lefthook checks staged Markdown files through
   `Illegal byte sequence`; keep filesystem-backed non-UTF-8 worktree fixtures
   Linux-gated while retaining platform-independent native-path coverage.
 - Put reusable CLI integration helpers in `crates/treeboot/tests/common/`.
-- Run `mise run check` before handoff for ordinary code changes.
-- Run `mise run verify` for broad harness, CI, release, or architecture changes.
+- Use affected targeted tasks during implementation and correction rounds; see
+  the validation guide for correction and cross-platform preflight rules.
+- Run `mise run check` on the intended handoff head for ordinary code changes.
+- Run `mise run verify` on the intended final local head for broad harness, CI,
+  release, or architecture changes. Rerun it only when later changes invalidate
+  that broad evidence.
 
 ## Harness Notes
 
