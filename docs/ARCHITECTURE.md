@@ -479,7 +479,11 @@ become stdout, stderr, and process status.
 
 `OutputEvent::message()` is the durable text-log representation. Some
 file-operation lifecycle events intentionally return an empty message because
-they are structured presentation hooks for reporters rather than log lines.
+they are structured presentation hooks for reporters rather than log lines. CLI
+JSON and YAML reports serialize completely into memory before stdout is touched,
+so an unrepresentable native path or other serialization failure cannot leave a
+partial document. Worktree text rendering writes Unix path bytes directly;
+structured path strings require UTF-8.
 
 ### Public enum evolution
 

@@ -204,7 +204,9 @@ current repository. Repository-wide lookup and listing load each existing
 candidate worktree's own config, so the result matches the
 `TREEBOOT_WORKTREE_ID` that configured commands receive there. Stale registered
 paths are skipped, and identifier collisions are reported instead of choosing an
-arbitrary path.
+arbitrary path. Text output preserves native path bytes on Unix. JSON and YAML
+path strings require valid UTF-8 and fail without partial stdout when a
+repository contains a non-UTF-8 worktree path.
 
 If no config is found, `treeboot` prints an info message and exits successfully.
 Add `--strict` to bootstrap when that should be an error. Missing discovered

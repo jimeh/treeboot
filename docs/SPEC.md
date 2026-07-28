@@ -399,10 +399,13 @@ succeeding so a later collision cannot be missed.
 `worktree list` uses the same candidate discovery and identifier generation.
 Text output is an `ID` and `PATH` table. The main worktree is first and
 remaining entries are sorted by canonical path. Duplicate identifiers remain
-visible and do not make listing fail.
+visible and do not make listing fail. On Unix, `worktree path` and
+`worktree list` text output preserve native path bytes exactly.
 
 Missing registered paths are stale and skipped without changing Git metadata.
-Bare records are excluded. An existing candidate that cannot be canonicalized,
+Bare records are excluded from inventory and reverse lookup, but a bare primary
+repository remains the Git main-worktree identity used to resolve linked
+worktree context. An existing candidate that cannot be canonicalized,
 discovered, or fully parsed makes the complete operation fail. A candidate that
 disappears during inspection is skipped only when the failure is a not-found I/O
 error; other failures are fatal and attributed to the candidate path. Reports
@@ -478,6 +481,10 @@ output uses the same field names, values, and nesting as JSON. Path values are
 strings. Optional values are `null` when absent. Tagged enum values are
 lowercase `snake_case` strings. JSON object member order is not part of the
 contract.
+
+Structured path values require valid UTF-8. If any path cannot be represented by
+the JSON/YAML string schema, serialization fails before stdout is written. Use
+text output when native non-UTF-8 Unix path bytes must be preserved.
 
 The shared worktree context object has this shape:
 

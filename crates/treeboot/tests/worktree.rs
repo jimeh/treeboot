@@ -1,4 +1,6 @@
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
+use std::process::Command;
 
 use predicates::prelude::*;
 use tempfile::TempDir;
@@ -45,6 +47,46 @@ fn worktree_id(cwd: &Path) -> String {
         .expect("ID should be UTF-8")
         .trim()
         .to_owned()
+}
+
+struct BarePrimaryWorktree {
+    _temp: TempDir,
+    bare_path: PathBuf,
+    linked_path: PathBuf,
+}
+
+fn bare_primary_worktree() -> BarePrimaryWorktree {
+    let temp = TempDir::new().expect("tempdir should be created");
+    let bare_path = temp.path().join("bare.git");
+    let seed_path = temp.path().join("seed");
+    let linked_path = temp.path().join("linked");
+    let bare = bare_path.to_str().expect("bare path should be UTF-8");
+    let linked = linked_path.to_str().expect("linked path should be UTF-8");
+
+    git(&["init", "--bare", bare], temp.path());
+    git(&["init", "seed"], temp.path());
+    git(&["config", "user.name", "treeboot"], &seed_path);
+    git(
+        &["config", "user.email", "treeboot@example.invalid"],
+        &seed_path,
+    );
+    git(&["config", "commit.gpgsign", "false"], &seed_path);
+    write_file(&seed_path.join("README.md"), "treeboot bare repo\n");
+    git(&["add", "README.md"], &seed_path);
+    git(&["commit", "-m", "Initial commit"], &seed_path);
+    git(&["remote", "add", "origin", bare], &seed_path);
+    git(&["push", "origin", "HEAD:main"], &seed_path);
+    git(&["symbolic-ref", "HEAD", "refs/heads/main"], &bare_path);
+    git(
+        &["worktree", "add", "-b", "linked-worktree", linked, "main"],
+        &bare_path,
+    );
+
+    BarePrimaryWorktree {
+        _temp: temp,
+        bare_path,
+        linked_path,
+    }
 }
 
 #[test]
@@ -204,14 +246,107 @@ fn worktree_path_and_list_should_use_candidate_local_config_and_contract_order()
 }
 
 #[test]
+fn worktree_list_should_keep_main_first_when_a_linked_path_sorts_before_it() {
+    let temp = TempDir::new().expect("tempdir should be created");
+    let root = temp.path().join("z-root");
+    let linked = temp.path().join("a-linked");
+    std::fs::create_dir(&root).expect("root should be created");
+    git(&["init"], &root);
+    git(&["config", "user.name", "treeboot"], &root);
+    git(&["config", "user.email", "treeboot@example.invalid"], &root);
+    git(&["config", "commit.gpgsign", "false"], &root);
+    write_file(&root.join("README.md"), "treeboot ordering repo\n");
+    git(&["add", "README.md"], &root);
+    git(&["commit", "-m", "Initial commit"], &root);
+    git(
+        &[
+            "worktree",
+            "add",
+            "-b",
+            "treeboot-ordering",
+            linked.to_str().expect("linked path should be UTF-8"),
+        ],
+        &root,
+    );
+    let root = canonical_path(&root);
+    let linked = canonical_path(&linked);
+    assert!(linked < root, "fixture should sort linked path before root");
+
+    let list = treeboot()
+        .args(["worktree", "list", "--format", "json"])
+        .current_dir(&linked)
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    let list = parse_json(list, "main-first list");
+    let entries = list["worktrees"]
+        .as_array()
+        .expect("worktrees should be an array");
+
+    assert_eq!(entries[0]["path"], root.display().to_string());
+    assert_eq!(entries[1]["path"], linked.display().to_string());
+}
+
+#[test]
+fn worktree_commands_should_support_a_bare_primary_repository() {
+    let repo = bare_primary_worktree();
+    let linked = canonical_path(&repo.linked_path);
+    let bare = canonical_path(&repo.bare_path);
+    let id = worktree_id(&repo.linked_path);
+
+    let env = treeboot()
+        .args(["env", "--json"])
+        .current_dir(&repo.linked_path)
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    let env = parse_json(env, "bare primary env");
+    assert_eq!(env["TREEBOOT_ROOT_PATH"], bare.display().to_string());
+
+    let list = treeboot()
+        .args(["worktree", "list", "--json"])
+        .current_dir(&repo.linked_path)
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    let list = parse_json(list, "bare primary list");
+    let entries = list["worktrees"]
+        .as_array()
+        .expect("worktrees should be an array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["id"], id);
+    assert_eq!(entries[0]["path"], linked.display().to_string());
+    assert_ne!(entries[0]["path"], bare.display().to_string());
+
+    treeboot()
+        .args(["worktree", "path", &id])
+        .current_dir(&repo.linked_path)
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .stdout(format!("{}\n", linked.display()));
+}
+
+#[test]
 fn worktree_path_should_emit_exact_structured_shapes() {
     let repo = git_worktree();
     let id = worktree_id(repo.worktree_path());
     let path = canonical_path(repo.worktree_path());
+    let nested = repo.worktree_path().join("nested");
+    std::fs::create_dir(&nested).expect("nested directory should be created");
 
     let json = treeboot()
-        .args(["worktree", "path", &id, "--json"])
-        .current_dir(repo.root_path())
+        .args(["worktree", "path", &id, "--format", "json"])
+        .current_dir(&nested)
         .assert()
         .success()
         .stderr(predicate::str::is_empty())
@@ -257,13 +392,86 @@ fn worktree_list_should_skip_stale_registered_paths() {
     );
     std::fs::remove_dir_all(&stale_path).expect("stale worktree should be removed from disk");
 
+    let root = canonical_path(repo.root_path()).display().to_string();
     treeboot()
         .args(["worktree", "list"])
         .current_dir(repo.root_path())
         .assert()
         .success()
         .stderr(predicate::str::is_empty())
-        .stdout(predicate::str::contains("stale").not());
+        .stdout(predicate::str::contains("stale").not())
+        .stdout(predicate::str::contains(root));
+}
+
+#[cfg(unix)]
+#[test]
+fn worktree_text_paths_should_preserve_native_bytes_and_structured_fail_atomically() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::{OsStrExt, OsStringExt};
+
+    let repo = git_worktree();
+    let parent = TempDir::new().expect("non-UTF-8 parent should be created");
+    let path = parent
+        .path()
+        .join(OsString::from_vec(b"non-utf8-\xff".to_vec()));
+    let output = Command::new("git")
+        .args(["worktree", "add", "-b", "treeboot-non-utf8"])
+        .arg(&path)
+        .current_dir(repo.root_path())
+        .output()
+        .expect("git should run");
+    assert!(
+        output.status.success(),
+        "git worktree add should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let path = canonical_path(&path);
+    let id = worktree_id(&path);
+    let mut expected_path = path.as_os_str().as_bytes().to_vec();
+    expected_path.push(b'\n');
+
+    let path_output = treeboot()
+        .args(["worktree", "path", &id])
+        .current_dir(repo.root_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    assert_eq!(path_output, expected_path);
+
+    let list_output = treeboot()
+        .args(["worktree", "list"])
+        .current_dir(repo.root_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    assert!(
+        list_output
+            .windows(expected_path.len())
+            .any(|window| window == expected_path),
+        "list should contain the exact native path bytes"
+    );
+
+    for args in [
+        vec!["worktree", "path", &id, "--json"],
+        vec!["worktree", "path", &id, "--yaml"],
+        vec!["worktree", "list", "--format", "json"],
+        vec!["worktree", "list", "--format", "yaml"],
+    ] {
+        treeboot()
+            .args(args)
+            .current_dir(repo.root_path())
+            .assert()
+            .failure()
+            .stdout(predicate::str::is_empty())
+            .stderr(predicate::str::contains("failed to write output"));
+    }
 }
 
 #[test]
@@ -416,6 +624,13 @@ fn worktree_commands_should_honor_recognized_ambient_environment() {
 
 #[test]
 fn worktree_nested_help_and_version_should_be_exposed() {
+    treeboot()
+        .arg("worktree")
+        .assert()
+        .code(2)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains("Usage:"));
+
     treeboot()
         .args(["worktree", "--help"])
         .assert()

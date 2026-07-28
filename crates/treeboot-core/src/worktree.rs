@@ -66,7 +66,7 @@ pub struct WorktreeListReport {
 pub fn inspect_worktree_id(options: WorktreeInspectionOptions) -> Result<WorktreeIdReport> {
     let context = resolve_effective_context(env_options(&options, options.cwd.clone()))?;
     Ok(WorktreeIdReport {
-        id: identifier_from_context(&context),
+        id: identifier_from_context(&context)?,
     })
 }
 
@@ -111,10 +111,9 @@ pub fn inspect_worktree_list(options: WorktreeInspectionOptions) -> Result<Workt
             Err(error) if candidate_disappeared(&path, &error) => continue,
             Err(error) => return Err(candidate_error(&path, error)),
         };
-        let entry = WorktreeEntry {
-            id: identifier_from_context(&context),
-            path,
-        };
+        let id =
+            identifier_from_context(&context).map_err(|error| candidate_error(&path, error))?;
+        let entry = WorktreeEntry { id, path };
 
         if candidate.main {
             main = Some(entry);
@@ -175,11 +174,12 @@ fn env_options(options: &WorktreeInspectionOptions, cwd: Option<PathBuf>) -> Env
     }
 }
 
-fn identifier_from_context(context: &crate::Worktree) -> String {
+fn identifier_from_context(context: &crate::Worktree) -> Result<String> {
     context
         .environment
         .get(TREEBOOT_WORKTREE_ID)
-        .map_or_else(String::new, |id| id.to_string_lossy().into_owned())
+        .map(|id| id.to_string_lossy().into_owned())
+        .ok_or(Error::WorktreeIdMissing)
 }
 
 fn candidate_error(path: &Path, source: Error) -> Error {
@@ -257,5 +257,20 @@ mod tests {
         assert!(!candidate_disappeared(&existing, &error));
         assert!(candidate_disappeared(&missing, &error));
         assert!(!candidate_disappeared(&missing, &Error::NotGitWorktree));
+    }
+
+    #[test]
+    fn identifier_resolution_should_error_when_managed_value_is_missing() {
+        let context = crate::Worktree::from_parts(
+            "/repo".into(),
+            "/repo/linked".into(),
+            "main".to_owned(),
+            crate::Environment::new(),
+        );
+
+        let error =
+            identifier_from_context(&context).expect_err("missing managed ID should be an error");
+
+        assert!(matches!(error, Error::WorktreeIdMissing));
     }
 }

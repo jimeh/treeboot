@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::path::Path;
 
 use clap::{Args, Subcommand};
 use treeboot_core::{
@@ -90,7 +91,7 @@ fn print_value(value: &str) -> treeboot_core::Result<()> {
 fn print_path(report: &WorktreePathReport) -> treeboot_core::Result<()> {
     let stdout = std::io::stdout();
     let mut handle = stdout.lock();
-    writeln!(handle, "{}", report.path.display()).map_err(|source| Error::Output { source })
+    write_path_line(&mut handle, &report.path).map_err(|source| Error::Output { source })
 }
 
 fn print_list(report: &WorktreeListReport) -> treeboot_core::Result<()> {
@@ -105,8 +106,21 @@ fn print_list(report: &WorktreeListReport) -> treeboot_core::Result<()> {
     let mut handle = stdout.lock();
     writeln!(handle, "{:<id_width$}  PATH", "ID").map_err(|source| Error::Output { source })?;
     for entry in &report.worktrees {
-        writeln!(handle, "{:<id_width$}  {}", entry.id, entry.path.display())
-            .map_err(|source| Error::Output { source })?;
+        write!(handle, "{:<id_width$}  ", entry.id).map_err(|source| Error::Output { source })?;
+        write_path_line(&mut handle, &entry.path).map_err(|source| Error::Output { source })?;
     }
     Ok(())
+}
+
+#[cfg(unix)]
+fn write_path_line(writer: &mut dyn Write, path: &Path) -> std::io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+
+    writer.write_all(path.as_os_str().as_bytes())?;
+    writer.write_all(b"\n")
+}
+
+#[cfg(not(unix))]
+fn write_path_line(writer: &mut dyn Write, path: &Path) -> std::io::Result<()> {
+    writeln!(writer, "{}", path.display())
 }

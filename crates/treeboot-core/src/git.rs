@@ -40,7 +40,7 @@ impl Git {
         Ok(self
             .worktrees()?
             .into_iter()
-            .find(|worktree| worktree.main && !worktree.bare)
+            .find(|worktree| worktree.main)
             .map(|worktree| worktree.path))
     }
 

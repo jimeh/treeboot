@@ -63,6 +63,10 @@ pub enum Error {
         source: Box<Error>,
     },
 
+    /// A resolved context unexpectedly lacks its managed worktree identifier.
+    #[error("resolved worktree context is missing TREEBOOT_WORKTREE_ID")]
+    WorktreeIdMissing,
+
     /// No registered worktree has the requested identifier.
     #[error("no worktree found with ID {id:?}")]
     WorktreeIdNotFound {
