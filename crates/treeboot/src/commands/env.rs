@@ -37,11 +37,10 @@ pub(crate) fn run_env_command(args: EnvArgs) -> treeboot_core::Result<()> {
 
 impl From<EnvArgs> for EnvOptions {
     fn from(args: EnvArgs) -> Self {
-        Self {
-            cwd: None,
-            root: args.root,
-            environment: environment_input(),
-            config: args.config,
-        }
+        let mut options = Self::default();
+        options.root = args.root;
+        options.environment = environment_input();
+        options.config = args.config;
+        options
     }
 }

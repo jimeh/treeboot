@@ -7,7 +7,29 @@ use crate::context;
 use crate::{Config, EnvironmentInput, Result, WorktreeOptions};
 
 /// Options for inspecting the treeboot child environment.
+///
+/// Construct options through [`EnvOptions::default`] so future additive fields
+/// remain source-compatible.
+///
+/// ```
+/// use treeboot_core::EnvOptions;
+///
+/// let mut options = EnvOptions::default();
+/// options.config = Some(".treeboot.toml".into());
+/// ```
+///
+/// ```compile_fail
+/// use treeboot_core::{EnvOptions, EnvironmentInput};
+///
+/// let _ = EnvOptions {
+///     cwd: None,
+///     root: None,
+///     environment: EnvironmentInput::empty(),
+///     config: None,
+/// };
+/// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct EnvOptions {
     /// Directory from which environment discovery starts.
     pub cwd: Option<PathBuf>,

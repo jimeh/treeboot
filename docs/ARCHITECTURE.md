@@ -486,8 +486,10 @@ behavior: `FileOperationKind`, `SyncCompare`, `SymlinkMode`, `MetadataField`,
 ### Public struct evolution
 
 Public structs in the normalized config graph, plus the resolved `Worktree`
-context carried by `LoadedConfig`, are `#[non_exhaustive]`:
+context carried by `LoadedConfig` and the extensible `EnvOptions` command input,
+are `#[non_exhaustive]`:
 
+- `EnvOptions`
 - `LoadedConfig`
 - `Worktree`
 - `Config`
@@ -499,15 +501,16 @@ context carried by `LoadedConfig`, are `#[non_exhaustive]`:
 
 Downstream callers may read public fields but must use `..` when destructuring.
 Stable constructors preserve programmatic creation without exposing exhaustive
-struct literals: `Config::default()`, `Worktree::from_parts`, `SourceSpan::new`,
-shell/direct `CommandOperation` constructors, and operation-specific
-`FileOperation` constructors. Config parsing, manual file operations, and public
-file constructors converge on one normalized operation builder.
+struct literals: `EnvOptions::default()`, `Config::default()`,
+`Worktree::from_parts`, `SourceSpan::new`, shell/direct `CommandOperation`
+constructors, and operation-specific `FileOperation` constructors. Config
+parsing, manual file operations, and public file constructors converge on one
+normalized operation builder.
 
 This policy makes future additive fields source-compatible. Removing fields,
 changing field types, or expanding intentionally closed config vocabulary enums
-remains a deliberate compatibility decision. Command input and report structs
-outside this normalized graph are not covered by this migration.
+remains a deliberate compatibility decision. Other command input and report
+structs outside this set are not covered by this migration.
 
 ## Verification boundaries: Testing Architecture
 

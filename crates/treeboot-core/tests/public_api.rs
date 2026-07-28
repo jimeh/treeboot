@@ -5,15 +5,15 @@ use std::process::Command;
 use tempfile::TempDir;
 use treeboot_core::{
     ActionPlan, ActionPlanOptions, CheckAction, CommandKind, CommandOperation, Config,
-    ConfigOptions, ConfigRuntimeOptions, DiagnosticStatus, Environment, EnvironmentInput, Error,
-    ExecuteOptions, Executor, FileOperation, FileOperationAction, FileOperationCompletionOptions,
-    FileOperationKind, FileOperationOptions, FileOperationSummary, InitOptions, LoadedConfig,
-    ManualFileOperationOptions, MetadataField, OutputEvent, PlanOrigin, PlannedFileStatus,
-    Reporter, RunAction, RunOptions, SourceSpan, StatusOptions, SymlinkMode, SyncCompare,
-    TeardownOptions, Worktree, WorktreeIdConfig, WorktreeOptions, check, config_schema_json,
-    diagnose, file_operation_source_candidates, init, inspect_config, inspect_env, inspect_status,
-    inspect_status_snapshot, prepare_teardown, run, run_file_operation, treeboot_version_info,
-    version_info,
+    ConfigOptions, ConfigRuntimeOptions, DiagnosticStatus, EnvOptions, Environment,
+    EnvironmentInput, Error, ExecuteOptions, Executor, FileOperation, FileOperationAction,
+    FileOperationCompletionOptions, FileOperationKind, FileOperationOptions, FileOperationSummary,
+    InitOptions, LoadedConfig, ManualFileOperationOptions, MetadataField, OutputEvent, PlanOrigin,
+    PlannedFileStatus, Reporter, RunAction, RunOptions, SourceSpan, StatusOptions, SymlinkMode,
+    SyncCompare, TeardownOptions, Worktree, WorktreeIdConfig, WorktreeOptions, check,
+    config_schema_json, diagnose, file_operation_source_candidates, init, inspect_config,
+    inspect_env, inspect_status, inspect_status_snapshot, prepare_teardown, run,
+    run_file_operation, treeboot_version_info, version_info,
 };
 
 #[derive(Default)]
@@ -611,13 +611,10 @@ fn public_api_should_expose_metadata_env_check_and_doctor() {
     assert_eq!(treeboot_version.spec_version, treeboot_core::SPEC_VERSION);
     assert!(config_schema_json().contains("\"$defs\""));
 
-    let env = inspect_env(treeboot_core::EnvOptions {
-        cwd: Some(repo.worktree_path().to_path_buf()),
-        root: None,
-        environment: EnvironmentInput::empty(),
-        config: None,
-    })
-    .expect("environment should inspect");
+    let mut env_options = EnvOptions::default();
+    env_options.cwd = Some(repo.worktree_path().to_path_buf());
+    env_options.environment = EnvironmentInput::empty();
+    let env = inspect_env(env_options).expect("environment should inspect");
     assert!(env.environment.contains_key("TREEBOOT_ROOT_PATH"));
     let env_json = serde_json::to_value(&env).expect("env should serialize");
     assert!(env_json.get("environment").is_none());

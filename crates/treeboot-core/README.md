@@ -119,16 +119,17 @@ Manifest plan constructors refine it from the parsed `WorktreeIdConfig` before
 validating owned command environment variables. This also applies when an
 embedding supplies an empty environment through `Worktree::from_parts`.
 
-## Public Config Construction
+## Public Struct Construction
 
-The normalized config graph and resolved `Worktree` context are
-`#[non_exhaustive]`. Downstream code can read their public fields, but must use
-`..` when destructuring and cannot construct them with struct literals. This
-lets future treeboot releases add fields without breaking exhaustive downstream
-patterns.
+The normalized config graph, resolved `Worktree` context, and extensible
+`EnvOptions` input are `#[non_exhaustive]`. Downstream code can read their
+public fields, but must use `..` when destructuring and cannot construct them
+with struct literals. This lets future treeboot releases add fields without
+breaking exhaustive downstream patterns.
 
 Use the stable construction paths instead:
 
+- `EnvOptions::default()` for environment inspection options
 - `Config::default()` for an empty normalized config
 - `WorktreeIdConfig::new(...)` for checked identifier presentation settings
 - `Worktree::from_parts(...)` for a synthetic resolved context
