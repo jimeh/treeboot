@@ -10,10 +10,11 @@ use treeboot_core::{
     FileOperationCompletionOptions, FileOperationKind, FileOperationOptions, FileOperationSummary,
     InitOptions, LoadedConfig, ManualFileOperationOptions, MetadataField, OutputEvent, PlanOrigin,
     PlannedFileStatus, Reporter, RunAction, RunOptions, SourceSpan, StatusOptions, SymlinkMode,
-    SyncCompare, TeardownOptions, Worktree, WorktreeIdConfig, WorktreeOptions, check,
-    config_schema_json, diagnose, file_operation_source_candidates, init, inspect_config,
-    inspect_env, inspect_status, inspect_status_snapshot, prepare_teardown, run,
-    run_file_operation, treeboot_version_info, version_info,
+    SyncCompare, TeardownOptions, Worktree, WorktreeIdConfig, WorktreeInspectionOptions,
+    WorktreeOptions, check, config_schema_json, diagnose, file_operation_source_candidates, init,
+    inspect_config, inspect_env, inspect_status, inspect_status_snapshot, inspect_worktree_id,
+    inspect_worktree_list, inspect_worktree_path, prepare_teardown, run, run_file_operation,
+    treeboot_version_info, version_info,
 };
 
 #[derive(Default)]
@@ -132,6 +133,35 @@ fn public_struct_policy_should_keep_selected_types_non_exhaustive() {
     assert_non_exhaustive(config, "SourceSpan");
     assert_non_exhaustive(include_str!("../src/context.rs"), "Worktree");
     assert_non_exhaustive(include_str!("../src/env.rs"), "EnvOptions");
+    assert_non_exhaustive(
+        include_str!("../src/worktree.rs"),
+        "WorktreeInspectionOptions",
+    );
+    assert_non_exhaustive(include_str!("../src/worktree.rs"), "WorktreeIdReport");
+    assert_non_exhaustive(include_str!("../src/worktree.rs"), "WorktreeEntry");
+    assert_non_exhaustive(include_str!("../src/worktree.rs"), "WorktreePathReport");
+    assert_non_exhaustive(include_str!("../src/worktree.rs"), "WorktreeListReport");
+}
+
+#[test]
+fn public_worktree_inspection_api_should_resolve_current_list_and_path() {
+    let repo = git_worktree();
+    let mut options = WorktreeInspectionOptions::default();
+    options.cwd = Some(repo.worktree_path().to_path_buf());
+
+    let current = inspect_worktree_id(options.clone()).expect("current ID should resolve");
+    let list = inspect_worktree_list(options.clone()).expect("worktree list should resolve");
+    let resolved = inspect_worktree_path(&current.id, options).expect("ID should reverse resolve");
+
+    assert_eq!(resolved.id, current.id);
+    assert_eq!(resolved.path, canonical_path(repo.worktree_path()));
+    assert_eq!(list.worktrees.len(), 2);
+    let entry = list
+        .worktrees
+        .iter()
+        .find(|entry| entry.path == resolved.path)
+        .expect("resolved worktree should be listed");
+    assert_eq!(entry.id, resolved.id);
 }
 
 #[test]

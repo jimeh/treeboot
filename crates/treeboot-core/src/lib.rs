@@ -33,6 +33,7 @@ mod teardown;
 #[cfg(test)]
 mod test_support;
 mod validation;
+mod worktree;
 mod worktree_id;
 
 pub use check::{CheckAction, CheckOptions, CheckReport, WorktreeSnapshot, check};
@@ -63,6 +64,10 @@ pub use teardown::{
 pub use validation::{
     ActionPlan, ActionPlanOptions, ConfigPhaseValidation, PlanOrigin, PlanWarning, PlannedCommand,
     PlannedFileOperation, PlannedFileStatus, TeardownPlan, validate_config_phases,
+};
+pub use worktree::{
+    WorktreeEntry, WorktreeIdReport, WorktreeInspectionOptions, WorktreeListReport,
+    WorktreePathReport, inspect_worktree_id, inspect_worktree_list, inspect_worktree_path,
 };
 
 /// Convenient result type used by `treeboot-core`.

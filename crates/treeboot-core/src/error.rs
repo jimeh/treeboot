@@ -53,6 +53,32 @@ pub enum Error {
     #[error("could not determine root checkout path")]
     RootPathNotFound,
 
+    /// Inspecting one existing registered worktree failed.
+    #[error("failed to inspect worktree {path:?}: {source}")]
+    WorktreeInspection {
+        /// Registered worktree path being inspected.
+        path: PathBuf,
+        /// Underlying discovery or config error.
+        #[source]
+        source: Box<Error>,
+    },
+
+    /// No registered worktree has the requested identifier.
+    #[error("no worktree found with ID {id:?}")]
+    WorktreeIdNotFound {
+        /// Exact identifier that was requested.
+        id: String,
+    },
+
+    /// More than one registered worktree has the requested identifier.
+    #[error("ambiguous worktree ID {id:?}; matching paths: {paths:?}")]
+    WorktreeIdAmbiguous {
+        /// Exact identifier that was requested.
+        id: String,
+        /// Canonical paths of every matching worktree.
+        paths: Vec<PathBuf>,
+    },
+
     /// A specifically requested config file does not exist.
     #[error("config file not found: {0:?}")]
     ConfigNotFound(PathBuf),

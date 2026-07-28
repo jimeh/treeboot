@@ -84,6 +84,7 @@ callers that want to discover a `Worktree`, load a `LoadedConfig`, build an
 | `treeboot schema`                  | `config_schema_json()`                                                                                   | `metadata`                                                                                                  | View-only unless `--output` is used. Prints or writes the bundled config schema.                                     |
 | `treeboot doctor`                  | `diagnose(DoctorOptions)`                                                                                | `doctor`, `runtime`, `context`, `discovery`, `config`, `validation`                                         | View-only. Reports diagnostic statuses for discovery and validation, including strict diagnostics when requested.    |
 | `treeboot env`                     | `inspect_env(EnvOptions)`                                                                                | `env`, `context`, `config`, `worktree_id`                                                                   | View-only. Loads config to report the effective child environment passed to configured commands.                     |
+| `treeboot worktree id/path/list`   | `inspect_worktree_id(...)`, `inspect_worktree_path(...)`, `inspect_worktree_list(...)`                   | `worktree`, `git`, `env`, `context`, `config`, `worktree_id`                                                | View-only. Resolves candidate-local IDs and canonical paths without changing Git metadata.                           |
 | `treeboot completions`             | CLI-owned completion registration; `file_operation_source_candidates(...)` for dynamic source completion | `main.rs`, `commands/completions.rs`, `manual`                                                              | Prints shell registration. Dynamic source candidates delegate to core.                                               |
 
 ## Anchors: Runtime Context
@@ -115,9 +116,12 @@ change root-target classification._
 
 `git.rs` keeps Git-discovered filesystem paths in platform-native form. On Unix,
 path output remains raw bytes through parsing and conversion; only branch names
-and diagnostic stderr use ergonomic lossy text conversion. Main-worktree records
-use Git's NUL-delimited porcelain format so quoting and embedded newlines are
-unambiguous.
+and diagnostic stderr use ergonomic lossy text conversion. Every worktree record
+uses Git's NUL-delimited porcelain format so quoting, embedded newlines, unknown
+fields, non-UTF-8 Unix paths, and bare records remain unambiguous.
+Repository-wide inspection canonicalizes existing non-bare candidates, loads
+each candidate's config through the same effective-context path as `env`, skips
+stale not-found paths, and collects the complete report before CLI rendering.
 
 ### Source root
 
@@ -274,6 +278,7 @@ flowchart LR
   CHECK["check.rs<br/>side-effect-free validation"]
   DOCTOR["doctor.rs<br/>diagnostics"]
   ENV["env.rs<br/>child environment"]
+  WORKTREE["worktree.rs<br/>ID/path/list inspection"]
   ID["worktree_id.rs<br/>path recognizers<br/>sanitization + SHA-256<br/>Crockford encoding"]
   MANUAL["manual.rs<br/>manual files"]
   CONFIG["config.rs<br/>parse + normalize"]
@@ -313,6 +318,8 @@ flowchart LR
   DOCTOR --> CHECK
   ENV --> CONTEXT
   ENV --> CONFIG
+  WORKTREE --> ENV
+  WORKTREE --> GIT
   CONTEXT --> ID
   VALID --> ID
   MANUAL --> CONTEXT
@@ -352,6 +359,7 @@ file-operation execution._
 | `config.rs`          | TOML parsing, defaulting, normalized config data.                                                                                                                                | Boundary validation or execution.                                                                            |
 | `doctor.rs`          | Diagnostic aggregation across discovery and validation.                                                                                                                          | Fixing problems or applying effects.                                                                         |
 | `env.rs`             | Config-aware effective child environment inspection.                                                                                                                             | File operations, command execution, or identifier algorithms.                                                |
+| `worktree.rs`        | Candidate-local worktree ID inspection, repository inventory ordering, stale filtering, and exact reverse lookup.                                                                | Git mutation, config parsing details, or CLI presentation.                                                   |
 | `executor.rs`        | Sequencing validated bootstrap file and command execution.                                                                                                                       | Teardown dispatch, validation, or CLI policy.                                                                |
 | `file_actions.rs`    | Concrete file action model, grouped operation actions, summary construction, and cross-action symlink warnings.                                                                  | Filesystem traversal or mutation.                                                                            |
 | `file_operations.rs` | Operation-level file application facade, apply options/report types, planning lifecycle events, and planning/execution sequencing.                                               | Concrete planning decisions, action mutation details, or low-level filesystem helper implementation.         |

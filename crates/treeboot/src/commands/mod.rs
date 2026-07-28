@@ -14,6 +14,7 @@ mod schema;
 mod status;
 mod teardown;
 mod version;
+mod worktree;
 
 use check::CheckArgs;
 use completions::CompletionsArgs;
@@ -27,6 +28,7 @@ use schema::SchemaArgs;
 use status::StatusArgs;
 use teardown::TeardownArgs;
 use version::VersionArgs;
+use worktree::WorktreeArgs;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -72,6 +74,8 @@ enum Command {
     Completions(CompletionsArgs),
     /// Run configured teardown commands for a linked worktree.
     Teardown(TeardownArgs),
+    /// Inspect worktree identifiers and paths.
+    Worktree(WorktreeArgs),
 }
 
 pub(crate) fn command() -> ClapCommand {
@@ -161,6 +165,7 @@ pub(crate) fn run_cli(cli: Cli, reporter: &mut dyn Reporter) -> Result<(), CliEr
             completions::run_completions_command(args).map_err(Into::into)
         }
         Some(Command::Teardown(args)) => teardown::run_teardown_command(args, reporter),
+        Some(Command::Worktree(args)) => worktree::run_worktree_command(args).map_err(Into::into),
         None => treeboot_core::run(cli.run.into(), reporter)
             .map(|_| ())
             .map_err(Into::into),

@@ -189,12 +189,22 @@ treeboot config        # Print normalized TOML config without executing it
 treeboot check         # Validate bootstrap and teardown plans
 treeboot doctor        # Run discovery and configuration diagnostics
 treeboot env           # Print effective treeboot-owned command environment
+treeboot worktree id   # Print the current worktree's stable identifier
+treeboot worktree list # List registered worktree identifiers and paths
 treeboot run --dry-run # Preview file operations and commands
 treeboot teardown --dry-run # Preview teardown commands without prompting
 ```
 
-`status`, `config`, `check`, `doctor`, `env`, and `version` support
-`--format text|json|yaml`, with `--json` and `--yaml` shortcuts.
+`status`, `config`, `check`, `doctor`, `env`, `version`, and all `worktree` leaf
+commands support `--format text|json|yaml`, with `--json` and `--yaml`
+shortcuts.
+
+Use `treeboot worktree path <ID>` to reverse-resolve an exact identifier in the
+current repository. Repository-wide lookup and listing load each existing
+candidate worktree's own config, so the result matches the
+`TREEBOOT_WORKTREE_ID` that configured commands receive there. Stale registered
+paths are skipped, and identifier collisions are reported instead of choosing an
+arbitrary path.
 
 If no config is found, `treeboot` prints an info message and exits successfully.
 Add `--strict` to bootstrap when that should be an error. Missing discovered
@@ -234,13 +244,13 @@ treeboot teardown --worktree "$path" --yes &&
 
 `treeboot` and `treeboot run` are equivalent.
 
-| Purpose         | Commands                                     |
-| --------------- | -------------------------------------------- |
-| Bootstrap       | `run`                                        |
-| Teardown        | `teardown`                                   |
-| Inspect         | `status`, `config`, `check`, `doctor`, `env` |
-| File operations | `copy`, `symlink`, `sync`                    |
-| Utilities       | `init`, `schema`, `version`, `completions`   |
+| Purpose         | Commands                                                 |
+| --------------- | -------------------------------------------------------- |
+| Bootstrap       | `run`                                                    |
+| Teardown        | `teardown`                                               |
+| Inspect         | `status`, `config`, `check`, `doctor`, `env`, `worktree` |
+| File operations | `copy`, `symlink`, `sync`                                |
+| Utilities       | `init`, `schema`, `version`, `completions`               |
 
 Common examples:
 
@@ -321,14 +331,17 @@ Configuration defaults can be overridden with `TREEBOOT_STRICT`,
 `TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE`. These affect bootstrap
 file planning, not command-only teardown.
 
-Use `treeboot env` to print the effective treeboot-owned environment.
-`TREEBOOT_WORKTREE_ID` defaults to at most 48 DNS-label-compatible characters
-with a six-character lowercase Crockford base32 hash. Configure its maximum
-length, hash length, and `-`/`_` separator through the top-level `worktree_id`
-inline object. The full canonical worktree path determines the hash; branch
-changes and root-source overrides do not change it. `treeboot env --config`
-selects an explicit config, and invalid discovered config now makes `env` fail
-instead of displaying settings commands would not receive.
+Use `treeboot env` to print the effective treeboot-owned environment. Use
+`treeboot worktree id` for the current identifier, `treeboot worktree path <ID>`
+to resolve it to a canonical path, and `treeboot worktree list` to inventory the
+current repository. `TREEBOOT_WORKTREE_ID` defaults to at most 48
+DNS-label-compatible characters with a six-character lowercase Crockford base32
+hash. Configure its maximum length, hash length, and `-`/`_` separator through
+the top-level `worktree_id` inline object. The full canonical worktree path
+determines the hash; branch changes and root-source overrides do not change it.
+`treeboot env --config` selects an explicit config, and invalid discovered
+config now makes `env` fail instead of displaying settings commands would not
+receive.
 
 ## Schema
 
@@ -359,7 +372,7 @@ The command only prints the script; it does not install completion files.
 ## Project status
 
 `treeboot` supports its core worktree bootstrap and explicit teardown workflows.
-The current compatibility contract is [spec v2.2.0](./docs/SPEC.md); this README
+The current compatibility contract is [spec v2.3.0](./docs/SPEC.md); this README
 is the shorter, human-facing guide.
 
 The name `treeboot` means "worktree bootstrap."

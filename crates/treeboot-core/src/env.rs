@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use serde::Serialize;
 
 use crate::context;
-use crate::{Config, EnvironmentInput, Result, WorktreeOptions};
+use crate::{Config, EnvironmentInput, Result, Worktree, WorktreeOptions};
 
 /// Options for inspecting the treeboot child environment.
 ///
@@ -53,13 +53,7 @@ pub struct EnvReport {
 ///
 /// Returns an error if context or config discovery, loading, or parsing fails.
 pub fn inspect_env(options: EnvOptions) -> Result<EnvReport> {
-    let context = context::resolve(&WorktreeOptions {
-        cwd: options.cwd,
-        root: options.root,
-        environment: options.environment,
-    })?;
-    let context = Config::load_discovered(&context, options.config.as_deref())?
-        .map_or(context, |loaded| loaded.context);
+    let context = resolve_effective_context(options)?;
     let environment = context
         .environment
         .into_iter()
@@ -67,4 +61,15 @@ pub fn inspect_env(options: EnvOptions) -> Result<EnvReport> {
         .collect();
 
     Ok(EnvReport { environment })
+}
+
+pub(crate) fn resolve_effective_context(options: EnvOptions) -> Result<Worktree> {
+    let context = context::resolve(&WorktreeOptions {
+        cwd: options.cwd,
+        root: options.root,
+        environment: options.environment,
+    })?;
+    let context = Config::load_discovered(&context, options.config.as_deref())?
+        .map_or(context, |loaded| loaded.context);
+    Ok(context)
 }

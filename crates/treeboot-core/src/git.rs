@@ -12,6 +12,13 @@ pub(crate) struct Git {
     cwd: PathBuf,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GitWorktree {
+    pub(crate) path: PathBuf,
+    pub(crate) bare: bool,
+    pub(crate) main: bool,
+}
+
 impl Git {
     pub(crate) fn new(cwd: &Path) -> Self {
         Self {
@@ -30,6 +37,14 @@ impl Git {
     }
 
     pub(crate) fn main_worktree_path(&self) -> Result<Option<PathBuf>> {
+        Ok(self
+            .worktrees()?
+            .into_iter()
+            .find(|worktree| worktree.main && !worktree.bare)
+            .map(|worktree| worktree.path))
+    }
+
+    pub(crate) fn worktrees(&self) -> Result<Vec<GitWorktree>> {
         let args = ["worktree", "list", "--porcelain", "-z"];
         let output = self.output(&args)?;
 
@@ -40,7 +55,7 @@ impl Git {
             });
         }
 
-        Ok(parse_main_worktree_path(&output.stdout))
+        Ok(parse_worktrees(&output.stdout))
     }
 
     pub(crate) fn default_branch(&self) -> Result<String> {
@@ -87,11 +102,32 @@ fn strip_one_trailing_lf(stdout: &[u8]) -> &[u8] {
     stdout.strip_suffix(b"\n").unwrap_or(stdout)
 }
 
-fn parse_main_worktree_path(stdout: &[u8]) -> Option<PathBuf> {
-    stdout
-        .split(|byte| *byte == b'\0')
-        .find_map(|field| field.strip_prefix(b"worktree "))
-        .map(path_from_git_bytes)
+fn parse_worktrees(stdout: &[u8]) -> Vec<GitWorktree> {
+    let mut worktrees = Vec::new();
+    let mut current: Option<GitWorktree> = None;
+
+    for field in stdout.split(|byte| *byte == b'\0') {
+        if let Some(path) = field.strip_prefix(b"worktree ") {
+            if let Some(worktree) = current.take() {
+                worktrees.push(worktree);
+            }
+            current = Some(GitWorktree {
+                path: path_from_git_bytes(path),
+                bare: false,
+                main: worktrees.is_empty(),
+            });
+        } else if field == b"bare"
+            && let Some(worktree) = &mut current
+        {
+            worktree.bare = true;
+        }
+    }
+
+    if let Some(worktree) = current {
+        worktrees.push(worktree);
+    }
+
+    worktrees
 }
 
 #[cfg(unix)]
@@ -119,22 +155,44 @@ mod tests {
     }
 
     #[test]
-    fn parse_main_worktree_path_should_preserve_spaces_and_newlines() {
+    fn parse_worktrees_should_preserve_spaces_newlines_and_unknown_fields() {
         let output = b"worktree /repo/ main\ncheckout\0HEAD abc123\0branch refs/heads/main\0\0";
 
         assert_eq!(
-            parse_main_worktree_path(output),
-            Some(PathBuf::from("/repo/ main\ncheckout"))
+            parse_worktrees(output),
+            vec![GitWorktree {
+                path: PathBuf::from("/repo/ main\ncheckout"),
+                bare: false,
+                main: true,
+            }]
         );
     }
 
     #[test]
-    fn parse_main_worktree_path_should_find_first_worktree_field() {
-        let output = b"worktree /main\0HEAD abc123\0\0worktree /linked\0HEAD def456\0\0";
+    fn parse_worktrees_should_parse_multiple_and_distinguish_bare_records() {
+        let output = b"worktree /main\0HEAD abc123\0unknown value\0\0\
+                       worktree /linked\0HEAD def456\0\0\
+                       worktree /bare\0bare\0\0";
 
         assert_eq!(
-            parse_main_worktree_path(output),
-            Some(PathBuf::from("/main"))
+            parse_worktrees(output),
+            vec![
+                GitWorktree {
+                    path: PathBuf::from("/main"),
+                    bare: false,
+                    main: true,
+                },
+                GitWorktree {
+                    path: PathBuf::from("/linked"),
+                    bare: false,
+                    main: false,
+                },
+                GitWorktree {
+                    path: PathBuf::from("/bare"),
+                    bare: true,
+                    main: false,
+                },
+            ]
         );
     }
 
@@ -143,8 +201,8 @@ mod tests {
     fn path_from_git_bytes_should_preserve_non_utf8_bytes() {
         use std::os::unix::ffi::OsStrExt;
 
-        let path = path_from_git_bytes(b"/repo/\xff");
+        let worktrees = parse_worktrees(b"worktree /repo/\xff\0HEAD abc\0\0");
 
-        assert_eq!(path.as_os_str().as_bytes(), b"/repo/\xff");
+        assert_eq!(worktrees[0].path.as_os_str().as_bytes(), b"/repo/\xff");
     }
 }
