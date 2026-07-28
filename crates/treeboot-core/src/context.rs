@@ -4,9 +4,11 @@ use std::path::{Path, PathBuf};
 
 use crate::git::Git;
 use crate::paths;
-use crate::{Error, Result};
+use crate::worktree_id;
+use crate::{Error, Result, WorktreeIdConfig};
 
 const TREEBOOT_ROOT_PATH: &str = "TREEBOOT_ROOT_PATH";
+pub(crate) const TREEBOOT_WORKTREE_ID: &str = "TREEBOOT_WORKTREE_ID";
 const CODEX_SOURCE_TREE_PATH: &str = "CODEX_SOURCE_TREE_PATH";
 const CONDUCTOR_ROOT_PATH: &str = "CONDUCTOR_ROOT_PATH";
 const SUPERSET_ROOT_PATH: &str = "SUPERSET_ROOT_PATH";
@@ -206,7 +208,12 @@ pub(crate) fn resolve(options: &WorktreeOptions) -> Result<Worktree> {
         .ok_or(Error::RootPathNotFound)?;
     let root_path = discover_root_path(options, &cwd, &main_worktree_path)?;
     let default_branch = discover_default_branch(options, &git)?;
-    let environment = build_environment(&root_path, &worktree_path, &default_branch);
+    let environment = build_environment(
+        &root_path,
+        &worktree_path,
+        &main_worktree_path,
+        &default_branch,
+    );
 
     Ok(Worktree {
         root_path,
@@ -241,7 +248,12 @@ fn discover_default_branch(options: &WorktreeOptions, git: &Git) -> Result<Strin
     git.default_branch()
 }
 
-fn build_environment(root_path: &Path, worktree_path: &Path, default_branch: &str) -> Environment {
+fn build_environment(
+    root_path: &Path,
+    worktree_path: &Path,
+    main_worktree_path: &Path,
+    default_branch: &str,
+) -> Environment {
     let root = root_path.as_os_str().to_os_string();
     let worktree = worktree_path.as_os_str().to_os_string();
     let branch = OsString::from(default_branch);
@@ -249,6 +261,14 @@ fn build_environment(root_path: &Path, worktree_path: &Path, default_branch: &st
     let mut env = Environment::new();
     env.insert("TREEBOOT_ROOT_PATH".to_owned(), root.clone());
     env.insert("TREEBOOT_WORKTREE_PATH".to_owned(), worktree.clone());
+    env.insert(
+        TREEBOOT_WORKTREE_ID.to_owned(),
+        OsString::from(worktree_id::identifier(
+            worktree_path,
+            main_worktree_path,
+            &WorktreeIdConfig::default(),
+        )),
+    );
     env.insert("TREEBOOT_DEFAULT_BRANCH".to_owned(), branch.clone());
     env.insert("GIT_SOURCE_TREE_PATH".to_owned(), root.clone());
     env.insert("GIT_WORKTREE_PATH".to_owned(), worktree.clone());
@@ -259,6 +279,19 @@ fn build_environment(root_path: &Path, worktree_path: &Path, default_branch: &st
     env.insert("CONDUCTOR_DEFAULT_BRANCH".to_owned(), branch);
     env.insert("SUPERSET_ROOT_PATH".to_owned(), root);
     env
+}
+
+pub(crate) fn with_worktree_id_config(context: &Worktree, config: &WorktreeIdConfig) -> Worktree {
+    let mut context = context.clone();
+    context.environment.insert(
+        TREEBOOT_WORKTREE_ID.to_owned(),
+        OsString::from(worktree_id::identifier(
+            &context.worktree_path,
+            &context.main_worktree_path,
+            config,
+        )),
+    );
+    context
 }
 
 fn non_empty_value(value: &Option<OsString>) -> Option<&OsStr> {
@@ -331,12 +364,26 @@ mod tests {
     fn build_environment_should_set_codex_worktree_to_worktree_path() {
         let root = Path::new("/repo");
         let worktree = Path::new("/repo-worktree");
-        let env = build_environment(root, worktree, "main");
+        let env = build_environment(root, worktree, root, "main");
 
         assert_eq!(
             env.get("CODEX_WORKTREE_PATH"),
             Some(&OsString::from("/repo-worktree"))
         );
+    }
+
+    #[test]
+    fn build_environment_should_set_default_worktree_identifier() {
+        let root = Path::new("/repo");
+        let worktree = Path::new("/repo-worktree");
+        let env = build_environment(root, worktree, root, "main");
+
+        let identifier = env
+            .get("TREEBOOT_WORKTREE_ID")
+            .expect("worktree identifier should be present")
+            .to_string_lossy();
+        assert!(identifier.starts_with("repo-worktree-"));
+        assert_eq!(identifier.len(), "repo-worktree-".len() + 6);
     }
 
     #[test]

@@ -83,7 +83,7 @@ callers that want to discover a `Worktree`, load a `LoadedConfig`, build an
 | `treeboot init`                    | `init(InitOptions, Reporter)`                                                                            | `init`, `context`, `output`                                                                                 | Writes a starter config.                                                                                             |
 | `treeboot schema`                  | `config_schema_json()`                                                                                   | `metadata`                                                                                                  | View-only unless `--output` is used. Prints or writes the bundled config schema.                                     |
 | `treeboot doctor`                  | `diagnose(DoctorOptions)`                                                                                | `doctor`, `runtime`, `context`, `discovery`, `config`, `validation`                                         | View-only. Reports diagnostic statuses for discovery and validation, including strict diagnostics when requested.    |
-| `treeboot env`                     | `inspect_env(EnvOptions)`                                                                                | `env`, `context`                                                                                            | View-only. Reports child environment variables passed to configured commands.                                        |
+| `treeboot env`                     | `inspect_env(EnvOptions)`                                                                                | `env`, `context`, `config`, `worktree_id`                                                                   | View-only. Loads config to report the effective child environment passed to configured commands.                     |
 | `treeboot completions`             | CLI-owned completion registration; `file_operation_source_candidates(...)` for dynamic source completion | `main.rs`, `commands/completions.rs`, `manual`                                                              | Prints shell registration. Dynamic source candidates delegate to core.                                               |
 
 ## Anchors: Runtime Context
@@ -98,7 +98,7 @@ environment aliases, and Git worktree queries build a `Worktree`.
 flowchart LR
   OPT["RunOptions<br/>cwd<br/>root override"]
   ENV["Environment<br/>TREEBOOT_ROOT_PATH<br/>compat aliases"]
-  RES["context::resolve<br/>normalize current + main worktrees<br/>discover root source<br/>build environment map"]
+  RES["context::resolve<br/>normalize current + main worktrees<br/>discover root source<br/>build default environment map"]
   GIT["Git queries<br/>rev-parse --show-toplevel<br/>worktree list --porcelain -z<br/>origin/HEAD"]
   WT["Worktree<br/>root_path / worktree_path<br/>private main-worktree identity<br/>default_branch / environment"]
 
@@ -133,10 +133,15 @@ target with Git's actual main-worktree identity, not the overridable source
 root. Teardown rejects a root target in core preparation; inspection commands
 retain their existing strict/non-strict root behavior.
 
-### Environment aliases
+### Environment aliases and identifier
 
 Configured commands receive treeboot variables plus compatibility aliases for
-Codex, Conductor, and Superset flows.
+Codex, Conductor, and Superset flows. Context discovery also derives the default
+`TREEBOOT_WORKTREE_ID` from the canonical worktree and Git main-worktree paths.
+After config normalization, manifest plan constructors replace that entry from
+the validated `WorktreeIdConfig` before command validation. This keeps owned
+variable protection and the executed environment correct for high-level flows
+and public `Worktree::from_parts` callers alike.
 
 ## Primary orchestration: `treeboot run` Flow
 
@@ -201,7 +206,7 @@ and `CommandOperation` values. Validation builds the relevant phase plan;
 flowchart LR
   TOML["Raw TOML<br/>RawConfig<br/>spanned entries"]
   CLI["Manual CLI args<br/>FileOperationOptions<br/>root source completion"]
-  MODEL["Normalized model<br/>Config<br/>FileOperation<br/>CommandOperation"]
+  MODEL["Normalized model<br/>Config + WorktreeIdConfig<br/>FileOperation<br/>CommandOperation"]
   VALID["Validation<br/>ActionPlan / TeardownPlan<br/>PlannedFileOperation<br/>PlannedCommands"]
   FILES["Files<br/>FileAction"]
   CMDS["Commands<br/>Command"]
@@ -269,6 +274,7 @@ flowchart LR
   CHECK["check.rs<br/>side-effect-free validation"]
   DOCTOR["doctor.rs<br/>diagnostics"]
   ENV["env.rs<br/>child environment"]
+  ID["worktree_id.rs<br/>path recognizers<br/>sanitization + SHA-256<br/>Crockford encoding"]
   MANUAL["manual.rs<br/>manual files"]
   CONFIG["config.rs<br/>parse + normalize"]
   RUNTIME["runtime.rs<br/>policy precedence"]
@@ -306,6 +312,9 @@ flowchart LR
   DOCTOR --> DISC
   DOCTOR --> CHECK
   ENV --> CONTEXT
+  ENV --> CONFIG
+  CONTEXT --> ID
+  VALID --> ID
   MANUAL --> CONTEXT
   MANUAL --> RUNTIME
   CONFIG --> CONTEXT
@@ -342,7 +351,7 @@ file-operation execution._
 | `context.rs`         | Git-derived root/worktree/default branch and env aliases.                                                                                                                        | Config parsing or side effects.                                                                              |
 | `config.rs`          | TOML parsing, defaulting, normalized config data.                                                                                                                                | Boundary validation or execution.                                                                            |
 | `doctor.rs`          | Diagnostic aggregation across discovery and validation.                                                                                                                          | Fixing problems or applying effects.                                                                         |
-| `env.rs`             | Child environment inspection.                                                                                                                                                    | Config discovery beyond context resolution.                                                                  |
+| `env.rs`             | Config-aware effective child environment inspection.                                                                                                                             | File operations, command execution, or identifier algorithms.                                                |
 | `executor.rs`        | Sequencing validated bootstrap file and command execution.                                                                                                                       | Teardown dispatch, validation, or CLI policy.                                                                |
 | `file_actions.rs`    | Concrete file action model, grouped operation actions, summary construction, and cross-action symlink warnings.                                                                  | Filesystem traversal or mutation.                                                                            |
 | `file_operations.rs` | Operation-level file application facade, apply options/report types, planning lifecycle events, and planning/execution sequencing.                                               | Concrete planning decisions, action mutation details, or low-level filesystem helper implementation.         |
@@ -352,6 +361,7 @@ file-operation execution._
 | `path_filter.rs`     | Compiling and matching copy/sync include and ignore path rules, include viability pruning, and include-oriented source scans.                                                    | Config parsing, validation policy, or filesystem mutation.                                                   |
 | `runtime.rs`         | Environment/config/CLI runtime policy precedence and conversion to validation options.                                                                                           | Config parsing, Git discovery, or side effects.                                                              |
 | `validation.rs`      | Bootstrap and teardown plans, shared command planning, complete-config phase validation, path and environment boundary checks, and plan warnings.                                | Parsing or filesystem mutation.                                                                              |
+| `worktree_id.rs`     | Stable path-derived readable-name recognition, sanitization, SHA-256 hashing, Crockford encoding, truncation, and effective environment refinement inputs.                       | Config parsing, Git discovery, or CLI presentation.                                                          |
 | `commands.rs`        | Shared sequential bootstrap/teardown command spawning, execution-time cwd boundary enforcement, phase event selection, and dry-run output.                                       | Parsing command config or deciding phase contents.                                                           |
 | `teardown.rs`        | Reporter-aware teardown preparation, no-op actions, and execution of validated teardown plans.                                                                                   | Terminal confirmation, worktree removal, or bootstrap execution.                                             |
 | `metadata.rs`        | Embedded config schema, spec version, and version metadata helpers.                                                                                                              | Generating source files or reading runtime files.                                                            |
@@ -482,6 +492,7 @@ context carried by `LoadedConfig`, are `#[non_exhaustive]`:
 - `Worktree`
 - `Config`
 - `ConfigRuntimeOptions`
+- `WorktreeIdConfig`
 - `FileOperation`
 - `CommandOperation`
 - `SourceSpan`
@@ -541,6 +552,7 @@ existing modules.
 | If changing                   | Touch                                                                                                                                                     | Keep invariant                                                                                                                                                                                         |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Config file format            | `docs/SPEC.md`, `config.rs`, schema generator, schema file, parser tests.                                                                                 | The spec is the contract; generated schema must be fresh.                                                                                                                                              |
+| Worktree identifier contract  | `worktree_id.rs`, `context.rs`, `config.rs`, `validation.rs`, `env.rs`, CLI reporting, spec, schema, and cross-phase tests.                               | Hash input and encoding stay path-only and versioned; plans refine the owned variable before validation; bootstrap and teardown agree.                                                                 |
 | Runtime policy semantics      | `runtime.rs`, command facade modules, config/check/doctor/run/manual tests, spec when observable.                                                         | Config/env/CLI precedence must stay centralized and consistent across run-like commands.                                                                                                               |
 | File operation behavior       | `config.rs`, `manual.rs`, `validation.rs`, `file_actions.rs`, `file_operations.rs`, `file_planning.rs`, `file_execution.rs`, `file_system.rs`, CLI tests. | Declarative config and manual commands must share planning and file execution semantics; keep policy, planning, action modeling, execution, and low-level filesystem helpers separated by module role. |
 | Command runtime               | `config.rs`, `validation.rs`, `commands.rs`, `executor.rs`, `teardown.rs`, phase tests, spec.                                                             | Bootstrap and teardown share one planner/runtime; plans and output events stay phase-specific.                                                                                                         |

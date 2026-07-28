@@ -1,6 +1,6 @@
 # Worktree Identifier Environment Plan
 
-Status: approved design; implementation pending.
+Status: implemented.
 
 This plan adds a stable, human-readable identifier for the current Git worktree.
 Treeboot will expose it to every configured bootstrap and teardown command as

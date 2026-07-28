@@ -113,13 +113,13 @@ pub fn prepare_teardown(
     if plan.commands().is_empty() {
         report(reporter, OutputEvent::NoTeardownCommandsConfigured)?;
         return Ok(PreparedTeardown {
-            context,
+            context: plan.context().clone(),
             action: TeardownAction::NoCommands,
         });
     }
 
     Ok(PreparedTeardown {
-        context,
+        context: plan.context().clone(),
         action: TeardownAction::Ready(Box::new(plan)),
     })
 }

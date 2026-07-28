@@ -18,6 +18,9 @@ struct TreebootConfig {
     /// Default path ignore patterns prepended to copy and sync operations.
     #[serde(skip_serializing_if = "Option::is_none")]
     default_ignore: Option<Vec<String>>,
+    /// Stable worktree identifier presentation settings.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    worktree_id: Option<WorktreeIdConfig>,
     /// Allows file operation sources outside the root checkout.
     #[serde(skip_serializing_if = "Option::is_none")]
     dangerously_allow_sources_outside_root: Option<bool>,
@@ -52,6 +55,30 @@ struct TreebootConfig {
     /// Verbose teardown entries. TOML uses this as [[teardown_command]].
     #[serde(skip_serializing_if = "Option::is_none")]
     teardown_command: Option<Vec<CommandObject>>,
+}
+
+#[derive(JsonSchema, Serialize)]
+#[serde(deny_unknown_fields)]
+struct WorktreeIdConfig {
+    /// Maximum length of the complete identifier.
+    #[schemars(range(min = 3))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_length: Option<usize>,
+    /// Number of lowercase Crockford base32 digest characters.
+    #[schemars(range(min = 1, max = 52))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hash_length: Option<usize>,
+    /// Separator used inside the readable name and before the hash.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    separator: Option<WorktreeIdSeparator>,
+}
+
+#[derive(JsonSchema, Serialize)]
+enum WorktreeIdSeparator {
+    #[serde(rename = "-")]
+    Hyphen,
+    #[serde(rename = "_")]
+    Underscore,
 }
 
 #[derive(JsonSchema, Serialize)]

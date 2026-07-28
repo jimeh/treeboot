@@ -114,6 +114,11 @@ Bootstrap `ActionPlan` and `TeardownPlan` keep separate phase contents while
 sharing command planning, cwd/environment validation, and command runtime
 semantics.
 
+Resolved contexts include the default path-derived `TREEBOOT_WORKTREE_ID`.
+Manifest plan constructors refine it from the parsed `WorktreeIdConfig` before
+validating owned command environment variables. This also applies when an
+embedding supplies an empty environment through `Worktree::from_parts`.
+
 ## Public Config Construction
 
 The normalized config graph and resolved `Worktree` context are
@@ -125,6 +130,7 @@ patterns.
 Use the stable construction paths instead:
 
 - `Config::default()` for an empty normalized config
+- `WorktreeIdConfig::new(...)` for checked identifier presentation settings
 - `Worktree::from_parts(...)` for a synthetic resolved context
 - `SourceSpan::new(...)` for source attribution
 - `CommandOperation::shell(...)` or `CommandOperation::direct(...)`

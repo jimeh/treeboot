@@ -1194,6 +1194,32 @@ fn run_command_env_owned_override_should_exit_with_config_error() {
 }
 
 #[test]
+fn run_worktree_identifier_override_should_fail_before_file_effects() {
+    let repo = git_worktree();
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
+    write_file(
+        &config,
+        r#"
+copy = [".env"]
+commands = [{ run = "pwd", env = { TREEBOOT_WORKTREE_ID = "override" } }]
+"#,
+    );
+
+    treeboot()
+        .arg("run")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("TREEBOOT_WORKTREE_ID"))
+        .stderr(predicate::str::contains(
+            "overrides treeboot-owned variable",
+        ));
+
+    assert!(!repo.worktree_path().join(".env").exists());
+}
+
+#[test]
 fn run_unsafe_source_symlink_should_exit_with_config_error() {
     let repo = git_worktree();
     let config = repo.worktree_path().join(".treeboot.toml");

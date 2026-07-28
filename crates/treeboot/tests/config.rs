@@ -4,7 +4,8 @@ use tempfile::TempDir;
 mod common;
 
 use common::{
-    assert_json_object_keys, canonical_path, git_worktree, parse_json, treeboot, write_file,
+    assert_json_object_keys, canonical_path, git_repo, git_worktree, parse_json, treeboot,
+    write_file,
 };
 
 #[test]
@@ -27,6 +28,10 @@ commands = ["mise install"]
         .assert()
         .success()
         .stdout(predicate::str::contains("treeboot: config"))
+        .stdout(predicate::str::contains("worktree id:"))
+        .stdout(predicate::str::contains("max_length: 48"))
+        .stdout(predicate::str::contains("hash_length: 6"))
+        .stdout(predicate::str::contains("separator: \"-\""))
         .stdout(predicate::str::contains(concat!(
             "copy .env.local -> .env.local symlinks=preserve ",
             "ignore=[\".DS_Store\",\"**/vendor/**\"]"
@@ -36,6 +41,53 @@ commands = ["mise install"]
             "delete=false symlinks=preserve ignore=[\".DS_Store\"]"
         )))
         .stdout(predicate::str::contains("run \"mise install\""));
+}
+
+#[test]
+fn config_command_should_show_effective_identifier_in_root_checkout() {
+    let repo = git_repo();
+    write_file(
+        &repo.path().join(".treeboot.toml"),
+        r#"worktree_id = { max_length = 24, hash_length = 9, separator = "_" }"#,
+    );
+    let env = treeboot()
+        .args(["env", "--json"])
+        .current_dir(repo.path())
+        .output()
+        .expect("env command should run");
+    assert!(env.status.success(), "env command should succeed");
+    let env = parse_json(env.stdout, "root-checkout env");
+    let identifier = env["TREEBOOT_WORKTREE_ID"]
+        .as_str()
+        .expect("identifier should be a string");
+    let basename = repo
+        .path()
+        .file_name()
+        .expect("root checkout should have a basename")
+        .to_string_lossy()
+        .trim_start_matches(|character: char| !character.is_ascii_alphanumeric())
+        .to_ascii_lowercase();
+    assert!(identifier.starts_with(&format!("{basename}_")));
+    assert_eq!(
+        identifier
+            .rsplit_once('_')
+            .expect("identifier separator")
+            .1
+            .len(),
+        9
+    );
+    assert!(identifier.len() <= 24);
+
+    treeboot()
+        .arg("config")
+        .current_dir(repo.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("worktree id:"))
+        .stdout(predicate::str::contains(format!("  value: {identifier}")))
+        .stdout(predicate::str::contains("max_length: 24"))
+        .stdout(predicate::str::contains("hash_length: 9"))
+        .stdout(predicate::str::contains("separator: \"_\""));
 }
 
 #[test]
@@ -99,6 +151,7 @@ commands = [
             "files",
             "strict",
             "teardown_commands",
+            "worktree_id",
         ],
     );
     assert_eq!(config["strict"], false);
@@ -106,6 +159,14 @@ commands = [
     assert_eq!(config["dangerously_allow_sources_outside_root"], false);
     assert_eq!(config["dangerously_allow_targets_outside_worktree"], false);
     assert_eq!(config["teardown_commands"], serde_json::json!([]));
+    assert_eq!(
+        config["worktree_id"],
+        serde_json::json!({
+            "max_length": 48,
+            "hash_length": 6,
+            "separator": "-",
+        })
+    );
 
     let files = config["files"]
         .as_array()

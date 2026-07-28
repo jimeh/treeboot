@@ -8,6 +8,29 @@ use common::treeboot;
 const ROOT_SCHEMA_JSON: &str = include_str!("../../../schemas/treeboot.schema.json");
 
 #[test]
+fn schema_should_describe_worktree_identifier_settings() {
+    let schema: serde_json::Value =
+        serde_json::from_str(ROOT_SCHEMA_JSON).expect("schema should parse");
+    assert_eq!(
+        schema["properties"]["worktree_id"]["$ref"],
+        "#/$defs/WorktreeIdConfig"
+    );
+
+    let properties = &schema["$defs"]["WorktreeIdConfig"]["properties"];
+    assert_eq!(properties["max_length"]["minimum"], 3);
+    assert_eq!(properties["hash_length"]["minimum"], 1);
+    assert_eq!(properties["hash_length"]["maximum"], 52);
+    assert_eq!(
+        properties["separator"]["$ref"],
+        "#/$defs/WorktreeIdSeparator"
+    );
+    assert_eq!(
+        schema["$defs"]["WorktreeIdSeparator"]["enum"],
+        serde_json::json!(["-", "_"])
+    );
+}
+
+#[test]
 fn schema_should_describe_both_teardown_command_forms() {
     let schema: serde_json::Value =
         serde_json::from_str(ROOT_SCHEMA_JSON).expect("schema should parse");

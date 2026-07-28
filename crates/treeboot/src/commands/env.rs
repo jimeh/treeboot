@@ -12,6 +12,10 @@ pub(crate) struct EnvArgs {
     #[arg(short, long)]
     root: Option<PathBuf>,
 
+    /// Use one specific config file and skip config discovery.
+    #[arg(short, long)]
+    config: Option<PathBuf>,
+
     #[command(flatten)]
     output: OutputArgs,
 }
@@ -37,6 +41,7 @@ impl From<EnvArgs> for EnvOptions {
             cwd: None,
             root: args.root,
             environment: environment_input(),
+            config: args.config,
         }
     }
 }

@@ -61,12 +61,109 @@ pub struct Config {
     /// Runtime options declared by the config.
     #[serde(flatten)]
     pub options: ConfigRuntimeOptions,
+    /// Settings for the stable worktree identifier passed to commands.
+    pub worktree_id: WorktreeIdConfig,
     /// Ordered file operations.
     pub files: Vec<FileOperation>,
     /// Ordered command operations.
     pub commands: Vec<CommandOperation>,
     /// Ordered teardown command operations.
     pub teardown_commands: Vec<CommandOperation>,
+}
+
+/// Validated presentation settings for the stable worktree identifier.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
+pub struct WorktreeIdConfig {
+    max_length: usize,
+    hash_length: usize,
+    separator: char,
+}
+
+impl WorktreeIdConfig {
+    /// Creates validated worktree identifier settings.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the hash length is outside `1..=52`, the maximum
+    /// length cannot hold a readable character plus separator and hash, or the
+    /// separator is not `-` or `_`.
+    pub fn new(
+        max_length: usize,
+        hash_length: usize,
+        separator: char,
+    ) -> std::result::Result<Self, WorktreeIdConfigError> {
+        validate_worktree_id_settings(max_length, hash_length, separator)?;
+        Ok(Self {
+            max_length,
+            hash_length,
+            separator,
+        })
+    }
+
+    /// Returns the maximum complete identifier length.
+    #[must_use]
+    pub const fn max_length(&self) -> usize {
+        self.max_length
+    }
+
+    /// Returns the number of encoded digest characters in the identifier.
+    #[must_use]
+    pub const fn hash_length(&self) -> usize {
+        self.hash_length
+    }
+
+    /// Returns the readable-name and hash separator.
+    #[must_use]
+    pub const fn separator(&self) -> char {
+        self.separator
+    }
+}
+
+impl Default for WorktreeIdConfig {
+    fn default() -> Self {
+        Self {
+            max_length: 48,
+            hash_length: 6,
+            separator: '-',
+        }
+    }
+}
+
+/// Validation error returned by [`WorktreeIdConfig::new`].
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{message}")]
+pub struct WorktreeIdConfigError {
+    message: String,
+}
+
+fn validate_worktree_id_settings(
+    max_length: usize,
+    hash_length: usize,
+    separator: char,
+) -> std::result::Result<(), WorktreeIdConfigError> {
+    let message = if !(1..=52).contains(&hash_length) {
+        Some(format!(
+            "`worktree_id.hash_length` must be between 1 and 52, got {hash_length}"
+        ))
+    } else if !matches!(separator, '-' | '_') {
+        Some(format!(
+            "`worktree_id.separator` must be exactly `-` or `_`, got {separator:?}"
+        ))
+    } else if max_length < hash_length + 2 {
+        Some(format!(
+            "`worktree_id` max_length {max_length} cannot hold hash_length {hash_length}; \
+             max_length must be at least {}",
+            hash_length + 2
+        ))
+    } else {
+        None
+    };
+
+    match message {
+        Some(message) => Err(WorktreeIdConfigError { message }),
+        None => Ok(()),
+    }
 }
 
 impl Config {
@@ -133,9 +230,10 @@ impl Config {
             return Ok(None);
         };
         let config = Self::load(&path, context)?;
+        let context = context::with_worktree_id_config(context, &config.worktree_id);
 
         Ok(Some(LoadedConfig {
-            context: context.clone(),
+            context,
             path,
             config,
         }))
@@ -900,6 +998,7 @@ fn parse_config(path: &Path, content: &str, context: &Worktree) -> Result<Config
         }
     })?;
 
+    let worktree_id = normalize_worktree_id_config(path, content, raw.worktree_id)?;
     let default_ignore = raw.default_ignore;
     let mut files = Vec::new();
     normalize_file_group(
@@ -973,10 +1072,50 @@ fn parse_config(path: &Path, content: &str, context: &Worktree) -> Result<Config
             dangerously_allow_targets_outside_worktree: raw
                 .dangerously_allow_targets_outside_worktree,
         },
+        worktree_id,
         files,
         commands,
         teardown_commands,
     })
+}
+
+fn normalize_worktree_id_config(
+    path: &Path,
+    content: &str,
+    raw: Option<Spanned<RawWorktreeIdConfig>>,
+) -> Result<WorktreeIdConfig> {
+    let Some(raw) = raw else {
+        return Ok(WorktreeIdConfig::default());
+    };
+    let span = worktree_id_declaration_span(content, &raw);
+    let raw = raw.into_inner();
+    let defaults = WorktreeIdConfig::default();
+    let max_length = raw.max_length.unwrap_or(defaults.max_length());
+    let hash_length = raw.hash_length.unwrap_or(defaults.hash_length());
+    let separator = match raw.separator.as_deref() {
+        Some(value) => single_char(value).unwrap_or('\0'),
+        None => defaults.separator(),
+    };
+
+    WorktreeIdConfig::new(max_length, hash_length, separator)
+        .map_err(|error| invalid_config_error(path, content, span, error.to_string()))
+}
+
+fn single_char(value: &str) -> Option<char> {
+    let mut chars = value.chars();
+    let character = chars.next()?;
+    chars.next().is_none().then_some(character)
+}
+
+fn worktree_id_declaration_span(content: &str, entry: &Spanned<RawWorktreeIdConfig>) -> SourceSpan {
+    let range = entry.span();
+    let line_start = content[..range.start]
+        .rfind('\n')
+        .map_or(0, |position| position + 1);
+    let key_start = content[line_start..range.start]
+        .find("worktree_id")
+        .map_or(range.start, |position| line_start + position);
+    SourceSpan::from_range(content, key_start..range.end)
 }
 
 fn normalize_file_group(
@@ -1508,6 +1647,7 @@ fn line_column(content: &str, offset: usize) -> (usize, usize) {
 struct RawConfig {
     strict: bool,
     default_ignore: Vec<String>,
+    worktree_id: Option<Spanned<RawWorktreeIdConfig>>,
     dangerously_allow_sources_outside_root: bool,
     dangerously_allow_targets_outside_worktree: bool,
     copy: Vec<Spanned<RawFileEntry>>,
@@ -1519,6 +1659,14 @@ struct RawConfig {
     command: Vec<Spanned<RawCommandObject>>,
     teardown_commands: Vec<Spanned<RawCommandEntry>>,
     teardown_command: Vec<Spanned<RawCommandObject>>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct RawWorktreeIdConfig {
+    max_length: Option<usize>,
+    hash_length: Option<usize>,
+    separator: Option<String>,
 }
 
 #[derive(Debug)]
@@ -1676,6 +1824,88 @@ mod tests {
             error.contains(expected),
             "expected error to contain {expected:?}, got {error:?}"
         );
+    }
+
+    #[test]
+    fn parse_config_should_default_worktree_id_settings() {
+        let config = parse("");
+
+        assert_eq!(config.worktree_id.max_length(), 48);
+        assert_eq!(config.worktree_id.hash_length(), 6);
+        assert_eq!(config.worktree_id.separator(), '-');
+    }
+
+    #[test]
+    fn parse_config_should_default_omitted_worktree_id_fields() {
+        let config = parse(r#"worktree_id = { separator = "_" }"#);
+
+        assert_eq!(config.worktree_id.max_length(), 48);
+        assert_eq!(config.worktree_id.hash_length(), 6);
+        assert_eq!(config.worktree_id.separator(), '_');
+    }
+
+    #[test]
+    fn parse_config_should_reject_partial_worktree_id_with_incompatible_defaults() {
+        let error = parse_error(r#"worktree_id = { hash_length = 50 }"#);
+
+        assert!(error.contains("max_length 48"));
+        assert!(error.contains("hash_length 50"));
+        assert!(error.contains("line 1, column 1"));
+    }
+
+    #[test]
+    fn parse_config_should_serialize_normalized_worktree_id_settings() {
+        let config = parse(r#"worktree_id = { max_length = 64, separator = "_" }"#);
+        let value = serde_json::to_value(config).expect("config should serialize");
+
+        assert_eq!(
+            value["worktree_id"],
+            serde_json::json!({
+                "max_length": 64,
+                "hash_length": 6,
+                "separator": "_",
+            })
+        );
+    }
+
+    #[test]
+    fn parse_config_should_reject_worktree_id_hash_length_outside_digest() {
+        for hash_length in [0, 53] {
+            assert_parse_error_contains(
+                &format!("worktree_id = {{ hash_length = {hash_length} }}"),
+                "must be between 1 and 52",
+            );
+        }
+    }
+
+    #[test]
+    fn parse_config_should_reject_insufficient_worktree_id_max_length() {
+        assert_parse_error_contains(
+            r#"worktree_id = { max_length = 7, hash_length = 6 }"#,
+            "max_length must be at least 8",
+        );
+    }
+
+    #[test]
+    fn parse_config_should_accept_exact_worktree_id_length_boundary() {
+        let config = parse(r#"worktree_id = { max_length = 8, hash_length = 6 }"#);
+
+        assert_eq!(config.worktree_id.max_length(), 8);
+    }
+
+    #[test]
+    fn parse_config_should_reject_invalid_worktree_id_separators() {
+        for separator in ["", "--", "x", ".", "é"] {
+            assert_parse_error_contains(
+                &format!("worktree_id = {{ separator = {separator:?} }}"),
+                "must be exactly `-` or `_`",
+            );
+        }
+    }
+
+    #[test]
+    fn parse_config_should_reject_unknown_worktree_id_fields() {
+        assert_parse_error_contains(r#"worktree_id = { max_sled_length = 48 }"#, "unknown field");
     }
 
     fn toml_basic_string_path(path: &Path) -> String {

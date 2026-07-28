@@ -1,4 +1,4 @@
-# treeboot Specification v2.1.0
+# treeboot Specification v2.2.0
 
 A portable worktree lifecycle helper that lets every coding agent, editor, and
 orchestration tool run the same repo-local bootstrap and teardown commands.
@@ -174,9 +174,11 @@ parsing behavior; editing config values is out of scope.
 Human-readable text output lists normalized source and target values plus
 behavior-affecting normalized fields such as `required`, `compare`, `delete`,
 `symlinks`, `include`, `ignore`, `allow_failure`, `cwd`, and command `env`
-values when present. It labels bootstrap and teardown command collections
-separately and prints `(none)` for an empty collection. JSON and YAML output
-emit the full normalized config structure.
+values when present. Before those collections it prints the effective worktree
+identifier and normalized `max_length`, `hash_length`, and `separator` settings.
+It labels bootstrap and teardown command collections separately and prints
+`(none)` for an empty collection. JSON and YAML output emit the full normalized
+config structure, including the fully defaulted `worktree_id` object.
 
 ### `treeboot check`
 
@@ -341,6 +343,7 @@ Prints the environment variables treeboot passes to configured commands.
 
 ```sh
 treeboot env
+treeboot env --config .treeboot.toml
 treeboot env --root /path/to/root-checkout
 treeboot env --format json
 treeboot env --format yaml
@@ -349,8 +352,11 @@ treeboot env --yaml
 ```
 
 The text format is one `KEY=value` pair per line, sorted by variable name.
-Values are resolved for the current worktree context. `env` does not parse
-config, apply file operations, or run commands.
+Values are resolved for the current worktree context and selected config. `env`
+discovers and parses config to resolve the effective worktree identifier, but
+does not apply file operations or run commands. Missing discovered config uses
+default identifier settings. A missing explicit config or any invalid selected
+config is an error.
 
 JSON and YAML output are defined in
 [Structured output formats](#structured-output-formats).
@@ -393,7 +399,7 @@ a CLI usage error and exits with code `2`.
 | Option                                                     | Scope                                                         | Behavior                                                                                                                                                                                                                                                                    |
 | ---------------------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `-r`, `--root <path>`                                      | run/teardown/status/config/check/copy/symlink/sync/doctor/env | Overrides the root checkout used for discovery and file-operation context.                                                                                                                                                                                                  |
-| `-c`, `--config <path>`                                    | run/teardown/status/config/check/doctor                       | Uses one specific config file and skips config discovery. For teardown, relative paths resolve from the selected worktree.                                                                                                                                                  |
+| `-c`, `--config <path>`                                    | run/teardown/status/config/check/doctor/env                   | Uses one specific config file and skips config discovery. For teardown and env, relative paths resolve from the selected worktree.                                                                                                                                          |
 | `--worktree <path>`                                        | teardown                                                      | Selects the linked worktree to tear down. Defaults to the process working directory; a path inside a worktree resolves to its Git top level.                                                                                                                                |
 | `-o`, `--format <text\|json\|yaml>`                        | status/version/config/check/doctor/env                        | Selects human-readable, JSON, or YAML output. Defaults to `text`.                                                                                                                                                                                                           |
 | `-J`, `--json`                                             | status/version/config/check/doctor/env                        | Shortcut for `--format json`. Conflicts with `--format` and `--yaml`.                                                                                                                                                                                                       |
@@ -480,6 +486,11 @@ The shared worktree context object has this shape:
     "default_ignore": [],
     "dangerously_allow_sources_outside_root": false,
     "dangerously_allow_targets_outside_worktree": false,
+    "worktree_id": {
+      "max_length": 48,
+      "hash_length": 6,
+      "separator": "-"
+    },
     "files": [
       {
         "operation": "copy",
@@ -694,6 +705,7 @@ variables:
   "SUPERSET_ROOT_PATH": "/repo",
   "TREEBOOT_DEFAULT_BRANCH": "main",
   "TREEBOOT_ROOT_PATH": "/repo",
+  "TREEBOOT_WORKTREE_ID": "repo-worktree-nw67nj",
   "TREEBOOT_WORKTREE_PATH": "/repo-worktree"
 }
 ```
@@ -825,8 +837,104 @@ command planning.
 ```text
 TREEBOOT_ROOT_PATH
 TREEBOOT_WORKTREE_PATH
+TREEBOOT_WORKTREE_ID
 TREEBOOT_DEFAULT_BRANCH
 ```
+
+### Worktree identifier
+
+`TREEBOOT_WORKTREE_ID` is a stable, path-derived identifier shared by bootstrap
+and teardown commands. It has this default shape:
+
+```text
+<readable-name>-<6-lowercase-Crockford-base32-characters>
+```
+
+The optional top-level inline object controls presentation:
+
+```toml
+worktree_id = { max_length = 48, hash_length = 6, separator = "-" }
+```
+
+All fields independently default. `hash_length` must be in `1..=52`; `separator`
+must be exactly `-` or `_`; and `max_length` must be at least `hash_length + 2`
+so the result can hold one readable character, one separator, and the hash.
+Validation happens after omitted fields default, so
+`worktree_id = { hash_length = 50 }` is invalid against the default
+`max_length = 48`. Normalized config output always includes all three fields.
+There is no environment or CLI override for these settings.
+
+The identifier hash is SHA-256 over a platform-native, domain-separated byte
+sequence:
+
+```text
+<ASCII "treeboot-worktree-id-v1"><NUL><ASCII platform><NUL><canonical path bytes>
+```
+
+On Unix, `platform` is `unix` and the final bytes are the canonical worktree
+path's raw `OsStr` bytes. On Windows, `platform` is `windows` and the final
+bytes are the canonical worktree path's UTF-16 code units serialized
+little-endian. The canonical `Worktree.worktree_path` is the only identity
+input: root-source overrides, current directory, branch, config path, and
+manager state do not affect it. No additional case folding occurs.
+
+Treat the 256-bit digest as a big-endian bitstream and encode it without padding
+using the lowercase Crockford alphabet:
+
+```text
+0123456789abcdefghjkmnpqrstvwxyz
+```
+
+Consume five bits per character from most to least significant. Left-align the
+final remaining high bit and fill its low four bits with zero, producing 52
+characters for the complete digest. Retain the first `hash_length` characters.
+
+Choose the readable source using the first matching complete trailing component
+pattern:
+
+| Manager       | Trailing path pattern                                          | Readable source              |
+| ------------- | -------------------------------------------------------------- | ---------------------------- |
+| Codex/ChatGPT | `.../.codex/worktrees/<opaque>/<project>`                      | `<project>`                  |
+| Claude Code   | `.../<project>/.claude/worktrees/<name>`                       | `<name>`                     |
+| T3 Code       | `.../.t3/worktrees/<project>/t3code-<opaque>`                  | `<project>`                  |
+| Conductor     | `.../conductor/workspaces/<project>/<city>`                    | `<project>` plus `<city>`    |
+| Superset      | `.../.superset/worktrees/<project>/<workspace>/<workspace...>` | Components after `<project>` |
+| Generic       | no recognized pattern                                          | Worktree basename            |
+
+Here `...` consumes any leading components and Superset requires one or more
+components after the project. Matches are component-wise and use the literal
+marker spelling; Treeboot does not read `HOME`, `CODEX_HOME`, or other vendor
+environment variables.
+
+A selected single component is considered mechanical when it is a canonical
+hexadecimal UUID in `8-4-4-4-12` form, a hexadecimal token of at least eight
+characters, or `t3code-` followed by a non-empty ASCII alphanumeric, `_`, or `-`
+token. Mechanical names fall back to the Git-discovered main-worktree basename.
+
+Sanitize the selected native components lossily for display while retaining
+exact native bytes for hashing: lowercase ASCII letters, retain ASCII letters
+and digits, replace each maximal run of all other characters (including
+component boundaries) with one configured separator, and trim boundary
+separators. If nothing remains, sanitize the main-worktree basename the same
+way, then use `worktree` as the defensive fallback.
+
+The readable budget is `max_length - 1 - hash_length`. Truncate from the right
+to that budget and trim a separator exposed at the new end, then append exactly
+one configured separator and the digest prefix. The default result is at most 48
+ASCII characters and is a DNS-compatible label. `_` intentionally favors
+unquoted SQL/programming identifiers over DNS-label compatibility.
+
+`TREEBOOT_WORKTREE_ID` is Treeboot-owned. A bootstrap or teardown command that
+declares it in its `env` table fails planning before file operations or commands
+run. Changing the hash input, encoding, recognizer precedence, sanitization, or
+truncation behavior is a compatibility change.
+
+Existing configs that omit `worktree_id` continue with defaults. Older Treeboot
+versions reject the new key under the normal unknown-field forward-version rule.
+Structured `env` and `config` consumers receive additive keys. Scripts that
+previously ran `treeboot env` successfully beside an invalid discovered config
+now fail until that config is fixed or an explicit valid config is selected,
+because environment inspection must match configured command behavior.
 
 ### Aliases
 
@@ -871,11 +979,11 @@ Declarative config is the only bootstrap mode.
    current worktree path match, print `This is not a work tree` and exit before
    config; strict mode from CLI or environment exits non-zero.
 4. **Build environment**: Set treeboot canonical variables and compatibility
-   aliases.
+   aliases, including a default `TREEBOOT_WORKTREE_ID`.
 5. **Load config**: Discover TOML config unless a specific path is provided. If
    no config is found, print an info message and exit.
-6. **Resolve config options**: Merge top-level config options with environment
-   overrides and CLI flags.
+6. **Resolve config options**: Refine `TREEBOOT_WORKTREE_ID` from normalized
+   config, then merge runtime options with environment overrides and CLI flags.
 7. **Validate config**: Normalize entries and detect duplicate operation
    targets.
 8. **Apply files, then commands**: Run file operations first; commands run
@@ -898,8 +1006,9 @@ Teardown is an explicitly approved, command-only phase for a linked worktree.
 5. **Normalize the whole document**: Parse all declarations and construct one
    normalized config. Any TOML syntax, type, unknown-field, declaration-shape,
    or declaration-normalization error anywhere in the document is fatal.
-6. **Plan teardown**: Validate only the teardown command collection. Bootstrap
-   file and command semantic planning failures do not prevent a valid teardown.
+6. **Plan teardown**: Refine `TREEBOOT_WORKTREE_ID` from normalized config and
+   validate only the teardown command collection. Bootstrap file and command
+   semantic planning failures do not prevent a valid teardown.
 7. **Approve**: Skip approval for no-op and dry-run outcomes. Otherwise require
    `--yes` or affirmative terminal confirmation.
 8. **Execute the prepared plan**: Run the exact validated command set that was
@@ -1039,6 +1148,7 @@ through the aggregate `mise run generate:check` task.
 
 strict = false
 default_ignore = [".DS_Store", "Thumbs.db"]
+worktree_id = { max_length = 48, hash_length = 6, separator = "-" }
 dangerously_allow_sources_outside_root = false
 dangerously_allow_targets_outside_worktree = false
 
@@ -1090,6 +1200,7 @@ them.
 | `dangerously_allow_sources_outside_root`     | `TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT`     | Defaults to `false`. Allows declarative file operation sources outside `TREEBOOT_ROOT_PATH`.                                                            |
 | `dangerously_allow_targets_outside_worktree` | `TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE` | Defaults to `false`. Allows declarative file operation targets outside `TREEBOOT_WORKTREE_PATH`.                                                        |
 | `default_ignore`                             | none                                                  | Defaults to `[]`. Ordered path ignore patterns prepended to every `copy` and `sync` operation's effective ignore list.                                  |
+| `worktree_id`                                | none                                                  | Defaults to `{ max_length = 48, hash_length = 6, separator = "-" }`. Controls only stable worktree identifier presentation.                             |
 
 ### File objects
 

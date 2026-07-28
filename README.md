@@ -126,6 +126,7 @@ The default config file is `.treeboot.toml`. Its main operations are:
 | `copy`              | Copy a file or directory once, leaving an existing target alone. |
 | `symlink`           | Create a relative link back to the root checkout.                |
 | `sync`              | Reconcile a target with its source on every run.                 |
+| `worktree_id`       | Tune the stable identifier passed to lifecycle commands.         |
 | `commands`          | Run setup commands sequentially after file operations.           |
 | `teardown_commands` | Run explicitly approved commands before external removal.        |
 
@@ -136,6 +137,7 @@ A more complete config can mix short string entries with objects:
 
 strict = false
 default_ignore = [".DS_Store", "Thumbs.db"]
+worktree_id = { max_length = 48, hash_length = 6, separator = "-" }
 
 copy = [
   ".env.local",
@@ -186,7 +188,7 @@ treeboot status        # Show the detected worktree, root, and config
 treeboot config        # Print normalized TOML config without executing it
 treeboot check         # Validate bootstrap and teardown plans
 treeboot doctor        # Run discovery and configuration diagnostics
-treeboot env           # Print treeboot-owned command environment variables
+treeboot env           # Print effective treeboot-owned command environment
 treeboot run --dry-run # Preview file operations and commands
 treeboot teardown --dry-run # Preview teardown commands without prompting
 ```
@@ -294,10 +296,11 @@ teardown_commands = [
 
 Configured commands run from the worktree root by default, inherit the
 `TREEBOOT_*` environment, and receive no automatic positional `$1`; scripts
-should read `TREEBOOT_ROOT_PATH`, or the config should pass it explicitly.
-Bootstrap commands run after file operations; `--skip-commands` omits them.
-Teardown commands run only through `treeboot teardown` after approval. Both
-commands support `--dry-run` reporting without execution.
+should read `TREEBOOT_ROOT_PATH` and `TREEBOOT_WORKTREE_ID`, or the config
+should pass values explicitly. Bootstrap commands run after file operations;
+`--skip-commands` omits them. Teardown commands run only through
+`treeboot teardown` after approval. Both commands support `--dry-run` reporting
+without execution.
 
 Legacy `.treeboot.sh`, `.treebootrc`, and `.config/treeboot/init` files have no
 special meaning and are treated as ordinary repository files. The former
@@ -309,6 +312,8 @@ Configured commands receive:
 
 - `TREEBOOT_ROOT_PATH`: root checkout used as the file-operation source.
 - `TREEBOOT_WORKTREE_PATH`: current worktree where setup is applied.
+- `TREEBOOT_WORKTREE_ID`: stable readable path-derived identifier, such as
+  `feature-login-k7m2qx`, for per-worktree resources.
 - `TREEBOOT_DEFAULT_BRANCH`: best-effort default branch name.
 
 Configuration defaults can be overridden with `TREEBOOT_STRICT`,
@@ -317,6 +322,13 @@ Configuration defaults can be overridden with `TREEBOOT_STRICT`,
 file planning, not command-only teardown.
 
 Use `treeboot env` to print the effective treeboot-owned environment.
+`TREEBOOT_WORKTREE_ID` defaults to at most 48 DNS-label-compatible characters
+with a six-character lowercase Crockford base32 hash. Configure its maximum
+length, hash length, and `-`/`_` separator through the top-level `worktree_id`
+inline object. The full canonical worktree path determines the hash; branch
+changes and root-source overrides do not change it. `treeboot env --config`
+selects an explicit config, and invalid discovered config now makes `env` fail
+instead of displaying settings commands would not receive.
 
 ## Schema
 
@@ -347,7 +359,7 @@ The command only prints the script; it does not install completion files.
 ## Project status
 
 `treeboot` supports its core worktree bootstrap and explicit teardown workflows.
-The current compatibility contract is [spec v2.1.0](./docs/SPEC.md); this README
+The current compatibility contract is [spec v2.2.0](./docs/SPEC.md); this README
 is the shorter, human-facing guide.
 
 The name `treeboot` means "worktree bootstrap."
