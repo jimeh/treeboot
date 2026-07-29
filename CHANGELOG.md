@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.13.0](https://github.com/jimeh/treeboot/compare/v0.12.0...v0.13.0) (2026-07-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* `treeboot env` now loads and validates discovered or explicitly selected config, so invalid config causes the command to fail. `treeboot_core::EnvOptions` is now non-exhaustive; construct it with `EnvOptions::default()` before setting fields.
+
+### Features
+
+* add stable worktree identifiers to command environments ([#121](https://github.com/jimeh/treeboot/issues/121)) ([4c43db1](https://github.com/jimeh/treeboot/commit/4c43db162810c8ce55b08633684ac4127371b75e))
+* inspect and resolve worktree IDs ([#123](https://github.com/jimeh/treeboot/issues/123)) ([ee85cf6](https://github.com/jimeh/treeboot/commit/ee85cf6cecbb4a3a83a0c7099fad127a15fd0e97))
+* split worktree IDs and readable slugs ([#126](https://github.com/jimeh/treeboot/issues/126)) ([f22b22b](https://github.com/jimeh/treeboot/commit/f22b22ba311280146724c64e673146faeff4b9bc))
+
 ## [0.12.0](https://github.com/jimeh/treeboot/compare/v0.11.0...v0.12.0) (2026-07-23)
 
 
