@@ -261,9 +261,8 @@ work. Lefthook checks staged Markdown files through
 - Renovate is scoped to monthly mise tool, lockfile, and Rust toolchain
   maintenance. It runs from `.github/workflows/renovate-mise.yml` with the
   release bot GitHub App token and uses `.github/renovate-mise.config.js` as
-  self-hosted/global config. Mise tools use exact versions in `mise.toml` so
-  Renovate updates the constraints and `mise.lock` together; fuzzy constraints
-  preserve satisfying lock entries and prevent lock-only upgrades. Keep the
+  self-hosted/global config. Mise tools use major-version constraints in
+  `mise.toml`, while `mise.lock` records the exact resolved versions. Keep the
   `github:jimeh/treeboot` `extractVersion` rule so GitHub release tags do not
   reintroduce a `v` prefix into `mise.toml`. Keep
   `allowedUnsafeExecutions = ["mise"]` for mise lockfile refreshes. Keep exact
@@ -294,12 +293,13 @@ work. Lefthook checks staged Markdown files through
   install `llvm-tools-preview` for the active Rust toolchain.
 - Keep optional heavyweight tools task-scoped in `mise.toml`; GitHub Actions
   installs top-level mise tools in every job.
-- Keep `settings.lockfile_platforms` aligned with GitHub Actions host runner
-  platforms. Release target triples such as Android or musl do not need lockfile
-  platforms unless `mise install --locked` runs on that host OS/architecture.
+- Leave `settings.lockfile_platforms` unset. Dev-tool artifact coverage is
+  independent of the GitHub Actions hosts and release targets the project builds
+  and tests.
 - Pre-commit hooks are managed by Lefthook and installed by `mise run setup`.
-- `mise.toml` pins `sccache` and sets `RUSTC_WRAPPER=sccache` so Cargo tasks use
-  the project-managed compiler cache instead of relying on global shell setup.
+- `mise.toml` manages `sccache` and sets `RUSTC_WRAPPER=sccache` so Cargo tasks
+  use the project-managed compiler cache instead of relying on global shell
+  setup.
 - Rust toolchain version and components live in `rust-toolchain.toml` so Rustup
   and mise consume the same source. Mise exports that version through
   `RUSTUP_TOOLCHAIN`; CI install steps rely on it instead of duplicating the

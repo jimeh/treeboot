@@ -4,14 +4,6 @@
 
 [settings]
 lockfile = true
-lockfile_platforms = [
-    "linux-x64",
-    "linux-arm64",
-    "macos-x64",
-    "macos-arm64",
-    "windows-x64",
-    "windows-arm64",
-]
 minimum_release_age = "7d"
 minimum_release_age_excludes = ["github:jimeh/treeboot"]
 idiomatic_version_file_enable_tools = ["rust"]
@@ -24,15 +16,16 @@ run_auto_install = true
 # ------------------------------------------------------------------------------
 
 [tools]
-actionlint = "1.7.12"
-lefthook = "2.1.9"
-markdownlint-cli2 = "0.23.0"
-oxfmt = "0.57.0"
-pinact = "4.1.0"
-sccache = "0.16.0"
-"github:jimeh/treeboot" = "0.9.0"
-shellcheck = "0.11.0"
-zizmor = "1.26.1"
+actionlint = "1"
+lefthook = "2"
+markdownlint-cli2 = "0"
+oxfmt = "0"
+pinact = "4"
+sccache = "0"
+"github:colbymchenry/codegraph" = "1"
+"github:jimeh/treeboot" = "0"
+shellcheck = "0"
+zizmor = "1"
 
 # ------------------------------------------------------------------------------
 # Environment
@@ -49,7 +42,7 @@ RUSTC_WRAPPER = "sccache"
 
 [tasks.setup]
 description = "Set up local development environment"
-depends = ["deps", "hooks:install"]
+run = [{ task = "deps" }, { tasks = ["hooks:install", "codegraph:setup"] }]
 
 [tasks.deps]
 description = "Fetch Rust dependencies"
@@ -58,6 +51,10 @@ run = "cargo fetch --locked"
 [tasks."hooks:install"]
 description = "Install lefthook Git hooks"
 run = "lefthook install"
+
+[tasks."codegraph:setup"]
+description = "Initialize the local CodeGraph index"
+run = "codegraph init"
 
 [tasks.treeboot]
 description = "Bootstrap the current worktree with treeboot"
@@ -218,13 +215,13 @@ run = ["mise run ci", "mise run coverage"]
 
 [tasks.ci]
 depends = [
-    "actions:lint",
-    "format:check",
-    "generate:check",
-    "harness:check",
-    "lint",
-    "msrv",
-    "test",
+  "actions:lint",
+  "format:check",
+  "generate:check",
+  "harness:check",
+  "lint",
+  "msrv",
+  "test",
 ]
 description = "Run all CI checks"
 
@@ -240,11 +237,11 @@ run = "scripts/check-harness.sh"
 description = "Check required local tools"
 tools."cargo:cargo-llvm-cov" = "=0.8.7"
 run = [
-    "git --version",
-    "cargo --version",
-    "cargo llvm-cov --version",
-    "mise --version",
-    "lefthook version",
+  "git --version",
+  "cargo --version",
+  "cargo llvm-cov --version",
+  "mise --version",
+  "lefthook version",
 ]
 
 # GitHub Actions
@@ -263,9 +260,9 @@ run = "zizmor --offline .github/workflows"
 
 [tasks."actions:lint"]
 depends = [
-    "actions:lint:actionlint",
-    "actions:lint:pinact",
-    "actions:lint:zizmor",
+  "actions:lint:actionlint",
+  "actions:lint:pinact",
+  "actions:lint:zizmor",
 ]
 description = "Run GitHub Actions linters"
 
