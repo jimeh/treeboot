@@ -18,9 +18,12 @@ struct TreebootConfig {
     /// Default path ignore patterns prepended to copy and sync operations.
     #[serde(skip_serializing_if = "Option::is_none")]
     default_ignore: Option<Vec<String>>,
-    /// Stable worktree identifier presentation settings.
+    /// Stable compact worktree ID settings.
     #[serde(skip_serializing_if = "Option::is_none")]
     worktree_id: Option<WorktreeIdConfig>,
+    /// Readable worktree slug presentation settings.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    worktree_slug: Option<WorktreeSlugConfig>,
     /// Allows file operation sources outside the root checkout.
     #[serde(skip_serializing_if = "Option::is_none")]
     dangerously_allow_sources_outside_root: Option<bool>,
@@ -60,21 +63,26 @@ struct TreebootConfig {
 #[derive(JsonSchema, Serialize)]
 #[serde(deny_unknown_fields)]
 struct WorktreeIdConfig {
-    /// Maximum length of the complete identifier.
-    #[schemars(range(min = 3))]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    max_length: Option<usize>,
     /// Number of lowercase Crockford base32 digest characters.
     #[schemars(range(min = 1, max = 52))]
     #[serde(skip_serializing_if = "Option::is_none")]
-    hash_length: Option<usize>,
-    /// Separator used inside the readable name and before the hash.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    separator: Option<WorktreeIdSeparator>,
+    length: Option<usize>,
 }
 
 #[derive(JsonSchema, Serialize)]
-enum WorktreeIdSeparator {
+#[serde(deny_unknown_fields)]
+struct WorktreeSlugConfig {
+    /// Maximum length of the complete slug.
+    #[schemars(range(min = 3))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_length: Option<usize>,
+    /// Separator used inside the readable name and before the ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    separator: Option<WorktreeSlugSeparator>,
+}
+
+#[derive(JsonSchema, Serialize)]
+enum WorktreeSlugSeparator {
     #[serde(rename = "-")]
     Hyphen,
     #[serde(rename = "_")]

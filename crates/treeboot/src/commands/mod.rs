@@ -74,7 +74,7 @@ enum Command {
     Completions(CompletionsArgs),
     /// Run configured teardown commands for a linked worktree.
     Teardown(TeardownArgs),
-    /// Inspect worktree identifiers and paths.
+    /// Inspect worktree IDs, slugs, and paths.
     Worktree(WorktreeArgs),
 }
 

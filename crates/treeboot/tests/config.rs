@@ -29,8 +29,9 @@ commands = ["mise install"]
         .success()
         .stdout(predicate::str::contains("treeboot: config"))
         .stdout(predicate::str::contains("worktree id:"))
+        .stdout(predicate::str::contains("length: 6"))
+        .stdout(predicate::str::contains("worktree slug:"))
         .stdout(predicate::str::contains("max_length: 48"))
-        .stdout(predicate::str::contains("hash_length: 6"))
         .stdout(predicate::str::contains("separator: \"-\""))
         .stdout(predicate::str::contains(concat!(
             "copy .env.local -> .env.local symlinks=preserve ",
@@ -44,11 +45,12 @@ commands = ["mise install"]
 }
 
 #[test]
-fn config_command_should_show_effective_identifier_in_root_checkout() {
+fn config_command_should_show_effective_identity_in_root_checkout() {
     let repo = git_repo();
     write_file(
         &repo.path().join(".treeboot.toml"),
-        r#"worktree_id = { max_length = 24, hash_length = 9, separator = "_" }"#,
+        "worktree_id = { length = 9 }\n\
+         worktree_slug = { max_length = 24, separator = \"_\" }\n",
     );
     let env = treeboot()
         .args(["env", "--json"])
@@ -57,10 +59,13 @@ fn config_command_should_show_effective_identifier_in_root_checkout() {
         .expect("env command should run");
     assert!(env.status.success(), "env command should succeed");
     let env = parse_json(env.stdout, "root-checkout env");
-    let identifier = env["TREEBOOT_WORKTREE_ID"]
+    let id = env["TREEBOOT_WORKTREE_ID"]
         .as_str()
-        .expect("identifier should be a string");
-    assert!(!identifier.is_empty(), "identifier should not be empty");
+        .expect("ID should be a string");
+    let slug = env["TREEBOOT_WORKTREE_SLUG"]
+        .as_str()
+        .expect("slug should be a string");
+    assert_eq!(id.len(), 9);
     let basename = repo
         .path()
         .file_name()
@@ -68,16 +73,9 @@ fn config_command_should_show_effective_identifier_in_root_checkout() {
         .to_string_lossy()
         .trim_start_matches(|character: char| !character.is_ascii_alphanumeric())
         .to_ascii_lowercase();
-    assert!(identifier.starts_with(&format!("{basename}_")));
-    assert_eq!(
-        identifier
-            .rsplit_once('_')
-            .expect("identifier separator")
-            .1
-            .len(),
-        9
-    );
-    assert!(identifier.len() <= 24);
+    assert!(slug.starts_with(&format!("{basename}_")));
+    assert!(slug.ends_with(id));
+    assert!(slug.len() <= 24);
 
     treeboot()
         .arg("config")
@@ -85,10 +83,35 @@ fn config_command_should_show_effective_identifier_in_root_checkout() {
         .assert()
         .success()
         .stdout(predicate::str::contains("worktree id:"))
-        .stdout(predicate::str::contains(format!("  value: {identifier}")))
+        .stdout(predicate::str::contains(format!("  value: {id}")))
+        .stdout(predicate::str::contains("length: 9"))
+        .stdout(predicate::str::contains("worktree slug:"))
+        .stdout(predicate::str::contains(format!("  value: {slug}")))
         .stdout(predicate::str::contains("max_length: 24"))
-        .stdout(predicate::str::contains("hash_length: 9"))
         .stdout(predicate::str::contains("separator: \"_\""));
+}
+
+#[test]
+fn config_command_should_reject_incompatible_identity_lengths() {
+    let repo = git_worktree();
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        "\nstrict = true\n\n\
+         worktree_id = { length = 10 }\n\n\
+         worktree_slug = { max_length = 11 }\n",
+    );
+
+    treeboot()
+        .arg("config")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .failure()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "worktree_slug.max_length` 11 cannot hold `worktree_id.length` 10",
+        ))
+        .stderr(predicate::str::contains("max_length must be at least 12"))
+        .stderr(predicate::str::contains("line 6, column 1"));
 }
 
 #[test]
@@ -135,10 +158,14 @@ commands = [
         .expect("env command should run");
     assert!(env.status.success(), "env command should succeed");
     let env = parse_json(env.stdout, "worktree env");
-    let identifier = env["TREEBOOT_WORKTREE_ID"]
+    let id = env["TREEBOOT_WORKTREE_ID"]
         .as_str()
-        .expect("identifier should be a string");
-    assert!(!identifier.is_empty(), "identifier should not be empty");
+        .expect("ID should be a string");
+    let slug = env["TREEBOOT_WORKTREE_SLUG"]
+        .as_str()
+        .expect("slug should be a string");
+    assert!(!id.is_empty(), "ID should not be empty");
+    assert!(slug.ends_with(id));
 
     let json = treeboot()
         .args(["config", "--format", "json"])
@@ -150,9 +177,10 @@ commands = [
         .stdout
         .clone();
     let json = parse_json(json, "config");
-    assert_json_object_keys(&json, &["config", "path", "worktree_id"]);
+    assert_json_object_keys(&json, &["config", "path", "worktree_id", "worktree_slug"]);
     assert!(json["path"].is_string());
-    assert_eq!(json["worktree_id"], identifier);
+    assert_eq!(json["worktree_id"], id);
+    assert_eq!(json["worktree_slug"], slug);
 
     let config = &json["config"];
     assert_json_object_keys(
@@ -166,6 +194,7 @@ commands = [
             "strict",
             "teardown_commands",
             "worktree_id",
+            "worktree_slug",
         ],
     );
     assert_eq!(config["strict"], false);
@@ -173,13 +202,10 @@ commands = [
     assert_eq!(config["dangerously_allow_sources_outside_root"], false);
     assert_eq!(config["dangerously_allow_targets_outside_worktree"], false);
     assert_eq!(config["teardown_commands"], serde_json::json!([]));
+    assert_eq!(config["worktree_id"], serde_json::json!({ "length": 6 }));
     assert_eq!(
-        config["worktree_id"],
-        serde_json::json!({
-            "max_length": 48,
-            "hash_length": 6,
-            "separator": "-",
-        })
+        config["worktree_slug"],
+        serde_json::json!({ "max_length": 48, "separator": "-" })
     );
 
     let files = config["files"]
@@ -304,19 +330,21 @@ fn config_command_yaml_should_print_normalized_config() {
         .expect("env command should run");
     assert!(env.status.success(), "env command should succeed");
     let env = parse_json(env.stdout, "worktree env");
-    let identifier = env["TREEBOOT_WORKTREE_ID"]
+    let id = env["TREEBOOT_WORKTREE_ID"]
         .as_str()
-        .expect("identifier should be a string");
-    assert!(!identifier.is_empty(), "identifier should not be empty");
+        .expect("ID should be a string");
+    let slug = env["TREEBOOT_WORKTREE_SLUG"]
+        .as_str()
+        .expect("slug should be a string");
+    assert!(!id.is_empty(), "ID should not be empty");
 
     treeboot()
         .args(["config", "--format", "yaml"])
         .current_dir(repo.worktree_path())
         .assert()
         .success()
-        .stdout(predicate::str::contains(format!(
-            "worktree_id: {identifier}"
-        )))
+        .stdout(predicate::str::contains(format!("worktree_id: {id}")))
+        .stdout(predicate::str::contains(format!("worktree_slug: {slug}")))
         .stdout(predicate::str::contains("commands:"))
         .stdout(predicate::str::contains("run: mise install"));
 }
@@ -743,6 +771,6 @@ fn config_command_json_should_stay_parseable_with_include_warnings() {
         .clone();
     let json = parse_json(output, "config");
 
-    assert_json_object_keys(&json, &["config", "path", "worktree_id"]);
+    assert_json_object_keys(&json, &["config", "path", "worktree_id", "worktree_slug"]);
     assert_eq!(json["config"]["files"][0]["include"][0], "docs/**");
 }

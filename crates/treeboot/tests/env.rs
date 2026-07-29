@@ -22,6 +22,7 @@ const ENV_KEYS: &[&str] = &[
     "TREEBOOT_ROOT_PATH",
     "TREEBOOT_WORKTREE_ID",
     "TREEBOOT_WORKTREE_PATH",
+    "TREEBOOT_WORKTREE_SLUG",
 ];
 
 #[test]
@@ -58,16 +59,20 @@ fn env_should_print_child_environment_as_text_json_and_yaml() {
         json["TREEBOOT_WORKTREE_PATH"],
         expected_worktree.display().to_string()
     );
-    let identifier = json["TREEBOOT_WORKTREE_ID"]
+    let id = json["TREEBOOT_WORKTREE_ID"]
         .as_str()
-        .expect("identifier should be a string");
-    assert!(identifier.starts_with("linked-"));
+        .expect("ID should be a string");
+    let slug = json["TREEBOOT_WORKTREE_SLUG"]
+        .as_str()
+        .expect("slug should be a string");
+    assert_eq!(id.len(), 6);
+    assert!(slug.starts_with("linked-"));
+    assert!(slug.ends_with(id));
     assert!(
-        identifier
-            .bytes()
+        slug.bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
     );
-    assert!(identifier.len() <= 48);
+    assert!(slug.len() <= 48);
     assert!(json.get("TREEBOOT_STRICT").is_none());
     assert!(json.get("UNRELATED_TREEBOOT_TEST_VALUE").is_none());
 
@@ -79,7 +84,10 @@ fn env_should_print_child_environment_as_text_json_and_yaml() {
         .stderr(predicate::str::is_empty())
         .stdout(predicate::str::contains("TREEBOOT_ROOT_PATH:"))
         .stdout(predicate::str::contains(format!(
-            "TREEBOOT_WORKTREE_ID: {identifier}"
+            "TREEBOOT_WORKTREE_ID: {id}"
+        )))
+        .stdout(predicate::str::contains(format!(
+            "TREEBOOT_WORKTREE_SLUG: {slug}"
         )));
 }
 
@@ -88,7 +96,8 @@ fn env_should_use_discovered_worktree_identifier_config() {
     let repo = git_worktree();
     write_file(
         &repo.worktree_path().join(".treeboot.toml"),
-        r#"worktree_id = { max_length = 20, hash_length = 8, separator = "_" }"#,
+        "worktree_id = { length = 8 }\n\
+         worktree_slug = { max_length = 20, separator = \"_\" }\n",
     );
 
     let json = treeboot()
@@ -101,16 +110,17 @@ fn env_should_use_discovered_worktree_identifier_config() {
         .stdout
         .clone();
     let json = parse_json(json, "configured env");
-    let identifier = json["TREEBOOT_WORKTREE_ID"]
+    let id = json["TREEBOOT_WORKTREE_ID"]
         .as_str()
-        .expect("identifier should be a string");
+        .expect("ID should be a string");
+    let slug = json["TREEBOOT_WORKTREE_SLUG"]
+        .as_str()
+        .expect("slug should be a string");
 
-    assert!(identifier.starts_with("linked_"));
-    assert_eq!(
-        identifier.rsplit_once('_').map(|(_, hash)| hash.len()),
-        Some(8)
-    );
-    assert!(identifier.len() <= 20);
+    assert_eq!(id.len(), 8);
+    assert!(slug.starts_with("linked_"));
+    assert!(slug.ends_with(id));
+    assert!(slug.len() <= 20);
 }
 
 #[test]
@@ -118,7 +128,7 @@ fn env_config_option_should_select_requested_identifier_config() {
     let repo = git_worktree();
     write_file(
         &repo.worktree_path().join("custom.toml"),
-        r#"worktree_id = { hash_length = 10, separator = "_" }"#,
+        "worktree_id = { length = 10 }\nworktree_slug = { separator = \"_\" }\n",
     );
 
     let json = treeboot()
@@ -131,14 +141,11 @@ fn env_config_option_should_select_requested_identifier_config() {
         .stdout
         .clone();
     let json = parse_json(json, "explicit configured env");
-    let identifier = json["TREEBOOT_WORKTREE_ID"]
+    let id = json["TREEBOOT_WORKTREE_ID"]
         .as_str()
-        .expect("identifier should be a string");
+        .expect("ID should be a string");
 
-    assert_eq!(
-        identifier.rsplit_once('_').map(|(_, hash)| hash.len()),
-        Some(10)
-    );
+    assert_eq!(id.len(), 10);
 }
 
 #[test]
@@ -146,7 +153,7 @@ fn env_should_fail_for_invalid_discovered_config() {
     let repo = git_worktree();
     write_file(
         &repo.worktree_path().join(".treeboot.toml"),
-        r#"worktree_id = { hash_length = 0 }"#,
+        r#"worktree_id = { length = 0 }"#,
     );
 
     treeboot()
@@ -155,7 +162,7 @@ fn env_should_fail_for_invalid_discovered_config() {
         .assert()
         .failure()
         .stderr(predicate::str::contains(
-            "worktree_id.hash_length` must be between 1 and 52",
+            "worktree_id.length` must be between 1 and 52",
         ));
 }
 
@@ -176,7 +183,7 @@ fn env_should_resolve_configured_identifier_in_root_checkout() {
     let repo = git_repo();
     write_file(
         &repo.path().join(".treeboot.toml"),
-        r#"worktree_id = { hash_length = 9, separator = "_" }"#,
+        "worktree_id = { length = 9 }\nworktree_slug = { separator = \"_\" }\n",
     );
 
     let json = treeboot()
@@ -189,14 +196,11 @@ fn env_should_resolve_configured_identifier_in_root_checkout() {
         .stdout
         .clone();
     let json = parse_json(json, "root env");
-    let identifier = json["TREEBOOT_WORKTREE_ID"]
+    let id = json["TREEBOOT_WORKTREE_ID"]
         .as_str()
-        .expect("identifier should be a string");
+        .expect("ID should be a string");
 
-    assert_eq!(
-        identifier.rsplit_once('_').map(|(_, hash)| hash.len()),
-        Some(9)
-    );
+    assert_eq!(id.len(), 9);
 }
 
 #[test]

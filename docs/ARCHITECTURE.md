@@ -84,7 +84,8 @@ callers that want to discover a `Worktree`, load a `LoadedConfig`, build an
 | `treeboot schema`                  | `config_schema_json()`                                                                                   | `metadata`                                                                                                  | View-only unless `--output` is used. Prints or writes the bundled config schema.                                     |
 | `treeboot doctor`                  | `diagnose(DoctorOptions)`                                                                                | `doctor`, `runtime`, `context`, `discovery`, `config`, `validation`                                         | View-only. Reports diagnostic statuses for discovery and validation, including strict diagnostics when requested.    |
 | `treeboot env`                     | `inspect_env(EnvOptions)`                                                                                | `env`, `context`, `config`, `worktree_id`                                                                   | View-only. Loads config to report the effective child environment passed to configured commands.                     |
-| `treeboot worktree id/path/list`   | `inspect_worktree_id(...)`, `inspect_worktree_path(...)`, `inspect_worktree_list(...)`                   | `worktree`, `git`, `env`, `context`, `config`, `worktree_id`                                                | View-only. Resolves candidate-local IDs and canonical paths without changing Git metadata.                           |
+| `treeboot worktree id/slug`        | `inspect_worktree_id(WorktreeIdentityOptions)`, `inspect_worktree_slug(...)`                             | `worktree`, `git`, `env`, `context`, `config`, `worktree_id`                                                | View-only. Derives one config-aware identity from implicit Git context or an exact explicit target.                  |
+| `treeboot worktree path/list`      | `inspect_worktree_path(WorktreeInspectionOptions)`, `inspect_worktree_list(...)`                         | `worktree`, `git`, `env`, `context`, `config`, `worktree_id`                                                | View-only. Resolves candidate-local IDs, slugs, and canonical paths without changing Git metadata.                   |
 | `treeboot completions`             | CLI-owned completion registration; `file_operation_source_candidates(...)` for dynamic source completion | `main.rs`, `commands/completions.rs`, `manual`                                                              | Prints shell registration. Dynamic source candidates delegate to core.                                               |
 
 ## Anchors: Runtime Context
@@ -137,15 +138,29 @@ target with Git's actual main-worktree identity, not the overridable source
 root. Teardown rejects a root target in core preparation; inspection commands
 retain their existing strict/non-strict root behavior.
 
-### Environment aliases and identifier
+### Environment aliases and identity
 
 Configured commands receive treeboot variables plus compatibility aliases for
-Codex, Conductor, and Superset flows. Context discovery also derives the default
-`TREEBOOT_WORKTREE_ID` from the canonical worktree and Git main-worktree paths.
-After config normalization, manifest plan constructors replace that entry from
-the validated `WorktreeIdConfig` before command validation. This keeps owned
-variable protection and the executed environment correct for high-level flows
-and public `Worktree::from_parts` callers alike.
+Codex, Conductor, and Superset flows. Context discovery derives both
+`TREEBOOT_WORKTREE_ID` and `TREEBOOT_WORKTREE_SLUG` from the same normalized
+exact target path. That path alone supplies the ID hash input and is never
+replaced during explicit-target inspection. Git main-worktree data may supply
+only a basename fallback for the slug's readable portion. After config
+normalization, manifest plan constructors replace both entries from validated
+`WorktreeIdConfig` and `WorktreeSlugConfig` values before command validation.
+This keeps owned variable protection and the executed environment correct for
+high-level flows and public `Worktree::from_parts` callers alike.
+
+Single-target inspection uses `WorktreeIdentityOptions`. With no explicit path,
+it follows the normal config-aware Git context. With a path, `worktree.rs`
+normalizes that exact target, builds a synthetic non-Git context whose source
+and target roots are the target itself, and optionally asks Git from the target
+or nearest existing directory ancestor only for the main-worktree basename
+fallback. Checked path resolution rejects ambiguous Windows-relative forms, and
+filesystem metadata distinguishes nonexistent targets from dangling symlinks.
+Repository inventory and reverse lookup remain separate behind
+`WorktreeInspectionOptions`, preventing explicit-target inputs from leaking into
+candidate scans.
 
 ## Primary orchestration: `treeboot run` Flow
 
@@ -210,7 +225,7 @@ and `CommandOperation` values. Validation builds the relevant phase plan;
 flowchart LR
   TOML["Raw TOML<br/>RawConfig<br/>spanned entries"]
   CLI["Manual CLI args<br/>FileOperationOptions<br/>root source completion"]
-  MODEL["Normalized model<br/>Config + WorktreeIdConfig<br/>FileOperation<br/>CommandOperation"]
+  MODEL["Normalized model<br/>Config + ID/slug settings<br/>FileOperation<br/>CommandOperation"]
   VALID["Validation<br/>ActionPlan / TeardownPlan<br/>PlannedFileOperation<br/>PlannedCommands"]
   FILES["Files<br/>FileAction"]
   CMDS["Commands<br/>Command"]
@@ -278,7 +293,7 @@ flowchart LR
   CHECK["check.rs<br/>side-effect-free validation"]
   DOCTOR["doctor.rs<br/>diagnostics"]
   ENV["env.rs<br/>child environment"]
-  WORKTREE["worktree.rs<br/>ID/path/list inspection"]
+  WORKTREE["worktree.rs<br/>ID/slug/path/list inspection"]
   ID["worktree_id.rs<br/>path recognizers<br/>sanitization + SHA-256<br/>Crockford encoding"]
   MANUAL["manual.rs<br/>manual files"]
   CONFIG["config.rs<br/>parse + normalize"]
@@ -358,8 +373,8 @@ file-operation execution._
 | `context.rs`         | Git-derived root/worktree/default branch and env aliases.                                                                                                                        | Config parsing or side effects.                                                                              |
 | `config.rs`          | TOML parsing, defaulting, normalized config data.                                                                                                                                | Boundary validation or execution.                                                                            |
 | `doctor.rs`          | Diagnostic aggregation across discovery and validation.                                                                                                                          | Fixing problems or applying effects.                                                                         |
-| `env.rs`             | Config-aware effective child environment inspection.                                                                                                                             | File operations, command execution, or identifier algorithms.                                                |
-| `worktree.rs`        | Candidate-local worktree ID inspection, repository inventory ordering, stale filtering, and exact reverse lookup.                                                                | Git mutation, config parsing details, or CLI presentation.                                                   |
+| `env.rs`             | Config-aware effective child environment inspection.                                                                                                                             | File operations, command execution, or identity algorithms.                                                  |
+| `worktree.rs`        | Exact-target ID/slug inspection, candidate-local repository inventory ordering, stale filtering, and exact ID reverse lookup.                                                    | Git mutation, config parsing details, or CLI presentation.                                                   |
 | `executor.rs`        | Sequencing validated bootstrap file and command execution.                                                                                                                       | Teardown dispatch, validation, or CLI policy.                                                                |
 | `file_actions.rs`    | Concrete file action model, grouped operation actions, summary construction, and cross-action symlink warnings.                                                                  | Filesystem traversal or mutation.                                                                            |
 | `file_operations.rs` | Operation-level file application facade, apply options/report types, planning lifecycle events, and planning/execution sequencing.                                               | Concrete planning decisions, action mutation details, or low-level filesystem helper implementation.         |
@@ -369,7 +384,7 @@ file-operation execution._
 | `path_filter.rs`     | Compiling and matching copy/sync include and ignore path rules, include viability pruning, and include-oriented source scans.                                                    | Config parsing, validation policy, or filesystem mutation.                                                   |
 | `runtime.rs`         | Environment/config/CLI runtime policy precedence and conversion to validation options.                                                                                           | Config parsing, Git discovery, or side effects.                                                              |
 | `validation.rs`      | Bootstrap and teardown plans, shared command planning, complete-config phase validation, path and environment boundary checks, and plan warnings.                                | Parsing or filesystem mutation.                                                                              |
-| `worktree_id.rs`     | Stable path-derived readable-name recognition, sanitization, SHA-256 hashing, Crockford encoding, truncation, and effective environment refinement inputs.                       | Config parsing, Git discovery, or CLI presentation.                                                          |
+| `worktree_id.rs`     | Stable path-derived compact ID and readable slug derivation: recognizers, sanitization, SHA-256, Crockford encoding, and truncation.                                             | Config parsing, Git discovery, or CLI presentation.                                                          |
 | `commands.rs`        | Shared sequential bootstrap/teardown command spawning, execution-time cwd boundary enforcement, phase event selection, and dry-run output.                                       | Parsing command config or deciding phase contents.                                                           |
 | `teardown.rs`        | Reporter-aware teardown preparation, no-op actions, and execution of validated teardown plans.                                                                                   | Terminal confirmation, worktree removal, or bootstrap execution.                                             |
 | `metadata.rs`        | Embedded config schema, spec version, and version metadata helpers.                                                                                                              | Generating source files or reading runtime files.                                                            |
@@ -497,9 +512,9 @@ behavior: `FileOperationKind`, `SyncCompare`, `SymlinkMode`, `MetadataField`,
 
 ### Public struct evolution
 
-Public structs in the normalized config graph, plus the resolved `Worktree`
-context carried by `LoadedConfig` and the extensible `EnvOptions` command input,
-are `#[non_exhaustive]`:
+Public structs in the normalized config graph, the resolved `Worktree` context
+carried by `LoadedConfig`, and worktree inspection inputs and reports are
+`#[non_exhaustive]`:
 
 - `EnvOptions`
 - `LoadedConfig`
@@ -507,6 +522,14 @@ are `#[non_exhaustive]`:
 - `Config`
 - `ConfigRuntimeOptions`
 - `WorktreeIdConfig`
+- `WorktreeSlugConfig`
+- `WorktreeIdentityOptions`
+- `WorktreeInspectionOptions`
+- `WorktreeIdReport`
+- `WorktreeSlugReport`
+- `WorktreeEntry`
+- `WorktreePathReport`
+- `WorktreeListReport`
 - `FileOperation`
 - `CommandOperation`
 - `SourceSpan`
@@ -567,7 +590,7 @@ existing modules.
 | If changing                   | Touch                                                                                                                                                     | Keep invariant                                                                                                                                                                                         |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Config file format            | `docs/SPEC.md`, `config.rs`, schema generator, schema file, parser tests.                                                                                 | The spec is the contract; generated schema must be fresh.                                                                                                                                              |
-| Worktree identifier contract  | `worktree_id.rs`, `context.rs`, `config.rs`, `validation.rs`, `env.rs`, CLI reporting, spec, schema, and cross-phase tests.                               | Hash input and encoding stay path-only and versioned; plans refine the owned variable before validation; bootstrap and teardown agree.                                                                 |
+| Worktree identity contract    | `worktree_id.rs`, `worktree.rs`, `context.rs`, `config.rs`, `validation.rs`, `env.rs`, CLI reporting, spec, schema, and cross-phase tests.                | Hash input and encoding stay path-only and versioned; plans refine both owned variables before validation; bootstrap and teardown agree.                                                               |
 | Runtime policy semantics      | `runtime.rs`, command facade modules, config/check/doctor/run/manual tests, spec when observable.                                                         | Config/env/CLI precedence must stay centralized and consistent across run-like commands.                                                                                                               |
 | File operation behavior       | `config.rs`, `manual.rs`, `validation.rs`, `file_actions.rs`, `file_operations.rs`, `file_planning.rs`, `file_execution.rs`, `file_system.rs`, CLI tests. | Declarative config and manual commands must share planning and file execution semantics; keep policy, planning, action modeling, execution, and low-level filesystem helpers separated by module role. |
 | Command runtime               | `config.rs`, `validation.rs`, `commands.rs`, `executor.rs`, `teardown.rs`, phase tests, spec.                                                             | Bootstrap and teardown share one planner/runtime; plans and output events stay phase-specific.                                                                                                         |

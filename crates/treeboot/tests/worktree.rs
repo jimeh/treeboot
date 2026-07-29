@@ -10,6 +10,8 @@ mod common;
 use common::{
     assert_json_object_keys, canonical_path, git, git_worktree, parse_json, treeboot, write_file,
 };
+#[cfg(unix)]
+use common::{symlink_dir, symlink_file};
 
 struct ExtraWorktree {
     _parent: TempDir,
@@ -90,11 +92,12 @@ fn bare_primary_worktree() -> BarePrimaryWorktree {
 }
 
 #[test]
-fn worktree_id_should_print_bare_text_and_exact_structured_shapes() {
+fn worktree_id_and_slug_should_print_bare_text_and_exact_structured_shapes() {
     let repo = git_worktree();
     write_file(
         &repo.worktree_path().join(".treeboot.toml"),
-        r#"worktree_id = { max_length = 20, hash_length = 8, separator = "_" }"#,
+        "worktree_id = { length = 8 }\n\
+         worktree_slug = { max_length = 20, separator = \"_\" }\n",
     );
 
     let text = treeboot()
@@ -109,10 +112,7 @@ fn worktree_id_should_print_bare_text_and_exact_structured_shapes() {
     let id = String::from_utf8(text).expect("text ID should be UTF-8");
     assert!(id.ends_with('\n'));
     assert!(!id.trim().contains(char::is_whitespace));
-    assert_eq!(
-        id.trim().rsplit_once('_').map(|(_, hash)| hash.len()),
-        Some(8)
-    );
+    assert_eq!(id.trim().len(), 8);
 
     let json = treeboot()
         .args(["worktree", "id", "--json"])
@@ -145,6 +145,42 @@ fn worktree_id_should_print_bare_text_and_exact_structured_shapes() {
         .success()
         .stderr(predicate::str::is_empty())
         .stdout(predicate::str::contains(format!("id: {}", id.trim())));
+
+    let slug = treeboot()
+        .args(["worktree", "slug"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    let slug = String::from_utf8(slug).expect("text slug should be UTF-8");
+    assert!(slug.trim().starts_with("linked_"));
+    assert!(slug.trim().ends_with(id.trim()));
+    assert!(slug.trim().len() <= 20);
+
+    let slug_json = treeboot()
+        .args(["worktree", "slug", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    let slug_json = parse_json(slug_json, "worktree slug");
+    assert_json_object_keys(&slug_json, &["slug"]);
+    assert_eq!(slug_json["slug"], slug.trim());
+    assert_eq!(slug_json["slug"], env_json["TREEBOOT_WORKTREE_SLUG"]);
+
+    treeboot()
+        .args(["worktree", "slug", "--yaml"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .stdout(predicate::str::contains(format!("slug: {}", slug.trim())));
 }
 
 #[test]
@@ -153,32 +189,23 @@ fn worktree_path_and_list_should_use_candidate_local_config_and_contract_order()
     let second = add_worktree(repo.root_path(), "zeta");
     write_file(
         &repo.root_path().join(".treeboot.toml"),
-        r#"worktree_id = { hash_length = 5, separator = "_" }"#,
+        "worktree_id = { length = 5 }\nworktree_slug = { separator = \"_\" }\n",
     );
     write_file(
         &repo.worktree_path().join(".treeboot.toml"),
-        r#"worktree_id = { hash_length = 7, separator = "_" }"#,
+        "worktree_id = { length = 7 }\nworktree_slug = { separator = \"_\" }\n",
     );
     write_file(
         &second.path.join(".treeboot.toml"),
-        r#"worktree_id = { hash_length = 9, separator = "_" }"#,
+        "worktree_id = { length = 9 }\nworktree_slug = { separator = \"_\" }\n",
     );
 
     let root_id = worktree_id(repo.root_path());
     let linked_id = worktree_id(repo.worktree_path());
     let second_id = worktree_id(&second.path);
-    assert_eq!(
-        root_id.rsplit_once('_').map(|(_, hash)| hash.len()),
-        Some(5)
-    );
-    assert_eq!(
-        linked_id.rsplit_once('_').map(|(_, hash)| hash.len()),
-        Some(7)
-    );
-    assert_eq!(
-        second_id.rsplit_once('_').map(|(_, hash)| hash.len()),
-        Some(9)
-    );
+    assert_eq!(root_id.len(), 5);
+    assert_eq!(linked_id.len(), 7);
+    assert_eq!(second_id.len(), 9);
 
     for (id, path) in [
         (&root_id, repo.root_path()),
@@ -210,7 +237,13 @@ fn worktree_path_and_list_should_use_candidate_local_config_and_contract_order()
         .expect("worktrees should be an array");
     assert_eq!(entries.len(), 3);
     for entry in entries {
-        assert_json_object_keys(entry, &["id", "path"]);
+        assert_json_object_keys(entry, &["id", "path", "slug"]);
+        assert!(
+            entry["slug"]
+                .as_str()
+                .expect("slug should be a string")
+                .ends_with(entry["id"].as_str().expect("ID should be a string"))
+        );
     }
     assert_eq!(
         entries[0]["path"],
@@ -229,6 +262,7 @@ fn worktree_path_and_list_should_use_candidate_local_config_and_contract_order()
         .success()
         .stderr(predicate::str::is_empty())
         .stdout(predicate::str::starts_with("ID"))
+        .stdout(predicate::str::contains("SLUG"))
         .stdout(predicate::str::contains("PATH"))
         .stdout(predicate::str::contains(root_id))
         .stdout(predicate::str::contains(linked_id))
@@ -242,6 +276,7 @@ fn worktree_path_and_list_should_use_candidate_local_config_and_contract_order()
         .stderr(predicate::str::is_empty())
         .stdout(predicate::str::starts_with("worktrees:"))
         .stdout(predicate::str::contains("id:"))
+        .stdout(predicate::str::contains("slug:"))
         .stdout(predicate::str::contains("path:"));
 }
 
@@ -376,8 +411,355 @@ fn worktree_inspection_should_use_defaults_without_config() {
     let repo = git_worktree();
     let id = worktree_id(repo.worktree_path());
 
-    assert!(id.starts_with("linked-"));
-    assert_eq!(id.rsplit_once('-').map(|(_, hash)| hash.len()), Some(6));
+    assert_eq!(id.len(), 6);
+    assert!(id.bytes().all(|byte| {
+        byte.is_ascii_digit()
+            || matches!(
+                byte,
+                b'a'..=b'h' | b'j'..=b'k' | b'm'..=b'n' | b'p'..=b't' | b'v'..=b'z'
+            )
+    }));
+}
+
+#[test]
+fn explicit_actual_worktree_identity_should_match_implicit_and_local_config() {
+    let repo = git_worktree();
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        "worktree_id = { length = 10 }\n\
+         worktree_slug = { max_length = 24, separator = \"_\" }\n",
+    );
+
+    for command in ["id", "slug"] {
+        let implicit = treeboot()
+            .args(["worktree", command])
+            .current_dir(repo.worktree_path())
+            .output()
+            .expect("implicit identity command should run");
+        assert!(
+            implicit.status.success(),
+            "implicit {command} should succeed"
+        );
+
+        let explicit = treeboot()
+            .args(["worktree", command])
+            .arg(repo.worktree_path())
+            .current_dir(repo.root_path())
+            .output()
+            .expect("explicit identity command should run");
+        assert!(
+            explicit.status.success(),
+            "explicit {command} should succeed"
+        );
+        assert_eq!(explicit.stdout, implicit.stdout);
+    }
+}
+
+#[test]
+fn explicit_ordinary_directory_identity_should_work_outside_git_and_use_local_config() {
+    let parent = TempDir::new().expect("tempdir should be created");
+    let target = parent.path().join("Feature Login");
+    std::fs::create_dir(&target).expect("target should be created");
+    write_file(
+        &target.join(".treeboot.toml"),
+        "worktree_id = { length = 9 }\n\
+         worktree_slug = { max_length = 22, separator = \"_\" }\n",
+    );
+
+    let id = treeboot()
+        .args(["worktree", "id"])
+        .arg(&target)
+        .current_dir(parent.path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    let id = String::from_utf8(id).expect("ID should be UTF-8");
+    assert_eq!(id.trim().len(), 9);
+
+    let slug = treeboot()
+        .args(["worktree", "slug"])
+        .arg(&target)
+        .current_dir(parent.path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    let slug = String::from_utf8(slug).expect("slug should be UTF-8");
+    assert!(slug.trim().starts_with("feature_logi_"));
+    assert!(slug.trim().ends_with(id.trim()));
+    assert_eq!(slug.trim().len(), 22);
+}
+
+#[test]
+fn explicit_identity_relative_absolute_dot_and_dotdot_should_normalize_to_one_target() {
+    let parent = TempDir::new().expect("tempdir should be created");
+    let real_parent = parent.path().join("real");
+    let target = real_parent.join("target");
+    std::fs::create_dir_all(&target).expect("target should be created");
+
+    for command in ["id", "slug"] {
+        let absolute = worktree_identity_for_path(command, parent.path(), &target);
+        let relative = worktree_identity_for_path(command, parent.path(), Path::new("real/target"));
+        let dotted =
+            worktree_identity_for_path(command, parent.path(), Path::new("./real/./target"));
+        let parented =
+            worktree_identity_for_path(command, parent.path(), Path::new("real/other/../target"));
+
+        assert_eq!(absolute, relative);
+        assert_eq!(absolute, dotted);
+        assert_eq!(absolute, parented);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn explicit_identity_symlink_alias_should_normalize_to_target() {
+    let parent = TempDir::new().expect("tempdir should be created");
+    let real_parent = parent.path().join("real");
+    let target = real_parent.join("target");
+    let alias = parent.path().join("alias");
+    std::fs::create_dir_all(&target).expect("target should be created");
+    symlink_dir(&real_parent, &alias);
+
+    for command in ["id", "slug"] {
+        let expected = worktree_identity_for_path(command, parent.path(), &target);
+        let aliased = worktree_identity_for_path(command, parent.path(), Path::new("alias/target"));
+
+        assert_eq!(expected, aliased);
+    }
+}
+
+#[test]
+fn explicit_nonexistent_identity_should_survive_ordinary_directory_creation() {
+    let parent = TempDir::new().expect("tempdir should be created");
+    let target = parent.path().join("future").join("worktree");
+
+    let before_id = worktree_identity_for_path("id", parent.path(), &target);
+    let before_slug = worktree_identity_for_path("slug", parent.path(), &target);
+    std::fs::create_dir_all(&target).expect("target should be created");
+    let after_id = worktree_identity_for_path("id", parent.path(), &target);
+    let after_slug = worktree_identity_for_path("slug", parent.path(), &target);
+
+    assert_eq!(before_id, after_id);
+    assert_eq!(before_slug, after_slug);
+}
+
+#[test]
+fn explicit_nonexistent_git_targets_should_keep_fallback_slug_after_creation() {
+    let repo = git_worktree();
+    let targets = [
+        repo.worktree_path().join("future").join("deadbeef"),
+        repo.worktree_path().join("future").join("💥"),
+    ];
+
+    for target in targets {
+        let before_id = worktree_identity_for_path("id", repo.worktree_path(), &target);
+        let before_slug = worktree_identity_for_path("slug", repo.worktree_path(), &target);
+        std::fs::create_dir_all(&target).expect("target should be created");
+        let after_id = worktree_identity_for_path("id", repo.worktree_path(), &target);
+        let after_slug = worktree_identity_for_path("slug", repo.worktree_path(), &target);
+
+        assert_eq!(before_id, after_id);
+        assert_eq!(before_slug, after_slug, "target: {}", target.display());
+    }
+}
+
+#[test]
+fn explicit_git_subdirectory_should_keep_exact_identity_and_config_scope() {
+    let repo = git_worktree();
+    write_file(
+        &repo.root_path().join(".treeboot.toml"),
+        "worktree_id = { length = 12 }\n",
+    );
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        "worktree_id = { length = 10 }\n",
+    );
+    let target = repo.worktree_path().join("nested").join("target");
+    std::fs::create_dir_all(&target).expect("target should be created");
+
+    let worktree = worktree_identity_for_path("id", repo.worktree_path(), repo.worktree_path());
+    let subdirectory = worktree_identity_for_path("id", repo.worktree_path(), &target);
+
+    assert_eq!(worktree.len(), 10);
+    assert_eq!(subdirectory.len(), 6);
+    assert_ne!(subdirectory, worktree);
+}
+
+#[test]
+fn explicit_regular_file_and_invalid_config_should_fail_before_stdout() {
+    let parent = TempDir::new().expect("tempdir should be created");
+    let file = parent.path().join("file");
+    write_file(&file, "not a directory\n");
+
+    for command in ["id", "slug"] {
+        treeboot()
+            .args(["worktree", command])
+            .arg(&file)
+            .current_dir(parent.path())
+            .assert()
+            .failure()
+            .stdout(predicate::str::is_empty())
+            .stderr(predicate::str::contains("is not a directory"));
+    }
+
+    let invalid = parent.path().join("invalid");
+    std::fs::create_dir(&invalid).expect("invalid target should be created");
+    write_file(
+        &invalid.join(".treeboot.toml"),
+        "worktree_id = { length = 0 }\n",
+    );
+    for command in ["id", "slug"] {
+        treeboot()
+            .args(["worktree", command])
+            .arg(&invalid)
+            .current_dir(parent.path())
+            .assert()
+            .failure()
+            .stdout(predicate::str::is_empty())
+            .stderr(predicate::str::contains("must be between 1 and 52"));
+    }
+
+    let unrelated = parent.path().join("unrelated-invalid");
+    std::fs::create_dir(&unrelated).expect("invalid target should be created");
+    write_file(
+        &unrelated.join(".treeboot.toml"),
+        "commands = [{ args = [\"orphan\"] }]\n",
+    );
+    for command in ["id", "slug"] {
+        treeboot()
+            .args(["worktree", command])
+            .arg(&unrelated)
+            .current_dir(parent.path())
+            .assert()
+            .failure()
+            .stdout(predicate::str::is_empty())
+            .stderr(predicate::str::contains(
+                "command is missing required `run` or `program`",
+            ));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn explicit_dangling_symlink_should_fail_before_stdout() {
+    let parent = TempDir::new().expect("tempdir should be created");
+    let dangling = parent.path().join("dangling");
+    symlink_file(parent.path().join("missing"), &dangling);
+
+    for command in ["id", "slug"] {
+        treeboot()
+            .args(["worktree", command])
+            .arg(&dangling)
+            .current_dir(parent.path())
+            .assert()
+            .failure()
+            .stdout(predicate::str::is_empty())
+            .stderr(predicate::str::contains("is not a directory"));
+    }
+}
+
+#[test]
+fn explicit_empty_path_should_be_a_usage_error_without_stdout() {
+    for command in ["id", "slug"] {
+        treeboot()
+            .args(["worktree", command, ""])
+            .assert()
+            .code(2)
+            .stdout(predicate::str::is_empty())
+            .stderr(predicate::str::contains("PATH must not be empty"));
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn explicit_windows_special_relative_paths_should_fail_before_stdout() {
+    let parent = TempDir::new().expect("tempdir should be created");
+    for (path, reason) in [
+        (r"C:relative", "drive-relative paths are not supported"),
+        (
+            r"\relative",
+            "root-relative paths without a drive or share are not supported",
+        ),
+    ] {
+        for command in ["id", "slug"] {
+            treeboot()
+                .args(["worktree", command, path])
+                .current_dir(parent.path())
+                .assert()
+                .failure()
+                .stdout(predicate::str::is_empty())
+                .stderr(predicate::str::contains(reason));
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn explicit_identity_path_parser_should_preserve_native_non_utf8_input() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let parent = TempDir::new().expect("tempdir should be created");
+    let target = parent
+        .path()
+        .join(OsString::from_vec(b"target-\xff".to_vec()));
+    std::fs::create_dir(&target).expect("target should be created");
+
+    for command in ["id", "slug"] {
+        treeboot()
+            .args(["worktree", command])
+            .arg(&target)
+            .current_dir(parent.path())
+            .assert()
+            .success()
+            .stderr(predicate::str::is_empty())
+            .stdout(predicate::str::is_empty().not());
+    }
+}
+
+#[test]
+fn explicit_identity_should_ignore_ambient_discovery_overrides() {
+    let parent = TempDir::new().expect("tempdir should be created");
+    let target = parent.path().join("target");
+    std::fs::create_dir(&target).expect("target should be created");
+    for command in ["id", "slug"] {
+        let expected = worktree_identity_for_path(command, parent.path(), &target);
+
+        treeboot()
+            .args(["worktree", command])
+            .arg(&target)
+            .env("TREEBOOT_ROOT_PATH", parent.path().join("missing-root"))
+            .env("CONDUCTOR_DEFAULT_BRANCH", "ambient-branch")
+            .current_dir(parent.path())
+            .assert()
+            .success()
+            .stderr(predicate::str::is_empty())
+            .stdout(format!("{expected}\n"));
+    }
+}
+
+fn worktree_identity_for_path(command: &str, cwd: &Path, path: &Path) -> String {
+    let output = treeboot()
+        .args(["worktree", command])
+        .arg(path)
+        .current_dir(cwd)
+        .output()
+        .expect("explicit identity command should run");
+    assert!(
+        output.status.success(),
+        "explicit {command} should succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout)
+        .expect("identity should be UTF-8")
+        .trim()
+        .to_owned()
 }
 
 #[test]
@@ -491,7 +873,7 @@ fn worktree_path_should_report_missing_and_ambiguous_ids_without_stdout() {
     for path in [repo.worktree_path(), second.path.as_path()] {
         write_file(
             &path.join(".treeboot.toml"),
-            "worktree_id = { max_length = 3, hash_length = 1 }\n",
+            "worktree_id = { length = 1 }\nworktree_slug = { max_length = 3 }\n",
         );
     }
 
@@ -514,7 +896,7 @@ fn worktree_path_should_report_missing_and_ambiguous_ids_without_stdout() {
         let extra = add_worktree(repo.root_path(), &name);
         write_file(
             &extra.path.join(".treeboot.toml"),
-            "worktree_id = { max_length = 3, hash_length = 1 }\n",
+            "worktree_id = { length = 1 }\nworktree_slug = { max_length = 3 }\n",
         );
         candidates.push(extra.path.clone());
         parents.push(extra);
@@ -563,7 +945,7 @@ fn malformed_sibling_config_should_fail_atomically_with_candidate_path() {
     let sibling = add_worktree(repo.root_path(), "malformed");
     write_file(
         &sibling.path.join(".treeboot.toml"),
-        "worktree_id = { hash_length = 0 }\n",
+        "worktree_id = { length = 0 }\n",
     );
 
     for args in [
@@ -580,7 +962,7 @@ fn malformed_sibling_config_should_fail_atomically_with_candidate_path() {
                 "{:?}",
                 canonical_path(&sibling.path)
             )))
-            .stderr(predicate::str::contains("hash_length"));
+            .stderr(predicate::str::contains("length"));
     }
 }
 
@@ -590,6 +972,7 @@ fn worktree_commands_should_fail_outside_git() {
 
     for args in [
         vec!["worktree", "id"],
+        vec!["worktree", "slug"],
         vec!["worktree", "list"],
         vec!["worktree", "path", "id"],
     ] {
@@ -610,6 +993,7 @@ fn worktree_commands_should_honor_recognized_ambient_environment() {
 
     for args in [
         vec!["worktree", "id"],
+        vec!["worktree", "slug"],
         vec!["worktree", "list"],
         vec!["worktree", "path", "id"],
     ] {
@@ -638,6 +1022,7 @@ fn worktree_nested_help_and_version_should_be_exposed() {
         .assert()
         .success()
         .stdout(predicate::str::contains("id"))
+        .stdout(predicate::str::contains("slug"))
         .stdout(predicate::str::contains("path"))
         .stdout(predicate::str::contains("list"));
 
@@ -645,9 +1030,17 @@ fn worktree_nested_help_and_version_should_be_exposed() {
         .args(["worktree", "id", "--help"])
         .assert()
         .success()
+        .stdout(predicate::str::contains("[PATH]"))
         .stdout(predicate::str::contains("--format"))
         .stdout(predicate::str::contains("--json"))
         .stdout(predicate::str::contains("--yaml"));
+
+    treeboot()
+        .args(["worktree", "slug", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("[PATH]"))
+        .stdout(predicate::str::contains("--format"));
 
     treeboot()
         .args(["worktree", "--version"])

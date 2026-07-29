@@ -420,27 +420,33 @@
     "WorktreeIdConfig": {
       "additionalProperties": false,
       "properties": {
-        "hash_length": {
+        "length": {
           "description": "Number of lowercase Crockford base32 digest characters.",
           "format": "uint",
           "maximum": 52,
           "minimum": 1,
           "type": "integer"
-        },
+        }
+      },
+      "type": "object"
+    },
+    "WorktreeSlugConfig": {
+      "additionalProperties": false,
+      "properties": {
         "max_length": {
-          "description": "Maximum length of the complete identifier.",
+          "description": "Maximum length of the complete slug.",
           "format": "uint",
           "minimum": 3,
           "type": "integer"
         },
         "separator": {
-          "$ref": "#/$defs/WorktreeIdSeparator",
-          "description": "Separator used inside the readable name and before the hash."
+          "$ref": "#/$defs/WorktreeSlugSeparator",
+          "description": "Separator used inside the readable name and before the ID."
         }
       },
       "type": "object"
     },
-    "WorktreeIdSeparator": {
+    "WorktreeSlugSeparator": {
       "enum": [
         "-",
         "_"
@@ -535,7 +541,11 @@
     },
     "worktree_id": {
       "$ref": "#/$defs/WorktreeIdConfig",
-      "description": "Stable worktree identifier presentation settings."
+      "description": "Stable compact worktree ID settings."
+    },
+    "worktree_slug": {
+      "$ref": "#/$defs/WorktreeSlugConfig",
+      "description": "Readable worktree slug presentation settings."
     }
   },
   "title": "TreebootConfig",

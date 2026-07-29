@@ -54,10 +54,11 @@ fn dynamic_completions_should_include_nested_worktree_commands_and_formats() {
         .assert()
         .success()
         .stdout(predicate::str::contains("id"))
+        .stdout(predicate::str::contains("slug"))
         .stdout(predicate::str::contains("path"))
         .stdout(predicate::str::contains("list"));
 
-    for command in ["id", "path", "list"] {
+    for command in ["id", "slug", "path", "list"] {
         treeboot()
             .env("COMPLETE", "fish")
             .args(["--", "treeboot", "worktree", command, "--"])
@@ -66,6 +67,24 @@ fn dynamic_completions_should_include_nested_worktree_commands_and_formats() {
             .stdout(predicate::str::contains("--format"))
             .stdout(predicate::str::contains("--json"))
             .stdout(predicate::str::contains("--yaml"));
+    }
+}
+
+#[test]
+fn dynamic_identity_completions_should_suggest_directories() {
+    let dir = TempDir::new().expect("tempdir should be created");
+    std::fs::create_dir(dir.path().join("target-dir")).expect("target directory should be created");
+    write_file(&dir.path().join("target-file"), "file\n");
+
+    for command in ["id", "slug"] {
+        treeboot()
+            .env("COMPLETE", "fish")
+            .args(["--", "treeboot", "worktree", command, "target"])
+            .current_dir(dir.path())
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("target-dir"))
+            .stdout(predicate::str::contains("target-file").not());
     }
 }
 

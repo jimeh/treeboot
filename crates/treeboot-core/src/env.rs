@@ -46,7 +46,7 @@ pub struct EnvReport {
 
 /// Inspects the treeboot child environment.
 ///
-/// This function loads config only to resolve the effective identifier. It does
+/// This function loads config only to resolve the effective identity. It does
 /// not apply file operations or execute commands.
 ///
 /// # Errors

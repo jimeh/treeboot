@@ -66,8 +66,9 @@ pub use validation::{
     PlannedFileOperation, PlannedFileStatus, TeardownPlan, validate_config_phases,
 };
 pub use worktree::{
-    WorktreeEntry, WorktreeIdReport, WorktreeInspectionOptions, WorktreeListReport,
-    WorktreePathReport, inspect_worktree_id, inspect_worktree_list, inspect_worktree_path,
+    WorktreeEntry, WorktreeIdReport, WorktreeIdentityOptions, WorktreeInspectionOptions,
+    WorktreeListReport, WorktreePathReport, WorktreeSlugReport, inspect_worktree_id,
+    inspect_worktree_list, inspect_worktree_path, inspect_worktree_slug,
 };
 
 /// Convenient result type used by `treeboot-core`.
@@ -75,7 +76,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub use config::{
     CommandKind, CommandOperation, Config, ConfigOptions, ConfigReport, ConfigRuntimeOptions,
     FileOperation, FileOperationKind, LoadedConfig, MetadataField, SourceSpan, SymlinkMode,
-    SyncCompare, WorktreeIdConfig, WorktreeIdConfigError, inspect_config,
+    SyncCompare, WorktreeIdConfig, WorktreeIdConfigError, WorktreeSlugConfig,
+    WorktreeSlugConfigError, inspect_config,
 };
 
 /// Parsed treeboot manifest.

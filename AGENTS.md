@@ -100,10 +100,12 @@ commands:
 
 - CLI parsing for `run`, `status`, `config`, `check`, `doctor`, `env`, `schema`,
   `version`, `init`, `copy`, `symlink`, `sync`, `completions`, and the
-  `worktree id`, `worktree path`, and `worktree list` inspection commands
+  `worktree id`, `worktree slug`, `worktree path`, and `worktree list`
+  inspection commands
 - Git worktree/root/default-branch discovery
 - treeboot environment aliases
-- stable config-refined `TREEBOOT_WORKTREE_ID` command environments
+- stable config-refined `TREEBOOT_WORKTREE_ID` and `TREEBOOT_WORKTREE_SLUG`
+  command environments
 - declarative TOML config parsing and normalization
 - declarative TOML validation and action-plan construction
 - config/env/CLI runtime option precedence for declarative validation
@@ -116,8 +118,9 @@ commands:
   surfaces, with command-shaped workflow facades for full treeboot behavior
 - view-only discovery status inspection
 - view-only normalized config inspection
-- side-effect-free check, doctor, config-aware env, worktree ID/path/list,
-  schema, and version inspection commands
+- side-effect-free check, doctor, config-aware env, exact-target worktree
+  ID/slug, repository worktree path/list, schema, and version inspection
+  commands
 - generated JSON Schema for the config file format
 - generated spec-version asset and embedded config schema accessors
 - starter config generation
