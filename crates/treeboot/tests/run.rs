@@ -1194,29 +1194,33 @@ fn run_command_env_owned_override_should_exit_with_config_error() {
 }
 
 #[test]
-fn run_worktree_identifier_override_should_fail_before_file_effects() {
-    let repo = git_worktree();
-    let config = repo.worktree_path().join(".treeboot.toml");
-    write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
-    write_file(
-        &config,
-        r#"
+fn run_worktree_identity_overrides_should_fail_before_file_effects() {
+    for variable in ["TREEBOOT_WORKTREE_ID", "TREEBOOT_WORKTREE_SLUG"] {
+        let repo = git_worktree();
+        let config = repo.worktree_path().join(".treeboot.toml");
+        write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
+        write_file(
+            &config,
+            &format!(
+                r#"
 copy = [".env"]
-commands = [{ run = "pwd", env = { TREEBOOT_WORKTREE_ID = "override" } }]
+commands = [{{ run = "pwd", env = {{ {variable} = "override" }} }}]
 "#,
-    );
+            ),
+        );
 
-    treeboot()
-        .arg("run")
-        .current_dir(repo.worktree_path())
-        .assert()
-        .code(1)
-        .stderr(predicate::str::contains("TREEBOOT_WORKTREE_ID"))
-        .stderr(predicate::str::contains(
-            "overrides treeboot-owned variable",
-        ));
+        treeboot()
+            .arg("run")
+            .current_dir(repo.worktree_path())
+            .assert()
+            .code(1)
+            .stderr(predicate::str::contains(variable))
+            .stderr(predicate::str::contains(
+                "overrides treeboot-owned variable",
+            ));
 
-    assert!(!repo.worktree_path().join(".env").exists());
+        assert!(!repo.worktree_path().join(".env").exists());
+    }
 }
 
 #[test]

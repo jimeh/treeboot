@@ -192,7 +192,16 @@ impl ActionPlan {
         context: &Worktree,
         options: ActionPlanOptions,
     ) -> Result<Self> {
-        let context = context::with_worktree_id_config(context, &manifest.worktree_id);
+        crate::config::validate_worktree_identity_settings(
+            &manifest.worktree_id,
+            &manifest.worktree_slug,
+        )
+        .map_err(|error| invalid_config_error(path, None, error.to_string()))?;
+        let context = context::with_worktree_identity_config(
+            context,
+            &manifest.worktree_id,
+            &manifest.worktree_slug,
+        );
         let worktree_path = normalize_existing(&context.worktree_path).map_err(|source| {
             invalid_config_error(
                 path,
@@ -380,7 +389,16 @@ impl TeardownPlan {
     ///
     /// Returns an error when command cwd or environment validation fails.
     pub fn from_manifest(path: &Path, manifest: &Config, context: &Worktree) -> Result<Self> {
-        let context = context::with_worktree_id_config(context, &manifest.worktree_id);
+        crate::config::validate_worktree_identity_settings(
+            &manifest.worktree_id,
+            &manifest.worktree_slug,
+        )
+        .map_err(|error| invalid_config_error(path, None, error.to_string()))?;
+        let context = context::with_worktree_identity_config(
+            context,
+            &manifest.worktree_id,
+            &manifest.worktree_slug,
+        );
         let worktree_path = normalize_existing(&context.worktree_path).map_err(|source| {
             invalid_config_error(
                 path,
@@ -1631,6 +1649,7 @@ mod tests {
     fn empty_config() -> Config {
         Config {
             worktree_id: Default::default(),
+            worktree_slug: Default::default(),
             options: Default::default(),
             files: Vec::new(),
             commands: Vec::new(),
@@ -1700,6 +1719,7 @@ mod tests {
         std::fs::write(root.join("shared/file.txt"), "data\n").expect("file should be written");
         let config = Config {
             worktree_id: Default::default(),
+            worktree_slug: Default::default(),
             options: Default::default(),
             files: vec![include_operation(
                 FileOperationKind::Copy,
@@ -1738,6 +1758,7 @@ mod tests {
         operation.ignore = vec!["docs/**".to_owned()];
         let config = Config {
             worktree_id: Default::default(),
+            worktree_slug: Default::default(),
             options: Default::default(),
             files: vec![operation],
             commands: Vec::new(),
@@ -1755,6 +1776,7 @@ mod tests {
         std::fs::write(root.join(".env"), "TOKEN=1\n").expect("file should be written");
         let config = Config {
             worktree_id: Default::default(),
+            worktree_slug: Default::default(),
             options: Default::default(),
             files: vec![
                 include_operation(
@@ -1791,6 +1813,7 @@ mod tests {
             .expect("source symlink should be created");
         let config = Config {
             worktree_id: Default::default(),
+            worktree_slug: Default::default(),
             options: Default::default(),
             files: vec![include_operation(
                 FileOperationKind::Copy,
@@ -1822,6 +1845,7 @@ mod tests {
 
         let filtered = Config {
             worktree_id: Default::default(),
+            worktree_slug: Default::default(),
             options: Default::default(),
             files: vec![include_operation(
                 FileOperationKind::Copy,
@@ -1838,6 +1862,7 @@ mod tests {
 
         let unfiltered = Config {
             worktree_id: Default::default(),
+            worktree_slug: Default::default(),
             options: Default::default(),
             files: vec![file_operation(
                 FileOperationKind::Copy,
@@ -1922,6 +1947,7 @@ mod tests {
         let (root, worktree) = temp_workspace("missing-source");
         let config = Config {
             worktree_id: Default::default(),
+            worktree_slug: Default::default(),
             options: Default::default(),
             files: vec![FileOperation {
                 operation: FileOperationKind::Copy,
@@ -1962,6 +1988,7 @@ mod tests {
         std::fs::write(root.join(".env"), "TOKEN=1\n").expect("source should be written");
         let config = Config {
             worktree_id: Default::default(),
+            worktree_slug: Default::default(),
             options: Default::default(),
             files: vec![file_operation(
                 FileOperationKind::Copy,
@@ -1992,6 +2019,7 @@ mod tests {
         sync.delete = Some(true);
         let config = Config {
             worktree_id: Default::default(),
+            worktree_slug: Default::default(),
             options: Default::default(),
             files: vec![
                 file_operation(
@@ -2057,6 +2085,7 @@ mod tests {
         std::fs::create_dir_all(&app_dir).expect("command cwd should be created");
         let config = Config {
             worktree_id: Default::default(),
+            worktree_slug: Default::default(),
             options: Default::default(),
             files: Vec::new(),
             commands: vec![CommandOperation {
@@ -2097,6 +2126,7 @@ mod tests {
         std::fs::write(&outside_source, "shared\n").expect("outside source should be written");
         let config = Config {
             worktree_id: Default::default(),
+            worktree_slug: Default::default(),
             options: Default::default(),
             files: vec![FileOperation {
                 operation: FileOperationKind::Copy,
@@ -2143,6 +2173,7 @@ mod tests {
             std::fs::write(root.join("source"), "value\n").expect("source should be written");
             let config = Config {
                 worktree_id: Default::default(),
+                worktree_slug: Default::default(),
                 options: Default::default(),
                 files: vec![file_operation(
                     operation,
@@ -2173,6 +2204,7 @@ mod tests {
         symlink_file(&source, &target).expect("target symlink should be created");
         let config = Config {
             worktree_id: Default::default(),
+            worktree_slug: Default::default(),
             options: Default::default(),
             files: vec![file_operation(
                 FileOperationKind::Symlink,
@@ -2210,6 +2242,7 @@ mod tests {
                 .expect("target parent symlink should be created");
             let config = Config {
                 worktree_id: Default::default(),
+                worktree_slug: Default::default(),
                 options: Default::default(),
                 files: vec![file_operation(
                     operation,
@@ -2251,6 +2284,7 @@ mod tests {
                 .expect("target parent file should be written");
             let config = Config {
                 worktree_id: Default::default(),
+                worktree_slug: Default::default(),
                 options: Default::default(),
                 files: vec![file_operation(
                     operation,
@@ -2288,6 +2322,7 @@ mod tests {
             .expect("target parent file should be written");
         let config = Config {
             worktree_id: Default::default(),
+            worktree_slug: Default::default(),
             options: Default::default(),
             files: vec![file_operation(
                 FileOperationKind::Copy,
@@ -2318,6 +2353,7 @@ mod tests {
             .expect("target parent symlink should be created");
         let config = Config {
             worktree_id: Default::default(),
+            worktree_slug: Default::default(),
             options: Default::default(),
             files: vec![file_operation(
                 FileOperationKind::Copy,
@@ -2360,6 +2396,7 @@ mod tests {
         operation.target_path = target_path;
         let config = Config {
             worktree_id: Default::default(),
+            worktree_slug: Default::default(),
             options: Default::default(),
             files: vec![operation],
             commands: Vec::new(),
@@ -2394,6 +2431,7 @@ mod tests {
         operation.target_path = target_path;
         let config = Config {
             worktree_id: Default::default(),
+            worktree_slug: Default::default(),
             options: Default::default(),
             files: vec![operation],
             commands: Vec::new(),
@@ -2526,6 +2564,7 @@ mod tests {
         std::fs::write(source_dir.join("config"), "value\n").expect("nested source should exist");
         let config = Config {
             worktree_id: Default::default(),
+            worktree_slug: Default::default(),
             options: Default::default(),
             files: vec![file_operation(
                 FileOperationKind::Copy,
@@ -2559,6 +2598,7 @@ mod tests {
 
         let config = Config {
             worktree_id: Default::default(),
+            worktree_slug: Default::default(),
             options: Default::default(),
             files: vec![operation],
             commands: Vec::new(),
@@ -2580,6 +2620,7 @@ mod tests {
             .expect("safe source symlink should be created");
         let config = Config {
             worktree_id: Default::default(),
+            worktree_slug: Default::default(),
             options: Default::default(),
             files: vec![file_operation(
                 FileOperationKind::Copy,
@@ -2604,6 +2645,7 @@ mod tests {
             .expect("broken source symlink should be created");
         let config = Config {
             worktree_id: Default::default(),
+            worktree_slug: Default::default(),
             options: Default::default(),
             files: vec![file_operation(
                 FileOperationKind::Copy,
@@ -2630,6 +2672,7 @@ mod tests {
         let (root, worktree) = temp_workspace("command-cwd");
         let config = Config {
             worktree_id: Default::default(),
+            worktree_slug: Default::default(),
             options: Default::default(),
             files: Vec::new(),
             commands: vec![CommandOperation {
@@ -2674,6 +2717,7 @@ mod tests {
         required.required = true;
         let config = Config {
             worktree_id: Default::default(),
+            worktree_slug: Default::default(),
             options: ConfigRuntimeOptions::default(),
             files: vec![required],
             commands: vec![CommandOperation::shell("bootstrap", span())],
@@ -2714,6 +2758,7 @@ mod tests {
         required.required = true;
         let config = Config {
             worktree_id: Default::default(),
+            worktree_slug: Default::default(),
             options: ConfigRuntimeOptions::default(),
             files: vec![required],
             commands: Vec::new(),
@@ -2747,8 +2792,9 @@ mod tests {
         let (root, worktree) = temp_workspace("identifier-from-parts");
         let context = Worktree::from_parts(root, worktree, "main".to_owned(), BTreeMap::new());
         let config = Config {
-            worktree_id: crate::WorktreeIdConfig::new(32, 8, '_')
-                .expect("identifier config should be valid"),
+            worktree_id: crate::WorktreeIdConfig::new(8).expect("ID config should be valid"),
+            worktree_slug: crate::WorktreeSlugConfig::new(32, '_')
+                .expect("slug config should be valid"),
             teardown_commands: vec![CommandOperation::shell("true", span())],
             ..empty_config()
         };
@@ -2774,27 +2820,28 @@ mod tests {
             .get("TREEBOOT_WORKTREE_ID")
             .expect("teardown identifier should exist");
         assert_eq!(bootstrap_id, teardown_id);
-        assert!(bootstrap_id.to_string_lossy().len() <= 32);
-        assert_eq!(
-            bootstrap_id
+        assert_eq!(bootstrap_id.to_string_lossy().len(), 8);
+        let bootstrap_slug = bootstrap
+            .context()
+            .environment
+            .get("TREEBOOT_WORKTREE_SLUG")
+            .expect("bootstrap slug should exist");
+        assert!(bootstrap_slug.to_string_lossy().len() <= 32);
+        assert!(
+            bootstrap_slug
                 .to_string_lossy()
-                .rsplit_once('_')
-                .map(|(_, hash)| hash.len()),
-            Some(8)
+                .ends_with(bootstrap_id.to_string_lossy().as_ref())
         );
     }
 
     #[test]
-    fn manifest_plans_should_reject_worktree_identifier_override_from_empty_context() {
-        let (root, worktree) = temp_workspace("identifier-owned");
-        let context = Worktree::from_parts(root, worktree, "main".to_owned(), BTreeMap::new());
-        let command = CommandOperation::shell("true", span()).with_env(BTreeMap::from([(
-            "TREEBOOT_WORKTREE_ID".to_owned(),
-            "override".to_owned(),
-        )]));
+    fn manifest_plans_should_reject_programmatic_incompatible_identity_settings() {
+        let (root, worktree) = temp_workspace("identity-settings");
+        let context = context(&root, &worktree);
         let config = Config {
-            commands: vec![command.clone()],
-            teardown_commands: vec![command],
+            worktree_id: crate::WorktreeIdConfig::new(10).expect("ID config should be valid"),
+            worktree_slug: crate::WorktreeSlugConfig::new(11, '-')
+                .expect("slug config should be individually valid"),
             ..empty_config()
         };
 
@@ -2804,11 +2851,46 @@ mod tests {
             &context,
             ActionPlanOptions::default(),
         )
-        .expect_err("bootstrap override should fail");
+        .expect_err("bootstrap should reject incompatible identity settings");
         let teardown = TeardownPlan::from_manifest(Path::new(".treeboot.toml"), &config, &context)
-            .expect_err("teardown override should fail");
+            .expect_err("teardown should reject incompatible identity settings");
 
-        assert!(bootstrap.to_string().contains("TREEBOOT_WORKTREE_ID"));
-        assert!(teardown.to_string().contains("TREEBOOT_WORKTREE_ID"));
+        for error in [bootstrap, teardown] {
+            assert!(
+                error.to_string().contains("max_length must be at least 12"),
+                "unexpected error: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn manifest_plans_should_reject_worktree_identity_overrides_from_empty_context() {
+        for variable in ["TREEBOOT_WORKTREE_ID", "TREEBOOT_WORKTREE_SLUG"] {
+            let (root, worktree) = temp_workspace("identity-owned");
+            let context = Worktree::from_parts(root, worktree, "main".to_owned(), BTreeMap::new());
+            let command = CommandOperation::shell("true", span()).with_env(BTreeMap::from([(
+                variable.to_owned(),
+                "override".to_owned(),
+            )]));
+            let config = Config {
+                commands: vec![command.clone()],
+                teardown_commands: vec![command],
+                ..empty_config()
+            };
+
+            let bootstrap = ActionPlan::from_manifest(
+                Path::new(".treeboot.toml"),
+                &config,
+                &context,
+                ActionPlanOptions::default(),
+            )
+            .expect_err("bootstrap override should fail");
+            let teardown =
+                TeardownPlan::from_manifest(Path::new(".treeboot.toml"), &config, &context)
+                    .expect_err("teardown override should fail");
+
+            assert!(bootstrap.to_string().contains(variable));
+            assert!(teardown.to_string().contains(variable));
+        }
     }
 }

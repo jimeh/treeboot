@@ -63,21 +63,42 @@ pub enum Error {
         source: Box<Error>,
     },
 
-    /// A resolved context unexpectedly lacks its managed worktree identifier.
+    /// A resolved context unexpectedly lacks its managed worktree ID.
     #[error("resolved worktree context is missing TREEBOOT_WORKTREE_ID")]
     WorktreeIdMissing,
 
-    /// No registered worktree has the requested identifier.
+    /// A resolved context unexpectedly lacks its managed worktree slug.
+    #[error("resolved worktree context is missing TREEBOOT_WORKTREE_SLUG")]
+    WorktreeSlugMissing,
+
+    /// An explicit identity target exists but is not a directory.
+    #[error("worktree identity path is not a directory: {path:?}")]
+    WorktreeIdentityPathNotDirectory {
+        /// Normalized explicit target path.
+        path: PathBuf,
+    },
+
+    /// An explicit identity target uses path semantics that Treeboot cannot
+    /// resolve consistently.
+    #[error("unsupported worktree identity path {path:?}: {reason}")]
+    WorktreeIdentityUnsupportedPath {
+        /// Exact explicit target path.
+        path: PathBuf,
+        /// Platform-specific reason the path form is unsupported.
+        reason: &'static str,
+    },
+
+    /// No registered worktree has the requested ID.
     #[error("no worktree found with ID {id:?}")]
     WorktreeIdNotFound {
-        /// Exact identifier that was requested.
+        /// Exact ID that was requested.
         id: String,
     },
 
-    /// More than one registered worktree has the requested identifier.
+    /// More than one registered worktree has the requested ID.
     #[error("ambiguous worktree ID {id:?}; matching paths: {paths:?}")]
     WorktreeIdAmbiguous {
-        /// Exact identifier that was requested.
+        /// Exact ID that was requested.
         id: String,
         /// Canonical paths of every matching worktree.
         paths: Vec<PathBuf>,

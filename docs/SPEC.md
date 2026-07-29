@@ -1,4 +1,4 @@
-# treeboot Specification v2.3.0
+# treeboot Specification v2.4.0
 
 A portable worktree lifecycle helper that lets every coding agent, editor, and
 orchestration tool run the same repo-local bootstrap and teardown commands.
@@ -148,7 +148,7 @@ treeboot -V
 Human-readable output is a compact, flag-like summary:
 
 ```text
-treeboot 0.10.0 (spec 2.3.0)
+treeboot 0.10.0 (spec 2.4.0)
 ```
 
 JSON and YAML output are defined in
@@ -175,11 +175,11 @@ Human-readable text output lists normalized source and target values plus
 behavior-affecting normalized fields such as `required`, `compare`, `delete`,
 `symlinks`, `include`, `ignore`, `allow_failure`, `cwd`, and command `env`
 values when present. Before those collections it prints the effective worktree
-identifier and normalized `max_length`, `hash_length`, and `separator` settings.
-It labels bootstrap and teardown command collections separately and prints
-`(none)` for an empty collection. JSON and YAML output emit the effective
-identifier as the top-level `worktree_id` string and the full normalized config
-structure, including its fully defaulted `worktree_id` settings object.
+ID and slug with their normalized `length`, `max_length`, and `separator`
+settings. It labels bootstrap and teardown command collections separately and
+prints `(none)` for an empty collection. JSON and YAML output emit the effective
+values as the top-level `worktree_id` and `worktree_slug` strings and the full
+normalized config structure, including its fully defaulted settings objects.
 
 ### `treeboot check`
 
@@ -354,9 +354,9 @@ treeboot env --yaml
 
 The text format is one `KEY=value` pair per line, sorted by variable name.
 Values are resolved for the current worktree context and selected config. `env`
-discovers and parses config to resolve the effective worktree identifier, but
+discovers and parses config to resolve the effective worktree ID and slug, but
 does not apply file operations or run commands. Missing discovered config uses
-default identifier settings. A missing explicit config or any invalid selected
+default identity settings. A missing explicit config or any invalid selected
 config is an error.
 
 JSON and YAML output are defined in
@@ -369,26 +369,55 @@ override variables that treeboot reads from its parent environment.
 
 ### `treeboot worktree`
 
-Inspects the stable Treeboot identifiers of worktrees registered in the current
-Git repository.
+Derives a stable Treeboot ID and readable slug for one target, or inventories
+the registered worktrees in the current Git repository.
 
 ```sh
 treeboot worktree id
-treeboot worktree path feature-login-k7m2qx
+treeboot worktree id ../prospective-worktree
+treeboot worktree slug
+treeboot worktree slug ../prospective-worktree
+treeboot worktree path k7m2qx
 treeboot worktree list
 treeboot worktree id --json
-treeboot worktree path feature-login-k7m2qx --yaml
+treeboot worktree slug --yaml
+treeboot worktree path k7m2qx --yaml
 treeboot worktree list --format json
 ```
 
-`worktree id` discovers and fully parses the current worktree's config using the
-same rules as `treeboot env`. Text output is the complete effective identifier
-followed by a newline.
+Without `PATH`, `worktree id` and `worktree slug` discover and fully parse the
+current worktree's config using the same rules as `treeboot env`. Text output is
+the requested effective value followed by a newline.
+
+With `PATH`, both commands derive identity for the exact target rather than
+replacing it with an enclosing Git worktree root. A relative input resolves
+against the process current directory. The result is normalized to an absolute
+path by canonicalizing the longest existing ancestor and lexically normalizing
+any missing suffix. An explicitly supplied empty argument is a usage error.
+Windows drive-relative paths such as `C:target` and root-relative paths without
+a drive or share such as `\target` are unsupported path errors; they are not
+joined to the current directory. Existing non-directory targets are errors,
+including regular files, symlinks to files, and dangling symlinks. Ordinary
+directories, symlinks to directories, and nonexistent targets work outside Git.
+
+An existing target directory uses config discovered directly within that
+directory and fully parses the selected file. A nonexistent target uses default
+identity settings. Invalid discovered config is fatal before output even when
+the invalid declaration is unrelated to identity. Explicit mode ignores ambient
+root and default-branch compatibility overrides. Git discovery is optional and
+starts from the exact target when it exists or its nearest existing directory
+ancestor otherwise. It may supply only the main-worktree basename used by the
+slug's readable fallback and never replaces the exact hash target.
+
+Equivalent relative, absolute, symlink, `.`, and `..` spellings normalize to one
+identity. A nonexistent target retains that identity after creation as an
+ordinary directory while the normalized target remains the same. For an actual
+Git worktree, explicit and implicit invocations produce the same values.
 
 `worktree path <ID>` enumerates all of the current repository's registered,
 non-bare worktrees whose paths still exist. Every candidate path is
 canonicalized, then that candidate's discovered config is fully parsed. The
-complete effective identifier is compared exactly and case-sensitively. The main
+complete effective ID is compared exactly and case-sensitively. The main
 worktree participates. Text output is the matching canonical absolute path
 followed by a newline.
 
@@ -396,11 +425,12 @@ No match exits non-zero. Multiple matches are a distinct error that reports
 every matching canonical path. Lookup always scans every candidate before
 succeeding so a later collision cannot be missed.
 
-`worktree list` uses the same candidate discovery and identifier generation.
-Text output is an `ID` and `PATH` table. The main worktree is first and
-remaining entries are sorted by canonical path. Duplicate identifiers remain
-visible and do not make listing fail. On Unix, `worktree path` and
-`worktree list` text output preserve native path bytes exactly.
+`worktree list` uses the same candidate discovery and identity generation. Text
+output is an `ID`, `SLUG`, and `PATH` table. The main worktree is first and
+remaining entries are sorted by canonical path. Duplicate IDs and slugs remain
+visible and do not make listing fail. Only ID collisions affect lookup. On Unix,
+`worktree path` and `worktree list` text output preserve native path bytes
+exactly.
 
 Missing registered paths are stale and skipped without changing Git metadata.
 Bare records are excluded from inventory and reverse lookup, but a bare primary
@@ -412,9 +442,9 @@ error; other failures are fatal and attributed to the candidate path. Reports
 are collected before rendering, so a candidate failure does not leave partial
 standard output.
 
-Ambient recognized Treeboot environment inputs remain honored. These commands do
-not accept `--root` or `--config`; explicit cross-candidate override semantics
-are not defined.
+Ambient recognized Treeboot environment inputs remain honored by implicit
+single-target and repository-wide inspection. Explicit `id PATH` and `slug PATH`
+ignore them. These commands do not accept `--root` or `--config`.
 
 ### Manual file operation commands
 
@@ -521,7 +551,7 @@ The shared worktree context object has this shape:
 {
   "package": "treeboot",
   "version": "0.8.0",
-  "spec_version": "2.3.0"
+  "spec_version": "2.4.0"
 }
 ```
 
@@ -535,15 +565,18 @@ The shared worktree context object has this shape:
 ```json
 {
   "path": "/repo-worktree/.treeboot.toml",
-  "worktree_id": "repo-worktree-a1b2c3",
+  "worktree_id": "a1b2c3",
+  "worktree_slug": "repo-worktree-a1b2c3",
   "config": {
     "strict": false,
     "default_ignore": [],
     "dangerously_allow_sources_outside_root": false,
     "dangerously_allow_targets_outside_worktree": false,
     "worktree_id": {
+      "length": 6
+    },
+    "worktree_slug": {
       "max_length": 48,
-      "hash_length": 6,
       "separator": "-"
     },
     "files": [
@@ -610,9 +643,9 @@ The shared worktree context object has this shape:
 }
 ```
 
-The top-level `worktree_id` string is the effective identifier for the selected
-worktree. `config.worktree_id` contains the normalized settings used to produce
-it.
+The top-level `worktree_id` and `worktree_slug` strings are the effective
+identity values for the selected worktree. `config.worktree_id` and
+`config.worktree_slug` contain their normalized settings.
 
 `files`, `commands`, and `teardown_commands` are ordered arrays. Omitted
 collections normalize to empty arrays. File `operation` is `copy`, `symlink`, or
@@ -764,8 +797,9 @@ variables:
   "SUPERSET_ROOT_PATH": "/repo",
   "TREEBOOT_DEFAULT_BRANCH": "main",
   "TREEBOOT_ROOT_PATH": "/repo",
-  "TREEBOOT_WORKTREE_ID": "repo-worktree-nw67nj",
-  "TREEBOOT_WORKTREE_PATH": "/repo-worktree"
+  "TREEBOOT_WORKTREE_ID": "nw67nj",
+  "TREEBOOT_WORKTREE_PATH": "/repo-worktree",
+  "TREEBOOT_WORKTREE_SLUG": "repo-worktree-nw67nj"
 }
 ```
 
@@ -779,7 +813,15 @@ variables that treeboot reads from the parent environment.
 
 ```json
 {
-  "id": "repo-worktree-nw67nj"
+  "id": "nw67nj"
+}
+```
+
+`treeboot worktree slug` emits:
+
+```json
+{
+  "slug": "repo-worktree-nw67nj"
 }
 ```
 
@@ -787,7 +829,7 @@ variables that treeboot reads from the parent environment.
 
 ```json
 {
-  "id": "repo-worktree-nw67nj",
+  "id": "nw67nj",
   "path": "/repo-worktree"
 }
 ```
@@ -798,11 +840,13 @@ variables that treeboot reads from the parent environment.
 {
   "worktrees": [
     {
-      "id": "repo-a1b2c3",
+      "id": "a1b2c3",
+      "slug": "repo-a1b2c3",
       "path": "/repo"
     },
     {
-      "id": "repo-worktree-nw67nj",
+      "id": "nw67nj",
+      "slug": "repo-worktree-nw67nj",
       "path": "/repo-worktree"
     }
   ]
@@ -827,11 +871,11 @@ command sections plus
 
 ## Public library compatibility
 
-`EnvOptions` and `WorktreeInspectionOptions` are non-exhaustive because
-inspection can gain optional inputs over time. Downstream callers must construct
-them through `Default` and then assign the public fields they need. Worktree
-inspection report and entry structs are also non-exhaustive so reports can gain
-additive metadata without breaking downstream source.
+`EnvOptions`, `WorktreeIdentityOptions`, and `WorktreeInspectionOptions` are
+non-exhaustive because inspection can gain optional inputs over time. Downstream
+callers must construct them through `Default` and then assign the public fields
+they need. Worktree inspection report and entry structs are also non-exhaustive
+so reports can gain additive metadata without breaking downstream source.
 
 ## Path model: Root path feeds the worktree path
 
@@ -943,33 +987,41 @@ command planning.
 TREEBOOT_ROOT_PATH
 TREEBOOT_WORKTREE_PATH
 TREEBOOT_WORKTREE_ID
+TREEBOOT_WORKTREE_SLUG
 TREEBOOT_DEFAULT_BRANCH
 ```
 
-### Worktree identifier
+### Worktree ID and slug
 
-`TREEBOOT_WORKTREE_ID` is a stable, path-derived identifier shared by bootstrap
-and teardown commands. It has this default shape:
+`TREEBOOT_WORKTREE_ID` is a stable compact ID shared by bootstrap and teardown
+commands. It contains only a configured prefix of the path digest.
+`TREEBOOT_WORKTREE_SLUG` is the readable companion containing a sanitized name,
+one configured separator, and the complete ID:
 
 ```text
-<readable-name>-<6-lowercase-Crockford-base32-characters>
+TREEBOOT_WORKTREE_ID=k7m2qx
+TREEBOOT_WORKTREE_SLUG=feature-login-k7m2qx
 ```
 
-The optional top-level inline object controls presentation:
+Two optional top-level inline objects control the values:
 
 ```toml
-worktree_id = { max_length = 48, hash_length = 6, separator = "-" }
+worktree_id = { length = 6 }
+worktree_slug = { max_length = 48, separator = "-" }
 ```
 
-All fields independently default. `hash_length` must be in `1..=52`; `separator`
-must be exactly `-` or `_`; and `max_length` must be at least `hash_length + 2`
-so the result can hold one readable character, one separator, and the hash.
-Validation happens after omitted fields default, so
-`worktree_id = { hash_length = 50 }` is invalid against the default
-`max_length = 48`. Normalized config output always includes all three fields.
-There is no environment or CLI override for these settings.
+All fields independently default. `worktree_id.length` must be in `1..=52`.
+`worktree_slug.separator` must be exactly `-` or `_`. `worktree_slug.max_length`
+must be at least `worktree_id.length + 2` so the slug can hold one readable
+character, one separator, and the complete ID. Validation happens after omitted
+fields default, so `worktree_id = { length = 50 }` is invalid against the
+default slug maximum of 48. Normalized config output always includes both
+settings objects and all of their fields. The unreleased composite `worktree_id`
+fields `max_length`, `hash_length`, and `separator` are unknown fields; there
+are no compatibility aliases for that shape. There is no environment or CLI
+override for these settings.
 
-The identifier hash is SHA-256 over a platform-native, domain-separated byte
+The identity digest is SHA-256 over a platform-native, domain-separated byte
 sequence:
 
 ```text
@@ -992,7 +1044,9 @@ using the lowercase Crockford alphabet:
 
 Consume five bits per character from most to least significant. Left-align the
 final remaining high bit and fill its low four bits with zero, producing 52
-characters for the complete digest. Retain the first `hash_length` characters.
+characters for the complete digest. Retain the first `worktree_id.length`
+characters as the complete ID. Readable naming and slug settings never affect
+the ID.
 
 Choose the readable source using the first matching complete trailing component
 pattern:
@@ -1014,32 +1068,37 @@ environment variables.
 A selected single component is considered mechanical when it is a canonical
 hexadecimal UUID in `8-4-4-4-12` form, a hexadecimal token of at least eight
 characters, or `t3code-` followed by a non-empty ASCII alphanumeric, `_`, or `-`
-token. Mechanical names fall back to the Git-discovered main-worktree basename.
+token. When Git supplies a main-worktree fallback, mechanical names use that
+fallback. Without one, including non-Git explicit targets, the target basename
+is retained as the deterministic readable source.
 
-Sanitize the selected native components lossily for display while retaining
+Sanitize the selected native components lossily for the slug while retaining
 exact native bytes for hashing: lowercase ASCII letters, retain ASCII letters
 and digits, replace each maximal run of all other characters (including
 component boundaries) with one configured separator, and trim boundary
-separators. If nothing remains, sanitize the main-worktree basename the same
-way, then use `worktree` as the defensive fallback.
+separators. If nothing remains, sanitize the main-worktree basename when
+available, then the target basename, then use `worktree` as the defensive
+fallback.
 
-The readable budget is `max_length - 1 - hash_length`. Truncate from the right
-to that budget and trim a separator exposed at the new end, then append exactly
-one configured separator and the digest prefix. The default result is at most 48
-ASCII characters and is a DNS-compatible label. `_` intentionally favors
-unquoted SQL/programming identifiers over DNS-label compatibility.
+The readable budget is `worktree_slug.max_length - 1 - worktree_id.length`.
+Truncate from the right to that budget and trim a separator exposed at the new
+end, then append exactly one configured separator and the complete ID. The
+default slug is at most 48 ASCII characters and is a DNS-compatible label. `_`
+intentionally favors unquoted SQL/programming identifiers over DNS-label
+compatibility.
 
-`TREEBOOT_WORKTREE_ID` is Treeboot-owned. A bootstrap or teardown command that
-declares it in its `env` table fails planning before file operations or commands
-run. Changing the hash input, encoding, recognizer precedence, sanitization, or
-truncation behavior is a compatibility change.
+Both identity variables are Treeboot-owned. A bootstrap or teardown command that
+declares either one in its `env` table fails planning before file operations or
+commands run. Changing the hash input, encoding, recognizer precedence,
+sanitization, or truncation behavior is a compatibility change.
 
-Existing configs that omit `worktree_id` continue with defaults. Older Treeboot
-versions reject the new key under the normal unknown-field forward-version rule.
-Structured `env` and `config` consumers receive additive keys. Scripts that
-previously ran `treeboot env` successfully beside an invalid discovered config
-now fail until that config is fixed or an explicit valid config is selected,
-because environment inspection must match configured command behavior.
+Existing configs that omit either settings object use defaults. Older Treeboot
+versions reject the new `worktree_slug` key under the normal unknown-field
+forward-version rule. Structured `env` and `config` consumers receive additive
+slug keys. Scripts that previously ran `treeboot env` successfully beside an
+invalid discovered config now fail until that config is fixed or an explicit
+valid config is selected, because environment inspection must match configured
+command behavior.
 
 ### Aliases
 
@@ -1253,7 +1312,8 @@ through the aggregate `mise run generate:check` task.
 
 strict = false
 default_ignore = [".DS_Store", "Thumbs.db"]
-worktree_id = { max_length = 48, hash_length = 6, separator = "-" }
+worktree_id = { length = 6 }
+worktree_slug = { max_length = 48, separator = "-" }
 dangerously_allow_sources_outside_root = false
 dangerously_allow_targets_outside_worktree = false
 
@@ -1305,7 +1365,8 @@ them.
 | `dangerously_allow_sources_outside_root`     | `TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT`     | Defaults to `false`. Allows declarative file operation sources outside `TREEBOOT_ROOT_PATH`.                                                            |
 | `dangerously_allow_targets_outside_worktree` | `TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE` | Defaults to `false`. Allows declarative file operation targets outside `TREEBOOT_WORKTREE_PATH`.                                                        |
 | `default_ignore`                             | none                                                  | Defaults to `[]`. Ordered path ignore patterns prepended to every `copy` and `sync` operation's effective ignore list.                                  |
-| `worktree_id`                                | none                                                  | Defaults to `{ max_length = 48, hash_length = 6, separator = "-" }`. Controls only stable worktree identifier presentation.                             |
+| `worktree_id`                                | none                                                  | Defaults to `{ length = 6 }`. Controls the compact path-digest prefix used as the worktree ID.                                                          |
+| `worktree_slug`                              | none                                                  | Defaults to `{ max_length = 48, separator = "-" }`. Controls readable worktree slug presentation.                                                       |
 
 ### File objects
 

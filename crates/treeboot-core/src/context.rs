@@ -5,10 +5,11 @@ use std::path::{Path, PathBuf};
 use crate::git::Git;
 use crate::paths;
 use crate::worktree_id;
-use crate::{Error, Result, WorktreeIdConfig};
+use crate::{Error, Result, WorktreeIdConfig, WorktreeSlugConfig};
 
 const TREEBOOT_ROOT_PATH: &str = "TREEBOOT_ROOT_PATH";
 pub(crate) const TREEBOOT_WORKTREE_ID: &str = "TREEBOOT_WORKTREE_ID";
+pub(crate) const TREEBOOT_WORKTREE_SLUG: &str = "TREEBOOT_WORKTREE_SLUG";
 const CODEX_SOURCE_TREE_PATH: &str = "CODEX_SOURCE_TREE_PATH";
 const CONDUCTOR_ROOT_PATH: &str = "CONDUCTOR_ROOT_PATH";
 const SUPERSET_ROOT_PATH: &str = "SUPERSET_ROOT_PATH";
@@ -151,6 +152,7 @@ pub struct Worktree {
     /// Canonical treeboot variables and compatibility aliases.
     pub environment: Environment,
     main_worktree_path: PathBuf,
+    identity_fallback_path: Option<PathBuf>,
 }
 
 impl Worktree {
@@ -172,6 +174,7 @@ impl Worktree {
             worktree_path,
             default_branch,
             environment,
+            identity_fallback_path: Some(main_worktree_path.clone()),
             main_worktree_path,
         }
     }
@@ -211,7 +214,7 @@ pub(crate) fn resolve(options: &WorktreeOptions) -> Result<Worktree> {
     let environment = build_environment(
         &root_path,
         &worktree_path,
-        &main_worktree_path,
+        Some(&main_worktree_path),
         &default_branch,
     );
 
@@ -220,6 +223,7 @@ pub(crate) fn resolve(options: &WorktreeOptions) -> Result<Worktree> {
         worktree_path,
         default_branch,
         environment,
+        identity_fallback_path: Some(main_worktree_path.clone()),
         main_worktree_path,
     })
 }
@@ -251,7 +255,7 @@ fn discover_default_branch(options: &WorktreeOptions, git: &Git) -> Result<Strin
 fn build_environment(
     root_path: &Path,
     worktree_path: &Path,
-    main_worktree_path: &Path,
+    identity_fallback_path: Option<&Path>,
     default_branch: &str,
 ) -> Environment {
     let root = root_path.as_os_str().to_os_string();
@@ -261,13 +265,16 @@ fn build_environment(
     let mut env = Environment::new();
     env.insert("TREEBOOT_ROOT_PATH".to_owned(), root.clone());
     env.insert("TREEBOOT_WORKTREE_PATH".to_owned(), worktree.clone());
+    let identity = worktree_id::identity(
+        worktree_path,
+        identity_fallback_path,
+        &WorktreeIdConfig::default(),
+        &WorktreeSlugConfig::default(),
+    );
+    env.insert(TREEBOOT_WORKTREE_ID.to_owned(), OsString::from(identity.id));
     env.insert(
-        TREEBOOT_WORKTREE_ID.to_owned(),
-        OsString::from(worktree_id::identifier(
-            worktree_path,
-            main_worktree_path,
-            &WorktreeIdConfig::default(),
-        )),
+        TREEBOOT_WORKTREE_SLUG.to_owned(),
+        OsString::from(identity.slug),
     );
     env.insert("TREEBOOT_DEFAULT_BRANCH".to_owned(), branch.clone());
     env.insert("GIT_SOURCE_TREE_PATH".to_owned(), root.clone());
@@ -281,17 +288,43 @@ fn build_environment(
     env
 }
 
-pub(crate) fn with_worktree_id_config(context: &Worktree, config: &WorktreeIdConfig) -> Worktree {
+pub(crate) fn with_worktree_identity_config(
+    context: &Worktree,
+    id_config: &WorktreeIdConfig,
+    slug_config: &WorktreeSlugConfig,
+) -> Worktree {
     let mut context = context.clone();
-    context.environment.insert(
-        TREEBOOT_WORKTREE_ID.to_owned(),
-        OsString::from(worktree_id::identifier(
-            &context.worktree_path,
-            &context.main_worktree_path,
-            config,
-        )),
+    let identity = worktree_id::identity(
+        &context.worktree_path,
+        context.identity_fallback_path.as_deref(),
+        id_config,
+        slug_config,
     );
     context
+        .environment
+        .insert(TREEBOOT_WORKTREE_ID.to_owned(), OsString::from(identity.id));
+    context.environment.insert(
+        TREEBOOT_WORKTREE_SLUG.to_owned(),
+        OsString::from(identity.slug),
+    );
+    context
+}
+
+pub(crate) fn for_identity_path(
+    path: PathBuf,
+    identity_fallback_path: Option<PathBuf>,
+) -> Worktree {
+    let root_path = path.clone();
+    let environment =
+        build_environment(&root_path, &path, identity_fallback_path.as_deref(), "main");
+    Worktree {
+        root_path: root_path.clone(),
+        worktree_path: path,
+        default_branch: "main".to_owned(),
+        environment,
+        main_worktree_path: root_path,
+        identity_fallback_path,
+    }
 }
 
 fn non_empty_value(value: &Option<OsString>) -> Option<&OsStr> {
@@ -364,7 +397,7 @@ mod tests {
     fn build_environment_should_set_codex_worktree_to_worktree_path() {
         let root = Path::new("/repo");
         let worktree = Path::new("/repo-worktree");
-        let env = build_environment(root, worktree, root, "main");
+        let env = build_environment(root, worktree, Some(root), "main");
 
         assert_eq!(
             env.get("CODEX_WORKTREE_PATH"),
@@ -376,14 +409,19 @@ mod tests {
     fn build_environment_should_set_default_worktree_identifier() {
         let root = Path::new("/repo");
         let worktree = Path::new("/repo-worktree");
-        let env = build_environment(root, worktree, root, "main");
+        let env = build_environment(root, worktree, Some(root), "main");
 
-        let identifier = env
+        let id = env
             .get("TREEBOOT_WORKTREE_ID")
-            .expect("worktree identifier should be present")
+            .expect("worktree ID should be present")
             .to_string_lossy();
-        assert!(identifier.starts_with("repo-worktree-"));
-        assert_eq!(identifier.len(), "repo-worktree-".len() + 6);
+        let slug = env
+            .get("TREEBOOT_WORKTREE_SLUG")
+            .expect("worktree slug should be present")
+            .to_string_lossy();
+        assert_eq!(id.len(), 6);
+        assert!(slug.starts_with("repo-worktree-"));
+        assert!(slug.ends_with(id.as_ref()));
     }
 
     #[test]

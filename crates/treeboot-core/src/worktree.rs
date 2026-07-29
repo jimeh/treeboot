@@ -3,13 +3,30 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use crate::context::TREEBOOT_WORKTREE_ID;
+use crate::context::{TREEBOOT_WORKTREE_ID, TREEBOOT_WORKTREE_SLUG};
 use crate::env::resolve_effective_context;
 use crate::git::Git;
 use crate::paths;
-use crate::{EnvOptions, EnvironmentInput, Error, Result, WorktreeOptions};
+use crate::{Config, EnvOptions, EnvironmentInput, Error, Result, WorktreeOptions};
 
-/// Options for inspecting worktree identifiers in the current repository.
+/// Options for inspecting one worktree identity.
+///
+/// Construct options through [`WorktreeIdentityOptions::default`] so future
+/// additive fields remain source-compatible.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct WorktreeIdentityOptions {
+    /// Process directory used to resolve a relative explicit path, or the
+    /// discovery start when no explicit path is supplied.
+    pub cwd: Option<PathBuf>,
+    /// Exact target path whose identity should be derived.
+    pub path: Option<PathBuf>,
+    /// Explicit environment input used by implicit Git discovery. Explicit
+    /// path inspection intentionally ignores these compatibility overrides.
+    pub environment: EnvironmentInput,
+}
+
+/// Options for inspecting worktree identities in the current repository.
 ///
 /// Construct options through [`WorktreeInspectionOptions::default`] so future
 /// additive fields remain source-compatible.
@@ -22,29 +39,39 @@ pub struct WorktreeInspectionOptions {
     pub environment: EnvironmentInput,
 }
 
-/// Result of inspecting the current worktree identifier.
+/// Result of inspecting a worktree ID.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[non_exhaustive]
 pub struct WorktreeIdReport {
-    /// Complete effective worktree identifier.
+    /// Complete effective worktree ID.
     pub id: String,
 }
 
-/// Identifier and canonical path of one registered worktree.
+/// Result of inspecting a worktree slug.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
+pub struct WorktreeSlugReport {
+    /// Complete effective readable worktree slug.
+    pub slug: String,
+}
+
+/// Identity and canonical path of one registered worktree.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[non_exhaustive]
 pub struct WorktreeEntry {
-    /// Complete effective worktree identifier.
+    /// Complete effective worktree ID.
     pub id: String,
+    /// Complete effective readable worktree slug.
+    pub slug: String,
     /// Canonical absolute worktree path.
     pub path: PathBuf,
 }
 
-/// Result of resolving a worktree identifier.
+/// Result of resolving a worktree ID.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[non_exhaustive]
 pub struct WorktreePathReport {
-    /// Exact identifier that was resolved.
+    /// Exact ID that was resolved.
     pub id: String,
     /// Canonical absolute path of the matching worktree.
     pub path: PathBuf,
@@ -58,19 +85,40 @@ pub struct WorktreeListReport {
     pub worktrees: Vec<WorktreeEntry>,
 }
 
-/// Inspects the current worktree's config-refined identifier.
+#[derive(Debug)]
+struct WorktreeIdentity {
+    id: String,
+    slug: String,
+}
+
+/// Inspects the current or explicit target's config-refined ID.
 ///
 /// # Errors
 ///
-/// Returns an error if worktree discovery or full config parsing fails.
-pub fn inspect_worktree_id(options: WorktreeInspectionOptions) -> Result<WorktreeIdReport> {
-    let context = resolve_effective_context(env_options(&options, options.cwd.clone()))?;
+/// Returns an error if implicit worktree discovery, explicit path
+/// normalization, or full config parsing fails.
+pub fn inspect_worktree_id(options: WorktreeIdentityOptions) -> Result<WorktreeIdReport> {
+    let context = resolve_identity_context(options)?;
     Ok(WorktreeIdReport {
-        id: identifier_from_context(&context)?,
+        id: identity_from_context(&context)?.id,
     })
 }
 
-/// Lists every registered, existing, non-bare worktree and its effective ID.
+/// Inspects the current or explicit target's config-refined slug.
+///
+/// # Errors
+///
+/// Returns an error if implicit worktree discovery, explicit path
+/// normalization, or full config parsing fails.
+pub fn inspect_worktree_slug(options: WorktreeIdentityOptions) -> Result<WorktreeSlugReport> {
+    let context = resolve_identity_context(options)?;
+    Ok(WorktreeSlugReport {
+        slug: identity_from_context(&context)?.slug,
+    })
+}
+
+/// Lists every registered, existing, non-bare worktree and its effective
+/// identity.
 ///
 /// # Errors
 ///
@@ -111,9 +159,13 @@ pub fn inspect_worktree_list(options: WorktreeInspectionOptions) -> Result<Workt
             Err(error) if candidate_disappeared(&path, &error) => continue,
             Err(error) => return Err(candidate_error(&path, error)),
         };
-        let id =
-            identifier_from_context(&context).map_err(|error| candidate_error(&path, error))?;
-        let entry = WorktreeEntry { id, path };
+        let identity =
+            identity_from_context(&context).map_err(|error| candidate_error(&path, error))?;
+        let entry = WorktreeEntry {
+            id: identity.id,
+            slug: identity.slug,
+            path,
+        };
 
         if candidate.main {
             main = Some(entry);
@@ -132,9 +184,9 @@ pub fn inspect_worktree_list(options: WorktreeInspectionOptions) -> Result<Workt
     Ok(WorktreeListReport { worktrees })
 }
 
-/// Resolves an exact effective identifier to one registered worktree path.
+/// Resolves an exact effective ID to one registered worktree path.
 ///
-/// Every candidate is inspected before the result is selected so identifier
+/// Every candidate is inspected before the result is selected so ID
 /// collisions cannot be hidden by enumeration order.
 ///
 /// # Errors
@@ -174,12 +226,66 @@ fn env_options(options: &WorktreeInspectionOptions, cwd: Option<PathBuf>) -> Env
     }
 }
 
-fn identifier_from_context(context: &crate::Worktree) -> Result<String> {
-    context
+fn resolve_identity_context(options: WorktreeIdentityOptions) -> Result<crate::Worktree> {
+    let Some(input_path) = options.path else {
+        return resolve_effective_context(EnvOptions {
+            cwd: options.cwd,
+            environment: options.environment,
+            ..EnvOptions::default()
+        });
+    };
+    let cwd = options.cwd.map_or_else(
+        || std::env::current_dir().map_err(|source| Error::CurrentDir { source }),
+        Ok,
+    )?;
+    let input_path = paths::resolve_path(&cwd, &input_path).map_err(|source| {
+        Error::WorktreeIdentityUnsupportedPath {
+            path: input_path,
+            reason: source.reason(),
+        }
+    })?;
+    let path =
+        paths::normalize_maybe_existing(&input_path).map_err(|source| Error::NormalizePath {
+            path: input_path,
+            source,
+        })?;
+    match std::fs::symlink_metadata(&path) {
+        Ok(_) if !path.is_dir() => {
+            return Err(Error::WorktreeIdentityPathNotDirectory { path });
+        }
+        Ok(_) => {}
+        Err(source) if source.kind() == ErrorKind::NotFound => {}
+        Err(source) => {
+            return Err(Error::NormalizePath { path, source });
+        }
+    }
+
+    let identity_fallback_path = path
+        .ancestors()
+        .find(|candidate| candidate.is_dir())
+        .and_then(|candidate| {
+            Git::new(candidate)
+                .main_worktree_path()
+                .ok()
+                .flatten()
+                .and_then(|path| paths::canonicalize(&path).ok())
+        });
+    let context = crate::context::for_identity_path(path, identity_fallback_path);
+    Ok(Config::load_discovered(&context, None)?.map_or(context, |loaded| loaded.context))
+}
+
+fn identity_from_context(context: &crate::Worktree) -> Result<WorktreeIdentity> {
+    let id = context
         .environment
         .get(TREEBOOT_WORKTREE_ID)
         .map(|id| id.to_string_lossy().into_owned())
-        .ok_or(Error::WorktreeIdMissing)
+        .ok_or(Error::WorktreeIdMissing)?;
+    let slug = context
+        .environment
+        .get(TREEBOOT_WORKTREE_SLUG)
+        .map(|slug| slug.to_string_lossy().into_owned())
+        .ok_or(Error::WorktreeSlugMissing)?;
+    Ok(WorktreeIdentity { id, slug })
 }
 
 fn candidate_error(path: &Path, source: Error) -> Error {
@@ -269,8 +375,26 @@ mod tests {
         );
 
         let error =
-            identifier_from_context(&context).expect_err("missing managed ID should be an error");
+            identity_from_context(&context).expect_err("missing managed ID should be an error");
 
         assert!(matches!(error, Error::WorktreeIdMissing));
+    }
+
+    #[test]
+    fn identity_resolution_should_error_when_managed_slug_is_missing() {
+        let context = crate::Worktree::from_parts(
+            "/repo".into(),
+            "/repo/linked".into(),
+            "main".to_owned(),
+            crate::Environment::from([(
+                TREEBOOT_WORKTREE_ID.to_owned(),
+                std::ffi::OsString::from("a1b2c3"),
+            )]),
+        );
+
+        let error =
+            identity_from_context(&context).expect_err("missing managed slug should be an error");
+
+        assert!(matches!(error, Error::WorktreeSlugMissing));
     }
 }

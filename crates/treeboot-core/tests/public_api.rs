@@ -10,11 +10,12 @@ use treeboot_core::{
     FileOperationCompletionOptions, FileOperationKind, FileOperationOptions, FileOperationSummary,
     InitOptions, LoadedConfig, ManualFileOperationOptions, MetadataField, OutputEvent, PlanOrigin,
     PlannedFileStatus, Reporter, RunAction, RunOptions, SourceSpan, StatusOptions, SymlinkMode,
-    SyncCompare, TeardownOptions, Worktree, WorktreeIdConfig, WorktreeInspectionOptions,
-    WorktreeOptions, check, config_schema_json, diagnose, file_operation_source_candidates, init,
-    inspect_config, inspect_env, inspect_status, inspect_status_snapshot, inspect_worktree_id,
-    inspect_worktree_list, inspect_worktree_path, prepare_teardown, run, run_file_operation,
-    treeboot_version_info, version_info,
+    SyncCompare, TeardownOptions, Worktree, WorktreeIdConfig, WorktreeIdentityOptions,
+    WorktreeInspectionOptions, WorktreeOptions, WorktreeSlugConfig, check, config_schema_json,
+    diagnose, file_operation_source_candidates, init, inspect_config, inspect_env, inspect_status,
+    inspect_status_snapshot, inspect_worktree_id, inspect_worktree_list, inspect_worktree_path,
+    inspect_worktree_slug, prepare_teardown, run, run_file_operation, treeboot_version_info,
+    version_info,
 };
 
 #[derive(Default)]
@@ -128,6 +129,8 @@ fn public_struct_policy_should_keep_selected_types_non_exhaustive() {
     assert_non_exhaustive(config, "LoadedConfig");
     assert_non_exhaustive(config, "Config");
     assert_non_exhaustive(config, "ConfigRuntimeOptions");
+    assert_non_exhaustive(config, "WorktreeIdConfig");
+    assert_non_exhaustive(config, "WorktreeSlugConfig");
     assert_non_exhaustive(config, "FileOperation");
     assert_non_exhaustive(config, "CommandOperation");
     assert_non_exhaustive(config, "SourceSpan");
@@ -137,7 +140,12 @@ fn public_struct_policy_should_keep_selected_types_non_exhaustive() {
         include_str!("../src/worktree.rs"),
         "WorktreeInspectionOptions",
     );
+    assert_non_exhaustive(
+        include_str!("../src/worktree.rs"),
+        "WorktreeIdentityOptions",
+    );
     assert_non_exhaustive(include_str!("../src/worktree.rs"), "WorktreeIdReport");
+    assert_non_exhaustive(include_str!("../src/worktree.rs"), "WorktreeSlugReport");
     assert_non_exhaustive(include_str!("../src/worktree.rs"), "WorktreeEntry");
     assert_non_exhaustive(include_str!("../src/worktree.rs"), "WorktreePathReport");
     assert_non_exhaustive(include_str!("../src/worktree.rs"), "WorktreeListReport");
@@ -146,12 +154,17 @@ fn public_struct_policy_should_keep_selected_types_non_exhaustive() {
 #[test]
 fn public_worktree_inspection_api_should_resolve_current_list_and_path() {
     let repo = git_worktree();
-    let mut options = WorktreeInspectionOptions::default();
-    options.cwd = Some(repo.worktree_path().to_path_buf());
+    let mut identity_options = WorktreeIdentityOptions::default();
+    identity_options.cwd = Some(repo.worktree_path().to_path_buf());
+    let mut inspection_options = WorktreeInspectionOptions::default();
+    inspection_options.cwd = Some(repo.worktree_path().to_path_buf());
 
-    let current = inspect_worktree_id(options.clone()).expect("current ID should resolve");
-    let list = inspect_worktree_list(options.clone()).expect("worktree list should resolve");
-    let resolved = inspect_worktree_path(&current.id, options).expect("ID should reverse resolve");
+    let current = inspect_worktree_id(identity_options.clone()).expect("current ID should resolve");
+    let slug = inspect_worktree_slug(identity_options).expect("current slug should resolve");
+    let list =
+        inspect_worktree_list(inspection_options.clone()).expect("worktree list should resolve");
+    let resolved =
+        inspect_worktree_path(&current.id, inspection_options).expect("ID should reverse resolve");
 
     assert_eq!(resolved.id, current.id);
     assert_eq!(resolved.path, canonical_path(repo.worktree_path()));
@@ -162,19 +175,69 @@ fn public_worktree_inspection_api_should_resolve_current_list_and_path() {
         .find(|entry| entry.path == resolved.path)
         .expect("resolved worktree should be listed");
     assert_eq!(entry.id, resolved.id);
+    assert_eq!(entry.slug, slug.slug);
+}
+
+#[test]
+fn public_worktree_identity_api_should_support_an_explicit_non_git_target() {
+    let temp = TempDir::new().expect("tempdir should be created");
+    let target = temp.path().join("Feature Target");
+    std::fs::create_dir(&target).expect("target should be created");
+    write_file(
+        &target.join(".treeboot.toml"),
+        "worktree_id = { length = 8 }\n\
+         worktree_slug = { max_length = 24, separator = \"_\" }\n",
+    );
+    let mut options = WorktreeIdentityOptions::default();
+    options.cwd = Some(temp.path().to_path_buf());
+    options.path = Some(PathBuf::from("Feature Target"));
+
+    let id = inspect_worktree_id(options.clone()).expect("explicit ID should resolve");
+    let slug = inspect_worktree_slug(options).expect("explicit slug should resolve");
+
+    assert_eq!(id.id.len(), 8);
+    assert!(slug.slug.starts_with("feature_target_"));
+    assert!(slug.slug.ends_with(&id.id));
+}
+
+#[cfg(windows)]
+#[test]
+fn public_worktree_identity_api_should_type_unsupported_windows_paths() {
+    for (path, expected_reason) in [
+        (PathBuf::from(r"C:relative"), "drive-relative paths"),
+        (PathBuf::from(r"\relative"), "root-relative paths"),
+    ] {
+        let mut options = WorktreeIdentityOptions::default();
+        options.cwd = Some(PathBuf::from(r"C:\repo"));
+        options.path = Some(path.clone());
+
+        let error = inspect_worktree_id(options).expect_err("special path should fail");
+        match error {
+            Error::WorktreeIdentityUnsupportedPath {
+                path: actual,
+                reason,
+            } => {
+                assert_eq!(actual, path);
+                assert!(reason.contains(expected_reason), "{reason}");
+            }
+            other => panic!("expected typed unsupported-path error, got {other:?}"),
+        }
+    }
 }
 
 #[test]
 fn public_worktree_path_lookup_should_be_case_sensitive_and_typed() {
     let repo = git_worktree();
-    let mut options = WorktreeInspectionOptions::default();
-    options.cwd = Some(repo.worktree_path().to_path_buf());
-    let current = inspect_worktree_id(options.clone()).expect("current ID should resolve");
+    let mut identity_options = WorktreeIdentityOptions::default();
+    identity_options.cwd = Some(repo.worktree_path().to_path_buf());
+    let current = inspect_worktree_id(identity_options).expect("current ID should resolve");
     let changed = current.id.to_ascii_uppercase();
     assert_ne!(changed, current.id);
 
-    let error =
-        inspect_worktree_path(&changed, options).expect_err("case-changed ID should not match");
+    let mut inspection_options = WorktreeInspectionOptions::default();
+    inspection_options.cwd = Some(repo.worktree_path().to_path_buf());
+    let error = inspect_worktree_path(&changed, inspection_options)
+        .expect_err("case-changed ID should not match");
 
     match error {
         Error::WorktreeIdNotFound { id } => assert_eq!(id, changed),
@@ -193,9 +256,9 @@ fn public_worktree_path_lookup_should_report_every_ambiguous_path() {
             let path = add_git_worktree(repo.root_path(), parent.path(), &name);
             write_file(
                 &path.join(".treeboot.toml"),
-                "worktree_id = { max_length = 3, hash_length = 1 }\n",
+                "worktree_id = { length = 1 }\nworktree_slug = { max_length = 3 }\n",
             );
-            let mut options = WorktreeInspectionOptions::default();
+            let mut options = WorktreeIdentityOptions::default();
             options.cwd = Some(path.clone());
             let id = inspect_worktree_id(options)
                 .expect("collision candidate ID should resolve")
@@ -229,7 +292,7 @@ fn public_worktree_list_should_attribute_malformed_candidate_config() {
     let malformed = add_git_worktree(repo.root_path(), parent.path(), "malformed");
     write_file(
         &malformed.join(".treeboot.toml"),
-        "worktree_id = { hash_length = 0 }\n",
+        "worktree_id = { length = 0 }\n",
     );
     let malformed = canonical_path(&malformed);
     let mut options = WorktreeInspectionOptions::default();
@@ -847,7 +910,9 @@ fn public_api_run_should_apply_discovered_config() {
     let config_path = repo.worktree_path().join(".treeboot.toml");
     write_file(
         &config_path,
-        "worktree_id = { hash_length = 9, separator = \"_\" }\ncommands = []\n",
+        "worktree_id = { length = 9 }\n\
+         worktree_slug = { separator = \"_\" }\n\
+         commands = []\n",
     );
     let mut reporter = VecReporter::default();
 
@@ -866,16 +931,20 @@ fn public_api_run_should_apply_discovered_config() {
             path: canonical_path(&config_path),
         }
     );
-    let identifier = report
+    let id = report
         .context
         .environment
         .get("TREEBOOT_WORKTREE_ID")
-        .expect("run report should carry effective identifier")
+        .expect("run report should carry effective ID")
         .to_string_lossy();
-    assert_eq!(
-        identifier.rsplit_once('_').map(|(_, hash)| hash.len()),
-        Some(9)
-    );
+    let slug = report
+        .context
+        .environment
+        .get("TREEBOOT_WORKTREE_SLUG")
+        .expect("run report should carry effective slug")
+        .to_string_lossy();
+    assert_eq!(id.len(), 9);
+    assert!(slug.ends_with(id.as_ref()));
 }
 
 #[test]
@@ -883,7 +952,7 @@ fn public_api_prepared_teardown_should_carry_effective_identifier_without_comman
     let repo = git_worktree();
     write_file(
         &repo.worktree_path().join(".treeboot.toml"),
-        "worktree_id = { hash_length = 10, separator = \"_\" }\n",
+        "worktree_id = { length = 10 }\nworktree_slug = { separator = \"_\" }\n",
     );
     let mut reporter = VecReporter::default();
 
@@ -895,17 +964,20 @@ fn public_api_prepared_teardown_should_carry_effective_identifier_without_comman
         &mut reporter,
     )
     .expect("teardown should prepare");
-    let identifier = prepared
+    let id = prepared
         .context()
         .environment
         .get("TREEBOOT_WORKTREE_ID")
-        .expect("prepared teardown should carry effective identifier")
+        .expect("prepared teardown should carry effective ID")
         .to_string_lossy();
-
-    assert_eq!(
-        identifier.rsplit_once('_').map(|(_, hash)| hash.len()),
-        Some(10)
-    );
+    let slug = prepared
+        .context()
+        .environment
+        .get("TREEBOOT_WORKTREE_SLUG")
+        .expect("prepared teardown should carry effective slug")
+        .to_string_lossy();
+    assert_eq!(id.len(), 10);
+    assert!(slug.ends_with(id.as_ref()));
 }
 
 #[test]
@@ -1218,12 +1290,15 @@ fn public_api_config_load_should_report_io_errors() {
 }
 
 #[test]
-fn public_worktree_identifier_config_should_require_checked_construction() {
-    let config = WorktreeIdConfig::new(64, 10, '_').expect("settings should be valid");
-    let error = WorktreeIdConfig::new(8, 10, '_').expect_err("insufficient maximum should fail");
+fn public_worktree_identity_configs_should_require_checked_construction() {
+    let id = WorktreeIdConfig::new(10).expect("ID settings should be valid");
+    let slug = WorktreeSlugConfig::new(64, '_').expect("slug settings should be valid");
+    let id_error = WorktreeIdConfig::new(53).expect_err("oversized ID should fail");
+    let slug_error = WorktreeSlugConfig::new(2, '_').expect_err("short slug should fail");
 
-    assert_eq!(config.max_length(), 64);
-    assert_eq!(config.hash_length(), 10);
-    assert_eq!(config.separator(), '_');
-    assert!(error.to_string().contains("max_length must be at least 12"));
+    assert_eq!(id.length(), 10);
+    assert_eq!(slug.max_length(), 64);
+    assert_eq!(slug.separator(), '_');
+    assert!(id_error.to_string().contains("between 1 and 52"));
+    assert!(slug_error.to_string().contains("at least 3"));
 }

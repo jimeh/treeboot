@@ -3,51 +3,66 @@ use std::path::{Component, Path};
 
 use sha2::{Digest, Sha256};
 
-use crate::WorktreeIdConfig;
+use crate::{WorktreeIdConfig, WorktreeSlugConfig};
 
 const HASH_DOMAIN: &[u8] = b"treeboot-worktree-id-v1";
 const CROCKFORD: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
 
-pub(crate) fn identifier(
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WorktreeIdentity {
+    pub(crate) id: String,
+    pub(crate) slug: String,
+}
+
+pub(crate) fn identity(
     worktree_path: &Path,
-    main_worktree_path: &Path,
-    config: &WorktreeIdConfig,
-) -> String {
+    main_worktree_path: Option<&Path>,
+    id_config: &WorktreeIdConfig,
+    slug_config: &WorktreeSlugConfig,
+) -> WorktreeIdentity {
+    let encoded = encode_digest(&path_digest(worktree_path));
+    let id = encoded[..id_config.length()].to_owned();
     let selected = readable_source(worktree_path);
-    let selected = if selected.len() == 1 && is_mechanical(selected[0]) {
-        Vec::new()
-    } else {
-        selected
-    };
-    let mut readable = sanitize_components(&selected, config.separator());
+    let selected =
+        if main_worktree_path.is_some() && selected.len() == 1 && is_mechanical(selected[0]) {
+            Vec::new()
+        } else {
+            selected
+        };
+    let mut readable = sanitize_components(&selected, slug_config.separator());
     if readable.is_empty() {
         readable = main_worktree_path
-            .file_name()
+            .and_then(Path::file_name)
             .map_or_else(String::new, |name| {
-                sanitize_components(&[name], config.separator())
+                sanitize_components(&[name], slug_config.separator())
             });
+    }
+    if readable.is_empty() {
+        readable = worktree_path.file_name().map_or_else(String::new, |name| {
+            sanitize_components(&[name], slug_config.separator())
+        });
     }
     if readable.is_empty() {
         readable = "worktree".to_owned();
     }
 
-    let budget = config.max_length() - config.hash_length() - 1;
+    let budget = slug_config.max_length().saturating_sub(id.len() + 1);
     if readable.len() > budget {
         readable.truncate(budget);
-        while readable.ends_with(config.separator()) {
+        while readable.ends_with(slug_config.separator()) {
             readable.pop();
         }
     }
     if readable.is_empty() {
-        readable = fallback_within_budget(main_worktree_path, config.separator(), budget);
+        readable = fallback_within_budget(
+            main_worktree_path.unwrap_or(worktree_path),
+            slug_config.separator(),
+            budget,
+        );
     }
 
-    let encoded = encode_digest(&path_digest(worktree_path));
-    format!(
-        "{readable}{}{hash}",
-        config.separator(),
-        hash = &encoded[..config.hash_length()]
-    )
+    let slug = format!("{readable}{}{id}", slug_config.separator());
+    WorktreeIdentity { id, slug }
 }
 
 fn fallback_within_budget(main_worktree_path: &Path, separator: char, budget: usize) -> String {
@@ -237,12 +252,14 @@ fn encode_digest(digest: &[u8; 32]) -> String {
 mod tests {
     use super::*;
 
-    fn default_id(path: &str, root: &str) -> String {
-        identifier(
+    fn default_slug(path: &str, root: &str) -> String {
+        identity(
             Path::new(path),
-            Path::new(root),
+            Some(Path::new(root)),
             &WorktreeIdConfig::default(),
+            &WorktreeSlugConfig::default(),
         )
+        .slug
     }
 
     #[test]
@@ -265,22 +282,22 @@ mod tests {
         ];
 
         for (path, prefix) in cases {
-            let value = default_id(path, "/home/a/treeboot");
+            let value = default_slug(path, "/home/a/treeboot");
             assert!(value.starts_with(prefix), "{path}: {value}");
         }
     }
 
     #[test]
     fn identifier_should_use_generic_name_for_recognizer_near_miss() {
-        let conductor = default_id(
+        let conductor = default_slug(
             "/home/a/conductor2/workspaces/payments/london",
             "/home/a/project",
         );
-        let t3 = default_id(
+        let t3 = default_slug(
             "/home/a/.t3/worktrees/payments/feature-auth",
             "/home/a/project",
         );
-        let superset = default_id(
+        let superset = default_slug(
             "/home/a/.superset2/worktrees/payments/owner/feature-auth",
             "/home/a/project",
         );
@@ -295,7 +312,7 @@ mod tests {
 
     #[test]
     fn identifier_should_use_earlier_complete_superset_marker() {
-        let value = default_id(
+        let value = default_slug(
             "/a/.superset/worktrees/proj/ws/.superset/worktrees/x",
             "/a/proj",
         );
@@ -305,11 +322,11 @@ mod tests {
 
     #[test]
     fn identifier_should_recognize_codex_uuid_parent_and_superset_simple_workspace() {
-        let codex = default_id(
+        let codex = default_slug(
             "/custom/.codex/worktrees/550e8400-e29b-41d4-a716-446655440000/treeboot",
             "/custom/treeboot",
         );
-        let superset = default_id(
+        let superset = default_slug(
             "/custom/.superset/worktrees/treeboot/feature-auth",
             "/custom/treeboot",
         );
@@ -321,14 +338,14 @@ mod tests {
     #[test]
     fn identifier_should_fall_back_for_unknown_mechanical_basenames() {
         for name in ["deadbeef", "t3code-ab12"] {
-            let value = default_id(&format!("/tmp/{name}"), "/tmp/payments");
+            let value = default_slug(&format!("/tmp/{name}"), "/tmp/payments");
             assert!(value.starts_with("payments-"), "{name}: {value}");
         }
     }
 
     #[test]
     fn identifier_should_fall_back_for_mechanical_single_component() {
-        let value = default_id(
+        let value = default_slug(
             "/home/a/project/.claude/worktrees/550e8400-e29b-41d4-a716-446655440000",
             "/home/a/project",
         );
@@ -338,19 +355,20 @@ mod tests {
 
     #[test]
     fn identifier_should_collapse_unsupported_runs() {
-        let value = default_id("/home/a/Feature...  Login", "/home/a/project");
+        let value = default_slug("/home/a/Feature...  Login", "/home/a/project");
 
         assert!(value.starts_with("feature-login-"));
     }
 
     #[test]
     fn identifier_should_truncate_without_trailing_separator() {
-        let config = WorktreeIdConfig::new(16, 6, '-').expect("config should be valid");
-        let value = identifier(
+        let value = identity(
             Path::new("/home/a/abcdefghi--jkl"),
-            Path::new("/home/a/project"),
-            &config,
-        );
+            Some(Path::new("/home/a/project")),
+            &WorktreeIdConfig::default(),
+            &WorktreeSlugConfig::new(16, '-').expect("config should be valid"),
+        )
+        .slug;
 
         assert_eq!(value.len(), 16);
         assert!(!value[..9].ends_with('-'));
@@ -358,26 +376,27 @@ mod tests {
 
     #[test]
     fn identifier_should_use_final_fallback_when_names_sanitize_empty() {
-        let value = default_id("/tmp/💥", "/tmp/✨");
+        let value = default_slug("/tmp/💥", "/tmp/✨");
 
         assert!(value.starts_with("worktree-"));
     }
 
     #[test]
     fn identifier_should_use_main_worktree_when_selected_name_sanitizes_empty() {
-        let value = default_id("/tmp/💥", "/tmp/payments");
+        let value = default_slug("/tmp/💥", "/tmp/payments");
 
         assert!(value.starts_with("payments-"));
     }
 
     #[test]
     fn identifier_should_support_underscore_separator_and_exact_minimum_length() {
-        let config = WorktreeIdConfig::new(8, 6, '_').expect("config should be valid");
-        let value = identifier(
+        let value = identity(
             Path::new("/tmp/long-readable-name"),
-            Path::new("/tmp/project"),
-            &config,
-        );
+            Some(Path::new("/tmp/project")),
+            &WorktreeIdConfig::default(),
+            &WorktreeSlugConfig::new(8, '_').expect("config should be valid"),
+        )
+        .slug;
 
         assert_eq!(value.len(), 8);
         assert_eq!(value.as_bytes()[1], b'_');
@@ -385,8 +404,8 @@ mod tests {
 
     #[test]
     fn identifier_should_distinguish_same_names_under_different_parents() {
-        let first = default_id("/tmp/one/feature", "/tmp/one/project");
-        let second = default_id("/tmp/two/feature", "/tmp/two/project");
+        let first = default_slug("/tmp/one/feature", "/tmp/one/project");
+        let second = default_slug("/tmp/two/feature", "/tmp/two/project");
 
         assert_ne!(first, second);
         assert!(first.starts_with("feature-"));
@@ -395,8 +414,8 @@ mod tests {
 
     #[test]
     fn identifier_should_hash_native_path_spelling_without_case_folding() {
-        let upper = default_id("/tmp/Feature", "/tmp/project");
-        let lower = default_id("/tmp/feature", "/tmp/project");
+        let upper = default_slug("/tmp/Feature", "/tmp/project");
+        let lower = default_slug("/tmp/feature", "/tmp/project");
 
         assert_ne!(upper, lower);
         assert!(upper.starts_with("feature-"));
@@ -407,25 +426,71 @@ mod tests {
     fn identifier_should_keep_digest_prefix_across_presentation_settings() {
         let path = Path::new("/tmp/feature-login");
         let root = Path::new("/tmp/project");
-        let short = identifier(
+        let short = identity(
             path,
-            root,
-            &WorktreeIdConfig::new(48, 6, '-').expect("config should be valid"),
+            Some(root),
+            &WorktreeIdConfig::new(6).expect("config should be valid"),
+            &WorktreeSlugConfig::new(48, '-').expect("config should be valid"),
         );
-        let long = identifier(
+        let long = identity(
             path,
-            root,
-            &WorktreeIdConfig::new(80, 12, '_').expect("config should be valid"),
+            Some(root),
+            &WorktreeIdConfig::new(12).expect("config should be valid"),
+            &WorktreeSlugConfig::new(80, '_').expect("config should be valid"),
         );
 
-        let short_hash = short.rsplit_once('-').map(|(_, hash)| hash);
-        let long_hash = long.rsplit_once('_').map(|(_, hash)| hash);
-        assert_eq!(short_hash, long_hash.map(|hash| &hash[..6]));
+        assert_eq!(short.id, &long.id[..6]);
+        assert!(short.slug.ends_with(&short.id));
+        assert!(long.slug.ends_with(&long.id));
+    }
+
+    #[test]
+    fn id_should_ignore_readable_fallback_separator_and_slug_maximum() {
+        let path = Path::new("/tmp/deadbeef");
+        let id_config = WorktreeIdConfig::new(10).expect("ID config should be valid");
+        let first = identity(
+            path,
+            Some(Path::new("/tmp/project-one")),
+            &id_config,
+            &WorktreeSlugConfig::new(24, '-').expect("slug config should be valid"),
+        );
+        let second = identity(
+            path,
+            None,
+            &id_config,
+            &WorktreeSlugConfig::new(64, '_').expect("slug config should be valid"),
+        );
+
+        assert_eq!(first.id, second.id);
+        assert_ne!(first.slug, second.slug);
+        assert!(first.slug.ends_with(&first.id));
+        assert!(second.slug.ends_with(&second.id));
+    }
+
+    #[test]
+    fn slug_should_use_deterministic_non_git_fallbacks() {
+        let mechanical = identity(
+            Path::new("/tmp/deadbeef"),
+            None,
+            &WorktreeIdConfig::default(),
+            &WorktreeSlugConfig::default(),
+        );
+        let empty = identity(
+            Path::new("/tmp/💥"),
+            None,
+            &WorktreeIdConfig::default(),
+            &WorktreeSlugConfig::default(),
+        );
+
+        assert!(mechanical.slug.starts_with("deadbeef-"));
+        assert!(mechanical.slug.ends_with(&mechanical.id));
+        assert!(empty.slug.starts_with("worktree-"));
+        assert!(empty.slug.ends_with(&empty.id));
     }
 
     #[test]
     fn identifier_default_should_match_dns_label_contract() {
-        let value = default_id("/tmp/--Feature Login--", "/tmp/project");
+        let value = default_slug("/tmp/--Feature Login--", "/tmp/project");
 
         assert!(value.len() <= 48);
         assert!(
@@ -460,27 +525,30 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn identifier_should_match_fixed_unix_path_vector() {
-        let value = default_id(
-            "/home/alice/worktrees/payments/feature-login",
-            "/home/alice/worktrees/payments",
+        let value = identity(
+            Path::new("/home/alice/worktrees/payments/feature-login"),
+            Some(Path::new("/home/alice/worktrees/payments")),
+            &WorktreeIdConfig::default(),
+            &WorktreeSlugConfig::default(),
         );
 
-        assert_eq!(value, "feature-login-a20v6r");
+        assert_eq!(value.id, "a20v6r");
+        assert_eq!(value.slug, "feature-login-a20v6r");
     }
 
     #[cfg(unix)]
     #[test]
     fn identifier_should_expose_full_fixed_digest_through_checked_config() {
-        let config = WorktreeIdConfig::new(80, 52, '-').expect("config should be valid");
-        let value = identifier(
+        let value = identity(
             Path::new("/home/alice/worktrees/payments/feature-login"),
-            Path::new("/home/alice/worktrees/payments"),
-            &config,
+            Some(Path::new("/home/alice/worktrees/payments")),
+            &WorktreeIdConfig::new(52).expect("config should be valid"),
+            &WorktreeSlugConfig::new(80, '-').expect("config should be valid"),
         );
 
         assert_eq!(
-            value,
-            "feature-login-a20v6rkf7fqtm08dt0tfx2bm8cy0w7xdrytn08wctah6htqhrr30"
+            value.id,
+            "a20v6rkf7fqtm08dt0tfx2bm8cy0w7xdrytn08wctah6htqhrr30"
         );
     }
 
@@ -491,17 +559,20 @@ mod tests {
 
         let path =
             std::path::PathBuf::from(std::ffi::OsString::from_vec(b"/tmp/worktree-\xff".to_vec()));
-        let first = identifier(
+        let first = identity(
             &path,
-            Path::new("/tmp/project"),
+            Some(Path::new("/tmp/project")),
             &WorktreeIdConfig::default(),
+            &WorktreeSlugConfig::default(),
         );
-        let second = default_id("/tmp/worktree-", "/tmp/project");
+        let second = identity(
+            Path::new("/tmp/worktree-"),
+            Some(Path::new("/tmp/project")),
+            &WorktreeIdConfig::default(),
+            &WorktreeSlugConfig::default(),
+        );
 
-        assert_ne!(
-            first.rsplit_once('-').map(|(_, hash)| hash),
-            second.rsplit_once('-').map(|(_, hash)| hash)
-        );
+        assert_ne!(first.id, second.id);
     }
 
     #[cfg(windows)]
