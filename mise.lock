@@ -13,6 +13,7 @@ provenance = "github-attestations"
 [tools.actionlint."platforms.linux-arm64-musl"]
 checksum = "sha256:325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6"
 url = "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/rhysd/actionlint/releases/assets/384924897"
 provenance = "github-attestations"
 
 [tools.actionlint."platforms.linux-x64"]
@@ -24,6 +25,7 @@ provenance = "github-attestations"
 [tools.actionlint."platforms.linux-x64-musl"]
 checksum = "sha256:8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
 url = "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/rhysd/actionlint/releases/assets/384924896"
 provenance = "github-attestations"
 
 [tools.actionlint."platforms.macos-arm64"]
@@ -50,102 +52,170 @@ url = "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_
 url_api = "https://api.github.com/repos/rhysd/actionlint/releases/assets/384924919"
 provenance = "github-attestations"
 
+[[tools."github:colbymchenry/codegraph"]]
+version = "1.5.0"
+backend = "github:colbymchenry/codegraph"
+
+[tools."github:colbymchenry/codegraph"."platforms.linux-arm64"]
+checksum = "sha256:9f17750aedf45d51f68caae39ed21d6e2a7290b2326e5c53f95a165918ebd1d8"
+url = "https://github.com/colbymchenry/codegraph/releases/download/v1.5.0/codegraph-linux-arm64.tar.gz"
+url_api = "https://api.github.com/repos/colbymchenry/codegraph/releases/assets/485052592"
+provenance = "github-attestations"
+
+[tools."github:colbymchenry/codegraph"."platforms.linux-arm64-musl"]
+checksum = "sha256:9f17750aedf45d51f68caae39ed21d6e2a7290b2326e5c53f95a165918ebd1d8"
+url = "https://github.com/colbymchenry/codegraph/releases/download/v1.5.0/codegraph-linux-arm64.tar.gz"
+url_api = "https://api.github.com/repos/colbymchenry/codegraph/releases/assets/485052592"
+provenance = "github-attestations"
+
+[tools."github:colbymchenry/codegraph"."platforms.linux-x64"]
+checksum = "sha256:2ba65e87a1210b706bb1e67d5e48b5fc4a1935e43dbb3fb5f31c5597840d2e58"
+url = "https://github.com/colbymchenry/codegraph/releases/download/v1.5.0/codegraph-linux-x64.tar.gz"
+url_api = "https://api.github.com/repos/colbymchenry/codegraph/releases/assets/485052596"
+provenance = "github-attestations"
+provenance_verified = true
+
+[tools."github:colbymchenry/codegraph"."platforms.linux-x64-musl"]
+checksum = "sha256:2ba65e87a1210b706bb1e67d5e48b5fc4a1935e43dbb3fb5f31c5597840d2e58"
+url = "https://github.com/colbymchenry/codegraph/releases/download/v1.5.0/codegraph-linux-x64.tar.gz"
+url_api = "https://api.github.com/repos/colbymchenry/codegraph/releases/assets/485052596"
+provenance = "github-attestations"
+
+[tools."github:colbymchenry/codegraph"."platforms.macos-arm64"]
+checksum = "sha256:cf5ee435a6e44d097b2f98f2b7b8b9422bb1094844404efed82519c5da1af2cf"
+url = "https://github.com/colbymchenry/codegraph/releases/download/v1.5.0/codegraph-darwin-arm64.tar.gz"
+url_api = "https://api.github.com/repos/colbymchenry/codegraph/releases/assets/485052595"
+provenance = "github-attestations"
+
+[tools."github:colbymchenry/codegraph"."platforms.macos-x64"]
+checksum = "sha256:0a0ccc29bf7da9d10be1458d89d7e15c55927ae24cd95e9fa3de4bdfea059dde"
+url = "https://github.com/colbymchenry/codegraph/releases/download/v1.5.0/codegraph-darwin-x64.tar.gz"
+url_api = "https://api.github.com/repos/colbymchenry/codegraph/releases/assets/485052593"
+provenance = "github-attestations"
+
+[tools."github:colbymchenry/codegraph"."platforms.windows-arm64"]
+checksum = "sha256:de125e792b5eed7dee8def2ab9bd7e762f372012f75f595e59d3b0c8714b0d55"
+url = "https://github.com/colbymchenry/codegraph/releases/download/v1.5.0/codegraph-win32-arm64.zip"
+url_api = "https://api.github.com/repos/colbymchenry/codegraph/releases/assets/485052594"
+provenance = "github-attestations"
+
+[tools."github:colbymchenry/codegraph"."platforms.windows-x64"]
+checksum = "sha256:d6798622b4f44ee6757c94335f437ee27a9ff7d3537b554cb6a2b3baf11bc4a1"
+url = "https://github.com/colbymchenry/codegraph/releases/download/v1.5.0/codegraph-win32-x64.zip"
+url_api = "https://api.github.com/repos/colbymchenry/codegraph/releases/assets/485052628"
+provenance = "github-attestations"
+
 [[tools."github:jimeh/treeboot"]]
-version = "0.9.0"
+version = "0.12.0"
 backend = "github:jimeh/treeboot"
 
 [tools."github:jimeh/treeboot"."platforms.linux-arm64"]
-checksum = "sha256:895da866ba763db358236029a45db5023675be241895900a505ee0f86020a72d"
-url = "https://github.com/jimeh/treeboot/releases/download/v0.9.0/treeboot-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/466447653"
+checksum = "sha256:3fdb33d78dcbb41683281ee8193e69d1e5d9fbe3e5d9b5c8eb82277e5ede1b05"
+url = "https://github.com/jimeh/treeboot/releases/download/v0.12.0/treeboot-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/487576976"
+provenance = "github-attestations"
+
+[tools."github:jimeh/treeboot"."platforms.linux-arm64-musl"]
+checksum = "sha256:3fdb33d78dcbb41683281ee8193e69d1e5d9fbe3e5d9b5c8eb82277e5ede1b05"
+url = "https://github.com/jimeh/treeboot/releases/download/v0.12.0/treeboot-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/487576976"
 provenance = "github-attestations"
 
 [tools."github:jimeh/treeboot"."platforms.linux-x64"]
-checksum = "sha256:c8f6d8483173fce5813289782cc8d54f249459b3e175f85a1667d61a49f3f3dc"
-url = "https://github.com/jimeh/treeboot/releases/download/v0.9.0/treeboot-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/466447667"
+checksum = "sha256:075edf77e3d64c6f02ac67ccce399f582342dc0e9ee9fa91e65c54b228c52774"
+url = "https://github.com/jimeh/treeboot/releases/download/v0.12.0/treeboot-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/487576998"
+provenance = "github-attestations"
+provenance_verified = true
+
+[tools."github:jimeh/treeboot"."platforms.linux-x64-musl"]
+checksum = "sha256:075edf77e3d64c6f02ac67ccce399f582342dc0e9ee9fa91e65c54b228c52774"
+url = "https://github.com/jimeh/treeboot/releases/download/v0.12.0/treeboot-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/487576998"
 provenance = "github-attestations"
 
 [tools."github:jimeh/treeboot"."platforms.macos-arm64"]
-checksum = "sha256:6b040d26fdb4bcd2e3dee57c291bb855601be010bd3ed48d69fcf6a8a5a854bf"
-url = "https://github.com/jimeh/treeboot/releases/download/v0.9.0/treeboot-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/466447632"
+checksum = "sha256:aacc0efb947365738dfd3c61ae140c964cdf80c3baf3786f9e6d79fcad1d191e"
+url = "https://github.com/jimeh/treeboot/releases/download/v0.12.0/treeboot-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/487576962"
 provenance = "github-attestations"
 
 [tools."github:jimeh/treeboot"."platforms.macos-x64"]
-checksum = "sha256:d6bd948930b2243446f62fd2873da05500825e9af8e7c8ad1d4cebd0e809d8ad"
-url = "https://github.com/jimeh/treeboot/releases/download/v0.9.0/treeboot-x86_64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/466447662"
+checksum = "sha256:53e3f59c95db97b8c62f457fcd1610fc934e10c03e82626ef4929fdfb2d719e1"
+url = "https://github.com/jimeh/treeboot/releases/download/v0.12.0/treeboot-x86_64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/487576989"
 provenance = "github-attestations"
 
 [tools."github:jimeh/treeboot"."platforms.windows-arm64"]
-checksum = "sha256:c75dfbfd51e4dad61cb8ab0a68accb05cbb070ff856c332580005967f58725f0"
-url = "https://github.com/jimeh/treeboot/releases/download/v0.9.0/treeboot-aarch64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/466447650"
+checksum = "sha256:d854a067a30e164a0fd6dda05624c34416a766dbe85d38765ead13f88f524ad9"
+url = "https://github.com/jimeh/treeboot/releases/download/v0.12.0/treeboot-aarch64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/487576970"
 provenance = "github-attestations"
 
 [tools."github:jimeh/treeboot"."platforms.windows-x64"]
-checksum = "sha256:42a779b1d979fbb7605af863b2e0a508bf650bee2bdaf54b735900aa2da464bf"
-url = "https://github.com/jimeh/treeboot/releases/download/v0.9.0/treeboot-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/466447665"
+checksum = "sha256:a69a577a8b9b14e5ed718d0c8f0b07b62e073f8e68a26c62d24c71dceca20cb9"
+url = "https://github.com/jimeh/treeboot/releases/download/v0.12.0/treeboot-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jimeh/treeboot/releases/assets/487576995"
 provenance = "github-attestations"
 
 [[tools.lefthook]]
-version = "2.1.9"
+version = "2.1.10"
 backend = "aqua:evilmartians/lefthook"
 
 [tools.lefthook."platforms.linux-arm64"]
-checksum = "sha256:d1bae1c9c26b35270dd675c93c33cecead885368ed078b3976ec23cdcedd28e8"
-url = "https://github.com/evilmartians/lefthook/releases/download/v2.1.9/lefthook_2.1.9_Linux_aarch64.gz"
-url_api = "https://api.github.com/repos/evilmartians/lefthook/releases/assets/432862088"
+checksum = "sha256:6380a6ad6dd484466fd69bd83f24491d6ec27dc0b84e837be025620f7c4e11e3"
+url = "https://github.com/evilmartians/lefthook/releases/download/v2.1.10/lefthook_2.1.10_Linux_aarch64.gz"
+url_api = "https://api.github.com/repos/evilmartians/lefthook/releases/assets/470227512"
 provenance = "github-attestations"
 
 [tools.lefthook."platforms.linux-arm64-musl"]
-checksum = "sha256:d1bae1c9c26b35270dd675c93c33cecead885368ed078b3976ec23cdcedd28e8"
-url = "https://github.com/evilmartians/lefthook/releases/download/v2.1.9/lefthook_2.1.9_Linux_aarch64.gz"
+checksum = "sha256:6380a6ad6dd484466fd69bd83f24491d6ec27dc0b84e837be025620f7c4e11e3"
+url = "https://github.com/evilmartians/lefthook/releases/download/v2.1.10/lefthook_2.1.10_Linux_aarch64.gz"
+url_api = "https://api.github.com/repos/evilmartians/lefthook/releases/assets/470227512"
 provenance = "github-attestations"
 
 [tools.lefthook."platforms.linux-x64"]
-checksum = "sha256:e938f34bd05bafe1155888879a045ef4ee8cf5b4a56c9e5e9b0c2649f295636e"
-url = "https://github.com/evilmartians/lefthook/releases/download/v2.1.9/lefthook_2.1.9_Linux_x86_64.gz"
-url_api = "https://api.github.com/repos/evilmartians/lefthook/releases/assets/432862064"
+checksum = "sha256:0b14162a0bb2f0c64ae0759f6102f6e19c4d00981666a8ac73d4f5a6878ada4f"
+url = "https://github.com/evilmartians/lefthook/releases/download/v2.1.10/lefthook_2.1.10_Linux_x86_64.gz"
+url_api = "https://api.github.com/repos/evilmartians/lefthook/releases/assets/470227493"
 provenance = "github-attestations"
 
 [tools.lefthook."platforms.linux-x64-musl"]
-checksum = "sha256:e938f34bd05bafe1155888879a045ef4ee8cf5b4a56c9e5e9b0c2649f295636e"
-url = "https://github.com/evilmartians/lefthook/releases/download/v2.1.9/lefthook_2.1.9_Linux_x86_64.gz"
+checksum = "sha256:0b14162a0bb2f0c64ae0759f6102f6e19c4d00981666a8ac73d4f5a6878ada4f"
+url = "https://github.com/evilmartians/lefthook/releases/download/v2.1.10/lefthook_2.1.10_Linux_x86_64.gz"
+url_api = "https://api.github.com/repos/evilmartians/lefthook/releases/assets/470227493"
 provenance = "github-attestations"
 
 [tools.lefthook."platforms.macos-arm64"]
-checksum = "sha256:808f8ef81a61e01eb41c1a2951e5639804f2372dc6a484bbeff726406745c77f"
-url = "https://github.com/evilmartians/lefthook/releases/download/v2.1.9/lefthook_2.1.9_MacOS_arm64.gz"
-url_api = "https://api.github.com/repos/evilmartians/lefthook/releases/assets/432862040"
+checksum = "sha256:1dd4dc7b4c50efb1f9d9122cd6535c793738d6e59751c228d49f768ec9dbb604"
+url = "https://github.com/evilmartians/lefthook/releases/download/v2.1.10/lefthook_2.1.10_MacOS_arm64.gz"
+url_api = "https://api.github.com/repos/evilmartians/lefthook/releases/assets/470227499"
 provenance = "github-attestations"
 
 [tools.lefthook."platforms.macos-x64"]
-checksum = "sha256:371c3c75cb07a8cdf41295596d3981adc1f92dee7795001f7d471e1f36fe2a0e"
-url = "https://github.com/evilmartians/lefthook/releases/download/v2.1.9/lefthook_2.1.9_MacOS_x86_64.gz"
-url_api = "https://api.github.com/repos/evilmartians/lefthook/releases/assets/432862047"
+checksum = "sha256:49d905f28ca46442cb236060058b252da650b5f7b864bd275b61aa46945e8c4a"
+url = "https://github.com/evilmartians/lefthook/releases/download/v2.1.10/lefthook_2.1.10_MacOS_x86_64.gz"
+url_api = "https://api.github.com/repos/evilmartians/lefthook/releases/assets/470227495"
 provenance = "github-attestations"
 
 [tools.lefthook."platforms.windows-arm64"]
-checksum = "sha256:34f771b8e0c362f1221ebcf569c16f4b51fcb06abd0b6e6751ecf1f6c02e133b"
-url = "https://github.com/evilmartians/lefthook/releases/download/v2.1.9/lefthook_2.1.9_Windows_arm64.gz"
-url_api = "https://api.github.com/repos/evilmartians/lefthook/releases/assets/432862051"
+checksum = "sha256:933b3c2aaa016d84cd2b3926ea9b99c3febdc6bb778bfd854640223a3a4c5e50"
+url = "https://github.com/evilmartians/lefthook/releases/download/v2.1.10/lefthook_2.1.10_Windows_arm64.gz"
+url_api = "https://api.github.com/repos/evilmartians/lefthook/releases/assets/470227473"
 provenance = "github-attestations"
 
 [tools.lefthook."platforms.windows-x64"]
-checksum = "sha256:1f29681dfbc36b9bdde52139cca6c4668ea4d51fd81e9127a3b78f49369db67e"
-url = "https://github.com/evilmartians/lefthook/releases/download/v2.1.9/lefthook_2.1.9_Windows_x86_64.gz"
-url_api = "https://api.github.com/repos/evilmartians/lefthook/releases/assets/432862077"
+checksum = "sha256:beabbce824641ae71229ed11dd8634f47148921cb649d25c90441b737481494a"
+url = "https://github.com/evilmartians/lefthook/releases/download/v2.1.10/lefthook_2.1.10_Windows_x86_64.gz"
+url_api = "https://api.github.com/repos/evilmartians/lefthook/releases/assets/470227505"
 provenance = "github-attestations"
 
 [[tools.markdownlint-cli2]]
-version = "0.23.0"
+version = "0.23.1"
 backend = "npm:markdownlint-cli2"
 
 [[tools.oxfmt]]
-version = "0.57.0"
+version = "0.60.0"
 backend = "npm:oxfmt"
 
 [[tools.pinact]]
@@ -161,6 +231,7 @@ provenance = "github-attestations"
 [tools.pinact."platforms.linux-arm64-musl"]
 checksum = "sha256:2807669cd423a3572bc12ea4a5eab80cd2f30d5644710e0c97a08a075fdadf10"
 url = "https://github.com/suzuki-shunsuke/pinact/releases/download/v4.1.0/pinact_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/suzuki-shunsuke/pinact/releases/assets/442249970"
 provenance = "github-attestations"
 
 [tools.pinact."platforms.linux-x64"]
@@ -172,6 +243,7 @@ provenance = "github-attestations"
 [tools.pinact."platforms.linux-x64-musl"]
 checksum = "sha256:8fcbf1b3e95551c82fd995535e3c1defa70e23299ce36eb3afd6c98778de6ca0"
 url = "https://github.com/suzuki-shunsuke/pinact/releases/download/v4.1.0/pinact_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/suzuki-shunsuke/pinact/releases/assets/442249966"
 provenance = "github-attestations"
 
 [tools.pinact."platforms.macos-arm64"]
@@ -217,6 +289,7 @@ url_api = "https://api.github.com/repos/mozilla/sccache/releases/assets/45206046
 [tools.sccache."platforms.linux-arm64-musl"]
 checksum = "sha256:f73a5c39f96bb6ebb89cc7915cf182260d4cbf30765322c5e793d0fe8bd80784"
 url = "https://github.com/mozilla/sccache/releases/download/v0.16.0/sccache-v0.16.0-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/mozilla/sccache/releases/assets/452060468"
 
 [tools.sccache."platforms.linux-x64"]
 checksum = "sha256:aec995a83ad3dff3d14b6314e08858b7b73d35ca85a5bcf3d3a9ec07dee35588"
@@ -226,6 +299,7 @@ url_api = "https://api.github.com/repos/mozilla/sccache/releases/assets/45206068
 [tools.sccache."platforms.linux-x64-musl"]
 checksum = "sha256:aec995a83ad3dff3d14b6314e08858b7b73d35ca85a5bcf3d3a9ec07dee35588"
 url = "https://github.com/mozilla/sccache/releases/download/v0.16.0/sccache-v0.16.0-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/mozilla/sccache/releases/assets/452060682"
 
 [tools.sccache."platforms.macos-arm64"]
 checksum = "sha256:ded590cae2c72042c61178632906bef62d635fa20d45f8b22110a2241f430960"
@@ -259,6 +333,7 @@ url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/2790
 [tools.shellcheck."platforms.linux-arm64-musl"]
 checksum = "sha256:12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588"
 url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.aarch64.tar.xz"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056934"
 
 [tools.shellcheck."platforms.linux-x64"]
 checksum = "sha256:8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
@@ -268,6 +343,7 @@ url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/2790
 [tools.shellcheck."platforms.linux-x64-musl"]
 checksum = "sha256:8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
 url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz"
+url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056942"
 
 [tools.shellcheck."platforms.macos-arm64"]
 checksum = "sha256:56affdd8de5527894dca6dc3d7e0a99a873b0f004d7aabc30ae407d3f48b0a79"
@@ -290,47 +366,47 @@ url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellche
 url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056944"
 
 [[tools.zizmor]]
-version = "1.26.1"
+version = "1.28.0"
 backend = "aqua:zizmorcore/zizmor"
 
 [tools.zizmor."platforms.linux-arm64"]
-checksum = "sha256:711f5af366b299128f9a04b1470e37d990b41fbd21f14a1a4148d25004a83762"
-url = "https://github.com/zizmorcore/zizmor/releases/download/v1.26.1/zizmor-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/453417983"
+checksum = "sha256:324e43770cfacf4216f8aefb287263b5b5c733c85b03bf7583b5cc4a0460239e"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.28.0/zizmor-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/485211654"
 provenance = "github-attestations"
 
 [tools.zizmor."platforms.linux-arm64-musl"]
 provenance = "github-attestations"
 
 [tools.zizmor."platforms.linux-x64"]
-checksum = "sha256:8556289a64e7aaf2400cd516f61a471aa91c5902cc56ad96a82fd12f90c2ef73"
-url = "https://github.com/zizmorcore/zizmor/releases/download/v1.26.1/zizmor-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/453417985"
+checksum = "sha256:e87b67160194884e375a46a12c57ccc904f762b53845f254fab7f17d98809c09"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.28.0/zizmor-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/485211657"
 provenance = "github-attestations"
 
 [tools.zizmor."platforms.linux-x64-musl"]
 provenance = "github-attestations"
 
 [tools.zizmor."platforms.macos-arm64"]
-checksum = "sha256:68ab2b37836bbd44f6cfffcc102b9ffffbc20c5d67d84293dafb63bd2775a1da"
-url = "https://github.com/zizmorcore/zizmor/releases/download/v1.26.1/zizmor-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/453417984"
+checksum = "sha256:54949bbd6b4c8527046bb8990bac9e0dab3eec787640f4e6199ae121dd1040be"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.28.0/zizmor-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/485211655"
 provenance = "github-attestations"
 
 [tools.zizmor."platforms.macos-x64"]
-checksum = "sha256:2967414a561f8c1264121e8f723c3b5abcf3d1bf7ce5063114df99985dd75801"
-url = "https://github.com/zizmorcore/zizmor/releases/download/v1.26.1/zizmor-x86_64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/453417982"
+checksum = "sha256:40a58d8560d65c71357b3977d0da425773bf8f10bf1ffd38099d963d3afdf3aa"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.28.0/zizmor-x86_64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/485211652"
 provenance = "github-attestations"
 
 [tools.zizmor."platforms.windows-arm64"]
-checksum = "sha256:c6cea156935e3b9d36faeca4fd8f622d23f7a7578da26adb34e6456abd9beb9a"
-url = "https://github.com/zizmorcore/zizmor/releases/download/v1.26.1/zizmor-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/453417981"
+checksum = "sha256:06e5b2345323201ed4c55897651862fee3b43f79ddced799f1236f0f0d1c1c0f"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.28.0/zizmor-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/485211651"
 provenance = "github-attestations"
 
 [tools.zizmor."platforms.windows-x64"]
-checksum = "sha256:c6cea156935e3b9d36faeca4fd8f622d23f7a7578da26adb34e6456abd9beb9a"
-url = "https://github.com/zizmorcore/zizmor/releases/download/v1.26.1/zizmor-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/453417981"
+checksum = "sha256:06e5b2345323201ed4c55897651862fee3b43f79ddced799f1236f0f0d1c1c0f"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.28.0/zizmor-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/485211651"
 provenance = "github-attestations"
