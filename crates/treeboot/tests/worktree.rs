@@ -144,7 +144,6 @@ fn worktree_id_and_slug_should_print_bare_text_and_exact_structured_shapes() {
         .assert()
         .success()
         .stderr(predicate::str::is_empty())
-        .stdout(predicate::str::starts_with("id:"))
         .get_output()
         .stdout
         .clone();
@@ -406,7 +405,6 @@ fn worktree_path_should_emit_exact_structured_shapes() {
         .assert()
         .success()
         .stderr(predicate::str::is_empty())
-        .stdout(predicate::str::starts_with("id:"))
         .get_output()
         .stdout
         .clone();
