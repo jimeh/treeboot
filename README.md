@@ -4,7 +4,8 @@
 
 # treeboot
 
-**Bootstrap Git worktrees and run pre-removal teardown from one setup file.**
+**Set up Git worktrees from one file and clean up their resources before
+removal.**
 
 [![GitHub Release](https://img.shields.io/github/v/release/jimeh/treeboot?logo=github&label=Release)](https://github.com/jimeh/treeboot/releases/latest)
 [![crates.io](https://img.shields.io/crates/v/treeboot?logo=rust&label=crates.io)](https://crates.io/crates/treeboot)
@@ -17,15 +18,15 @@
 
 New Git worktrees often need the same local setup: copy environment overrides,
 link shared tooling, install dependencies, and run project setup commands.
-`treeboot` puts those steps in one repo-local contract that works for people,
-coding agents, editors, and orchestration tools.
+`treeboot` stores those steps in `.treeboot.toml`, so contributors, coding
+agents, editors, and orchestration tools can run the same setup.
 
 Projects can also declare teardown commands for resources that belong to one
 worktree, such as databases, containers, or preview environments. Run those
 commands explicitly before another tool removes the worktree.
 
-Instead of maintaining separate setup instructions for every tool, add
-`.treeboot.toml` to the repository and use one command:
+Instead of maintaining separate setup instructions for every tool, add one
+config file to the repository and run `treeboot` in each new worktree:
 
 ```sh
 treeboot
@@ -33,8 +34,10 @@ treeboot
 
 ## Add treeboot to a project
 
-The recommended setup uses [mise][] to make `treeboot` available across the
-project and provide a standard bootstrap task.
+Treeboot requires Git 2.36 or newer. The recommended setup also uses [mise][] to
+make `treeboot` available across the project and provide a standard bootstrap
+task. If the project does not use mise, see
+[Installation alternatives](#installation-alternatives).
 
 [mise]: https://mise.jdx.dev/
 
@@ -55,9 +58,44 @@ run = "treeboot"
 Keeping `treeboot` in the project-wide tool list makes it available to other
 tasks and direct commands as well as the bootstrap task.
 
-### 2. Describe the worktree setup
+### 2. Create and edit the config
 
-Add `.treeboot.toml` at the repository root:
+From the repository root, create a starter config:
+
+```sh
+treeboot init
+```
+
+The command creates `.treeboot.toml` and never replaces an existing file or
+symlink. The generated config contains no setup or teardown commands:
+
+```toml
+#:schema https://github.com/jimeh/treeboot/releases/latest/download/config.schema.json
+
+copy = [
+  ".env.local",
+]
+
+symlink = [
+]
+
+commands = [
+]
+
+teardown_commands = [
+]
+```
+
+Missing file-operation sources are skipped by default, so the starter config
+does nothing when `.env.local` does not exist. Edit the file to match the paths
+and commands used by the project.
+
+<details>
+<summary>See a Rails and Node.js project example</summary>
+
+This example copies local environment files, links a shared Rails key, installs
+dependencies, and defines teardown for worktree-specific services. Replace the
+paths and commands with ones that belong to the project.
 
 ```toml
 #:schema https://github.com/jimeh/treeboot/releases/latest/download/config.schema.json
@@ -84,22 +122,33 @@ teardown_commands = [
 ]
 ```
 
-### 3. Bootstrap each new worktree
+</details>
 
-Run this from the new worktree:
+Setup commands run on every bootstrap. Keep them idempotent, or delegate to a
+project setup task that is safe to run repeatedly. Teardown commands run only
+through `treeboot teardown`.
+
+### 3. Preview and bootstrap
+
+A Treeboot config can run arbitrary project commands. Only run it in
+repositories you trust. Before the first bootstrap, inspect the normalized
+config and preview the planned file operations and commands:
+
+```sh
+treeboot config
+treeboot run --dry-run
+```
+
+Then bootstrap the current worktree:
 
 ```sh
 mise run treeboot
 ```
 
-Missing copy, symlink, and sync sources are skipped by default, so the config
-can list local files that only some contributors have. Existing copy and symlink
-targets are also left alone by default.
+Run the same task in each new worktree. Existing copy and symlink targets are
+left alone by default.
 
-Commands always run. Keep them idempotent, or delegate to a project setup task
-that is safe to run repeatedly.
-
-### 4. Tell coding agents when to bootstrap
+### Optional: tell coding agents when to bootstrap
 
 If the project already has an `AGENTS.md`, `CLAUDE.md`, or equivalent
 instruction file, add a rule like this. If one instruction file references
@@ -145,43 +194,10 @@ The default config file is `.treeboot.toml`. Its main operations are:
 | `commands`          | Run setup commands sequentially after file operations.           |
 | `teardown_commands` | Run explicitly approved commands before external removal.        |
 
-A more complete config can mix short string entries with objects:
-
-```toml
-#:schema https://github.com/jimeh/treeboot/releases/latest/download/config.schema.json
-
-strict = false
-default_ignore = [".DS_Store", "Thumbs.db"]
-worktree_id = { length = 6 }
-worktree_slug = { max_length = 48, separator = "-" }
-
-copy = [
-  ".env.local",
-  { source = ".env.test.local", required = true },
-]
-
-symlink = [
-  ".tool-versions",
-  { source = "shared/bin", target = "bin" },
-]
-
-sync = [
-  { source = "shared/editor", target = ".editor" },
-]
-
-commands = [
-  "mise install",
-  { name = "Set up the project", run = "mise run setup" },
-]
-
-teardown_commands = [
-  { name = "Drop database", run = "mise run db:drop" },
-]
-```
-
-String file entries use the same source and target path. Object entries can use
-a different target and set options such as `required = true`. Directory sync
-preserves target-only files by default; set `delete = true` to remove them.
+File operations in the starter and Rails and Node.js examples above use short
+string entries. Object entries can use a different target and set options such
+as `required = true`. Directory sync preserves target-only files by default; set
+`delete = true` to remove them.
 
 Commands run in declaration order. For parallel setup, put the parallel work
 behind one task-runner command such as `mise run setup`.
@@ -216,14 +232,11 @@ treeboot teardown --dry-run # Preview teardown commands without prompting
 commands support `--format text|json|yaml`, with `--json` and `--yaml`
 shortcuts.
 
-Use `treeboot worktree path <ID>` to reverse-resolve an exact ID in the current
-repository. Repository-wide lookup and listing load each existing candidate
-worktree's own config, so the result matches the `TREEBOOT_WORKTREE_ID` that
-configured commands receive there. Stale registered paths are skipped, and ID
-collisions are reported instead of choosing an arbitrary path. Text output
-preserves native path bytes on Unix. JSON and YAML path strings require valid
-UTF-8 and fail without partial stdout when a repository contains a non-UTF-8
-worktree path.
+Use `treeboot worktree path <ID>` to resolve an exact ID in the current
+repository. Repository-wide lookup and listing use each worktree's own config,
+skip stale registered paths, and report ID collisions instead of choosing a
+path. The [treeboot specification](./docs/SPEC.md) defines platform-specific
+path and structured-output behavior.
 
 If no config is found, `treeboot` prints an info message and exits successfully.
 Add `--strict` to bootstrap when that should be an error. Missing discovered
@@ -282,12 +295,7 @@ treeboot teardown --dry-run
 treeboot teardown --worktree ../feature --yes
 treeboot copy .env.local mise.local.toml --target local
 treeboot sync shared/config --delete --dry-run
-treeboot init
 ```
-
-`treeboot init` creates `.treeboot.toml` by default. `treeboot init --config` is
-an explicit spelling of the same operation. Existing targets, including
-symlinks, are never replaced.
 
 ## Installation alternatives
 
@@ -305,8 +313,6 @@ can install from crates.io:
 ```sh
 cargo install treeboot
 ```
-
-Treeboot requires Git 2.36 or newer.
 
 ## Custom scripts
 
@@ -331,10 +337,6 @@ commands run after file operations; `--skip-commands` omits them. Teardown
 commands run only through `treeboot teardown` after approval. Both commands
 support `--dry-run` reporting without execution.
 
-Legacy `.treeboot.sh`, `.treebootrc`, and `.config/treeboot/init` files have no
-special meaning and are treated as ordinary repository files. The former
-`--no-init-script` and `init --script` options are no longer accepted.
-
 ## Environment
 
 Configured commands receive:
@@ -352,20 +354,15 @@ Configuration defaults can be overridden with `TREEBOOT_STRICT`,
 file planning, not command-only teardown.
 
 Use `treeboot env` to print the effective treeboot-owned environment.
-`treeboot worktree id` and `treeboot worktree slug` print the current values; an
-optional non-empty path derives either value for that exact target, even outside
-Git. Existing files and dangling symlinks are rejected. On Windows,
-drive-relative and root-relative inputs are unsupported; use a normal relative
-path or a fully qualified path. `treeboot worktree path <ID>` resolves an ID to
-a canonical registered-worktree path, and `treeboot worktree list` inventories
-the current repository. `TREEBOOT_WORKTREE_ID` defaults to a six-character
-lowercase Crockford base32 digest prefix. `TREEBOOT_WORKTREE_SLUG` defaults to
-at most 48 DNS-label-compatible characters and ends with the complete ID.
-Configure them through the top-level `worktree_id` and `worktree_slug` inline
-objects. The full canonical target path determines both values; branch changes
-and root-source overrides do not change them. `treeboot env --config` selects an
-explicit config, and invalid discovered config makes `env` fail instead of
-displaying settings commands would not receive.
+`treeboot worktree id` and `treeboot worktree slug` print the current values or
+derive them for a supplied path. `treeboot worktree path <ID>` resolves an ID in
+the current repository, and `treeboot worktree list` inventories its worktrees.
+
+The ID defaults to a six-character lowercase Crockford base32 digest prefix. The
+slug defaults to at most 48 DNS-label-compatible characters and ends with the
+complete ID. Configure them through the top-level `worktree_id` and
+`worktree_slug` objects. The [treeboot specification](./docs/SPEC.md) defines
+path normalization, platform restrictions, and config-aware lookup behavior.
 
 ## Schema
 
@@ -395,9 +392,9 @@ The command only prints the script; it does not install completion files.
 
 ## Project status
 
-`treeboot` supports its core worktree bootstrap and explicit teardown workflows.
-The current compatibility contract is [spec v2.4.0](./docs/SPEC.md); this README
-is the shorter, human-facing guide.
+Treeboot bootstraps linked worktrees and runs explicitly approved teardown
+commands. The current compatibility contract is [spec v2.4.0](./docs/SPEC.md);
+this README is the shorter, human-facing guide.
 
 The name `treeboot` means "worktree bootstrap."
 
