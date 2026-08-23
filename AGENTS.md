@@ -172,6 +172,7 @@ mise run test:release-helper
 mise run release:check
 mise run msrv
 mise run actions:lint
+mise run audit:deps
 mise run clean
 mise run coverage:missing
 ```
@@ -252,6 +253,7 @@ work. Lefthook checks staged Markdown files through
 
 - GitHub Actions are pinned and checked with `pinact`.
 - Workflow syntax/security checks are wrapped by `mise run actions:lint`.
+- Rust dependencies are checked against RustSec by `mise run audit:deps`.
 - Repo harness invariants are wrapped by `mise run harness:check`; keep
   dependency-boundary and spec-version drift checks there when they can be
   expressed without heavyweight tooling.
@@ -296,6 +298,8 @@ work. Lefthook checks staged Markdown files through
   install `llvm-tools-preview` for the active Rust toolchain.
 - Keep optional heavyweight tools task-scoped in `mise.toml`; GitHub Actions
   installs top-level mise tools in every job.
+- Give task-scoped Cargo tools concrete versions such as `0.22.2`; an `=0.22.2`
+  requirement makes Mise warn that the semver range is unsupported.
 - Leave `settings.lockfile_platforms` unset. Dev-tool artifact coverage is
   independent of the GitHub Actions hosts and release targets the project builds
   and tests.

@@ -25,6 +25,9 @@ tasks also run doctests so compile-fail public API contracts stay enforced.
 `format` applies Rust and Markdown formatting, while `format:check` is
 non-mutating.
 
+Run `mise run audit:deps` after dependency changes to check `Cargo.lock` against
+the current RustSec advisory database.
+
 During a correction loop, classify the delta as production behavior, public
 contract/API coverage, tests or CI fixtures, or documentation. Run the affected
 targeted tasks and any mutation evidence required by the changed behavior.
@@ -59,6 +62,7 @@ gate; it is a sensor for finding untested behavior.
 GitHub Actions runs these mise tasks:
 
 - `mise run actions:lint`
+- `mise run audit:deps`
 - `mise run format:check`
 - `mise run generate:check`
   - currently wraps `mise run generate:schema:check`

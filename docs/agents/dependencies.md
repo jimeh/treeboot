@@ -41,6 +41,8 @@ dependencies for small wrappers around the standard library.
   depend on Python or platform-specific zip tools in CI.
 - `cargo-llvm-cov` is a task-scoped mise development tool, not a Cargo
   dependency.
+- `cargo-audit` is a task-scoped mise development tool used by local and GitHub
+  Actions CI to reject known RustSec vulnerabilities in `Cargo.lock`.
 - Mise-managed tools use a 7-day `minimum_release_age` cooldown and checked-in
   `mise.lock` to avoid adopting freshly published binaries by default.
 - Renovate owns Rust toolchain updates so each `rust-toolchain.toml` change is

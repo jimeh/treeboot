@@ -195,15 +195,20 @@ run = "cargo test -p treeboot-release-helper --all-targets --all-features --lock
 
 [tasks.coverage]
 description = "Run tests and print Rust coverage summary"
-tools."cargo:cargo-llvm-cov" = "=0.8.7"
+tools."cargo:cargo-llvm-cov" = "0.9.0"
 run = "cargo llvm-cov --workspace --all-targets --all-features --locked"
 
 [tasks."coverage:missing"]
 description = "Show uncovered Rust lines"
-tools."cargo:cargo-llvm-cov" = "=0.8.7"
+tools."cargo:cargo-llvm-cov" = "0.9.0"
 run = "cargo llvm-cov --workspace --all-targets --all-features --locked --summary-only --show-missing-lines"
 
 # Validation
+
+[tasks."audit:deps"]
+description = "Audit Rust dependencies for security vulnerabilities"
+tools."cargo:cargo-audit" = "0.22.2"
+run = "cargo audit --file Cargo.lock"
 
 [tasks.check]
 depends = ["format:check", "generate:check", "harness:check", "lint", "test"]
@@ -216,6 +221,7 @@ run = ["mise run ci", "mise run coverage"]
 [tasks.ci]
 depends = [
   "actions:lint",
+  "audit:deps",
   "format:check",
   "generate:check",
   "harness:check",
@@ -235,9 +241,11 @@ run = "scripts/check-harness.sh"
 
 [tasks.doctor]
 description = "Check required local tools"
-tools."cargo:cargo-llvm-cov" = "=0.8.7"
+tools."cargo:cargo-audit" = "0.22.2"
+tools."cargo:cargo-llvm-cov" = "0.9.0"
 run = [
   "git --version",
+  "cargo audit --version",
   "cargo --version",
   "cargo llvm-cov --version",
   "mise --version",
