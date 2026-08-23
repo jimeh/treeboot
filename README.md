@@ -99,6 +99,20 @@ targets are also left alone by default.
 Commands always run. Keep them idempotent, or delegate to a project setup task
 that is safe to run repeatedly.
 
+### 4. Tell coding agents when to bootstrap
+
+Add a rule like this to the project's `AGENTS.md`, `CLAUDE.md`, or equivalent.
+If one instruction file references another, add the rule to the referenced file
+instead of duplicating it.
+
+```markdown
+## Worktree bootstrap
+
+If a linked worktree is missing files or dependencies needed for development,
+run `mise run treeboot` before setting it up manually. The task follows
+`.treeboot.toml`, including its configured file operations and setup commands.
+```
+
 ## How it works
 
 `treeboot` runs from the current worktree and discovers the repository's root
