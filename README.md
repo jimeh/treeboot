@@ -101,9 +101,9 @@ that is safe to run repeatedly.
 
 ### 4. Tell coding agents when to bootstrap
 
-Add a rule like this to the project's `AGENTS.md`, `CLAUDE.md`, or equivalent.
-If one instruction file references another, add the rule to the referenced file
-instead of duplicating it.
+If the project already has an `AGENTS.md`, `CLAUDE.md`, or equivalent
+instruction file, add a rule like this. If one instruction file references
+another, add the rule to the referenced file instead of duplicating it.
 
 ```markdown
 ## Worktree bootstrap
