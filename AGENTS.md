@@ -60,15 +60,32 @@ in a release note.
 
 ## Pull Request Final Review
 
-After implementation, dual review, final-head CI, and local handback pass, mark
-the PR ready and then add the `coderabbit:review` label. A CodeRabbit status
-reported while the PR is still draft does not satisfy the gate. Require the
-resulting review or check to cover the exact final head.
+Choose review depth according to the change's scope and risk.
 
-Treat CodeRabbit as the final merge gate: address its actionable feedback and
+Substantial or risky changes require two reviewers who did not implement the
+change to inspect it independently. This includes changes that materially affect
+user-visible behavior, public contracts, architecture, security-sensitive
+behavior or trust boundaries, concurrency, filesystem or command execution,
+cross-platform behavior, or release correctness. Give both reviewers the same
+requirements and candidate commit, keep their initial reviews separate, then
+verify and reconcile their findings against the current code.
+
+For minor, low-risk changes, one focused review plus proportionate validation is
+sufficient. Routine dependency and tool updates, GitHub Actions pin refreshes,
+documentation, tests, generated artifacts, and other mechanical maintenance
+usually qualify when expected behavior is unchanged and repository checks cover
+the risk. Escalate to two independent reviewers when an update is broad, changes
+behavior, crosses a trust boundary, or leaves meaningful uncertainty.
+
+After the required review, local validation, and all CI checks on the intended
+final commit pass, mark the PR ready and add the `coderabbit:review` label. A
+CodeRabbit status reported while the PR is still draft does not satisfy the
+gate. Require the resulting review or check to cover the exact final commit.
+
+Treat CodeRabbit as the final merge gate. Address its actionable feedback and
 wait for the gate to pass before merging. If its findings require changes,
-return the PR to draft while correcting them, then repeat affected validation
-and final-head review.
+return the PR to draft while correcting them, then repeat the affected
+validation and review before requesting the final CodeRabbit result.
 
 ## Repo Shape
 

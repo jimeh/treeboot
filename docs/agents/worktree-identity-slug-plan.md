@@ -116,8 +116,8 @@ rtk mise run verify
 
 GitHub Actions supplies the full Linux, macOS, and Windows test matrix plus
 format, generation, harness, lint, MSRV, and Actions validation. CodeRabbit is
-the final repository review gate after dual review, final local validation, and
-final-head CI.
+the final repository review gate after two independent reviews, final local
+validation, and CI on the exact final commit.
 
 ## Risks
 
