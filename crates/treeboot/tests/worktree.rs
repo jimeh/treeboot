@@ -393,17 +393,20 @@ fn worktree_path_should_emit_exact_structured_shapes() {
     assert_eq!(json["id"], id);
     assert_eq!(json["path"], path.display().to_string());
 
-    treeboot()
+    let yaml = treeboot()
         .args(["worktree", "path", &id, "--format", "yaml"])
         .current_dir(repo.root_path())
         .assert()
         .success()
         .stderr(predicate::str::is_empty())
-        .stdout(predicate::str::contains(format!("id: {id}")))
-        .stdout(predicate::str::contains(format!(
-            "path: {}",
-            path.display()
-        )));
+        .get_output()
+        .stdout
+        .clone();
+    let yaml: serde_json::Value = yaml_serde::from_slice(&yaml)
+        .unwrap_or_else(|error| panic!("worktree path YAML should parse: {error}"));
+    assert_json_object_keys(&yaml, &["id", "path"]);
+    assert_eq!(yaml["id"], id);
+    assert_eq!(yaml["path"], path.display().to_string());
 }
 
 #[test]
