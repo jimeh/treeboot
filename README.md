@@ -63,11 +63,12 @@ tasks and direct commands as well as the bootstrap task.
 From the repository root, create a starter config:
 
 ```sh
-treeboot init
+mise exec -- treeboot init
 ```
 
-The command creates `.treeboot.toml` and never replaces an existing file or
-symlink. The generated config contains no setup or teardown commands:
+This runs `treeboot init` with the project-managed Treeboot version. The command
+creates `.treeboot.toml` and never replaces an existing file or symlink. The
+generated config contains no setup or teardown commands:
 
 ```toml
 #:schema https://github.com/jimeh/treeboot/releases/latest/download/config.schema.json
@@ -128,15 +129,16 @@ Setup commands run on every bootstrap. Keep them idempotent, or delegate to a
 project setup task that is safe to run repeatedly. Teardown commands run only
 through `treeboot teardown`.
 
-### 3. Preview and bootstrap
+### 3. Preview and bootstrap a linked worktree
 
 A Treeboot config can run arbitrary project commands. Only run it in
-repositories you trust. Before the first bootstrap, inspect the normalized
-config and preview the planned file operations and commands:
+repositories you trust. Commit `mise.toml` and `.treeboot.toml`, then create or
+enter a linked worktree. From that worktree, inspect the normalized config and
+preview the planned file operations and commands:
 
 ```sh
-treeboot config
-treeboot run --dry-run
+mise exec -- treeboot config
+mise exec -- treeboot run --dry-run
 ```
 
 Then bootstrap the current worktree:
