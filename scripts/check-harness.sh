@@ -90,6 +90,23 @@ if [[ -n "${readme_spec}" && -n "${spec_version}" && "${readme_spec}" != "${spec
   fail "README.md spec v${readme_spec} does not match docs/SPEC.md v${spec_version}"
 fi
 
+for implementation_heading in \
+  "Public library compatibility" \
+  "Distribution: Install and releases" \
+  "Verification: Testing strategy"; do
+  if grep -Fqx "## ${implementation_heading}" docs/SPEC.md; then
+    fail "docs/SPEC.md must not own implementation-specific '${implementation_heading}' guidance"
+  fi
+done
+
+for implementation_phrase in \
+  "Rust executable" \
+  "generated from the Rust schema model"; do
+  if grep -Fq "${implementation_phrase}" docs/SPEC.md; then
+    fail "docs/SPEC.md must remain language-agnostic; found '${implementation_phrase}'"
+  fi
+done
+
 if [[ -z "${package_version}" ]]; then
   fail "crates/treeboot/Cargo.toml must expose package version X.Y.Z"
 fi

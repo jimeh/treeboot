@@ -395,8 +395,8 @@ The command only prints the script; it does not install completion files.
 ## Project status
 
 Treeboot bootstraps linked worktrees and runs explicitly approved teardown
-commands. The current compatibility contract is [spec v2.4.0](./docs/SPEC.md);
-this README is the shorter, human-facing guide.
+commands. The current language-agnostic CLI compatibility contract is
+[spec v2.5.0](./docs/SPEC.md); this README is the shorter, human-facing guide.
 
 The name `treeboot` means "worktree bootstrap."
 

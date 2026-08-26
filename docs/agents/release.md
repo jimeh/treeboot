@@ -1,25 +1,83 @@
 # Release Harness
 
 Release automation is split between release-please and tag-triggered asset
-publication. Use this guide when maintaining the release milestone from the
-spec.
+publication. This guide owns the official Treeboot distribution and publication
+contract. Those implementation-specific mechanics do not belong in the
+language-agnostic CLI specification.
 
 ## Release Contract
 
-The spec expects:
+Release assets use these names so direct GitHub release installers such as `ubi`
+and `mise` can select them predictably.
 
-- archive assets for each supported target
-- raw executable assets for direct installers
-- `config.schema.json`
-- `treeboot-checksums.txt`
-- SPDX SBOM
-- GitHub artifact attestations for release provenance
+Archive assets:
+
+```text
+treeboot-aarch64-apple-darwin.tar.gz
+treeboot-x86_64-apple-darwin.tar.gz
+treeboot-x86_64-unknown-linux-musl.tar.gz
+treeboot-aarch64-unknown-linux-musl.tar.gz
+treeboot-x86_64-pc-windows-msvc.zip
+treeboot-aarch64-pc-windows-msvc.zip
+treeboot-x86_64-android.tar.gz
+treeboot-aarch64-android.tar.gz
+```
+
+Raw executable assets:
+
+```text
+treeboot-aarch64-apple-darwin
+treeboot-x86_64-apple-darwin
+treeboot-x86_64-unknown-linux-musl
+treeboot-aarch64-unknown-linux-musl
+treeboot-x86_64-pc-windows-msvc.exe
+treeboot-aarch64-pc-windows-msvc.exe
+treeboot-x86_64-android
+treeboot-aarch64-android
+```
+
+Release metadata assets:
+
+```text
+treeboot-checksums.txt
+config.schema.json
+treeboot-sbom.spdx.json
+```
+
+Each archive contains `treeboot`, `README.md`, and `LICENSE`. Publish the raw
+platform executable separately so installers can download it, make it executable
+when needed, and run it without unpacking an archive. Publish
+`config.schema.json` from the canonical checked-in
+`schemas/treeboot.schema.json`.
+
+The checksum manifest covers every asset uploaded to the GitHub Release,
+including archives, raw executables, the config schema, and SBOMs. Publish one
+machine-readable SPDX JSON SBOM for the release and provenance attestations from
+GitHub Actions. Consumers can verify release assets with
+`gh attestation verify`.
+
+The supported release targets are:
+
+- `aarch64-apple-darwin`
+- `x86_64-apple-darwin`
+- `x86_64-unknown-linux-musl`
+- `aarch64-unknown-linux-musl`
+- `x86_64-pc-windows-msvc`
+- `aarch64-pc-windows-msvc`
+- `x86_64-linux-android`
+- `aarch64-linux-android`
+
+Android asset labels omit the Rust target triple's `linux` segment so desktop
+Linux installers do not classify Android archives as generic Linux assets. The
+target list comes from `rustc --print target-list`. Release automation publishes
+only targets that build and pass their configured release smoke test on the
+selected runner.
 
 GPG checksum signing and macOS signing/notarization are planned hardening work,
-not part of the first release automation pass.
-
-Supported release targets are macOS Apple Silicon, macOS Intel, Linux x86_64
-musl, Linux ARM64 musl, Windows x86_64/ARM64 MSVC, and Android x86_64/ARM64.
+not part of the current release automation. The planned signing flow publishes
+one detached GPG signature for `treeboot-checksums.txt`, making the checksum
+manifest the signed statement for other assets. The planned macOS flow signs CLI
+binaries with Apple Developer ID and notarizes them before publication.
 
 Release-please creates release PRs, updates `CHANGELOG.md`, bumps Cargo
 versions, creates `vX.Y.Z` tags, and leaves draft GitHub Releases. It must run

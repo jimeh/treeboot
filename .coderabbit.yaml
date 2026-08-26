@@ -18,7 +18,8 @@ reviews:
   path_instructions:
     - path: "crates/**"
       instructions: |
-        - Treat docs/SPEC.md as the source of truth for observable behavior.
+        - Treat docs/SPEC.md as the language-agnostic source of truth for
+          observable CLI behavior, not Rust API compatibility.
         - Flag implementation behavior that contradicts docs/SPEC.md unless
           the PR intentionally updates the spec.
         - When behavior, CLI output, validation semantics, config format, or
@@ -28,9 +29,15 @@ reviews:
           docs/ARCHITECTURE.md is updated in the same PR.
     - path: "docs/SPEC.md"
       instructions: |
-        - Verify the spec remains the authoritative behavior contract.
+        - Verify the spec remains the authoritative language-agnostic CLI,
+          config, filesystem, process, output, exit-code, and platform contract.
+        - Flag Rust API policy, official release mechanics, implementation test
+          strategy, parser-library prose, or completion helper protocols as
+          misplaced implementation details.
         - Check that described behavior is implementable and matches the Rust
           implementation and CLI tests.
+        - Verify schemas/treeboot.schema.json remains the normative config
+          schema without making its Rust generator part of portability.
         - For observable contract changes, verify the visible spec version is
           bumped and README references stay in sync.
     - path: "docs/ARCHITECTURE.md"
@@ -40,6 +47,11 @@ reviews:
           model, and known refactor pressure.
         - Flag stale architecture claims, missing modules, outdated API names,
           or sections that describe past plans rather than current code.
+    - path: "crates/treeboot-core/**"
+      instructions: |
+        - Verify public Rust API compatibility and construction guidance stays
+          owned by treeboot-core rather than docs/SPEC.md.
+        - Flag public non-exhaustive types that lack a stable construction path.
     - path: "AGENTS.md"
       instructions: |
         - Verify agent instructions continue to state that docs/SPEC.md is the
