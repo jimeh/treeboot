@@ -162,7 +162,7 @@ Status: first pass implemented; signing hardening pending.
 
 Scope:
 
-- release target matrix from the spec
+- release target matrix from the [release contract](release.md#release-contract)
 - archive and raw executable assets
 - checksums
 - SBOM and provenance artifacts

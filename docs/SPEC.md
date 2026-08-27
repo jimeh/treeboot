@@ -57,12 +57,14 @@ behavior defined by this specification. The executable's implementation
 language, internal APIs, parser library, and release process are outside this
 contract.
 
-Requirements use `must`. Examples and rationale explain the contract but do not
-add requirements unless the surrounding text says otherwise. Exact output text
-is contractual only where this specification calls it durable or shows the
-required text or data shape. A conformance result applies to the specification
-version, host platform, and capabilities exercised by that run. A result on one
-host does not establish support for other platforms.
+Contractual behavior appears as declarative behavior descriptions, required text
+or data shapes, durable output, and explicit mandatory requirements, which
+typically use `must`. `should` marks non-binding design or adoption guidance.
+Examples and rationale do not add requirements. Placeholder and example values
+are illustrative unless the surrounding text identifies an exact value. A
+conformance result applies to the specification version, host platform, and
+capabilities exercised by that run. A result on one host does not establish
+support for other platforms.
 
 ## CLI surface: Fifteen subcommands, one default path
 
@@ -169,14 +171,17 @@ treeboot -V
 Human-readable output is a compact, flag-like summary:
 
 ```text
-treeboot 0.10.0 (spec 2.5.0)
+treeboot <PACKAGE_VERSION> (spec <SPEC_VERSION>)
 ```
 
 `TB-CLI-VERSION`: Every version flag must report the implementation's package
 version and implemented specification version and exit `0` without Git or config
 discovery. A nested version flag may identify the invoked command in its leading
 label; that label and the parser's exact formatting are not contractual.
-`treeboot version` text output retains the exact compact summary shown above.
+`treeboot version` text output retains the exact compact summary shape shown
+above, substituting the implementation's actual package version for
+`<PACKAGE_VERSION>` and its implemented specification version for
+`<SPEC_VERSION>`.
 
 JSON and YAML output are defined in
 [Structured output formats](#structured-output-formats).
@@ -275,9 +280,11 @@ treeboot schema > config.schema.json
 ```
 
 The emitted schema is the canonical config schema at
-`schemas/treeboot.schema.json`. When `--output` is provided, treeboot writes the
-schema to that path instead of stdout. Parent directories must already exist.
-Existing regular files are replaced.
+`schemas/treeboot.schema.json`. Stdout and `--output` must contain that
+document's exact UTF-8 bytes without added framing or byte changes. When
+`--output` is provided, treeboot writes the schema to that path instead of
+stdout. Parent directories must already exist. Existing regular files are
+replaced.
 
 `schema` does not support `--format`, `--json`, or `--yaml`; the schema payload
 is already JSON.
@@ -584,13 +591,14 @@ The shared worktree context object has this shape:
 ```json
 {
   "package": "treeboot",
-  "version": "0.8.0",
-  "spec_version": "2.5.0"
+  "version": "<PACKAGE_VERSION>",
+  "spec_version": "<SPEC_VERSION>"
 }
 ```
 
 `package` is the CLI package name. `version` is the package version.
-`spec_version` is the TreeBoot spec version implemented by the build.
+`spec_version` is the TreeBoot spec version implemented by the build. The
+angle-bracketed values above are placeholders, not literals.
 
 ### `treeboot config` JSON
 
@@ -1157,7 +1165,7 @@ SUPERSET_ROOT_PATH
 
 treeboot does not set `CONDUCTOR_IS_LOCAL`, `CONDUCTOR_PORT`, or
 `SUPERSET_PORT_BASE`. Those variables are owned by the tools that define them
-and should not be fabricated.
+and must not be fabricated.
 
 ## Execution: Run flow
 
@@ -1332,8 +1340,8 @@ shape is unchanged.
 normative machine-readable definition of the config format. It must describe the
 same accepted document shapes, constraints, and rejected fields as this
 specification. Runtime defaults remain defined by the prose contract.
-`treeboot schema` must emit that canonical document as described in
-[`treeboot schema`](#treeboot-schema).
+`treeboot schema` stdout and `--output` must emit the canonical document's exact
+UTF-8 bytes as described in [`treeboot schema`](#treeboot-schema).
 
 ```toml
 #:schema https://github.com/jimeh/treeboot/releases/latest/download/config.schema.json
@@ -1515,8 +1523,8 @@ command declarations.
 
 ## Before execution: Operation validation
 
-treeboot should catch surprising or self-conflicting file operations before it
-starts changing the worktree.
+treeboot validates self-conflicting file operations before it starts changing
+the worktree.
 
 ### Whole-document and phase boundary
 
@@ -1546,11 +1554,11 @@ successful parse-only status.
 
 ### Normalize first
 
-Config parsing should normalize `copy`, `symlink`, `sync`, `files`, and
-`[[file]]` into one ordered list of file operations with resolved source and
-target paths. It normalizes bootstrap and teardown declarations into separate
-ordered command collections. Manual `copy`, `symlink`, and `sync` commands
-should produce the same normalized operation shape.
+Config parsing normalizes `copy`, `symlink`, `sync`, `files`, and `[[file]]`
+into one ordered list of file operations with resolved source and target paths.
+It normalizes bootstrap and teardown declarations into separate ordered command
+collections. Manual `copy`, `symlink`, and `sync` commands must produce the same
+normalized operation shape.
 
 Relative file-operation source paths resolve from `TREEBOOT_ROOT_PATH`. Relative
 file-operation target paths and command `cwd` paths resolve from
@@ -1571,7 +1579,7 @@ because they depend on process-local current-drive state.
 ### Conflicting targets
 
 If multiple file operations target the same normalized absolute path, or one
-target is inside another target, treeboot should report every conflicting entry
+target is inside another target, treeboot must report every conflicting entry
 with its operation, source, target, and declaration location when available.
 
 ### Target boundary
@@ -1632,12 +1640,12 @@ normal command-start `allow_failure` policy.
 ### Conflicting targets are invalid config
 
 A config that copies a file and later symlinks to the same target is ambiguous
-at best and destructive under force mode. treeboot should reject duplicate
-configured targets in every mode. It should also reject ancestor/descendant
-target pairs because a sync operation with `delete = true` can remove
-target-only children produced by another operation in the same plan. Manual
-commands should reject duplicate and overlapping targets derived from their
-source arguments and `--target` before any file changes are made.
+at best and destructive under force mode. treeboot must reject duplicate
+configured targets in every mode. It must also reject ancestor/descendant target
+pairs because a sync operation with `delete = true` can remove target-only
+children produced by another operation in the same plan. Manual commands must
+reject duplicate and overlapping targets derived from their source arguments and
+`--target` before any file changes are made.
 
 ### Outside-worktree targets need an explicit escape hatch
 
@@ -1955,8 +1963,8 @@ document order.
 ## Safety: Conflict modes
 
 The default mode is optimized for repeated worktree setup. Strict mode is for
-CI-like validation. Force mode is intentionally destructive and should be
-explicit.
+CI-like validation. Force mode is intentionally destructive and requires
+explicit selection.
 
 ### Trusted setup inputs
 
@@ -2018,10 +2026,10 @@ explicit deletes.
 
 ## File operation output and progress
 
-File-operation output should stay compact by default while preserving detailed
-diagnostics when requested. Default text output is grouped by top-level file
-operation. Top-level operations are declarative config entries or normalized
-manual source arguments.
+File-operation output is compact by default and preserves detailed diagnostics
+when requested. Default text output is grouped by top-level file operation.
+Top-level operations are declarative config entries or normalized manual source
+arguments.
 
 Single concrete actions omit parenthesized counts because the source and target
 already describe the work:
@@ -2231,11 +2239,11 @@ treeboot: no config detected
 treeboot: no teardown commands configured
 ```
 
-Manual file operation validation errors should identify the CLI operation,
-source, and target involved. They must not report synthetic config file paths,
-TOML line numbers, or TOML column numbers for command-line arguments. Config
-parse or normalization errors found while loading manual command policy still
-report the real config path and TOML location.
+Manual file operation validation errors must identify the CLI operation, source,
+and target involved. They must not report synthetic config file paths, TOML line
+numbers, or TOML column numbers for command-line arguments. Config parse or
+normalization errors found while loading manual command policy still report the
+real config path and TOML location.
 
 | Exit | Meaning                                                                                                             |
 | ---- | ------------------------------------------------------------------------------------------------------------------- |
