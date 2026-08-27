@@ -1,6 +1,4 @@
 use std::path::{Path, PathBuf};
-#[cfg(unix)]
-use std::process::Command;
 
 use predicates::prelude::*;
 use tempfile::TempDir;
@@ -783,18 +781,13 @@ pub(crate) fn worktree_text_paths_should_preserve_native_bytes_and_structured_fa
     let path = parent
         .path()
         .join(OsString::from_vec(b"non-utf8-\xff".to_vec()));
-    let output = Command::new("git")
+    let output = crate::cases::support::host_process("git")
         .args(["worktree", "add", "-b", "treeboot-non-utf8"])
         .arg(&path)
         .current_dir(repo.root_path())
         .output()
         .expect("git should run");
-    assert!(
-        output.status.success(),
-        "git worktree add should succeed\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    crate::cases::support::assert_fixture_process_success("git worktree add", &output);
     let path = canonical_path(&path);
     let id = worktree_id(&path);
     let mut expected_path = path.as_os_str().as_bytes().to_vec();
@@ -1023,11 +1016,17 @@ pub(crate) fn worktree_nested_help_and_version_should_be_exposed() {
         .stdout(predicate::str::contains("[PATH]"))
         .stdout(predicate::str::contains("--format"));
 
-    treeboot()
-        .args(["worktree", "--version"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains(
-            crate::cases::support::candidate_package_version(),
-        ));
+    for flag in ["--version", "-V"] {
+        treeboot()
+            .args(["worktree", flag])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains(
+                crate::cases::support::candidate_package_version(),
+            ))
+            .stdout(predicate::str::contains(format!(
+                "(spec {})",
+                crate::SPEC_VERSION
+            )));
+    }
 }

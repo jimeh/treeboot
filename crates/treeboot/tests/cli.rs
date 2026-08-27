@@ -24,25 +24,48 @@ fn reference_help_and_versions_should_match_embedded_assets() {
         .success()
         .stdout(predicate::str::contains("Usage: treeboot"));
 
-    for (args, command) in [
-        (&["--version"][..], "treeboot"),
-        (&["-V"][..], "treeboot"),
-        (&["run", "--version"][..], "treeboot-run"),
-        (&["copy", "--version"][..], "treeboot-copy"),
-        (&["completions", "--version"][..], "treeboot-completions"),
-    ] {
-        treeboot().args(args).assert().success().stdout(format!(
-            "{command} {} (spec {})\n",
+    for flag in ["--version", "-V"] {
+        treeboot().arg(flag).assert().success().stdout(format!(
+            "treeboot {} (spec {})\n",
             treeboot_core::TREEBOOT_VERSION,
             treeboot_core::SPEC_VERSION
         ));
     }
 
-    treeboot()
-        .args(["worktree", "--version"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains(treeboot_core::TREEBOOT_VERSION));
+    for command in [
+        &["run"][..],
+        &["teardown"][..],
+        &["status"][..],
+        &["config"][..],
+        &["check"][..],
+        &["init"][..],
+        &["schema"][..],
+        &["doctor"][..],
+        &["env"][..],
+        &["completions"][..],
+        &["copy"][..],
+        &["symlink"][..],
+        &["sync"][..],
+        &["version"][..],
+        &["worktree"][..],
+        &["worktree", "id"][..],
+        &["worktree", "slug"][..],
+        &["worktree", "path"][..],
+        &["worktree", "list"][..],
+    ] {
+        for flag in ["--version", "-V"] {
+            treeboot()
+                .args(command)
+                .arg(flag)
+                .assert()
+                .success()
+                .stdout(predicate::str::contains(treeboot_core::TREEBOOT_VERSION))
+                .stdout(predicate::str::contains(format!(
+                    "(spec {})",
+                    treeboot_core::SPEC_VERSION
+                )));
+        }
+    }
 
     let json = treeboot()
         .args(["version", "--json"])

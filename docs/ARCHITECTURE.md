@@ -73,6 +73,9 @@ option structs and prints core output events._
   accessors.
 - Runs the same private black-box case bodies through a local process runner or
   a caller-provided `Runner` adapter.
+- Reports candidate assertion failures as failed cases, fixture subprocess
+  failures as infrastructure errors prefixed with `fixture setup failed:`, and
+  bounded process overruns as timed-out cases.
 - Ships the `treeboot-spec` CLI for listing cases, printing canonical assets,
   and testing any candidate command without depending on `treeboot` or
   `treeboot-core`.

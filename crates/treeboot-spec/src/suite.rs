@@ -111,6 +111,9 @@ impl Suite {
                 (Ok(()), None) => CaseOutcome::Passed,
                 (_, Some(ExecutionFailure::Skipped(reason))) => CaseOutcome::Skipped { reason },
                 (_, Some(ExecutionFailure::Runner(details))) => CaseOutcome::Error { details },
+                (_, Some(ExecutionFailure::Fixture(details))) => CaseOutcome::Error {
+                    details: format!("fixture setup failed: {details}"),
+                },
                 (_, Some(ExecutionFailure::TimedOut(details))) => CaseOutcome::TimedOut { details },
                 (Err(payload), None) if !context.candidate_invoked() => CaseOutcome::Error {
                     details: format!("fixture setup failed: {}", panic_message(payload)),
@@ -172,6 +175,28 @@ pub enum SuiteError {
 mod tests {
     use super::*;
 
+    struct PassingRunner {
+        command: CommandTemplate,
+    }
+
+    impl Runner for PassingRunner {
+        fn command(&self) -> &CommandTemplate {
+            &self.command
+        }
+
+        fn run(
+            &self,
+            _invocation: &crate::Invocation,
+        ) -> Result<crate::InvocationResult, crate::RunnerError> {
+            Ok(crate::InvocationResult::new(
+                crate::Termination::Exited { code: 0 },
+                Vec::new(),
+                Vec::new(),
+                Duration::from_millis(1),
+            ))
+        }
+    }
+
     #[test]
     fn malformed_definition_should_be_an_infrastructure_error() {
         let metadata = CaseMetadata::closure("malformed.case", &["#test"]);
@@ -179,5 +204,24 @@ mod tests {
         let outcome = malformed_definition_outcome(metadata);
 
         assert!(matches!(outcome, CaseOutcome::Error { .. }));
+    }
+
+    #[test]
+    fn fixture_failure_after_candidate_should_be_an_infrastructure_error() {
+        let report = Suite::current().run_with(
+            Arc::new(PassingRunner {
+                command: CommandTemplate::new("test-candidate"),
+            }),
+            RunOptions {
+                filter: Some("test.fixture-failure.after-candidate".to_owned()),
+                ..RunOptions::default()
+            },
+        );
+
+        assert_eq!(report.cases.len(), 1);
+        assert!(matches!(
+            &report.cases[0].outcome,
+            CaseOutcome::Error { details } if details.starts_with("fixture setup failed:")
+        ));
     }
 }

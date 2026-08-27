@@ -411,7 +411,7 @@ The suite tests only the language-agnostic CLI contract. It does not specify the
 
 Treeboot bootstraps linked worktrees and runs explicitly approved teardown
 commands. The current language-agnostic CLI compatibility contract is
-[spec v2.5.0](./crates/treeboot-spec/SPEC.md); this README is the shorter,
+[spec v2.5.1](./crates/treeboot-spec/SPEC.md); this README is the shorter,
 human-facing guide.
 
 The name `treeboot` means "worktree bootstrap."

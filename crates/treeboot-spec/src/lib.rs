@@ -19,7 +19,7 @@ pub use runner::{
 pub use suite::{RunOptions, Suite, SuiteError};
 
 /// Treeboot specification version implemented by this crate.
-pub const SPEC_VERSION: &str = "2.5.0";
+pub const SPEC_VERSION: &str = "2.5.1";
 
 /// Canonical Treeboot specification Markdown.
 pub const SPEC_MARKDOWN: &str = include_str!("../SPEC.md");

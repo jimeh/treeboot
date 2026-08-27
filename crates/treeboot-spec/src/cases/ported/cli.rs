@@ -28,20 +28,39 @@ pub(crate) fn version_flags_should_print_package_and_spec_version() {
         crate::SPEC_VERSION
     ));
 
-    for args in [
-        &["run", "--version"][..],
-        &["copy", "--version"][..],
-        &["completions", "--version"][..],
+    for command in [
+        &["run"][..],
+        &["teardown"][..],
+        &["status"][..],
+        &["config"][..],
+        &["check"][..],
+        &["init"][..],
+        &["schema"][..],
+        &["doctor"][..],
+        &["env"][..],
+        &["completions"][..],
+        &["copy"][..],
+        &["symlink"][..],
+        &["sync"][..],
+        &["version"][..],
+        &["worktree"][..],
+        &["worktree", "id"][..],
+        &["worktree", "slug"][..],
+        &["worktree", "path"][..],
+        &["worktree", "list"][..],
     ] {
-        treeboot()
-            .args(args)
-            .assert()
-            .success()
-            .stdout(predicate::str::contains(&version))
-            .stdout(predicate::str::contains(format!(
-                "(spec {})",
-                crate::SPEC_VERSION
-            )));
+        for flag in ["--version", "-V"] {
+            treeboot()
+                .args(command)
+                .arg(flag)
+                .assert()
+                .success()
+                .stdout(predicate::str::contains(&version))
+                .stdout(predicate::str::contains(format!(
+                    "(spec {})",
+                    crate::SPEC_VERSION
+                )));
+        }
     }
 }
 

@@ -13,8 +13,40 @@ fn canonical_schema_has_a_supported_shape_and_resolvable_local_references() {
         "https://json-schema.org/draft/2020-12/schema"
     );
     assert_eq!(schema["type"], "object");
-    assert!(schema["additionalProperties"].is_boolean());
+    assert_eq!(schema["additionalProperties"], false);
     assert!(schema["$defs"].is_object());
+
+    for definition in [
+        "CopyObject",
+        "DirectCommandObject",
+        "ShellCommandObject",
+        "SymlinkObject",
+        "SyncObject",
+        "WorktreeIdConfig",
+        "WorktreeSlugConfig",
+    ] {
+        assert_eq!(
+            schema["$defs"][definition]["additionalProperties"], false,
+            "{definition} should reject unknown properties"
+        );
+    }
+    let mixed_file_variants = schema["$defs"]["MixedFileObject"]["oneOf"]
+        .as_array()
+        .expect("MixedFileObject should be a union");
+    assert!(!mixed_file_variants.is_empty());
+    for variant in mixed_file_variants {
+        assert_eq!(
+            variant["additionalProperties"], false,
+            "each MixedFileObject variant should reject unknown properties"
+        );
+    }
+    for definition in ["DirectCommandObject", "ShellCommandObject"] {
+        assert_eq!(
+            schema["$defs"][definition]["properties"]["env"]["additionalProperties"]["type"],
+            "string",
+            "{definition} env maps should accept arbitrary string-valued keys"
+        );
+    }
 
     let mut references = Vec::new();
     collect_local_references(&schema, &mut references);
