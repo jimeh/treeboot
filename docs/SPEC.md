@@ -2245,16 +2245,18 @@ treeboot: no teardown commands configured
 ```
 
 Command-wide manual argument or option validation errors must identify the CLI
-operation and the offending option, value, or reason. A path or planning error
-in a normalized operation's source-to-target mapping must identify the CLI
+operation and the offending option, value, or reason. An error while normalizing
+a manual operation's declared source-to-target mapping must identify the CLI
 operation and source. It must also identify the target once target derivation
-has succeeded. A recursive source-tree inspection or resolution error must
-identify the CLI operation and the most specific source path available when the
-failure occurs. If a traversal race makes the failing nested path unavailable,
-the operation's top-level source is sufficient. None of these error categories
-reports synthetic config paths or TOML locations for command-line arguments.
-Config parse or normalization errors found while loading manual command policy
-still report the real config path and TOML location.
+has succeeded. After normalization, a file-operation planning or execution error
+must identify the CLI operation, the path involved, and the reason. A recursive
+source-tree inspection or resolution error must identify the CLI operation and
+the most specific source path available when the failure occurs. If a traversal
+race makes the failing nested path unavailable, the operation's top-level source
+is sufficient. None of these error categories reports synthetic config paths or
+TOML locations for command-line arguments. Config parse or normalization errors
+found while loading manual command policy still report the real config path and
+TOML location.
 
 | Exit | Meaning                                                                                                             |
 | ---- | ------------------------------------------------------------------------------------------------------------------- |
