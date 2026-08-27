@@ -155,17 +155,11 @@ async function smokeInstall(
       directory,
     );
   }
-  const shim = join(
+  const launcher = manager === "npm" ? "npx" : "bunx";
+  const versionOutput = await runWithOutput(
+    [launcher, "--no-install", "treeboot", "--version"],
     directory,
-    "node_modules",
-    ".bin",
-    process.platform === "win32" ? "treeboot.cmd" : "treeboot",
   );
-  const shimCommand =
-    process.platform === "win32"
-      ? ["cmd.exe", "/d", "/s", "/c", `"${shim}" --version`]
-      : [shim, "--version"];
-  const versionOutput = await runWithOutput(shimCommand, directory);
   if (!/^treeboot \S+/m.test(versionOutput)) {
     throw new Error(
       `${manager} installed treeboot shim returned no version output`,

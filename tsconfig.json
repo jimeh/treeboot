@@ -20,5 +20,6 @@
     "target": "ES2022",
     "types": ["bun", "node"]
   },
-  "include": ["npm/**/*.ts"]
+  "include": ["npm/**/*.ts"],
+  "exclude": ["npm/treeboot/dist", "node_modules"]
 }
