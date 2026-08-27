@@ -34,7 +34,7 @@ pub enum CaseOutcome {
         /// Execution or fixture failure detail.
         details: String,
     },
-    /// A candidate invocation exceeded its timeout.
+    /// A candidate or host-helper invocation exceeded its timeout.
     TimedOut {
         /// Timeout detail, including retained partial output when available.
         details: String,

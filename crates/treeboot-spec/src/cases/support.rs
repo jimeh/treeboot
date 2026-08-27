@@ -11,7 +11,10 @@ use assert_cmd::assert::Assert;
 use serde_json::Value;
 use tempfile::TempDir;
 
-use crate::{Invocation, InvocationResult, Runner, RunnerCapabilities, StdinMode, Termination};
+use crate::{
+    CommandTemplate, Invocation, InvocationResult, LocalProcessRunner, Runner, RunnerCapabilities,
+    StdinMode, Termination,
+};
 
 const CLEAN_ENVIRONMENT: &[&str] = &[
     "TREEBOOT_ROOT_PATH",
@@ -23,14 +26,6 @@ const CLEAN_ENVIRONMENT: &[&str] = &[
     "TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT",
     "TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE",
 ];
-
-pub(crate) fn clean_process_command(program: impl AsRef<OsStr>) -> std::process::Command {
-    let mut command = std::process::Command::new(program);
-    for name in CLEAN_ENVIRONMENT {
-        command.env_remove(name);
-    }
-    command
-}
 
 thread_local! {
     static CASE_CONTEXT: RefCell<Option<Arc<CaseContext>>> = const { RefCell::new(None) };
@@ -194,14 +189,18 @@ impl Command {
             }
             message
         })?;
-        result_to_output(&context, result)
+        result_to_output(&context, result, "candidate")
     }
 }
 
-fn result_to_output(context: &CaseContext, result: InvocationResult) -> Result<Output, String> {
+fn result_to_output(
+    context: &CaseContext,
+    result: InvocationResult,
+    process: &str,
+) -> Result<Output, String> {
     if result.termination() == Termination::TimedOut {
         let message = format!(
-            "candidate timed out after {} ms; stdout: {}; stderr: {}",
+            "{process} timed out after {} ms; stdout: {}; stderr: {}",
             result.duration().as_millis(),
             String::from_utf8_lossy(result.stdout()),
             String::from_utf8_lossy(result.stderr())
@@ -215,6 +214,68 @@ fn result_to_output(context: &CaseContext, result: InvocationResult) -> Result<O
         stdout: result.stdout().to_vec(),
         stderr: result.stderr().to_vec(),
     })
+}
+
+pub(crate) struct HostProcess {
+    runner: LocalProcessRunner,
+    invocation: Invocation,
+}
+
+impl HostProcess {
+    pub(crate) fn arg(&mut self, argument: impl AsRef<OsStr>) -> &mut Self {
+        self.invocation =
+            std::mem::take(&mut self.invocation).arg(argument.as_ref().to_os_string());
+        self
+    }
+
+    pub(crate) fn args<I, S>(&mut self, arguments: I) -> &mut Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        self.invocation = std::mem::take(&mut self.invocation).args(
+            arguments
+                .into_iter()
+                .map(|value| value.as_ref().to_os_string()),
+        );
+        self
+    }
+
+    pub(crate) fn current_dir(&mut self, path: impl AsRef<Path>) -> &mut Self {
+        self.invocation =
+            std::mem::take(&mut self.invocation).current_dir(path.as_ref().to_path_buf());
+        self
+    }
+
+    pub(crate) fn env(&mut self, name: impl AsRef<OsStr>, value: impl AsRef<OsStr>) -> &mut Self {
+        self.invocation = std::mem::take(&mut self.invocation)
+            .env(name.as_ref().to_os_string(), value.as_ref().to_os_string());
+        self
+    }
+
+    pub(crate) fn output(&mut self) -> io::Result<Output> {
+        let context = context();
+        if self.invocation.timeout_value().is_none() {
+            self.invocation = std::mem::take(&mut self.invocation).timeout(context.timeout);
+        }
+        let result = self.runner.run(&self.invocation).map_err(|error| {
+            let message = format!("host subprocess failed: {error}");
+            context.record(ExecutionFailure::Runner(message.clone()));
+            io::Error::other(message)
+        })?;
+        result_to_output(&context, result, "host subprocess").map_err(io::Error::other)
+    }
+}
+
+pub(crate) fn host_process(program: impl AsRef<OsStr>) -> HostProcess {
+    let mut invocation = Invocation::new();
+    for name in CLEAN_ENVIRONMENT {
+        invocation = invocation.env_remove(*name);
+    }
+    HostProcess {
+        runner: LocalProcessRunner::new(CommandTemplate::new(program.as_ref().to_os_string())),
+        invocation,
+    }
 }
 
 #[cfg(unix)]
@@ -416,4 +477,46 @@ pub(crate) fn candidate_package_version() -> String {
         .as_str()
         .expect("candidate version should be a string")
         .to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Instant;
+
+    use super::*;
+
+    #[test]
+    fn blocking_host_subprocess_should_record_timeout_without_candidate_invocation() {
+        let context = Arc::new(CaseContext::new(
+            Arc::new(LocalProcessRunner::new(CommandTemplate::new(
+                "unused-candidate",
+            ))),
+            Duration::from_millis(100),
+        ));
+        let started = Instant::now();
+
+        with_context(Arc::clone(&context), || {
+            host_process(std::env::current_exe().expect("test executable should resolve"))
+                .args([
+                    "cases::support::tests::blocking_host_subprocess_helper",
+                    "--exact",
+                    "--ignored",
+                ])
+                .output()
+                .expect_err("blocking host subprocess should time out");
+        });
+
+        assert!(matches!(
+            context.take_failure(),
+            Some(ExecutionFailure::TimedOut(_))
+        ));
+        assert!(!context.candidate_invoked());
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    #[ignore = "helper process for the bounded host-subprocess regression"]
+    fn blocking_host_subprocess_helper() {
+        std::thread::sleep(Duration::from_secs(30));
+    }
 }
