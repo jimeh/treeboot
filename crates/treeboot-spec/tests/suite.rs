@@ -181,7 +181,7 @@ fn completion_execution_case_skips_before_using_runner_without_capability() {
     let report = Suite::current().run_with(
         adapter,
         RunOptions {
-            filter: Some("closure.completions.installed-zsh-script-lists-root-sources".to_owned()),
+            filter: Some("closure.completions.installed-fish-script-lists-root-sources".to_owned()),
             ..RunOptions::default()
         },
     );
