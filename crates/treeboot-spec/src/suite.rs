@@ -6,12 +6,60 @@ use thiserror::Error;
 
 use crate::cases::support::{CaseContext, ExecutionFailure, install_case_panic_hook, with_context};
 use crate::{
-    CaseMetadata, CaseOutcome, CaseResult, CommandTemplate, LocalProcessRunner, Runner, SuiteReport,
+    CaseMetadata, CaseOutcome, CaseRequirement, CaseResult, CommandTemplate, LocalProcessRunner,
+    Runner, SuiteReport,
 };
+
+/// Selects the compatibility guarantees exercised by a suite run.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ConformanceProfile {
+    /// Runs functional behavior and exact specification identity cases.
+    #[default]
+    Full,
+    /// Runs portable behavior while allowing specification-version drift.
+    Functional,
+}
+
+impl ConformanceProfile {
+    fn selects(self, requirement: CaseRequirement) -> bool {
+        self == Self::Full || requirement == CaseRequirement::Functional
+    }
+}
+
+/// A synchronous progress event emitted while a suite runs.
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum SuiteEvent<'a> {
+    /// The final case selection is known and execution is about to begin.
+    SuiteStarted {
+        /// Number of selected cases, including cases that will skip.
+        selected_cases: usize,
+    },
+    /// A selected case is about to run or report its static skip.
+    CaseStarted {
+        /// One-based position in the selected case order.
+        index: usize,
+        /// Total number of selected cases.
+        total: usize,
+        /// Stable metadata for the selected case.
+        case: CaseMetadata,
+    },
+    /// A selected case has produced its final result.
+    CaseFinished {
+        /// One-based position in the selected case order.
+        index: usize,
+        /// Total number of selected cases.
+        total: usize,
+        /// Final case result. The reference remains valid for this callback only.
+        result: &'a CaseResult,
+    },
+}
 
 /// Options controlling one suite execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunOptions {
+    /// Compatibility profile to execute.
+    pub profile: ConformanceProfile,
     /// Optional substring matched against stable case identifiers.
     pub filter: Option<String>,
     /// Default timeout applied to each candidate invocation.
@@ -21,6 +69,7 @@ pub struct RunOptions {
 impl Default for RunOptions {
     fn default() -> Self {
         Self {
+            profile: ConformanceProfile::Full,
             filter: None,
             invocation_timeout: Duration::from_secs(30),
         }
@@ -55,10 +104,34 @@ impl Suite {
         command: &CommandTemplate,
         options: RunOptions,
     ) -> Result<SuiteReport, SuiteError> {
+        self.run_observed(command, options, |_| {})
+    }
+
+    /// Runs the suite through the local-process runner and synchronously reports progress.
+    ///
+    /// The observer runs on the suite thread. It must not retain borrowed event data.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SuiteError`] when a path-like candidate command cannot be
+    /// resolved before execution.
+    pub fn run_observed<F>(
+        self,
+        command: &CommandTemplate,
+        options: RunOptions,
+        observer: F,
+    ) -> Result<SuiteReport, SuiteError>
+    where
+        F: FnMut(SuiteEvent<'_>),
+    {
         let command = command
             .resolve()
             .map_err(|source| SuiteError::ResolveCandidate { source })?;
-        Ok(self.run_with(Arc::new(LocalProcessRunner::new(command)), options))
+        Ok(self.run_with_observer(
+            Arc::new(LocalProcessRunner::new(command)),
+            options,
+            observer,
+        ))
     }
 
     /// Runs the same registry through a custom execution adapter.
@@ -67,25 +140,66 @@ impl Suite {
     /// invocation's native arguments, working directory, environment changes,
     /// input mode, and timeout.
     pub fn run_with(self, runner: Arc<dyn Runner>, options: RunOptions) -> SuiteReport {
+        self.run_with_observer(runner, options, |_| {})
+    }
+
+    /// Runs the registry through a custom adapter and synchronously reports progress.
+    ///
+    /// Selection by case identifier and profile completes before the first event.
+    /// The observer runs on the suite thread and must not retain borrowed event data.
+    pub fn run_with_observer<F>(
+        self,
+        runner: Arc<dyn Runner>,
+        options: RunOptions,
+        mut observer: F,
+    ) -> SuiteReport
+    where
+        F: FnMut(SuiteEvent<'_>),
+    {
         install_case_panic_hook();
+        let matching = crate::cases::definitions()
+            .filter(|definition| {
+                options
+                    .filter
+                    .as_ref()
+                    .is_none_or(|filter| definition.metadata.id().contains(filter))
+            })
+            .collect::<Vec<_>>();
+        let omitted_exact_case_count = matching
+            .iter()
+            .filter(|definition| !options.profile.selects(definition.metadata.requirement()))
+            .count();
+        let selected = matching
+            .into_iter()
+            .filter(|definition| options.profile.selects(definition.metadata.requirement()))
+            .collect::<Vec<_>>();
+        let total = selected.len();
+        observer(SuiteEvent::SuiteStarted {
+            selected_cases: total,
+        });
         let mut results = Vec::new();
-        for definition in crate::cases::definitions() {
-            if options
-                .filter
-                .as_ref()
-                .is_some_and(|filter| !definition.metadata.id().contains(filter))
-            {
-                continue;
-            }
+        for (offset, definition) in selected.into_iter().enumerate() {
+            let index = offset + 1;
+            observer(SuiteEvent::CaseStarted {
+                index,
+                total,
+                case: definition.metadata,
+            });
 
             if let Some(reason) = definition.skip_reason {
-                results.push(CaseResult {
+                let result = CaseResult {
                     case: definition.metadata,
                     duration_ms: 0,
                     outcome: CaseOutcome::Skipped {
                         reason: reason.to_owned(),
                     },
+                };
+                observer(SuiteEvent::CaseFinished {
+                    index,
+                    total,
+                    result: &result,
                 });
+                results.push(result);
                 continue;
             }
 
@@ -95,11 +209,17 @@ impl Suite {
             ));
             let started = Instant::now();
             let Some(run) = definition.run else {
-                results.push(CaseResult {
+                let result = CaseResult {
                     case: definition.metadata,
                     duration_ms: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
                     outcome: malformed_definition_outcome(definition.metadata),
+                };
+                observer(SuiteEvent::CaseFinished {
+                    index,
+                    total,
+                    result: &result,
                 });
+                results.push(result);
                 continue;
             };
             let execution = std::panic::catch_unwind(std::panic::AssertUnwindSafe({
@@ -122,11 +242,17 @@ impl Suite {
                     details: panic_message(payload),
                 },
             };
-            results.push(CaseResult {
+            let result = CaseResult {
                 case: definition.metadata,
                 duration_ms: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
                 outcome,
+            };
+            observer(SuiteEvent::CaseFinished {
+                index,
+                total,
+                result: &result,
             });
+            results.push(result);
         }
 
         SuiteReport {
@@ -135,6 +261,8 @@ impl Suite {
             host_platform: format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
             candidate: runner.command().report(),
             cases: results,
+            profile: options.profile,
+            omitted_exact_case_count,
         }
     }
 }

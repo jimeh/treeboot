@@ -11,8 +11,54 @@ const SYMLINK_SPEC: &[&str] = &["#symlinks-inside-copy-and-sync"];
 const MANUAL_DIAGNOSTIC_SPEC: &[&str] = &["#operator-experience-output-and-exit-codes"];
 const TEARDOWN_SPEC: &[&str] = &["#treeboot-teardown"];
 const COMPLETION_SPEC: &[&str] = &["#manual-operation-source-completion"];
+const CLI_SPEC: &[&str] = &["#cli-surface-fifteen-subcommands-one-default-path"];
+const SCHEMA_SPEC: &[&str] = &["#treeboot-schema"];
+const VERSION_SPEC: &[&str] = &["#treeboot-version"];
+const WORKTREE_SPEC: &[&str] = &["#treeboot-worktree"];
 
 pub(crate) const DEFINITIONS: &[CaseDefinition] = &[
+    CaseDefinition::new(
+        CaseMetadata::exact(
+            "closure.exact.cli.version-flags-declare-suite-spec",
+            CLI_SPEC,
+        ),
+        super::ported::cli::version_flags_should_declare_suite_spec,
+    ),
+    CaseDefinition::new(
+        CaseMetadata::exact(
+            "closure.exact.schema.stdout-matches-canonical-bytes",
+            SCHEMA_SPEC,
+        ),
+        super::ported::schema::schema_stdout_should_match_canonical_bytes,
+    ),
+    CaseDefinition::new(
+        CaseMetadata::exact(
+            "closure.exact.schema.short-output-matches-canonical-bytes",
+            SCHEMA_SPEC,
+        ),
+        super::ported::schema::schema_short_output_should_match_canonical_bytes,
+    ),
+    CaseDefinition::new(
+        CaseMetadata::exact(
+            "closure.exact.version.text-declares-suite-spec",
+            VERSION_SPEC,
+        ),
+        super::ported::version::version_text_should_declare_suite_spec,
+    ),
+    CaseDefinition::new(
+        CaseMetadata::exact(
+            "closure.exact.version.formats-declare-suite-spec",
+            VERSION_SPEC,
+        ),
+        super::ported::version::version_formats_should_declare_suite_spec,
+    ),
+    CaseDefinition::new(
+        CaseMetadata::exact(
+            "closure.exact.worktree.version-flags-declare-suite-spec",
+            WORKTREE_SPEC,
+        ),
+        super::ported::worktree::worktree_version_flags_should_declare_suite_spec,
+    ),
     #[cfg(unix)]
     CaseDefinition::new(
         CaseMetadata::closure(

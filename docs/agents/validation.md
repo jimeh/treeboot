@@ -29,6 +29,12 @@ together. The aggregate and core test tasks also run doctests so compile-fail
 public API contracts stay enforced. `format` applies Rust and Markdown
 formatting, while `format:check` is non-mutating.
 
+The official and standalone conformance drivers request the `full` profile
+explicitly. For compatibility checks against another released implementation,
+run `treeboot-spec test --profile functional -- <candidate>`. A green functional
+run permits a different declared spec version and canonical schema; it does not
+replace the full release gate.
+
 Run `mise run audit:deps` after dependency changes to check `Cargo.lock` against
 the current RustSec advisory database.
 

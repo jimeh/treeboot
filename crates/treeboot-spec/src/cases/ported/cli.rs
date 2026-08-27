@@ -12,22 +12,83 @@ pub(crate) fn help_should_print_usage() {
 
 pub(crate) fn version_flags_should_print_package_and_spec_version() {
     let version = crate::cases::support::candidate_package_version();
-    treeboot()
-        .arg("--version")
-        .assert()
-        .success()
-        .stdout(format!(
-            "treeboot {} (spec {})\n",
-            version,
-            crate::SPEC_VERSION
-        ));
+    for flag in ["--version", "-V"] {
+        let output = treeboot()
+            .arg(flag)
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+        assert_version_shape(&output, &version, Some("treeboot "));
+    }
 
-    treeboot().arg("-V").assert().success().stdout(format!(
-        "treeboot {} (spec {})\n",
-        version,
-        crate::SPEC_VERSION
-    ));
+    for command in [
+        &["run"][..],
+        &["teardown"][..],
+        &["status"][..],
+        &["config"][..],
+        &["check"][..],
+        &["init"][..],
+        &["schema"][..],
+        &["doctor"][..],
+        &["env"][..],
+        &["completions"][..],
+        &["copy"][..],
+        &["symlink"][..],
+        &["sync"][..],
+        &["version"][..],
+        &["worktree"][..],
+        &["worktree", "id"][..],
+        &["worktree", "slug"][..],
+        &["worktree", "path"][..],
+        &["worktree", "list"][..],
+    ] {
+        for flag in ["--version", "-V"] {
+            let output = treeboot()
+                .args(command)
+                .arg(flag)
+                .assert()
+                .success()
+                .get_output()
+                .stdout
+                .clone();
+            assert_version_shape(&output, &version, None);
+        }
+    }
+}
 
+fn assert_version_shape(output: &[u8], version: &str, prefix: Option<&str>) {
+    let text = std::str::from_utf8(output).expect("version output should be valid UTF-8");
+    if let Some(prefix) = prefix {
+        assert!(
+            text.starts_with(prefix),
+            "unexpected version output: {text:?}"
+        );
+    }
+    assert!(
+        text.contains(version),
+        "unexpected version output: {text:?}"
+    );
+    let marker = text
+        .rfind("(spec ")
+        .expect("version output should contain a spec marker");
+    assert!(text.ends_with(")\n"), "unexpected version output: {text:?}");
+    assert!(
+        text.len() > marker + "(spec )\n".len(),
+        "spec version should not be empty"
+    );
+}
+
+pub(crate) fn version_flags_should_declare_suite_spec() {
+    let expected = format!("(spec {})", crate::SPEC_VERSION);
+    for flag in ["--version", "-V"] {
+        treeboot()
+            .arg(flag)
+            .assert()
+            .success()
+            .stdout(predicate::str::contains(&expected));
+    }
     for command in [
         &["run"][..],
         &["teardown"][..],
@@ -55,11 +116,7 @@ pub(crate) fn version_flags_should_print_package_and_spec_version() {
                 .arg(flag)
                 .assert()
                 .success()
-                .stdout(predicate::str::contains(&version))
-                .stdout(predicate::str::contains(format!(
-                    "(spec {})",
-                    crate::SPEC_VERSION
-                )));
+                .stdout(predicate::str::contains(&expected));
         }
     }
 }

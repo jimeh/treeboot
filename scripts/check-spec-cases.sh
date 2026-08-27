@@ -14,6 +14,8 @@ registry_tests_raw="${tmpdir}/registry-tests-raw"
 registry_tests="${tmpdir}/registry-tests"
 duplicates="${tmpdir}/duplicates"
 overlap="${tmpdir}/overlap"
+closure_cases="${tmpdir}/closure-cases"
+exact_cases="${tmpdir}/exact-cases"
 
 while IFS= read -r test_path; do
   family="${test_path#crates/treeboot/tests/}"
@@ -58,7 +60,7 @@ sort -u "${reference_tests_raw}" >"${reference_tests}"
 
 {
   cat "${reference_tests_raw}"
-  printf '%s\n' 'conformance.official_binary_should_pass_portable_conformance_suite'
+  printf '%s\n' 'conformance.official_binary_should_pass_full_conformance_suite'
 } >"${expected_tests_raw}"
 sort -u "${expected_tests_raw}" >"${expected_tests}"
 
@@ -105,9 +107,10 @@ fi
 
 conformance_driver="crates/treeboot/tests/conformance.rs"
 if [[ ! -f "${conformance_driver}" ]] ||
-  ! grep -Fq 'fn official_binary_should_pass_portable_conformance_suite()' \
+  ! grep -Fq 'fn official_binary_should_pass_full_conformance_suite()' \
     "${conformance_driver}" ||
   ! grep -Fq 'Suite::current()' "${conformance_driver}" ||
+  ! grep -Fq 'profile: ConformanceProfile::Full' "${conformance_driver}" ||
   ! grep -Fq 'CARGO_BIN_EXE_treeboot' "${conformance_driver}"; then
   printf 'treeboot spec cases: official conformance driver is missing or incomplete\n' >&2
   printf 'expected %s to run Suite::current() against CARGO_BIN_EXE_treeboot\n' \
@@ -115,4 +118,20 @@ if [[ ! -f "${conformance_driver}" ]] ||
   exit 1
 fi
 
-printf 'treeboot spec cases: 302 portable registry cases, 18 reference-only tests, conformance driver present\n'
+standalone_driver="scripts/test-treeboot-spec-standalone.sh"
+if [[ ! -f "${standalone_driver}" ]] ||
+  ! grep -Fq 'test --profile full --' "${standalone_driver}"; then
+  printf 'treeboot spec cases: standalone conformance driver must request the full profile\n' >&2
+  exit 1
+fi
+
+sed -nE 's/^[[:space:]]+"(closure\.[^"]+)".*/\1/p' \
+  crates/treeboot-spec/src/cases/closure.rs | sort -u >"${closure_cases}"
+sed -n '/^closure\.exact\./p' "${closure_cases}" >"${exact_cases}"
+if [[ "$(wc -l <"${closure_cases}")" -ne 20 ]] ||
+  [[ "$(wc -l <"${exact_cases}")" -ne 6 ]]; then
+  printf 'treeboot spec cases: expected 20 closure cases including six exact-identity cases\n' >&2
+  exit 1
+fi
+
+printf 'treeboot spec cases: 302 audited cases, 20 closure cases, 18 reference-only tests, full conformance drivers present\n'

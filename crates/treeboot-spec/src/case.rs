@@ -1,5 +1,15 @@
 use serde::Serialize;
 
+/// The compatibility requirement exercised by a conformance case.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum CaseRequirement {
+    /// Observable behavior that can remain compatible across specification versions.
+    #[default]
+    Functional,
+    /// Exact identity with this crate's specification version or canonical assets.
+    Exact,
+}
+
 /// Public metadata for one stable conformance case.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct CaseMetadata {
@@ -7,6 +17,8 @@ pub struct CaseMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     source_test: Option<&'static str>,
     spec_references: &'static [&'static str],
+    #[serde(skip)]
+    requirement: CaseRequirement,
 }
 
 impl CaseMetadata {
@@ -19,6 +31,7 @@ impl CaseMetadata {
             id,
             source_test: Some(source_test),
             spec_references,
+            requirement: CaseRequirement::Functional,
         }
     }
 
@@ -41,12 +54,27 @@ impl CaseMetadata {
             id,
             source_test: None,
             spec_references,
+            requirement: CaseRequirement::Functional,
+        }
+    }
+
+    pub(crate) const fn exact(id: &'static str, spec_references: &'static [&'static str]) -> Self {
+        Self {
+            id,
+            source_test: None,
+            spec_references,
+            requirement: CaseRequirement::Exact,
         }
     }
 
     /// Returns specification section anchors or requirement identifiers.
     pub const fn spec_references(self) -> &'static [&'static str] {
         self.spec_references
+    }
+
+    /// Returns whether the case checks functional behavior or exact identity.
+    pub const fn requirement(self) -> CaseRequirement {
+        self.requirement
     }
 }
 

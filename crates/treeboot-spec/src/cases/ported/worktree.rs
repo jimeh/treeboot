@@ -1017,13 +1017,34 @@ pub(crate) fn worktree_nested_help_and_version_should_be_exposed() {
         .stdout(predicate::str::contains("--format"));
 
     for flag in ["--version", "-V"] {
+        let output = treeboot()
+            .args(["worktree", flag])
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+        let text = std::str::from_utf8(&output).expect("worktree version should be valid UTF-8");
+        assert!(
+            text.starts_with(&format!(
+                "treeboot-worktree {} (spec ",
+                crate::cases::support::candidate_package_version()
+            )),
+            "unexpected worktree version output: {text:?}"
+        );
+        assert!(
+            text.ends_with(")\n") && !text.ends_with("(spec )\n"),
+            "unexpected worktree version output: {text:?}"
+        );
+    }
+}
+
+pub(crate) fn worktree_version_flags_should_declare_suite_spec() {
+    for flag in ["--version", "-V"] {
         treeboot()
             .args(["worktree", flag])
             .assert()
             .success()
-            .stdout(predicate::str::contains(
-                crate::cases::support::candidate_package_version(),
-            ))
             .stdout(predicate::str::contains(format!(
                 "(spec {})",
                 crate::SPEC_VERSION
