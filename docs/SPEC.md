@@ -1337,11 +1337,15 @@ shape is unchanged.
 ### JSON Schema
 
 `TB-CONFIG-SCHEMA`: The JSON Schema at `schemas/treeboot.schema.json` is the
-normative machine-readable definition of the config format. It must describe the
-same accepted document shapes, constraints, and rejected fields as this
-specification. Runtime defaults remain defined by the prose contract.
-`treeboot schema` stdout and `--output` must emit the canonical document's exact
-UTF-8 bytes as described in [`treeboot schema`](#treeboot-schema).
+normative machine-readable definition of the config document's structure. It
+must describe the accepted document shapes, rejected fields, and constraints
+that the schema expresses. Passing schema validation does not guarantee runtime
+acceptance: semantic rules that depend on normalized values, path or pattern
+syntax, filesystem state, repository context, or runtime policy remain defined
+by the prose contract and conformance requirements. Runtime defaults also remain
+defined by the prose contract. `treeboot schema` stdout and `--output` must emit
+the canonical document's exact UTF-8 bytes as described in
+[`treeboot schema`](#treeboot-schema).
 
 ```toml
 #:schema https://github.com/jimeh/treeboot/releases/latest/download/config.schema.json
@@ -2251,12 +2255,11 @@ operation and source. It must also identify the target once target derivation
 has succeeded. After normalization, a file-operation planning or execution error
 must identify the CLI operation, the path involved, and the reason. A recursive
 source-tree inspection or resolution error must identify the CLI operation and
-the most specific source path available when the failure occurs. If a traversal
-race makes the failing nested path unavailable, the operation's top-level source
-is sufficient. None of these error categories reports synthetic config paths or
-TOML locations for command-line arguments. Config parse or normalization errors
-found while loading manual command policy still report the real config path and
-TOML location.
+the operation's top-level source. It should identify the most specific nested
+source path available when the failure occurs. None of these error categories
+reports synthetic config paths or TOML locations for command-line arguments.
+Config parse or normalization errors found while loading manual command policy
+still report the real config path and TOML location.
 
 | Exit | Meaning                                                                                                             |
 | ---- | ------------------------------------------------------------------------------------------------------------------- |
