@@ -86,6 +86,10 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
                     invocation_timeout: Duration::from_millis(timeout_ms),
                 },
             )?;
+            if report.cases.is_empty() {
+                eprintln!("treeboot-spec: no conformance cases match the requested filter");
+                return Ok(ExitCode::from(2));
+            }
             match format {
                 ReportFormat::Human => print_human_report(&report),
                 ReportFormat::Json => println!("{}", serde_json::to_string_pretty(&report)?),
@@ -112,21 +116,27 @@ fn print_human_report(report: &treeboot_spec::SuiteReport) {
         "treeboot-spec {} (spec {}, {})",
         report.crate_version, report.specification_version, report.host_platform
     );
-    println!("candidate: {}", report.candidate.program);
+    println!("candidate: {}", display_candidate(&report.candidate));
     for result in &report.cases {
+        let case = format!(
+            "{} [spec: {}] ({} ms)",
+            result.case.id(),
+            result.case.spec_references().join(", "),
+            result.duration_ms
+        );
         match &result.outcome {
-            CaseOutcome::Passed => println!("PASS {}", result.case.id()),
+            CaseOutcome::Passed => println!("PASS {case}"),
             CaseOutcome::Skipped { reason } => {
-                println!("SKIP {}: {reason}", result.case.id());
+                println!("SKIP {case}: {reason}");
             }
             CaseOutcome::Failed { details } => {
-                println!("FAIL {}: {details}", result.case.id());
+                println!("FAIL {case}: {details}");
             }
             CaseOutcome::Error { details } => {
-                println!("ERROR {}: {details}", result.case.id());
+                println!("ERROR {case}: {details}");
             }
             CaseOutcome::TimedOut { details } => {
-                println!("TIMEOUT {}: {details}", result.case.id());
+                println!("TIMEOUT {case}: {details}");
             }
         }
     }
@@ -136,4 +146,24 @@ fn print_human_report(report: &treeboot_spec::SuiteReport) {
         report.skipped_count(),
         report.cases.len() - report.passed_count() - report.skipped_count()
     );
+}
+
+fn display_candidate(candidate: &treeboot_spec::CommandReport) -> String {
+    std::iter::once(candidate.program.as_str())
+        .chain(candidate.prefix_args.iter().map(String::as_str))
+        .map(display_argument)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn display_argument(argument: &str) -> String {
+    if !argument.is_empty()
+        && argument
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || "/._-:=+".contains(character))
+    {
+        argument.to_owned()
+    } else {
+        serde_json::to_string(argument).unwrap_or_else(|_| format!("{argument:?}"))
+    }
 }

@@ -107,6 +107,13 @@ the GitHub Actions `release` environment in `.github/workflows/release.yml`.
 Reruns should check crates.io first and skip any package version that is already
 published.
 
+Before the first tag that includes `treeboot-spec`, reserve the crate name with
+a manual token-authenticated initial publish. After that publish succeeds,
+configure its crates.io Trusted Publisher for the GitHub Actions `release`
+environment in `.github/workflows/release.yml`. Do not create the tag until both
+steps are complete. The release workflow intentionally fails closed if
+`treeboot-spec` cannot publish before `treeboot-core` and `treeboot`.
+
 Release workflow scripts in `scripts/` are thin wrappers around the Rust
 `treeboot-release-helper` workspace package. Keep release version derivation,
 asset packaging, and changelog release-note extraction in that helper so the

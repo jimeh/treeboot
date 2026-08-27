@@ -1,9 +1,10 @@
 use predicates::prelude::*;
-#[cfg(unix)]
+use std::path::PathBuf;
 use tempfile::TempDir;
 
 #[cfg(unix)]
-use super::support::{git_worktree, runner_capabilities, skip, symlink_file, treeboot, write_file};
+use super::support::symlink_file;
+use super::support::{git_worktree, runner_capabilities, skip, treeboot, write_file};
 use crate::case::{CaseDefinition, CaseMetadata};
 
 const SYMLINK_SPEC: &[&str] = &["#symlinks-inside-copy-and-sync"];
@@ -135,6 +136,34 @@ pub(crate) const DEFINITIONS: &[CaseDefinition] = &[
             COMPLETION_SPEC,
         ),
         "requires Bash and the Bash completion runtime",
+    ),
+    CaseDefinition::new(
+        CaseMetadata::closure(
+            "closure.completions.installed-zsh-script-lists-root-sources",
+            COMPLETION_SPEC,
+        ),
+        installed_zsh_script_lists_root_sources,
+    ),
+    CaseDefinition::new(
+        CaseMetadata::closure(
+            "closure.completions.installed-fish-script-lists-root-sources",
+            COMPLETION_SPEC,
+        ),
+        installed_fish_script_lists_root_sources,
+    ),
+    CaseDefinition::new(
+        CaseMetadata::closure(
+            "closure.completions.installed-powershell-script-lists-root-sources",
+            COMPLETION_SPEC,
+        ),
+        installed_powershell_script_lists_root_sources,
+    ),
+    CaseDefinition::new(
+        CaseMetadata::closure(
+            "closure.completions.installed-elvish-script-lists-root-sources",
+            COMPLETION_SPEC,
+        ),
+        installed_elvish_script_lists_root_sources,
     ),
 ];
 
@@ -318,9 +347,8 @@ fn confirm_teardown_through_terminal_input() {
 
 #[cfg(unix)]
 fn installed_bash_script_lists_root_sources() {
-    if !runner_capabilities().completion_script_execution {
-        skip("runner cannot execute generated completion scripts on the fixture host");
-    }
+    require_completion_execution();
+    let bash = require_shell(&["bash"], "Bash", &["-c", "type complete >/dev/null"]);
 
     let repo = git_worktree();
     std::fs::create_dir_all(repo.root_path().join("shared-source"))
@@ -341,7 +369,7 @@ fn installed_bash_script_lists_root_sources() {
             "{script}\nCOMP_WORDS=(treeboot copy sh)\nCOMP_CWORD=2\nCOMP_TYPE=9\n_clap_complete_treeboot '' 'sh'\nprintf '%s\\n' \"${{COMPREPLY[@]}}\"\n"
         ),
     );
-    let completion = std::process::Command::new("bash")
+    let completion = std::process::Command::new(bash)
         .arg(&script_path)
         .current_dir(repo.worktree_path())
         .output()
@@ -354,7 +382,188 @@ fn installed_bash_script_lists_root_sources() {
     );
     assert!(
         String::from_utf8_lossy(&completion.stdout).contains("shared-source"),
-        "{}",
-        String::from_utf8_lossy(&completion.stdout)
+        "completion output did not contain shared-source\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&completion.stdout),
+        String::from_utf8_lossy(&completion.stderr)
+    );
+}
+
+fn installed_zsh_script_lists_root_sources() {
+    require_completion_execution();
+    let zsh = require_shell(
+        &["zsh"],
+        "Zsh",
+        &[
+            "-f",
+            "-c",
+            "autoload -Uz compinit; compinit; whence compdef >/dev/null",
+        ],
+    );
+    let (repo, _temp, script_path) = completion_fixture("zsh", "zsh");
+    let completion = std::process::Command::new(zsh)
+        .args([
+            "-f",
+            "-c",
+            "autoload -Uz compinit; compinit; source \"$1\"; function _describe { print -rl -- \"${(@P)3}\"; }; words=(treeboot copy sh); CURRENT=3; _clap_dynamic_completer_treeboot; true",
+            "completion-test",
+        ])
+        .arg(&script_path)
+        .current_dir(repo.worktree_path())
+        .output()
+        .expect("installed Zsh completion script should run");
+    assert_completion(&completion);
+}
+
+fn installed_fish_script_lists_root_sources() {
+    require_completion_execution();
+    let fish = require_shell(&["fish"], "Fish", &["-c", "type -q complete"]);
+    let (repo, _temp, script_path) = completion_fixture("fish", "fish");
+    let completion = std::process::Command::new(fish)
+        .args([
+            "-c",
+            "source $argv[1]; complete --do-complete 'treeboot copy sh'",
+        ])
+        .arg(&script_path)
+        .current_dir(repo.worktree_path())
+        .output()
+        .expect("installed Fish completion script should run");
+    assert_completion(&completion);
+}
+
+fn installed_powershell_script_lists_root_sources() {
+    require_completion_execution();
+    let powershell = require_shell(
+        &["pwsh", "powershell"],
+        "PowerShell",
+        &[
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "if (-not (Get-Command Register-ArgumentCompleter -ErrorAction SilentlyContinue)) { exit 1 }",
+        ],
+    );
+    let (repo, _temp, script_path) = completion_fixture("powershell", "ps1");
+    let completion = std::process::Command::new(powershell)
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            ". $args[0]; $line = 'treeboot copy sh'; [System.Management.Automation.CommandCompletion]::CompleteInput($line, $line.Length, $null).CompletionMatches | ForEach-Object CompletionText",
+        ])
+        .arg(&script_path)
+        .current_dir(repo.worktree_path())
+        .output()
+        .expect("installed PowerShell completion script should run");
+    assert_completion(&completion);
+}
+
+fn installed_elvish_script_lists_root_sources() {
+    require_completion_execution();
+    let elvish = require_shell(
+        &["elvish"],
+        "Elvish",
+        &[
+            "-norc",
+            "-c",
+            "has-key $edit:completion:arg-completer treeboot",
+        ],
+    );
+    let (repo, _temp, script_path) = completion_fixture("elvish", "elv");
+    let completion = std::process::Command::new(elvish)
+        .args([
+            "-norc",
+            "-c",
+            "source $args[0]; $edit:completion:arg-completer[treeboot] treeboot copy sh",
+        ])
+        .arg(&script_path)
+        .current_dir(repo.worktree_path())
+        .output()
+        .expect("installed Elvish completion script should run");
+    assert_completion(&completion);
+}
+
+fn require_completion_execution() {
+    if !runner_capabilities().completion_script_execution {
+        skip("runner cannot execute generated completion scripts on the fixture host");
+    }
+}
+
+fn completion_fixture(
+    shell: &str,
+    extension: &str,
+) -> (super::support::GitWorktree, TempDir, PathBuf) {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared-source"))
+        .expect("root source directory should be created");
+    let output = treeboot()
+        .args(["completions", shell])
+        .current_dir(repo.worktree_path())
+        .output()
+        .expect("candidate should generate completion script");
+    assert!(
+        output.status.success(),
+        "candidate failed to generate {shell} completion script with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let script = String::from_utf8(output.stdout).expect("completion script should be UTF-8");
+    let temp = TempDir::new().expect("completion script directory should be created");
+    let script_path = temp.path().join(format!("completion-test.{extension}"));
+    write_file(&script_path, &script);
+    (repo, temp, script_path)
+}
+
+fn require_shell(names: &[&str], label: &str, preflight_args: &[&str]) -> PathBuf {
+    let Some(executable) = find_executable(names) else {
+        skip(format!(
+            "requires the {label} executable on the fixture host; none was found in PATH"
+        ));
+    };
+    let preflight = std::process::Command::new(&executable)
+        .args(preflight_args)
+        .output()
+        .expect("located completion shell should launch");
+    if !preflight.status.success() {
+        skip(format!(
+            "{label} is installed but its required completion runtime is unavailable"
+        ));
+    }
+    executable
+}
+
+fn find_executable(names: &[&str]) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for directory in std::env::split_paths(&path) {
+        for name in names {
+            let candidate = directory.join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+            #[cfg(windows)]
+            {
+                let candidate = directory.join(format!("{name}.exe"));
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn assert_completion(completion: &std::process::Output) {
+    assert!(
+        completion.status.success(),
+        "completion shell failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        completion.status.code(),
+        String::from_utf8_lossy(&completion.stdout),
+        String::from_utf8_lossy(&completion.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&completion.stdout).contains("shared-source"),
+        "completion output did not contain shared-source\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&completion.stdout),
+        String::from_utf8_lossy(&completion.stderr)
     );
 }

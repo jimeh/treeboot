@@ -12,7 +12,7 @@ fn list_prints_the_stable_registry() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.lines().count() > 302);
+    assert_eq!(stdout.lines().count(), 316);
     assert!(stdout.lines().all(|line| !line.trim().is_empty()));
 }
 
@@ -29,7 +29,7 @@ fn show_and_schema_print_exact_canonical_assets() {
 
 #[cfg(unix)]
 #[test]
-fn test_accepts_a_candidate_with_prefix_arguments_and_emits_json() {
+fn no_matching_filter_is_a_selection_error() {
     let output = spec_command()
         .args([
             "test",
@@ -47,14 +47,9 @@ fn test_accepts_a_candidate_with_prefix_arguments_and_emits_json() {
         .output()
         .unwrap();
 
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["candidate"]["prefix_args"][0], "-c");
-    assert_eq!(report["cases"].as_array().unwrap().len(), 0);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("no conformance cases match"));
 }
 
 #[cfg(unix)]
@@ -83,4 +78,62 @@ fn json_failure_report_is_valid_and_does_not_leak_caught_panics() {
     );
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["cases"][0]["outcome"]["kind"], "failed");
+}
+
+#[cfg(unix)]
+#[test]
+fn human_report_includes_full_candidate_case_reference_duration_and_details() {
+    let output = spec_command()
+        .args([
+            "test",
+            "--filter",
+            "cli.help.print-usage",
+            "--",
+            "sh",
+            "-c",
+            "exit 0",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("candidate: "));
+    assert!(stdout.contains("sh -c \"exit 0\""), "{stdout}");
+    assert!(stdout.contains("FAIL cli.help.print-usage"), "{stdout}");
+    assert!(
+        stdout.contains("#cli-surface-fifteen-subcommands-one-default-path"),
+        "{stdout}"
+    );
+    assert!(stdout.contains(" ms)"), "{stdout}");
+    assert!(stdout.contains(":"), "{stdout}");
+}
+
+#[cfg(unix)]
+#[test]
+fn fixture_setup_failure_is_error_with_exit_three() {
+    let empty_path = tempfile::TempDir::new().unwrap();
+    let output = spec_command()
+        .args([
+            "test",
+            "--format",
+            "json",
+            "--filter",
+            "check.should-validate-config-without-side-effects",
+            "--",
+            "/bin/true",
+        ])
+        .env("PATH", empty_path.path())
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(3));
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["cases"][0]["outcome"]["kind"], "error");
+    assert!(
+        report["cases"][0]["outcome"]["details"]
+            .as_str()
+            .unwrap()
+            .contains("fixture setup")
+    );
 }

@@ -5,6 +5,7 @@ use std::ffi::OsStr;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{ExitStatus, Output};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Once};
 use std::time::Duration;
 
@@ -48,6 +49,7 @@ pub(crate) struct CaseContext {
     runner: Arc<dyn Runner>,
     timeout: Duration,
     failure: Mutex<Option<ExecutionFailure>>,
+    candidate_invoked: AtomicBool,
 }
 
 #[derive(Debug, Clone)]
@@ -63,6 +65,7 @@ impl CaseContext {
             runner,
             timeout,
             failure: Mutex::new(None),
+            candidate_invoked: AtomicBool::new(false),
         }
     }
 
@@ -78,6 +81,14 @@ impl CaseContext {
             .failure
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(failure);
+    }
+
+    pub(crate) fn candidate_invoked(&self) -> bool {
+        self.candidate_invoked.load(Ordering::Relaxed)
+    }
+
+    fn mark_candidate_invoked(&self) {
+        self.candidate_invoked.store(true, Ordering::Relaxed);
     }
 }
 
@@ -194,12 +205,14 @@ impl Command {
         if self.invocation.timeout_value().is_none() {
             self.invocation = std::mem::take(&mut self.invocation).timeout(context.timeout);
         }
+        context.mark_candidate_invoked();
         let result = context.runner.run(&self.invocation).map_err(|error| {
             let message = error.to_string();
-            if message.contains("does not support") {
-                context.record(ExecutionFailure::Skipped(message.clone()));
-            } else {
-                context.record(ExecutionFailure::Runner(message.clone()));
+            match error {
+                crate::RunnerError::UnsupportedCapability { .. } => {
+                    context.record(ExecutionFailure::Skipped(message.clone()));
+                }
+                _ => context.record(ExecutionFailure::Runner(message.clone())),
             }
             message
         })?;
@@ -232,7 +245,7 @@ fn native_status(termination: Termination) -> ExitStatus {
 
     match termination {
         Termination::Exited { code } => ExitStatus::from_raw(code << 8),
-        Termination::Signaled | Termination::TimedOut => ExitStatus::from_raw(1 << 8),
+        Termination::Signaled | Termination::TimedOut => ExitStatus::from_raw(9),
     }
 }
 

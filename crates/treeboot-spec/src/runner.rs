@@ -1,17 +1,28 @@
 use std::ffi::{OsStr, OsString};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus, Stdio};
+use std::process::{ChildStderr, ChildStdin, ChildStdout, Command, ExitStatus, Stdio};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
+#[cfg(unix)]
+use std::process::Child;
+
+#[cfg(windows)]
+use process_wrap::std::{ChildWrapper, CommandWrap, JobObject};
 
 use serde::Serialize;
 use thiserror::Error;
 
 use crate::CommandTemplate;
+
+#[cfg(unix)]
+type ManagedChild = Child;
+#[cfg(windows)]
+type ManagedChild = Box<dyn ChildWrapper>;
 
 /// Input supplied to one candidate invocation.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -310,42 +321,49 @@ impl Runner for LocalProcessRunner {
         }
 
         let started = Instant::now();
-        let mut child = command.spawn().map_err(|source| RunnerError::Launch {
+        let mut child = spawn_child(command).map_err(|source| RunnerError::Launch {
             program: self.command.program().to_string_lossy().into_owned(),
             source,
         })?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or(RunnerError::MissingPipe { stream: "stdout" })?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or(RunnerError::MissingPipe { stream: "stderr" })?;
+        let stdout =
+            take_stdout(&mut child).ok_or(RunnerError::MissingPipe { stream: "stdout" })?;
+        let stderr =
+            take_stderr(&mut child).ok_or(RunnerError::MissingPipe { stream: "stderr" })?;
         let stdout_reader = read_pipe(stdout);
         let stderr_reader = read_pipe(stderr);
 
         let stdin_writer = if let StdinMode::Piped(input) = &invocation.stdin {
-            let mut stdin = child
-                .stdin
-                .take()
-                .ok_or(RunnerError::MissingPipe { stream: "stdin" })?;
+            let mut stdin =
+                take_stdin(&mut child).ok_or(RunnerError::MissingPipe { stream: "stdin" })?;
             let input = input.clone();
             Some(thread::spawn(move || stdin.write_all(&input)))
         } else {
             None
         };
 
-        let (status, timed_out) = wait_for_child(&mut child, invocation.timeout)?;
-        let stdout = join_pipe(stdout_reader, "stdout")?;
-        let stderr = join_pipe(stderr_reader, "stderr")?;
-        if !timed_out && let Some(stdin_writer) = stdin_writer {
-            join_stdin(stdin_writer)?;
-        }
-        let termination = if timed_out {
-            Termination::TimedOut
-        } else {
-            termination_from_status(status)
+        let lifecycle = wait_for_invocation(
+            &mut child,
+            &stdout_reader,
+            &stderr_reader,
+            stdin_writer.as_ref(),
+            invocation
+                .timeout
+                .and_then(|timeout| started.checked_add(timeout)),
+        )?;
+        let (termination, stdout, stderr) = match lifecycle {
+            InvocationLifecycle::Completed(status) => {
+                let stdout = stdout_reader.finish("stdout")?;
+                let stderr = stderr_reader.finish("stderr")?;
+                if let Some(stdin_writer) = stdin_writer {
+                    join_stdin(stdin_writer)?;
+                }
+                (termination_from_status(status), stdout, stderr)
+            }
+            InvocationLifecycle::TimedOut => {
+                let stdout = stdout_reader.finish_after_timeout("stdout");
+                let stderr = stderr_reader.finish_after_timeout("stderr");
+                (Termination::TimedOut, stdout, stderr)
+            }
         };
 
         Ok(InvocationResult::new(
@@ -357,6 +375,48 @@ impl Runner for LocalProcessRunner {
     }
 }
 
+#[cfg(unix)]
+fn spawn_child(mut command: Command) -> std::io::Result<ManagedChild> {
+    command.spawn()
+}
+
+#[cfg(windows)]
+fn spawn_child(command: Command) -> std::io::Result<ManagedChild> {
+    let mut command = CommandWrap::from(command);
+    command.wrap(JobObject);
+    command.spawn()
+}
+
+#[cfg(unix)]
+fn take_stdin(child: &mut ManagedChild) -> Option<ChildStdin> {
+    child.stdin.take()
+}
+
+#[cfg(windows)]
+fn take_stdin(child: &mut ManagedChild) -> Option<ChildStdin> {
+    child.stdin().take()
+}
+
+#[cfg(unix)]
+fn take_stdout(child: &mut ManagedChild) -> Option<ChildStdout> {
+    child.stdout.take()
+}
+
+#[cfg(windows)]
+fn take_stdout(child: &mut ManagedChild) -> Option<ChildStdout> {
+    child.stdout().take()
+}
+
+#[cfg(unix)]
+fn take_stderr(child: &mut ManagedChild) -> Option<ChildStderr> {
+    child.stderr.take()
+}
+
+#[cfg(windows)]
+fn take_stderr(child: &mut ManagedChild) -> Option<ChildStderr> {
+    child.stderr().take()
+}
+
 fn join_stdin(handle: thread::JoinHandle<std::io::Result<()>>) -> Result<(), RunnerError> {
     handle
         .join()
@@ -364,73 +424,138 @@ fn join_stdin(handle: thread::JoinHandle<std::io::Result<()>>) -> Result<(), Run
         .map_err(|source| RunnerError::WriteStdin { source })
 }
 
-fn read_pipe(mut pipe: impl Read + Send + 'static) -> thread::JoinHandle<std::io::Result<Vec<u8>>> {
-    thread::spawn(move || {
-        let mut output = Vec::new();
-        pipe.read_to_end(&mut output)?;
-        Ok(output)
-    })
+struct PipeCapture {
+    output: Arc<Mutex<Vec<u8>>>,
+    handle: thread::JoinHandle<std::io::Result<()>>,
 }
 
-fn join_pipe(
-    handle: thread::JoinHandle<std::io::Result<Vec<u8>>>,
-    stream: &'static str,
-) -> Result<Vec<u8>, RunnerError> {
-    handle
-        .join()
-        .map_err(|_| RunnerError::ReaderPanicked { stream })?
-        .map_err(|source| RunnerError::ReadPipe { stream, source })
-}
+impl PipeCapture {
+    fn is_finished(&self) -> bool {
+        self.handle.is_finished()
+    }
 
-fn wait_for_child(
-    child: &mut Child,
-    timeout: Option<Duration>,
-) -> Result<(ExitStatus, bool), RunnerError> {
-    let started = Instant::now();
-    loop {
-        if let Some(status) = child
-            .try_wait()
-            .map_err(|source| RunnerError::Wait { source })?
-        {
-            return Ok((status, false));
+    fn finish(self, stream: &'static str) -> Result<Vec<u8>, RunnerError> {
+        let Self { output, handle } = self;
+        handle
+            .join()
+            .map_err(|_| RunnerError::ReaderPanicked { stream })?
+            .map_err(|source| RunnerError::ReadPipe { stream, source })?;
+        Ok(snapshot_output(&output))
+    }
+
+    fn finish_after_timeout(self, stream: &'static str) -> Vec<u8> {
+        let drain_deadline = Instant::now() + Duration::from_millis(100);
+        while !self.handle.is_finished() && Instant::now() < drain_deadline {
+            thread::sleep(Duration::from_millis(1));
         }
-        if timeout.is_some_and(|timeout| started.elapsed() >= timeout) {
-            terminate_child_tree(child)?;
-            let status = child
-                .wait()
+        if self.handle.is_finished() {
+            let Self { output, handle } = self;
+            let _ = handle
+                .join()
+                .map_err(|_| RunnerError::ReaderPanicked { stream });
+            return snapshot_output(&output);
+        }
+        self.snapshot()
+    }
+
+    fn snapshot(&self) -> Vec<u8> {
+        self.output
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+}
+
+fn snapshot_output(output: &Mutex<Vec<u8>>) -> Vec<u8> {
+    output
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+fn read_pipe(mut pipe: impl Read + Send + 'static) -> PipeCapture {
+    let output = Arc::new(Mutex::new(Vec::new()));
+    let writer = Arc::clone(&output);
+    let handle = thread::spawn(move || {
+        let mut buffer = [0_u8; 8192];
+        loop {
+            let count = pipe.read(&mut buffer)?;
+            if count == 0 {
+                return Ok(());
+            }
+            writer
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .extend_from_slice(&buffer[..count]);
+        }
+    });
+    PipeCapture { output, handle }
+}
+
+enum InvocationLifecycle {
+    Completed(ExitStatus),
+    TimedOut,
+}
+
+fn wait_for_invocation(
+    child: &mut ManagedChild,
+    stdout: &PipeCapture,
+    stderr: &PipeCapture,
+    stdin: Option<&thread::JoinHandle<std::io::Result<()>>>,
+    deadline: Option<Instant>,
+) -> Result<InvocationLifecycle, RunnerError> {
+    let mut status = None;
+    loop {
+        if status.is_none() {
+            status = child
+                .try_wait()
                 .map_err(|source| RunnerError::Wait { source })?;
-            return Ok((status, true));
+        }
+        let stdin_finished = stdin.is_none_or(thread::JoinHandle::is_finished);
+        if let Some(status) = status
+            && stdout.is_finished()
+            && stderr.is_finished()
+            && stdin_finished
+        {
+            return Ok(InvocationLifecycle::Completed(status));
+        }
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            terminate_child_tree(child, status.is_some())?;
+            if status.is_none() {
+                child
+                    .wait()
+                    .map_err(|source| RunnerError::Wait { source })?;
+            }
+            return Ok(InvocationLifecycle::TimedOut);
         }
         thread::sleep(Duration::from_millis(5));
     }
 }
 
 #[cfg(unix)]
-fn terminate_child_tree(child: &mut Child) -> Result<(), RunnerError> {
-    let group = format!("-{}", child.id());
-    let group_killed = Command::new("kill")
-        .args(["-s", "KILL", "--", &group])
-        .status()
-        .is_ok_and(|status| status.success());
-    if group_killed {
-        return Ok(());
-    }
+fn terminate_child_tree(child: &mut ManagedChild, leader_exited: bool) -> Result<(), RunnerError> {
+    use nix::errno::Errno;
+    use nix::sys::signal::{Signal, killpg};
+    use nix::unistd::Pid;
 
-    child.kill().map_err(|source| RunnerError::Kill { source })
+    match killpg(Pid::from_raw(child.id() as i32), Signal::SIGKILL) {
+        Ok(()) => Ok(()),
+        Err(Errno::ESRCH) if leader_exited => Ok(()),
+        Err(error) => child.kill().map_err(|source| RunnerError::Kill {
+            source: if source.kind() == std::io::ErrorKind::InvalidInput {
+                std::io::Error::from_raw_os_error(error as i32)
+            } else {
+                source
+            },
+        }),
+    }
 }
 
 #[cfg(windows)]
-fn terminate_child_tree(child: &mut Child) -> Result<(), RunnerError> {
-    let pid = child.id().to_string();
-    let tree_killed = Command::new("taskkill")
-        .args(["/PID", &pid, "/T", "/F"])
-        .status()
-        .is_ok_and(|status| status.success());
-    if tree_killed {
-        return Ok(());
-    }
-
-    child.kill().map_err(|source| RunnerError::Kill { source })
+fn terminate_child_tree(child: &mut ManagedChild, _leader_exited: bool) -> Result<(), RunnerError> {
+    child
+        .start_kill()
+        .map_err(|source| RunnerError::Kill { source })
 }
 
 fn termination_from_status(status: ExitStatus) -> Termination {

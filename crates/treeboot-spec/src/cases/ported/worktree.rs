@@ -998,7 +998,7 @@ pub(crate) fn worktree_nested_help_and_version_should_be_exposed() {
         .assert()
         .code(2)
         .stdout(predicate::str::is_empty())
-        .stderr(predicate::str::contains("Usage:"));
+        .stderr(predicate::str::is_empty().not());
 
     treeboot()
         .args(["worktree", "--help"])

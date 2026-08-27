@@ -11,10 +11,7 @@ fn current_registry_should_cover_each_portable_inventory_row_once() {
         .filter_map(|case| case.source_test())
         .collect::<HashSet<_>>();
 
-    assert!(
-        cases.len() > 302,
-        "closure cases must extend the audited suite"
-    );
+    assert_eq!(cases.len(), 316, "302 audited cases plus 14 closure cases");
     assert_eq!(ids.len(), cases.len());
     assert_eq!(source_tests.len(), 302);
     assert_eq!(

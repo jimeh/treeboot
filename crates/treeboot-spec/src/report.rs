@@ -71,9 +71,11 @@ pub struct SuiteReport {
 impl SuiteReport {
     /// Returns true when every executed case passed and all other cases skipped.
     pub fn passed(&self) -> bool {
-        self.cases
-            .iter()
-            .all(|result| result.outcome.is_passed() || result.outcome.is_skipped())
+        !self.cases.is_empty()
+            && self
+                .cases
+                .iter()
+                .all(|result| result.outcome.is_passed() || result.outcome.is_skipped())
     }
 
     /// Returns the number of passed cases.

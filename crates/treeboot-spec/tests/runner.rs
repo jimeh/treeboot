@@ -88,6 +88,42 @@ fn local_runner_timeout_should_cover_blocked_stdin_writes() {
 }
 
 #[test]
+#[cfg(unix)]
+fn local_runner_timeout_should_cover_output_held_by_descendant_after_leader_exit() {
+    let template = shell_command("(sleep 30) & printf leader-exited; exit 0");
+    let invocation = Invocation::new().timeout(Duration::from_millis(100));
+    let started = std::time::Instant::now();
+
+    let output = LocalProcessRunner::new(template)
+        .run(&invocation)
+        .expect("timed out descendants still produce an invocation result");
+
+    assert_eq!(output.termination(), Termination::TimedOut);
+    assert_eq!(output.stdout(), b"leader-exited");
+    assert!(started.elapsed() < Duration::from_secs(2));
+}
+
+#[test]
+#[cfg(windows)]
+fn local_runner_timeout_should_terminate_job_after_leader_exit() {
+    let template = shell_command("start \"\" /B ping -n 31 127.0.0.1 & echo leader-exited");
+    let invocation = Invocation::new().timeout(Duration::from_millis(100));
+    let started = std::time::Instant::now();
+
+    let output = LocalProcessRunner::new(template)
+        .run(&invocation)
+        .expect("timed out Windows jobs still produce an invocation result");
+
+    assert_eq!(output.termination(), Termination::TimedOut);
+    assert!(
+        String::from_utf8_lossy(output.stdout()).contains("leader-exited"),
+        "{}",
+        String::from_utf8_lossy(output.stdout())
+    );
+    assert!(started.elapsed() < Duration::from_secs(2));
+}
+
+#[test]
 fn local_runner_should_report_launch_failures() {
     let invocation = Invocation::new();
     let error = LocalProcessRunner::new(CommandTemplate::new(
@@ -97,6 +133,15 @@ fn local_runner_should_report_launch_failures() {
     .expect_err("missing candidate should fail to launch");
 
     assert!(error.to_string().contains("failed to launch"));
+}
+
+#[test]
+fn local_runner_should_treat_unrepresentable_timeout_as_unbounded() {
+    let output = LocalProcessRunner::new(shell_command("exit 0"))
+        .run(&Invocation::new().timeout(Duration::MAX))
+        .expect("an unrepresentable deadline should not panic");
+
+    assert_eq!(output.termination(), Termination::Exited { code: 0 });
 }
 
 #[test]

@@ -107,6 +107,9 @@ impl Suite {
                 (_, Some(ExecutionFailure::Skipped(reason))) => CaseOutcome::Skipped { reason },
                 (_, Some(ExecutionFailure::Runner(details))) => CaseOutcome::Error { details },
                 (_, Some(ExecutionFailure::TimedOut(details))) => CaseOutcome::TimedOut { details },
+                (Err(payload), None) if !context.candidate_invoked() => CaseOutcome::Error {
+                    details: format!("fixture setup failed: {}", panic_message(payload)),
+                },
                 (Err(payload), None) => CaseOutcome::Failed {
                     details: panic_message(payload),
                 },

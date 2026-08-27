@@ -4,9 +4,10 @@ set -euo pipefail
 cargo build -p treeboot -p treeboot-spec --locked
 
 executable_suffix=""
-if rustc -vV | sed -n 's/^host: //p' | rg -q -- '-windows-'; then
-  executable_suffix=".exe"
-fi
+host="$(rustc -vV | sed -n 's/^host: //p')"
+case "${host}" in
+  *-windows-*) executable_suffix=".exe" ;;
+esac
 
 temp_dir="$(mktemp -d)"
 trap 'rm -rf "${temp_dir}"' EXIT

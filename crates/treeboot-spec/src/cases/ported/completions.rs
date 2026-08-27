@@ -127,7 +127,6 @@ pub(crate) fn completions_unsupported_shell_should_exit_with_usage_error() {
         .assert()
         .code(2)
         .stdout(predicate::str::is_empty())
-        .stderr(predicate::str::is_empty().not())
         .stderr(predicate::str::is_empty().not());
 }
 

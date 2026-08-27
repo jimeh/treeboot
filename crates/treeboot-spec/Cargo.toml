@@ -26,6 +26,12 @@ tempfile = "3"
 thiserror = "2"
 yaml_serde = "0.10"
 
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.30", features = ["signal"] }
+
+[target.'cfg(windows)'.dependencies]
+process-wrap = { version = "10.0.0", default-features = false, features = ["job-object", "std"] }
+
 [[bin]]
 name = "treeboot-spec"
 path = "src/main.rs"
