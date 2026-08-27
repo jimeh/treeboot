@@ -1,7 +1,7 @@
 # npm Distribution Plan
 
-Status: ready for implementation; maintainer registry bootstrap is required
-before the first tagged npm release.
+Status: implemented; maintainer registry bootstrap remains required before the
+first tagged npm release.
 
 ## Objective
 
@@ -85,74 +85,21 @@ This layout follows npm's documented
 It keeps normal installs small, supports offline and reproducible installs, and
 lets Electron packagers see the executable as an ordinary dependency.
 
-## Facade Contract
+## Contract ownership
 
-The first public JavaScript API should stay deliberately small:
+The npm facade wraps the existing Treeboot CLI. It does not extend the
+language-agnostic CLI contract in the
+[portable specification](../../crates/treeboot-spec/SPEC.md).
 
-- `getBinaryPath()` returns the absolute path to the executable selected for the
-  current `process.platform` and `process.arch`.
-- `spawnTreeboot(args?, options?)` starts Treeboot without invoking a shell and
-  returns the Node.js child process.
-- `spawnTreebootSync(args?, options?)` runs the same operation synchronously.
-- Typed exported errors distinguish an unsupported platform from a compatible
-  optional package that is missing from the installation.
+The [npm package README](../../npm/treeboot/README.md) owns the public Node.js
+and Electron contract. Keep its exported API, package resolution, execution,
+error, CLI, and Electron guidance synchronized with the published package. The
+[architecture document](../ARCHITECTURE.md) owns component boundaries and data
+flow. The [release guide](release.md) owns assembly and publication mechanics.
 
-The spawn option types should derive from `node:child_process`, but omit the
-command, argument vector, and `shell` fields owned by the wrapper. User
-arguments must always be passed as an array rather than interpolated into a
-command string.
-
-The package also exposes a `treeboot` executable shim. It resolves the same
-binary, inherits standard input/output/error, forwards ordinary termination
-signals, and exits with the child process's exit status. This supports:
-
-```sh
-npx treeboot --version
-bunx treeboot --version
-```
-
-The package publishes:
-
-- Node-compatible ESM;
-- Node-compatible CommonJS;
-- TypeScript declarations;
-- an executable Node.js CLI entrypoint.
-
-Published code may use Node.js built-ins but not Bun-only APIs. Bun is the
-development runtime and build tool; Node.js is the consumer runtime contract.
-The facade declares `engines.node = ">=22"`.
-
-### Resolution failures
-
-Errors must explain the detected platform and architecture, the expected npm
-package, and likely causes. A missing binary dependency should specifically
-mention disabled optional dependencies and bundlers or Electron packagers that
-pruned the package. It must not silently fall back to downloading a release or
-to an unrelated executable on `PATH`.
-
-## Electron Contract
-
-Treeboot belongs in Electron's main process, a utility process with Node.js
-access, or an application backend. It is not a renderer API.
-
-Electron applications must keep the selected platform package in the packaged
-application and leave its executable outside `app.asar`. Electron only supports
-`execFile` directly for binaries inside ASAR; `spawn`, which this facade uses,
-requires a real filesystem path. The package documentation must therefore show
-how to mark `node_modules/@treeboot-rs/**/bin/**` as unpacked or copy it to the
-packager's external resources. See Electron's
-[ASAR execution limitations](https://www.electronjs.org/docs/latest/tutorial/asar-archives#executing-binaries-inside-asar-archive).
-
-As a defensive convenience, `getBinaryPath()` should detect a resolved path
-inside an `.asar` archive and return the matching `.asar.unpacked` path when
-that real file exists. It must otherwise return the original path so an invalid
-packaging configuration produces a direct, diagnosable failure.
-
-Cross-architecture and universal Electron builds cannot rely on optional
-dependency selection performed on the build host. Their build configuration must
-explicitly install and retain every target package they ship. Document this
-constraint and verify package selection independently from the build machine's
-architecture.
+This plan records implementation sequencing, validation, and the remaining
+maintainer bootstrap. If later work changes a contract, update its owning
+document rather than restating the new behavior here.
 
 ## Source Layout and Development Tooling
 
@@ -260,8 +207,8 @@ environment and requests `id-token: write`. Extend it as follows:
 5. Wait until each exact package version is visible from the npm registry.
 6. Publish the `treeboot` facade last. The facade is the commit point: users
    cannot receive a version whose optional packages are still unavailable.
-7. Continue to publish the two crates.io packages and GitHub Release assets in
-   the same job dependency graph.
+7. Continue to publish `treeboot-spec`, `treeboot-core`, and `treeboot`, plus
+   the GitHub Release assets, in the same job dependency graph.
 8. Mark the GitHub Release non-draft only after npm, crates.io, and asset
    publication all succeed.
 
@@ -423,9 +370,10 @@ environment.
 
 ### 1. Freeze the contract and workspace shape
 
-- Add the npm distribution behavior to `docs/SPEC.md` and bump the spec from
-  2.4.0 to 2.5.0.
-- Keep the README's referenced spec version in sync.
+- Keep the portable CLI behavior in `crates/treeboot-spec/SPEC.md` unchanged
+  unless the facade requires a real CLI compatibility change.
+- Record the Node.js and Electron contract in `npm/treeboot/README.md`, and keep
+  the root README as its shorter integration guide.
 - Add the private Bun workspace, locked toolchain, lint/format/typecheck config,
   ignored outputs, and mise tasks.
 - Update dependency automation for `bun.lock`.
@@ -546,8 +494,10 @@ package tests cannot represent.
 
 ## Documentation Changes
 
-- `docs/SPEC.md`: npm distribution, platform selection, facade API, CLI shim,
-  errors, supported platforms, and Electron constraints.
+- `crates/treeboot-spec/SPEC.md`: keep the portable CLI contract independent of
+  the npm wrapper unless the underlying CLI behavior changes.
+- `npm/treeboot/README.md`: npm installation, exports, platform selection,
+  errors, CLI behavior, and Electron constraints.
 - `docs/ARCHITECTURE.md`: Bun workspace, facade/platform ownership, staging
   boundary, and release data flow.
 - `README.md`: mise remains the primary direct-install recommendation; add npm
@@ -616,8 +566,8 @@ then, a badge would advertise the deprecated placeholder.
 - Tag publication uses npm Trusted Publishing with no npm token, publishes the
   facade last, and is safe to rerun.
 - Manual release dispatch produces the npm artifacts without publishing them.
-- The spec, architecture, README, release guide, roadmap, and package READMEs
-  describe the same final contract.
+- The package README, architecture, root README, release guide, roadmap, and
+  platform package READMEs agree on the final npm behavior and release flow.
 - Focused checks, the six-platform package matrix, `mise run release:check`, and
   `mise run verify` pass on the intended final commit.
 - Two independent final reviews and the repository's normal PR gates cover the
