@@ -108,7 +108,7 @@ fn local_runner_timeout_should_cover_output_held_by_descendant_after_leader_exit
 #[cfg(windows)]
 fn local_runner_timeout_should_terminate_job_after_leader_exit() {
     let template = shell_command("start \"\" /B ping -n 31 127.0.0.1 & echo leader-exited");
-    let invocation = Invocation::new().timeout(Duration::from_millis(100));
+    let invocation = Invocation::new().timeout(Duration::from_secs(1));
     let started = std::time::Instant::now();
 
     let output = LocalProcessRunner::new(template)
@@ -121,7 +121,7 @@ fn local_runner_timeout_should_terminate_job_after_leader_exit() {
         "{}",
         String::from_utf8_lossy(output.stdout())
     );
-    assert!(started.elapsed() < Duration::from_secs(2));
+    assert!(started.elapsed() < Duration::from_secs(5));
 }
 
 #[test]

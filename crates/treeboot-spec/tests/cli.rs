@@ -121,14 +121,21 @@ fn fixture_setup_failure_is_error_with_exit_three() {
             "--filter",
             "check.should-validate-config-without-side-effects",
             "--",
-            "/bin/true",
+            env!("CARGO_BIN_EXE_treeboot-spec"),
         ])
         .env("PATH", empty_path.path())
         .output()
         .unwrap();
 
     assert_eq!(output.status.code(), Some(3));
-    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
+            panic!(
+                "fixture error report should be JSON: {error}\nstdout:\n{}\nstderr:\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            )
+        });
     assert_eq!(report["cases"][0]["outcome"]["kind"], "error");
     assert!(
         report["cases"][0]["outcome"]["details"]
