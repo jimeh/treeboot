@@ -2254,12 +2254,13 @@ a manual operation's declared source-to-target mapping must identify the CLI
 operation and source. It must also identify the target once target derivation
 has succeeded. After normalization, a file-operation planning or execution error
 must identify the CLI operation, the path involved, and the reason. A recursive
-source-tree inspection or resolution error must identify the CLI operation and
-the operation's top-level source. It should identify the most specific nested
-source path available when the failure occurs. None of these error categories
-reports synthetic config paths or TOML locations for command-line arguments.
-Config parse or normalization errors found while loading manual command policy
-still report the real config path and TOML location.
+source-tree inspection or resolution error must identify the CLI operation and a
+source path associated with the failure. That path may be the operation's
+declared top-level source, its normalized location, or a nested source path. It
+should identify the most specific failing source path available. None of these
+error categories reports synthetic config paths or TOML locations for
+command-line arguments. Config parse or normalization errors found while loading
+manual command policy still report the real config path and TOML location.
 
 | Exit | Meaning                                                                                                             |
 | ---- | ------------------------------------------------------------------------------------------------------------------- |
