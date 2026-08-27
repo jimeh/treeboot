@@ -18,10 +18,19 @@ const CLEAN_ENVIRONMENT: &[&str] = &[
     "CODEX_SOURCE_TREE_PATH",
     "CONDUCTOR_ROOT_PATH",
     "SUPERSET_ROOT_PATH",
+    "CONDUCTOR_DEFAULT_BRANCH",
     "TREEBOOT_STRICT",
     "TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT",
     "TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE",
 ];
+
+pub(crate) fn clean_process_command(program: impl AsRef<OsStr>) -> std::process::Command {
+    let mut command = std::process::Command::new(program);
+    for name in CLEAN_ENVIRONMENT {
+        command.env_remove(name);
+    }
+    command
+}
 
 thread_local! {
     static CASE_CONTEXT: RefCell<Option<Arc<CaseContext>>> = const { RefCell::new(None) };

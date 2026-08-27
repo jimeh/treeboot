@@ -30,6 +30,7 @@ pub fn treeboot() -> Command {
         .env_remove("CODEX_SOURCE_TREE_PATH")
         .env_remove("CONDUCTOR_ROOT_PATH")
         .env_remove("SUPERSET_ROOT_PATH")
+        .env_remove("CONDUCTOR_DEFAULT_BRANCH")
         .env_remove("TREEBOOT_STRICT")
         .env_remove("TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT")
         .env_remove("TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE");

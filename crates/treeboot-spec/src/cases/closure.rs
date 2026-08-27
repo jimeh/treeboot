@@ -4,7 +4,9 @@ use tempfile::TempDir;
 
 #[cfg(unix)]
 use super::support::symlink_file;
-use super::support::{git_worktree, runner_capabilities, skip, treeboot, write_file};
+use super::support::{
+    clean_process_command, git_worktree, runner_capabilities, skip, treeboot, write_file,
+};
 use crate::case::{CaseDefinition, CaseMetadata};
 
 const SYMLINK_SPEC: &[&str] = &["#symlinks-inside-copy-and-sync"];
@@ -340,7 +342,7 @@ fn installed_fish_script_lists_root_sources() {
     require_completion_execution();
     let fish = require_shell(&["fish"], "Fish", &["-c", "type -q complete"]);
     let (repo, _temp, script_path) = completion_fixture("fish", "fish");
-    let completion = std::process::Command::new(fish)
+    let completion = clean_process_command(fish)
         .args([
             "-c",
             "source $argv[1]; complete --do-complete 'treeboot copy sh'",
@@ -365,7 +367,7 @@ fn installed_powershell_script_lists_root_sources() {
         ],
     );
     let (repo, _temp, script_path) = completion_fixture("powershell", "ps1");
-    let completion = std::process::Command::new(powershell)
+    let completion = clean_process_command(powershell)
         .args([
             "-NoProfile",
             "-NonInteractive",
@@ -393,7 +395,7 @@ fn installed_elvish_script_lists_root_sources() {
         ],
     );
     let (repo, _temp, script_path) = completion_fixture("elvish", "elv");
-    let completion = std::process::Command::new(elvish)
+    let completion = clean_process_command(elvish)
         .args([
             "-norc",
             "-c",
