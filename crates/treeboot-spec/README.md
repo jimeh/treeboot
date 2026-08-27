@@ -40,10 +40,7 @@ use treeboot_spec::{CommandTemplate, ConformanceProfile, RunOptions, Suite};
 let implementation = CommandTemplate::new("/path/to/treeboot");
 let report = Suite::current().run(
     &implementation,
-    RunOptions {
-        profile: ConformanceProfile::Full,
-        ..RunOptions::default()
-    },
+    RunOptions::new().with_profile(ConformanceProfile::Full),
 )?;
 assert!(report.passed());
 # Ok::<(), treeboot_spec::SuiteError>(())

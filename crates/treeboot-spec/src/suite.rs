@@ -12,6 +12,7 @@ use crate::{
 
 /// Selects the compatibility guarantees exercised by a suite run.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ConformanceProfile {
     /// Runs functional behavior and exact specification identity cases.
     #[default]
@@ -21,6 +22,14 @@ pub enum ConformanceProfile {
 }
 
 impl ConformanceProfile {
+    /// Returns the stable lowercase profile name used by the CLI and reports.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Functional => "functional",
+        }
+    }
+
     fn selects(self, requirement: CaseRequirement) -> bool {
         self == Self::Full || requirement == CaseRequirement::Functional
     }
@@ -57,6 +66,7 @@ pub enum SuiteEvent<'a> {
 
 /// Options controlling one suite execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct RunOptions {
     /// Compatibility profile to execute.
     pub profile: ConformanceProfile,
@@ -66,13 +76,41 @@ pub struct RunOptions {
     pub invocation_timeout: Duration,
 }
 
-impl Default for RunOptions {
-    fn default() -> Self {
+impl RunOptions {
+    /// Returns options for the full profile with no filter and a 30-second timeout.
+    pub const fn new() -> Self {
         Self {
             profile: ConformanceProfile::Full,
             filter: None,
             invocation_timeout: Duration::from_secs(30),
         }
+    }
+
+    /// Selects the compatibility profile to execute.
+    #[must_use]
+    pub const fn with_profile(mut self, profile: ConformanceProfile) -> Self {
+        self.profile = profile;
+        self
+    }
+
+    /// Restricts execution to case identifiers containing `filter`.
+    #[must_use]
+    pub fn with_filter(mut self, filter: impl Into<String>) -> Self {
+        self.filter = Some(filter.into());
+        self
+    }
+
+    /// Sets the default timeout applied to each candidate invocation.
+    #[must_use]
+    pub const fn with_invocation_timeout(mut self, timeout: Duration) -> Self {
+        self.invocation_timeout = timeout;
+        self
+    }
+}
+
+impl Default for RunOptions {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

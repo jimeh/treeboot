@@ -112,22 +112,20 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             let invocation_timeout = Duration::from_millis(timeout_ms);
             let progress_enabled =
                 matches!(format, ReportFormat::Human) && !no_progress && io::stderr().is_terminal();
+            let mut run_options = RunOptions::new()
+                .with_profile(profile)
+                .with_invocation_timeout(invocation_timeout);
+            if let Some(filter) = filter {
+                run_options = run_options.with_filter(filter);
+            }
             let report = {
                 let mut stderr = io::stderr().lock();
                 let mut progress = ProgressRenderer::new(&mut stderr);
-                let report = Suite::current().run_observed(
-                    &template,
-                    RunOptions {
-                        profile,
-                        filter,
-                        invocation_timeout,
-                    },
-                    |event| {
-                        if progress_enabled {
-                            progress.observe(event);
-                        }
-                    },
-                )?;
+                let report = Suite::current().run_observed(&template, run_options, |event| {
+                    if progress_enabled {
+                        progress.observe(event);
+                    }
+                })?;
                 if progress_enabled {
                     progress.clear();
                 }
@@ -225,15 +223,23 @@ fn print_human_report(
             metadata.package, metadata.version, metadata.specification_version
         );
         if metadata.specification_version != report.specification_version {
-            match report.profile {
-                ConformanceProfile::Full => println!(
+            if report.profile == ConformanceProfile::Full {
+                println!(
                     "warning: candidate declares spec {}; full conformance requires spec {}",
                     metadata.specification_version, report.specification_version
-                ),
-                ConformanceProfile::Functional => println!(
+                );
+            } else if report.profile == ConformanceProfile::Functional {
+                println!(
                     "note: candidate spec {} differs from suite spec {}; functional compatibility allows this mismatch",
                     metadata.specification_version, report.specification_version
-                ),
+                );
+            } else {
+                println!(
+                    "note: candidate spec {} differs from suite spec {} under the {} profile",
+                    metadata.specification_version,
+                    report.specification_version,
+                    report.profile.as_str()
+                );
             }
         }
     }
@@ -337,10 +343,7 @@ fn print_human_report(
 }
 
 fn profile_name(profile: ConformanceProfile) -> &'static str {
-    match profile {
-        ConformanceProfile::Full => "full",
-        ConformanceProfile::Functional => "functional",
-    }
+    profile.as_str()
 }
 
 fn result_label(report: &treeboot_spec::SuiteReport) -> &'static str {

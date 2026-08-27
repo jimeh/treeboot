@@ -55,6 +55,7 @@ impl CaseOutcome {
 
 /// Serializable report for one suite execution.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
 pub struct SuiteReport {
     /// `treeboot-spec` package version.
     pub crate_version: &'static str,

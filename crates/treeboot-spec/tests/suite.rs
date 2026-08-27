@@ -76,6 +76,18 @@ impl Runner for RecordingRunner {
 }
 
 #[test]
+fn run_options_builder_configures_public_execution_options() {
+    let options = RunOptions::new()
+        .with_profile(ConformanceProfile::Functional)
+        .with_filter("cli.help")
+        .with_invocation_timeout(Duration::from_secs(7));
+
+    assert_eq!(options.profile, ConformanceProfile::Functional);
+    assert_eq!(options.filter.as_deref(), Some("cli.help"));
+    assert_eq!(options.invocation_timeout, Duration::from_secs(7));
+}
+
+#[test]
 fn custom_runner_executes_the_same_private_case_body() {
     let runner = Arc::new(RecordingRunner {
         command: CommandTemplate::new("remote-treeboot"),
@@ -85,10 +97,7 @@ fn custom_runner_executes_the_same_private_case_body() {
 
     let report = Suite::current().run_with(
         adapter,
-        RunOptions {
-            filter: Some("cli.help.print-usage".to_owned()),
-            ..RunOptions::default()
-        },
+        RunOptions::new().with_filter("cli.help.print-usage"),
     );
 
     assert!(report.passed());
@@ -103,10 +112,7 @@ fn display_text_does_not_turn_runner_errors_into_skips() {
             command: CommandTemplate::new("remote-treeboot"),
             unsupported: false,
         }),
-        RunOptions {
-            filter: Some("cli.help.print-usage".to_owned()),
-            ..RunOptions::default()
-        },
+        RunOptions::new().with_filter("cli.help.print-usage"),
     );
 
     assert!(matches!(
@@ -122,10 +128,7 @@ fn unsupported_capability_is_an_explicit_skip() {
             command: CommandTemplate::new("remote-treeboot"),
             unsupported: true,
         }),
-        RunOptions {
-            filter: Some("cli.help.print-usage".to_owned()),
-            ..RunOptions::default()
-        },
+        RunOptions::new().with_filter("cli.help.print-usage"),
     );
 
     assert!(matches!(
@@ -141,10 +144,7 @@ fn signaled_candidate_cannot_satisfy_exit_code_one_assertions() {
         Arc::new(SignaledRunner {
             command: CommandTemplate::new("remote-treeboot"),
         }),
-        RunOptions {
-            filter: Some("run.strict-missing-config.exit-with-runtime-failure".to_owned()),
-            ..RunOptions::default()
-        },
+        RunOptions::new().with_filter("run.strict-missing-config.exit-with-runtime-failure"),
     );
 
     assert!(!report.passed());
@@ -161,10 +161,7 @@ fn empty_report_cannot_pass() {
             command: CommandTemplate::new("remote-treeboot"),
             invocations: AtomicUsize::new(0),
         }),
-        RunOptions {
-            filter: Some("no-case-has-this-id".to_owned()),
-            ..RunOptions::default()
-        },
+        RunOptions::new().with_filter("no-case-has-this-id"),
     );
 
     assert!(!report.passed());
@@ -180,11 +177,9 @@ fn functional_profile_omits_exact_cases_before_execution() {
     let mut events = Vec::new();
     let report = Suite::current().run_with_observer(
         runner.clone(),
-        RunOptions {
-            profile: ConformanceProfile::Functional,
-            filter: Some("closure.exact.".to_owned()),
-            ..RunOptions::default()
-        },
+        RunOptions::new()
+            .with_profile(ConformanceProfile::Functional)
+            .with_filter("closure.exact."),
         |event| match event {
             SuiteEvent::SuiteStarted { selected_cases } => events.push(selected_cases),
             _ => panic!("an omitted case must not emit a case event"),
@@ -206,10 +201,8 @@ fn observed_run_emits_ordered_events_for_selected_skip() {
             command: CommandTemplate::new("remote-treeboot"),
             invocations: AtomicUsize::new(0),
         }),
-        RunOptions {
-            filter: Some("closure.completions.installed-bash-script-lists-root-sources".to_owned()),
-            ..RunOptions::default()
-        },
+        RunOptions::new()
+            .with_filter("closure.completions.installed-bash-script-lists-root-sources"),
         |event| match event {
             SuiteEvent::SuiteStarted { selected_cases } => {
                 events.push(format!("suite:{selected_cases}"));
@@ -247,11 +240,9 @@ fn profile_fields_do_not_change_serialized_report_shape() {
             command: CommandTemplate::new("remote-treeboot"),
             invocations: AtomicUsize::new(0),
         }),
-        RunOptions {
-            profile: ConformanceProfile::Functional,
-            filter: Some("no-case-has-this-id".to_owned()),
-            ..RunOptions::default()
-        },
+        RunOptions::new()
+            .with_profile(ConformanceProfile::Functional)
+            .with_filter("no-case-has-this-id"),
     );
     let value = serde_json::to_value(report).unwrap();
 
@@ -268,10 +259,8 @@ fn completion_execution_case_skips_before_using_runner_without_capability() {
     let adapter: Arc<dyn Runner> = runner.clone();
     let report = Suite::current().run_with(
         adapter,
-        RunOptions {
-            filter: Some("closure.completions.installed-fish-script-lists-root-sources".to_owned()),
-            ..RunOptions::default()
-        },
+        RunOptions::new()
+            .with_filter("closure.completions.installed-fish-script-lists-root-sources"),
     );
 
     assert!(matches!(
@@ -300,13 +289,7 @@ fn terminal_backed_completion_gaps_should_remain_explicit() {
             invocations: AtomicUsize::new(0),
         });
         let adapter: Arc<dyn Runner> = runner.clone();
-        let report = Suite::current().run_with(
-            adapter,
-            RunOptions {
-                filter: Some(id.to_owned()),
-                ..RunOptions::default()
-            },
-        );
+        let report = Suite::current().run_with(adapter, RunOptions::new().with_filter(id));
 
         assert_eq!(report.cases.len(), 1);
         assert!(matches!(

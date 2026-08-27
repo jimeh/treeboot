@@ -8,11 +8,9 @@ fn official_binary_should_pass_full_conformance_suite() {
     let report = Suite::current()
         .run(
             &command,
-            RunOptions {
-                profile: ConformanceProfile::Full,
-                invocation_timeout: Duration::from_secs(10),
-                ..RunOptions::default()
-            },
+            RunOptions::new()
+                .with_profile(ConformanceProfile::Full)
+                .with_invocation_timeout(Duration::from_secs(10)),
         )
         .expect("conformance suite should start");
     assert_eq!(report.profile(), ConformanceProfile::Full);

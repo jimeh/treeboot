@@ -291,6 +291,9 @@ work. Lefthook checks staged Markdown files through
 - Inventory checks must deduplicate generated registry source keys before
   counting them; `generated.rs` intentionally repeats keys across `cfg`-gated
   runnable and skipped definitions.
+- Keep the official conformance-driver source-shape check in
+  `scripts/check-spec-cases.sh` aligned with the supported `RunOptions`
+  construction API; it verifies an explicit full-profile selection.
 - Use affected targeted tasks during implementation and correction rounds; see
   the validation guide for correction and cross-platform preflight rules.
 - Run `mise run check` on the intended handoff head for ordinary code changes.

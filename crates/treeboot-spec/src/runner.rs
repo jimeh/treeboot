@@ -490,9 +490,10 @@ impl PipeCapture {
                 handle,
                 capture_limit,
             } = self;
-            let _ = handle
+            handle
                 .join()
-                .map_err(|_| RunnerError::ReaderPanicked { stream });
+                .map_err(|_| RunnerError::ReaderPanicked { stream })?
+                .map_err(|source| RunnerError::ReadPipe { stream, source })?;
             return captured_result(snapshot_output(&output), stream, capture_limit);
         }
         let output = self.snapshot();
@@ -702,4 +703,34 @@ pub enum RunnerError {
     /// The background input writer panicked.
     #[error("candidate stdin writer panicked")]
     WriterPanicked,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{self, Read};
+
+    use super::{RunnerError, read_pipe};
+
+    struct FailingReader;
+
+    impl Read for FailingReader {
+        fn read(&mut self, _buffer: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::other("injected pipe read failure"))
+        }
+    }
+
+    #[test]
+    fn timed_out_capture_should_preserve_completed_pipe_read_failure() {
+        let error = read_pipe(FailingReader, None)
+            .finish_after_timeout("stdout")
+            .expect_err("a completed pipe read failure should not become a timeout result");
+
+        assert!(matches!(
+            error,
+            RunnerError::ReadPipe {
+                stream: "stdout",
+                source,
+            } if source.kind() == io::ErrorKind::Other
+        ));
+    }
 }

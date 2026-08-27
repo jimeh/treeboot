@@ -2,6 +2,7 @@ use serde::Serialize;
 
 /// The compatibility requirement exercised by a conformance case.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CaseRequirement {
     /// Observable behavior that can remain compatible across specification versions.
     #[default]
