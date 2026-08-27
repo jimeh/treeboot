@@ -129,9 +129,8 @@ fn unsupported_capability_is_an_explicit_skip() {
     );
 
     assert!(matches!(
-        &report.cases[0].outcome,
-        treeboot_spec::CaseOutcome::Skipped { reason }
-            if reason == "runner cannot execute generated completion scripts on the fixture host"
+        report.cases[0].outcome,
+        treeboot_spec::CaseOutcome::Skipped { .. }
     ));
     assert!(report.passed());
 }
@@ -188,8 +187,9 @@ fn completion_execution_case_skips_before_using_runner_without_capability() {
     );
 
     assert!(matches!(
-        report.cases[0].outcome,
-        treeboot_spec::CaseOutcome::Skipped { .. }
+        &report.cases[0].outcome,
+        treeboot_spec::CaseOutcome::Skipped { reason }
+            if reason == "runner cannot execute generated completion scripts on the fixture host"
     ));
     assert_eq!(runner.invocations.load(Ordering::Relaxed), 0);
 }
