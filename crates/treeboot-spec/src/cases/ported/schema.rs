@@ -15,7 +15,7 @@ pub(crate) fn schema_should_print_or_write_embedded_schema() {
         .get_output()
         .stdout
         .clone();
-    parse_schema(&stdout, "schema stdout");
+    parse_functional_schema(&stdout, "schema stdout");
 
     let temp = TempDir::new().expect("tempdir should be created");
     let output = temp.path().join("config.schema.json");
@@ -28,7 +28,7 @@ pub(crate) fn schema_should_print_or_write_embedded_schema() {
         .stdout(predicate::str::is_empty());
 
     let content = std::fs::read(output).expect("schema should be written");
-    parse_schema(&content, "schema output file");
+    parse_functional_schema(&content, "schema output file");
     assert_schema_bytes_equal(&content, &stdout, "schema stdout and --output file differ");
 }
 
@@ -45,7 +45,7 @@ pub(crate) fn schema_output_short_flag_should_write_file() {
         .stdout(predicate::str::is_empty());
 
     let content = std::fs::read(output).expect("schema should be written");
-    parse_schema(&content, "schema -o output file");
+    parse_functional_schema(&content, "schema -o output file");
 }
 
 pub(crate) fn schema_stdout_should_match_canonical_bytes() {
@@ -85,6 +85,33 @@ pub(crate) fn schema_short_output_should_match_canonical_bytes() {
 fn parse_schema(bytes: &[u8], label: &str) -> serde_json::Value {
     serde_json::from_slice(bytes)
         .unwrap_or_else(|error| panic!("{label} is not valid JSON: {error}"))
+}
+
+fn parse_functional_schema(bytes: &[u8], label: &str) -> serde_json::Value {
+    let schema = parse_schema(bytes, label);
+    let object = schema
+        .as_object()
+        .unwrap_or_else(|| panic!("{label} must be a JSON object"));
+    assert!(
+        object
+            .get("$schema")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|value| !value.is_empty()),
+        "{label} must declare a non-empty $schema string"
+    );
+    assert_eq!(
+        object.get("type").and_then(serde_json::Value::as_str),
+        Some("object"),
+        "{label} must describe an object"
+    );
+    assert!(
+        object
+            .get("properties")
+            .and_then(serde_json::Value::as_object)
+            .is_some_and(|properties| !properties.is_empty()),
+        "{label} must declare a non-empty properties object"
+    );
+    schema
 }
 
 fn assert_schema_bytes_equal(actual: &[u8], expected: &[u8], label: &str) {
@@ -253,5 +280,19 @@ mod tests {
         assert!(message.contains("structures match"), "{message}");
         assert!(message.contains("line 1, column 2"), "{message}");
         assert!(message.len() < 512, "{message}");
+    }
+
+    #[test]
+    fn functional_schema_floor_should_reject_empty_or_non_object_documents() {
+        for schema in [br#"{}"#.as_slice(), br#"null"#.as_slice()] {
+            let panic = std::panic::catch_unwind(|| {
+                parse_functional_schema(schema, "candidate schema");
+            });
+
+            assert!(
+                panic.is_err(),
+                "schema should not satisfy the functional floor"
+            );
+        }
     }
 }

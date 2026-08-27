@@ -79,6 +79,9 @@ option structs and prints core output events._
 - Emits synchronous, presentation-neutral suite and case progress events. The
   CLI turns them into a single terminal progress line without changing JSON
   reports.
+- Bounds the CLI's best-effort candidate metadata probe by time and retained
+  bytes. Local runner capture limits keep draining both process pipes and report
+  excess output as a typed runner error.
 - Reports candidate assertion failures as failed cases, fixture subprocess
   failures as infrastructure errors prefixed with `fixture setup failed:`, and
   bounded process overruns as timed-out cases.

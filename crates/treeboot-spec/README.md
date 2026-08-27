@@ -22,7 +22,8 @@ treeboot-spec schema
 The default `full` profile verifies functional behavior plus the candidate's
 declared specification version and exact canonical schema bytes. The
 `functional` profile checks portable behavior while allowing those identities to
-differ. A successful functional run establishes compatibility, not full
+differ. A functional-profile pass covers only the selected cases and preserves
+explicit capability skips for the caller to assess. It does not establish full
 conformance with this crate's specification release.
 
 Human output is concise by default. It prints a summary, skips, failing case
@@ -55,7 +56,9 @@ or collect telemetry without coupling the suite to a terminal.
 Custom `Runner` implementations can execute the same cases in another process
 environment. A complete adapter must expose each temporary fixture filesystem to
 the candidate and honor native arguments, working directories, environment
-changes, stdin mode, and deadlines.
+changes, stdin mode, deadlines, and per-stream output capture limits. A runner
+must continue draining output after a limit is reached, then return
+`RunnerError::OutputLimitExceeded`.
 
 The default local runner captures output through pipes, so terminal-input cases
 report an explicit capability skip. A custom adapter can provide terminal input

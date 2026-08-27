@@ -66,6 +66,7 @@ pub struct Invocation {
     environment: Vec<EnvironmentChange>,
     stdin: StdinMode,
     timeout: Option<Duration>,
+    capture_limit: Option<usize>,
 }
 
 impl Invocation {
@@ -133,6 +134,17 @@ impl Invocation {
         self
     }
 
+    /// Limits retained stdout and stderr bytes independently.
+    ///
+    /// Runners must continue draining both streams and return
+    /// [`RunnerError::OutputLimitExceeded`] if either stream exceeds this
+    /// limit.
+    #[must_use]
+    pub fn capture_limit(mut self, bytes_per_stream: usize) -> Self {
+        self.capture_limit = Some(bytes_per_stream);
+        self
+    }
+
     /// Returns the case arguments.
     pub fn arguments(&self) -> &[OsString] {
         &self.args
@@ -156,6 +168,11 @@ impl Invocation {
     /// Returns the invocation timeout.
     pub fn timeout_value(&self) -> Option<Duration> {
         self.timeout
+    }
+
+    /// Returns the maximum bytes retained from each output stream.
+    pub fn capture_limit_value(&self) -> Option<usize> {
+        self.capture_limit
     }
 }
 
@@ -255,13 +272,15 @@ pub trait Runner: Send + Sync {
         RunnerCapabilities::default()
     }
 
-    /// Executes one invocation and returns all captured output.
+    /// Executes one invocation and returns its captured output.
     ///
     /// # Errors
     ///
     /// Returns [`RunnerError`] when the candidate cannot be launched or the
     /// adapter cannot complete process I/O. A candidate closing piped stdin
     /// before consuming every byte is normal completion, not an I/O failure.
+    /// Adapters must honor [`Invocation::capture_limit`] while continuing to
+    /// drain stdout and stderr.
     fn run(&self, invocation: &Invocation) -> Result<InvocationResult, RunnerError>;
 }
 
@@ -333,8 +352,8 @@ impl Runner for LocalProcessRunner {
             take_stdout(&mut child).ok_or(RunnerError::MissingPipe { stream: "stdout" })?;
         let stderr =
             take_stderr(&mut child).ok_or(RunnerError::MissingPipe { stream: "stderr" })?;
-        let stdout_reader = read_pipe(stdout);
-        let stderr_reader = read_pipe(stderr);
+        let stdout_reader = read_pipe(stdout, invocation.capture_limit);
+        let stderr_reader = read_pipe(stderr, invocation.capture_limit);
 
         let stdin_writer = if let StdinMode::Piped(input) = &invocation.stdin {
             let mut stdin =
@@ -356,17 +375,17 @@ impl Runner for LocalProcessRunner {
         )?;
         let (termination, stdout, stderr) = match lifecycle {
             InvocationLifecycle::Completed(status) => {
-                let stdout = stdout_reader.finish("stdout")?;
-                let stderr = stderr_reader.finish("stderr")?;
+                let stdout = stdout_reader.finish("stdout");
+                let stderr = stderr_reader.finish("stderr");
                 if let Some(stdin_writer) = stdin_writer {
                     join_stdin(stdin_writer)?;
                 }
-                (termination_from_status(status), stdout, stderr)
+                (termination_from_status(status), stdout?, stderr?)
             }
             InvocationLifecycle::TimedOut => {
                 let stdout = stdout_reader.finish_after_timeout("stdout");
                 let stderr = stderr_reader.finish_after_timeout("stderr");
-                (Termination::TimedOut, stdout, stderr)
+                (Termination::TimedOut, stdout?, stderr?)
             }
         };
 
@@ -431,8 +450,15 @@ fn join_stdin(handle: thread::JoinHandle<std::io::Result<()>>) -> Result<(), Run
 }
 
 struct PipeCapture {
-    output: Arc<Mutex<Vec<u8>>>,
+    output: Arc<Mutex<CapturedOutput>>,
     handle: thread::JoinHandle<std::io::Result<()>>,
+    capture_limit: Option<usize>,
+}
+
+#[derive(Clone, Default)]
+struct CapturedOutput {
+    bytes: Vec<u8>,
+    limit_exceeded: bool,
 }
 
 impl PipeCapture {
@@ -441,30 +467,39 @@ impl PipeCapture {
     }
 
     fn finish(self, stream: &'static str) -> Result<Vec<u8>, RunnerError> {
-        let Self { output, handle } = self;
+        let Self {
+            output,
+            handle,
+            capture_limit,
+        } = self;
         handle
             .join()
             .map_err(|_| RunnerError::ReaderPanicked { stream })?
             .map_err(|source| RunnerError::ReadPipe { stream, source })?;
-        Ok(snapshot_output(&output))
+        captured_result(snapshot_output(&output), stream, capture_limit)
     }
 
-    fn finish_after_timeout(self, stream: &'static str) -> Vec<u8> {
+    fn finish_after_timeout(self, stream: &'static str) -> Result<Vec<u8>, RunnerError> {
         let drain_deadline = Instant::now() + Duration::from_millis(100);
         while !self.handle.is_finished() && Instant::now() < drain_deadline {
             thread::sleep(Duration::from_millis(1));
         }
         if self.handle.is_finished() {
-            let Self { output, handle } = self;
+            let Self {
+                output,
+                handle,
+                capture_limit,
+            } = self;
             let _ = handle
                 .join()
                 .map_err(|_| RunnerError::ReaderPanicked { stream });
-            return snapshot_output(&output);
+            return captured_result(snapshot_output(&output), stream, capture_limit);
         }
-        self.snapshot()
+        let output = self.snapshot();
+        captured_result(output, stream, self.capture_limit)
     }
 
-    fn snapshot(&self) -> Vec<u8> {
+    fn snapshot(&self) -> CapturedOutput {
         self.output
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -472,15 +507,29 @@ impl PipeCapture {
     }
 }
 
-fn snapshot_output(output: &Mutex<Vec<u8>>) -> Vec<u8> {
+fn captured_result(
+    output: CapturedOutput,
+    stream: &'static str,
+    capture_limit: Option<usize>,
+) -> Result<Vec<u8>, RunnerError> {
+    if output.limit_exceeded {
+        return Err(RunnerError::OutputLimitExceeded {
+            stream,
+            limit: capture_limit.unwrap_or(output.bytes.len()),
+        });
+    }
+    Ok(output.bytes)
+}
+
+fn snapshot_output(output: &Mutex<CapturedOutput>) -> CapturedOutput {
     output
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clone()
+        .to_owned()
 }
 
-fn read_pipe(mut pipe: impl Read + Send + 'static) -> PipeCapture {
-    let output = Arc::new(Mutex::new(Vec::new()));
+fn read_pipe(mut pipe: impl Read + Send + 'static, capture_limit: Option<usize>) -> PipeCapture {
+    let output = Arc::new(Mutex::new(CapturedOutput::default()));
     let writer = Arc::clone(&output);
     let handle = thread::spawn(move || {
         let mut buffer = [0_u8; 8192];
@@ -489,13 +538,24 @@ fn read_pipe(mut pipe: impl Read + Send + 'static) -> PipeCapture {
             if count == 0 {
                 return Ok(());
             }
-            writer
+            let mut output = writer
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .extend_from_slice(&buffer[..count]);
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let retained = capture_limit.map_or(count, |limit| {
+                let remaining = limit.saturating_sub(output.bytes.len());
+                if count > remaining {
+                    output.limit_exceeded = true;
+                }
+                count.min(remaining)
+            });
+            output.bytes.extend_from_slice(&buffer[..retained]);
         }
     });
-    PipeCapture { output, handle }
+    PipeCapture {
+        output,
+        handle,
+        capture_limit,
+    }
 }
 
 enum InvocationLifecycle {
@@ -624,6 +684,14 @@ pub enum RunnerError {
         /// Output read failure.
         #[source]
         source: std::io::Error,
+    },
+    /// Captured output exceeded an invocation's configured per-stream limit.
+    #[error("candidate {stream} exceeded the {limit}-byte output capture limit")]
+    OutputLimitExceeded {
+        /// Stream that exceeded the limit.
+        stream: &'static str,
+        /// Maximum retained bytes for that stream.
+        limit: usize,
     },
     /// A background output reader panicked.
     #[error("candidate {stream} reader panicked")]

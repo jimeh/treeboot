@@ -36,7 +36,13 @@ fn functional_exact_only_filter_is_a_selection_error() {
 
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("no conformance cases match"));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "functional profile omitted 6 exact-identity cases that matched the requested filter"
+        ),
+        "{stderr}"
+    );
 }
 
 #[test]
@@ -139,6 +145,81 @@ fn concise_human_report_defers_failure_details_and_omits_passes() {
             && stdout.find("Failures:").unwrap() < stdout.find("Failure details:").unwrap(),
         "{stdout}"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn concise_human_report_counts_pass_without_printing_pass_line() {
+    let output = spec_command()
+        .args([
+            "test",
+            "--no-progress",
+            "--filter",
+            "cli.help.print-usage",
+            "--",
+            "sh",
+            "-c",
+            "printf 'treeboot usage\\n'",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("Result: PASSED"), "{stdout}");
+    assert!(stdout.contains("1 case: 1 passed"), "{stdout}");
+    assert!(!stdout.contains("PASS cli.help.print-usage"), "{stdout}");
+}
+
+#[cfg(unix)]
+#[test]
+fn candidate_metadata_output_limit_is_ignored_after_passing_suite() {
+    let output = spec_command()
+        .args([
+            "test",
+            "--no-progress",
+            "--filter",
+            "cli.help.print-usage",
+            "--",
+            "sh",
+            "-c",
+            "if [ \"$1\" = --help ]; then printf 'treeboot usage\\n'; else head -c 70000 /dev/zero; head -c 70000 /dev/zero >&2; fi",
+            "candidate",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("Result: PASSED"), "{stdout}");
+    assert!(!stdout.contains("candidate version:"), "{stdout}");
+    assert!(output.stderr.is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn skipped_only_functional_report_is_passed_not_compatibility_claim() {
+    let output = spec_command()
+        .args([
+            "test",
+            "--profile",
+            "functional",
+            "--no-progress",
+            "--filter",
+            "closure.completions.installed-bash-script-lists-root-sources",
+            "--",
+            "sh",
+            "-c",
+            "exit 0",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("Result: PASSED"), "{stdout}");
+    assert!(stdout.contains("1 case: 0 passed, 1 skipped"), "{stdout}");
+    assert!(!stdout.contains("FUNCTIONALLY COMPATIBLE"), "{stdout}");
 }
 
 #[cfg(unix)]

@@ -3,7 +3,7 @@ use std::ffi::OsString;
 use std::time::Duration;
 
 use treeboot_spec::{
-    CommandTemplate, Invocation, LocalProcessRunner, Runner, StdinMode, Termination,
+    CommandTemplate, Invocation, LocalProcessRunner, Runner, RunnerError, StdinMode, Termination,
 };
 
 fn shell_command(script: &str) -> CommandTemplate {
@@ -254,4 +254,46 @@ fn local_runner_should_reject_terminal_input_without_terminal_capability() {
         .expect_err("terminal input requires an adapter capability");
 
     assert!(error.to_string().contains("terminal input"));
+}
+
+#[test]
+fn local_runner_should_bound_stdout_and_stderr_while_draining() {
+    for stream in ["stdout", "stderr"] {
+        let template = CommandTemplate::with_args(
+            std::env::current_exe().expect("test executable should resolve"),
+            ["output_limit_helper", "--exact", "--ignored", "--nocapture"],
+        );
+        let invocation = Invocation::new()
+            .env("TREEBOOT_SPEC_OUTPUT_STREAM", stream)
+            .capture_limit(4096);
+
+        let error = LocalProcessRunner::new(template)
+            .run(&invocation)
+            .expect_err("output above the capture limit should fail");
+
+        assert!(matches!(
+            error,
+            RunnerError::OutputLimitExceeded {
+                stream: actual_stream,
+                limit: 4096,
+            } if actual_stream == stream
+        ));
+    }
+}
+
+#[test]
+#[ignore = "helper process for output capture limit regressions"]
+fn output_limit_helper() {
+    use std::io::Write as _;
+
+    let output = vec![b'x'; 8192];
+    match std::env::var("TREEBOOT_SPEC_OUTPUT_STREAM").as_deref() {
+        Ok("stdout") => std::io::stdout()
+            .write_all(&output)
+            .expect("stdout helper output should write"),
+        Ok("stderr") => std::io::stderr()
+            .write_all(&output)
+            .expect("stderr helper output should write"),
+        value => panic!("unexpected output stream: {value:?}"),
+    }
 }

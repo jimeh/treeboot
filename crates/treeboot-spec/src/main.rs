@@ -134,7 +134,21 @@ fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
                 report
             };
             if report.cases.is_empty() {
-                eprintln!("treeboot-spec: no conformance cases match the requested filter");
+                if report.profile == ConformanceProfile::Functional
+                    && report.omitted_exact_case_count > 0
+                {
+                    let case_suffix = if report.omitted_exact_case_count == 1 {
+                        ""
+                    } else {
+                        "s"
+                    };
+                    eprintln!(
+                        "treeboot-spec: functional profile omitted {} exact-identity case{case_suffix} that matched the requested filter",
+                        report.omitted_exact_case_count
+                    );
+                } else {
+                    eprintln!("treeboot-spec: no conformance cases match the requested filter");
+                }
                 return Ok(ExitCode::from(2));
             }
             match format {
@@ -179,12 +193,11 @@ fn probe_candidate_metadata(
         .run(
             &Invocation::new()
                 .args(["version", "--json"])
-                .timeout(invocation_timeout.min(Duration::from_secs(2))),
+                .timeout(invocation_timeout.min(Duration::from_secs(2)))
+                .capture_limit(MAX_METADATA_BYTES),
         )
         .ok()?;
-    if result.termination() != (Termination::Exited { code: 0 })
-        || result.stdout().len() > MAX_METADATA_BYTES
-    {
+    if result.termination() != (Termination::Exited { code: 0 }) {
         return None;
     }
     let value: serde_json::Value = serde_json::from_slice(result.stdout()).ok()?;
@@ -332,10 +345,7 @@ fn profile_name(profile: ConformanceProfile) -> &'static str {
 
 fn result_label(report: &treeboot_spec::SuiteReport) -> &'static str {
     if report.passed() {
-        return match report.profile {
-            ConformanceProfile::Full => "PASSED",
-            ConformanceProfile::Functional => "FUNCTIONALLY COMPATIBLE",
-        };
+        return "PASSED";
     }
     if report.cases.iter().any(|result| {
         matches!(
@@ -395,8 +405,8 @@ impl<W: Write> ProgressRenderer<W> {
 
     fn observe(&mut self, event: SuiteEvent<'_>) {
         match event {
-            SuiteEvent::SuiteStarted { .. } => {}
-            SuiteEvent::CaseStarted { total, case, .. } => self.render(total, case.id()),
+            SuiteEvent::SuiteStarted { selected_cases } => self.render(selected_cases),
+            SuiteEvent::CaseStarted { .. } => {}
             SuiteEvent::CaseFinished { total, result, .. } => {
                 self.completed += 1;
                 match result.outcome {
@@ -406,20 +416,20 @@ impl<W: Write> ProgressRenderer<W> {
                     CaseOutcome::Error { .. } => self.errors += 1,
                     CaseOutcome::TimedOut { .. } => self.timed_out += 1,
                 }
-                self.render(total, result.case.id());
+                self.render(total);
             }
             _ => {}
         }
     }
 
-    fn render(&mut self, total: usize, current_case: &str) {
+    fn render(&mut self, total: usize) {
         let percent = self
             .completed
             .saturating_mul(100)
             .checked_div(total)
             .unwrap_or(100);
         let line = format!(
-            "[{}/{}] {}%  {} passed  {} skipped  {} failed  {} errors  {} timed out  {}",
+            "[{}/{} {:>3}%] {} passed {} skipped {} failed {} errors {} timed out",
             self.completed,
             total,
             percent,
@@ -427,8 +437,7 @@ impl<W: Write> ProgressRenderer<W> {
             self.skipped,
             self.failed,
             self.errors,
-            self.timed_out,
-            current_case
+            self.timed_out
         );
         let padding = " ".repeat(self.previous_width.saturating_sub(line.len()));
         let _ = write!(self.writer, "\r{line}{padding}");
@@ -460,5 +469,28 @@ fn display_argument(argument: &str) -> String {
         argument.to_owned()
     } else {
         serde_json::to_string(argument).unwrap_or_else(|_| format!("{argument:?}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn progress_renderer_should_fit_and_clear_an_eighty_column_row() {
+        let mut renderer = ProgressRenderer::new(Vec::new());
+        renderer.render(322);
+        renderer.completed = 322;
+        renderer.passed = 315;
+        renderer.skipped = 7;
+        renderer.render(322);
+        renderer.clear();
+        let output = String::from_utf8(renderer.writer).expect("progress should be UTF-8");
+        let frames = output.split('\r').collect::<Vec<_>>();
+
+        assert!(frames[1].len() <= 80, "{}", frames[1]);
+        assert!(frames[2].len() <= 80, "{}", frames[2]);
+        assert_eq!(frames[3].len(), frames[2].len());
+        assert!(frames[3].chars().all(|character| character == ' '));
     }
 }
