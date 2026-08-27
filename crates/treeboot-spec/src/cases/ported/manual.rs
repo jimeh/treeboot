@@ -631,10 +631,17 @@ pub(crate) fn manual_commands_should_fail_on_invalid_config_before_side_effects(
 
 pub(crate) fn manual_commands_should_use_config_runtime_policy() {
     let repo = git_worktree();
-    let outside = repo
-        .worktree_path()
-        .parent()
-        .expect("worktree should have parent")
+    let outside_parent =
+        tempfile::TempDir::new_in(repo.root_path().parent().expect("root should have parent"))
+            .expect("outside source parent should be created");
+    let outside = outside_parent.path().join("outside.env");
+    let relative_source = std::path::Path::new("..")
+        .join(
+            outside_parent
+                .path()
+                .file_name()
+                .expect("outside source parent should have a name"),
+        )
         .join("outside.env");
     write_file(&outside, "TOKEN=1\n");
     write_file(
@@ -643,13 +650,15 @@ pub(crate) fn manual_commands_should_use_config_runtime_policy() {
     );
 
     treeboot()
-        .args(["copy", "--target", "copied.env", "../outside.env"])
+        .args(["copy", "--target", "copied.env"])
+        .arg(&relative_source)
         .current_dir(repo.worktree_path())
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "treeboot: copy ../outside.env -> copied.env",
-        ));
+        .stdout(predicate::str::contains(format!(
+            "treeboot: copy {} -> copied.env",
+            relative_source.display()
+        )));
 
     assert_eq!(
         std::fs::read_to_string(repo.worktree_path().join("copied.env"))
