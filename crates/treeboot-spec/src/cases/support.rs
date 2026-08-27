@@ -255,7 +255,7 @@ fn native_status(termination: Termination) -> ExitStatus {
 
     match termination {
         Termination::Exited { code } => ExitStatus::from_raw(code as u32),
-        Termination::Signaled | Termination::TimedOut => ExitStatus::from_raw(1),
+        Termination::Signaled | Termination::TimedOut => ExitStatus::from_raw(u32::MAX),
     }
 }
 
