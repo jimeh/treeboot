@@ -261,16 +261,20 @@ work. Lefthook checks staged Markdown files through
   so automation never receives a partial document.
 - For bug fixes, add a regression test that fails without the fix unless the
   scenario cannot be reproduced in the local harness.
-- Use CLI integration tests for user-visible command behavior.
-- Keep parser-library diagnostics and direct completion helper protocols in
-  reference-only tests. Portable behavior tests should assert exit status,
-  durable output, side effects, and completion through installed shell scripts.
+- Put portable user-visible CLI behavior in `treeboot-spec` conformance cases.
+  Those cases should assert exit status, durable output, side effects, and
+  completion through installed shell scripts.
+- Keep only reference-implementation details such as parser-library structure,
+  direct completion helper protocols, generated Rust schema-model structure, and
+  diagnostics intentionally more specific than the portable contract in
+  `crates/treeboot/tests/` alongside the official conformance driver.
 - When executing generated PowerShell completion scripts, pass the script path
   through an environment variable and dot-source it with
   `-ExecutionPolicy Bypass`; trailing arguments after `-Command` do not portably
   populate `$args`.
-- For run/config CLI behavior inside Git, prefer `git_worktree()` so tests run
-  from an actual linked worktree; reserve `git_repo()` for root-checkout cases.
+- For portable run/config behavior inside Git, prefer `git_worktree()` so cases
+  run from an actual linked worktree; reserve `git_repo()` for root-checkout
+  cases.
 - Use core unit tests for pure helpers, formatting, and validation logic.
 - Unit-test chunked or buffered I/O through injected `Read`/`Write` adapters
   (short or staggered reads, `Interrupted`), not just real temp files, and size
@@ -282,7 +286,11 @@ work. Lefthook checks staged Markdown files through
 - Git on macOS rejects non-UTF-8 worktree administrative directory names with
   `Illegal byte sequence`; keep filesystem-backed non-UTF-8 worktree fixtures
   Linux-gated while retaining platform-independent native-path coverage.
-- Put reusable CLI integration helpers in `crates/treeboot/tests/common/`.
+- Put helpers needed by the retained reference-only integration tests in
+  `crates/treeboot/tests/common/`; portable fixtures belong in `treeboot-spec`.
+- Inventory checks must deduplicate generated registry source keys before
+  counting them; `generated.rs` intentionally repeats keys across `cfg`-gated
+  runnable and skipped definitions.
 - Use affected targeted tasks during implementation and correction rounds; see
   the validation guide for correction and cross-platform preflight rules.
 - Run `mise run check` on the intended handoff head for ordinary code changes.

@@ -47,8 +47,11 @@ unless the task is explicitly changing the behavior contract.
 
 - Use core unit tests for pure helpers, validation, planning, file execution,
   command runtime, and output event formatting.
-- Use CLI integration tests for user-visible command behavior, stdout/stderr,
-  exit codes, output formats, and Git linked-worktree behavior.
+- Use `treeboot-spec` conformance cases for portable user-visible CLI behavior,
+  stdout/stderr, exit codes, output formats, filesystem effects, and Git
+  linked-worktree behavior.
+- Keep `crates/treeboot/tests/` for reference-implementation details excluded
+  from the portable suite and the official-binary conformance driver.
 - Update `crates/treeboot-spec/SPEC.md` and spec-version metadata when
   observable behavior changes.
 - Update `docs/ARCHITECTURE.md` when module boundaries, public core APIs,
@@ -62,16 +65,16 @@ whole-document normalization, independent phase validation, discovery order,
 environment construction, conflict policies, relative symlinks, and manual
 source-to-target normalization.
 
-CLI integration fixtures should create real temporary Git repositories and
-linked worktrees. Exercise Treeboot from linked worktrees, including explicit
-teardown targets and manual operations, then assert filesystem effects, command
-execution, environment values, stdout, stderr, and exit status. Revalidate a
-configured command's working directory immediately before every bootstrap and
-teardown spawn.
+For portable conformance cases that depend on Git, create real temporary
+repositories and linked worktrees. Exercise those cases from linked worktrees,
+including explicit teardown targets and manual operations where relevant, then
+assert filesystem effects, command execution, environment values, stdout,
+stderr, and exit status. Revalidate a configured command's working directory
+immediately before every bootstrap and teardown spawn.
 
-The CLI suite should retain focused coverage for default-command equivalence,
-teardown approval and root rejection, dry-run non-mutation, no-op config cases,
-status discovery, init defaults, required manual sources, one-source and
-many-source targets, completion scripts and root-relative candidates, and
-conflict policy. These are implementation testing responsibilities; the
-observable behavior itself remains in `crates/treeboot-spec/SPEC.md`.
+The reference-only integration suite is intentionally narrow: it covers Clap
+structure and diagnostic wording, embedded version linkage, direct completion
+protocol structure, generated-script markers and Bash/Zsh helper behavior, the
+generated Rust schema model, and diagnostic choices that the portable contract
+intentionally permits to vary. `crates/treeboot/tests/conformance.rs` runs the
+complete portable suite against the official binary.
