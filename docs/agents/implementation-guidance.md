@@ -52,3 +52,24 @@ explicitly changing the behavior contract.
 - Update `docs/ARCHITECTURE.md` when module boundaries, public core APIs,
   command flow, validation/planning/execution flow, reporting, or refactor
   pressure changes.
+
+Core unit coverage should include config parsing and normalization, duplicate
+and outside-boundary target validation, string and object file and command
+forms, sync comparison and deletion, teardown command forms and order,
+whole-document normalization, independent phase validation, discovery order,
+environment construction, conflict policies, relative symlinks, and manual
+source-to-target normalization.
+
+CLI integration fixtures should create real temporary Git repositories and
+linked worktrees. Exercise Treeboot from linked worktrees, including explicit
+teardown targets and manual operations, then assert filesystem effects, command
+execution, environment values, stdout, stderr, and exit status. Revalidate a
+configured command's working directory immediately before every bootstrap and
+teardown spawn.
+
+The CLI suite should retain focused coverage for default-command equivalence,
+teardown approval and root rejection, dry-run non-mutation, no-op config cases,
+status discovery, init defaults, required manual sources, one-source and
+many-source targets, completion scripts and root-relative candidates, and
+conflict policy. These are implementation testing responsibilities; the
+observable behavior itself remains in `docs/SPEC.md`.

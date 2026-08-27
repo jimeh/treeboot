@@ -547,6 +547,10 @@ changing field types, or expanding intentionally closed config vocabulary enums
 remains a deliberate compatibility decision. Other command input and report
 structs outside this set are not covered by this migration.
 
+This Rust API compatibility policy belongs to `treeboot-core`. It is recorded
+here, in the crate README, and in rustdoc rather than the language-agnostic CLI
+specification.
+
 ## Verification boundaries: Testing Architecture
 
 Tests are split by behavior layer. Use core unit tests for pure helpers and CLI

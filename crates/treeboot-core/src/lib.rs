@@ -2,6 +2,11 @@
 //!
 //! This crate contains the reusable worktree bootstrap logic. The `treeboot`
 //! binary crate provides the command-line interface on top of this API.
+//!
+//! The crate's Rust API compatibility policy is separate from Treeboot's
+//! language-agnostic CLI specification. Growth-oriented input and report
+//! structs are non-exhaustive; downstream callers should use their documented
+//! constructors or `Default` implementations.
 
 #![deny(missing_docs)]
 

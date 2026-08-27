@@ -5,8 +5,10 @@
 `treeboot` is a Rust CLI and public core library for bootstrapping Git worktrees
 from one repo-local setup contract.
 
-The implementation target is the behavior in [docs/SPEC.md](docs/SPEC.md). The
-README is the user-facing summary; the spec is the contract when they differ.
+The CLI implementation target is the language-agnostic behavior in
+[docs/SPEC.md](docs/SPEC.md). The README is the user-facing summary; the spec is
+the executable compatibility contract when they differ. Rust API compatibility
+belongs to the core crate README, rustdoc, and architecture documentation.
 
 ## Spec Discipline
 
@@ -22,6 +24,11 @@ edge-case semantics, CLI output, validation rules, or compatibility
 requirements, update the spec instead of leaving those details only in
 implementation plans or roadmap notes. Keep implementation tactics in
 `docs/agents/` planning docs.
+
+Do not put Rust API compatibility, official packaging or release automation, or
+implementation test-layer guidance in the portable spec. Keep the canonical JSON
+Schema normative even while its current generation mechanism remains an
+implementation detail.
 
 Keep implementation plans focused on sequencing, placement, and behavior/test
 closure. Link to settled behavior in [docs/SPEC.md](docs/SPEC.md) and current
@@ -245,6 +252,9 @@ work. Lefthook checks staged Markdown files through
 - For bug fixes, add a regression test that fails without the fix unless the
   scenario cannot be reproduced in the local harness.
 - Use CLI integration tests for user-visible command behavior.
+- Keep parser-library diagnostics and direct completion helper protocols in
+  reference-only tests. Portable behavior tests should assert exit status,
+  durable output, side effects, and completion through installed shell scripts.
 - For run/config CLI behavior inside Git, prefer `git_worktree()` so tests run
   from an actual linked worktree; reserve `git_repo()` for root-checkout cases.
 - Use core unit tests for pure helpers, formatting, and validation logic.

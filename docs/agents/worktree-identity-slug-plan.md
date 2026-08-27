@@ -20,7 +20,7 @@ Git worktree.
 Treat the following specification sections as the complete observable contract:
 
 - [Worktree inspection commands](../SPEC.md#treeboot-worktree)
-- [Public library compatibility](../SPEC.md#public-library-compatibility)
+- [Public struct construction](../../crates/treeboot-core/README.md#public-struct-construction)
 - [Worktree ID and slug](../SPEC.md#worktree-id-and-slug)
 
 Use the [command-to-core map](../ARCHITECTURE.md#entry-points-command-surface),
