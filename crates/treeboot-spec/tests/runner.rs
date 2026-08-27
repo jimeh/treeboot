@@ -153,6 +153,10 @@ fn local_runner_timeout_should_terminate_job_after_leader_exit() {
 #[test]
 #[cfg(windows)]
 #[ignore = "helper process for the Windows Job Object timeout regression"]
+#[allow(
+    clippy::zombie_processes,
+    reason = "the leader must exit while its Job Object descendant remains alive"
+)]
 fn windows_job_leader_helper() {
     use std::io::Write as _;
 
