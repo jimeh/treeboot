@@ -74,6 +74,7 @@ GitHub Actions runs these mise tasks:
 - `mise run lint`
 - `mise run msrv`
 - `mise run test`
+- `mise run test:spec:standalone`
 
 The full test suite runs once on each supported GitHub Actions host platform:
 Linux x64/ARM64, macOS x64/ARM64, and Windows x64/ARM64. The local `mise run ci`
