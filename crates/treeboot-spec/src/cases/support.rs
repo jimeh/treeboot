@@ -58,6 +58,7 @@ pub(crate) struct CaseContext {
 pub(crate) enum ExecutionFailure {
     Skipped(String),
     Runner(String),
+    Fixture(String),
     TimedOut(String),
 }
 
@@ -260,7 +261,7 @@ impl HostProcess {
         }
         let result = self.runner.run(&self.invocation).map_err(|error| {
             let message = format!("host subprocess failed: {error}");
-            context.record(ExecutionFailure::Runner(message.clone()));
+            context.record(ExecutionFailure::Fixture(message.clone()));
             io::Error::other(message)
         })?;
         result_to_output(&context, result, "host subprocess").map_err(io::Error::other)
@@ -276,6 +277,38 @@ pub(crate) fn host_process(program: impl AsRef<OsStr>) -> HostProcess {
         runner: LocalProcessRunner::new(CommandTemplate::new(program.as_ref().to_os_string())),
         invocation,
     }
+}
+
+#[track_caller]
+pub(crate) fn assert_fixture_process_success(label: &str, output: &Output) {
+    if output.status.success() {
+        return;
+    }
+
+    let message = format!(
+        "{label} should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    context().record(ExecutionFailure::Fixture(message.clone()));
+    panic!("{message}");
+}
+
+#[cfg(test)]
+pub(crate) fn fixture_failure_after_candidate_for_suite_regression() {
+    treeboot()
+        .arg("--version")
+        .output()
+        .expect("candidate invocation should run");
+    let output = host_process(std::env::current_exe().expect("test executable should resolve"))
+        .args([
+            "cases::support::tests::failing_host_subprocess_helper",
+            "--exact",
+            "--ignored",
+        ])
+        .output()
+        .expect("failing host subprocess should run");
+    assert_fixture_process_success("host subprocess", &output);
 }
 
 #[cfg(unix)]
@@ -327,18 +360,12 @@ pub(crate) fn toml_string(value: &str) -> String {
 }
 
 pub(crate) fn git(args: &[&str], cwd: &Path) {
-    let output = std::process::Command::new("git")
-        .args(args)
+    let output = host_process("git")
+        .args(args.iter().copied())
         .current_dir(cwd)
         .output()
         .expect("git should run");
-
-    assert!(
-        output.status.success(),
-        "git {args:?} should succeed\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    assert_fixture_process_success(&format!("git {args:?}"), &output);
 }
 
 pub(crate) fn git_repo() -> TempDir {
@@ -472,6 +499,12 @@ pub(crate) fn candidate_package_version() -> String {
         .args(["version", "--json"])
         .output()
         .expect("candidate version query should run");
+    assert!(
+        output.status.success(),
+        "candidate version query should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
     let value = parse_json(output.stdout, "candidate version");
     value["version"]
         .as_str()
@@ -515,8 +548,70 @@ mod tests {
     }
 
     #[test]
+    fn host_launch_failure_should_remain_a_fixture_error_after_candidate_invocation() {
+        let context = Arc::new(CaseContext::new(
+            Arc::new(LocalProcessRunner::new(CommandTemplate::new(
+                "unused-candidate",
+            ))),
+            Duration::from_secs(1),
+        ));
+        context.mark_candidate_invoked();
+
+        with_context(Arc::clone(&context), || {
+            host_process("treeboot-spec-host-program-that-does-not-exist")
+                .output()
+                .expect_err("missing host program should fail to launch");
+        });
+
+        assert!(matches!(
+            context.take_failure(),
+            Some(ExecutionFailure::Fixture(_))
+        ));
+        assert!(context.candidate_invoked());
+    }
+
+    #[test]
+    fn host_nonzero_exit_should_remain_a_fixture_error_after_candidate_invocation() {
+        let context = Arc::new(CaseContext::new(
+            Arc::new(LocalProcessRunner::new(CommandTemplate::new(
+                "unused-candidate",
+            ))),
+            Duration::from_secs(1),
+        ));
+        context.mark_candidate_invoked();
+
+        with_context(Arc::clone(&context), || {
+            let output =
+                host_process(std::env::current_exe().expect("test executable should resolve"))
+                    .args([
+                        "cases::support::tests::failing_host_subprocess_helper",
+                        "--exact",
+                        "--ignored",
+                    ])
+                    .output()
+                    .expect("failing host subprocess should run");
+            let failure = std::panic::catch_unwind(|| {
+                assert_fixture_process_success("host subprocess", &output);
+            });
+            assert!(failure.is_err());
+        });
+
+        assert!(matches!(
+            context.take_failure(),
+            Some(ExecutionFailure::Fixture(_))
+        ));
+        assert!(context.candidate_invoked());
+    }
+
+    #[test]
     #[ignore = "helper process for the bounded host-subprocess regression"]
     fn blocking_host_subprocess_helper() {
         std::thread::sleep(Duration::from_secs(30));
+    }
+
+    #[test]
+    #[ignore = "helper process for the non-zero host-subprocess regression"]
+    fn failing_host_subprocess_helper() {
+        std::process::exit(99);
     }
 }

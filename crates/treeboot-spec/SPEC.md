@@ -1,4 +1,4 @@
-# treeboot Specification v2.5.0
+# treeboot Specification v2.5.1
 
 A portable worktree lifecycle helper that lets every coding agent, editor, and
 orchestration tool run the same repo-local bootstrap and teardown commands.
@@ -156,7 +156,7 @@ JSON and YAML output are defined in
 
 Prints version metadata and exits without discovering Git context or config.
 `treeboot --version` and `treeboot -V` are global version flags. Nested command
-parsers also accept `--version`.
+parsers also accept both flags.
 
 ```sh
 treeboot version
@@ -525,7 +525,7 @@ a CLI usage error and exits with code `2`.
 | `-o`, `--format <text\|json\|yaml>`                        | status/version/config/check/doctor/env/worktree leaves        | Selects human-readable, JSON, or YAML output. Defaults to `text`.                                                                                                                                                                                                           |
 | `-J`, `--json`                                             | status/version/config/check/doctor/env/worktree leaves        | Shortcut for `--format json`. Conflicts with `--format` and `--yaml`.                                                                                                                                                                                                       |
 | `-Y`, `--yaml`                                             | status/version/config/check/doctor/env/worktree leaves        | Shortcut for `--format yaml`. Conflicts with `--format` and `--json`.                                                                                                                                                                                                       |
-| `-V`, `--version`                                          | global                                                        | Prints package and spec version details and exits before command validation.                                                                                                                                                                                                |
+| `-V`, `--version`                                          | global and nested command parsers                             | Prints package and spec version details and exits before command validation.                                                                                                                                                                                                |
 | `-o`, `--output <path>`                                    | schema                                                        | Writes the bundled config schema to a file instead of stdout.                                                                                                                                                                                                               |
 | `-S`, `--strict`                                           | run/check/copy/symlink/sync/doctor                            | Fails if a copy/symlink target exists; rejects sync operations; exits non-zero when run from the root checkout. Declarative config can also enable strict mode with top-level `strict = true`. For doctor, strict failures are reported as fatal diagnostics when possible. |
 | `-f`, `--force`                                            | run/copy/symlink/sync                                         | Replaces existing file-operation targets where supported.                                                                                                                                                                                                                   |

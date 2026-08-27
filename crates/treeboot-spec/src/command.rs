@@ -112,21 +112,46 @@ fn executable_candidates(candidate: PathBuf) -> Vec<PathBuf> {
 
 #[cfg(windows)]
 fn executable_candidates(candidate: PathBuf) -> Vec<PathBuf> {
-    if candidate.extension().is_some() {
-        return vec![candidate];
-    }
-    let extensions = std::env::var_os("PATHEXT")
-        .unwrap_or_else(|| ".COM;.EXE;.BAT;.CMD".into())
+    let path_ext = std::env::var_os("PATHEXT").unwrap_or_else(|| ".COM;.EXE;.BAT;.CMD".into());
+    executable_candidates_with_path_ext(candidate, &path_ext)
+}
+
+#[cfg(windows)]
+fn executable_candidates_with_path_ext(candidate: PathBuf, path_ext: &OsStr) -> Vec<PathBuf> {
+    let extensions = path_ext
         .to_string_lossy()
         .split(';')
         .filter(|extension| !extension.is_empty())
-        .map(|extension| candidate.with_extension(extension.trim_start_matches('.')))
+        .map(str::to_owned)
         .collect::<Vec<_>>();
     if extensions.is_empty() {
-        vec![candidate]
-    } else {
-        extensions
+        return vec![candidate];
     }
+
+    if candidate.extension().is_some_and(|candidate_extension| {
+        extensions.iter().any(|extension| {
+            candidate_extension
+                .to_string_lossy()
+                .eq_ignore_ascii_case(extension.trim_start_matches('.'))
+        })
+    }) {
+        return vec![candidate];
+    }
+
+    let Some(file_name) = candidate.file_name() else {
+        return vec![candidate];
+    };
+    extensions
+        .into_iter()
+        .map(|extension| {
+            let mut suffixed_name = file_name.to_os_string();
+            if !extension.starts_with('.') {
+                suffixed_name.push(".");
+            }
+            suffixed_name.push(extension);
+            candidate.with_file_name(suffixed_name)
+        })
+        .collect()
 }
 
 /// Serializable projection of a native candidate command.
@@ -136,4 +161,43 @@ pub struct CommandReport {
     pub program: String,
     /// Prefix arguments rendered lossily for reports.
     pub prefix_args: Vec<String>,
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn executable_candidates_preserve_recognized_extensions() {
+        assert_eq!(
+            executable_candidates_with_path_ext(
+                PathBuf::from("treeboot.exe"),
+                ".COM;.EXE".as_ref()
+            ),
+            vec![PathBuf::from("treeboot.exe")]
+        );
+    }
+
+    #[test]
+    fn executable_candidates_append_path_ext_to_unrecognized_extensions() {
+        assert_eq!(
+            executable_candidates_with_path_ext(PathBuf::from("treeboot.v2"), ".EXE;CMD".as_ref()),
+            vec![
+                PathBuf::from("treeboot.v2.EXE"),
+                PathBuf::from("treeboot.v2.CMD"),
+            ]
+        );
+        assert_eq!(
+            executable_candidates_with_path_ext(PathBuf::from("treeboot"), ".EXE;CMD".as_ref()),
+            vec![PathBuf::from("treeboot.EXE"), PathBuf::from("treeboot.CMD"),]
+        );
+    }
+
+    #[test]
+    fn executable_candidates_preserve_candidate_when_path_ext_is_empty() {
+        assert_eq!(
+            executable_candidates_with_path_ext(PathBuf::from("treeboot"), "".as_ref()),
+            vec![PathBuf::from("treeboot")]
+        );
+    }
 }
