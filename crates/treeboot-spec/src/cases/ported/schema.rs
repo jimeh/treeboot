@@ -5,6 +5,7 @@ use tempfile::TempDir;
 use crate::cases::support::treeboot;
 
 const ROOT_SCHEMA_JSON: &str = crate::CONFIG_SCHEMA_JSON;
+const JSON_SCHEMA_DIALECT: &str = "https://json-schema.org/draft/2020-12/schema";
 
 pub(crate) fn schema_should_print_or_write_embedded_schema() {
     let stdout = treeboot()
@@ -92,25 +93,70 @@ fn parse_functional_schema(bytes: &[u8], label: &str) -> serde_json::Value {
     let object = schema
         .as_object()
         .unwrap_or_else(|| panic!("{label} must be a JSON object"));
-    assert!(
-        object
-            .get("$schema")
-            .and_then(serde_json::Value::as_str)
-            .is_some_and(|value| !value.is_empty()),
-        "{label} must declare a non-empty $schema string"
+    assert_eq!(
+        object.get("$schema").and_then(serde_json::Value::as_str),
+        Some(JSON_SCHEMA_DIALECT),
+        "{label} must use the JSON Schema draft 2020-12 dialect"
     );
     assert_eq!(
         object.get("type").and_then(serde_json::Value::as_str),
         Some("object"),
         "{label} must describe an object"
     );
-    assert!(
-        object
-            .get("properties")
-            .and_then(serde_json::Value::as_object)
-            .is_some_and(|properties| !properties.is_empty()),
-        "{label} must declare a non-empty properties object"
+    assert_eq!(
+        object.get("additionalProperties"),
+        Some(&serde_json::Value::Bool(false)),
+        "{label} must reject unknown root properties"
     );
+    let properties = object
+        .get("properties")
+        .and_then(serde_json::Value::as_object)
+        .filter(|properties| !properties.is_empty())
+        .unwrap_or_else(|| panic!("{label} must declare a non-empty properties object"));
+    assert_eq!(
+        properties
+            .get("strict")
+            .and_then(serde_json::Value::as_object)
+            .and_then(|strict| strict.get("type"))
+            .and_then(serde_json::Value::as_str),
+        Some("boolean"),
+        "{label} must declare strict as a boolean"
+    );
+    for (property, definition) in [
+        ("copy", "CopyEntry"),
+        ("symlink", "SymlinkEntry"),
+        ("sync", "SyncEntry"),
+        ("commands", "CommandEntry"),
+    ] {
+        let property_schema = properties
+            .get(property)
+            .and_then(serde_json::Value::as_object)
+            .unwrap_or_else(|| panic!("{label} must declare {property} as an object schema"));
+        assert_eq!(
+            property_schema
+                .get("type")
+                .and_then(serde_json::Value::as_str),
+            Some("array"),
+            "{label} must declare {property} as an array"
+        );
+        let expected_reference = format!("#/$defs/{definition}");
+        assert_eq!(
+            property_schema
+                .get("items")
+                .and_then(serde_json::Value::as_object)
+                .and_then(|items| items.get("$ref"))
+                .and_then(serde_json::Value::as_str),
+            Some(expected_reference.as_str()),
+            "{label} must point {property} items at {expected_reference}"
+        );
+        assert!(
+            schema
+                .pointer(&expected_reference[1..])
+                .and_then(serde_json::Value::as_object)
+                .is_some_and(|definition| !definition.is_empty()),
+            "{label} must define a non-empty {expected_reference} object"
+        );
+    }
     schema
 }
 
@@ -283,8 +329,12 @@ mod tests {
     }
 
     #[test]
-    fn functional_schema_floor_should_reject_empty_or_non_object_documents() {
-        for schema in [br#"{}"#.as_slice(), br#"null"#.as_slice()] {
+    fn functional_schema_floor_should_reject_arbitrary_or_non_object_documents() {
+        for schema in [
+            br#"{}"#.as_slice(),
+            br#"null"#.as_slice(),
+            br#"{"$schema":"x","type":"object","properties":{"foo":null}}"#.as_slice(),
+        ] {
             let panic = std::panic::catch_unwind(|| {
                 parse_functional_schema(schema, "candidate schema");
             });
@@ -294,5 +344,45 @@ mod tests {
                 "schema should not satisfy the functional floor"
             );
         }
+    }
+
+    #[test]
+    fn canonical_schema_should_satisfy_functional_floor() {
+        parse_functional_schema(ROOT_SCHEMA_JSON.as_bytes(), "canonical schema");
+    }
+
+    #[test]
+    fn functional_schema_floor_should_require_stable_treeboot_anchors() {
+        let canonical = parse_schema(ROOT_SCHEMA_JSON.as_bytes(), "canonical schema");
+        for pointer in [
+            "/additionalProperties",
+            "/properties/strict/type",
+            "/properties/copy/type",
+            "/properties/symlink/items/$ref",
+            "/properties/sync/items/$ref",
+            "/properties/commands/items/$ref",
+        ] {
+            let mut candidate = canonical.clone();
+            *candidate
+                .pointer_mut(pointer)
+                .unwrap_or_else(|| panic!("canonical schema should contain {pointer}")) =
+                serde_json::Value::Null;
+            let bytes = serde_json::to_vec(&candidate).expect("candidate schema should serialize");
+
+            let panic = std::panic::catch_unwind(|| {
+                parse_functional_schema(&bytes, "candidate schema");
+            });
+            assert!(panic.is_err(), "missing anchor should fail: {pointer}");
+        }
+
+        let mut candidate = canonical;
+        *candidate
+            .pointer_mut("/$defs/CopyEntry")
+            .expect("canonical schema should define CopyEntry") = serde_json::json!({});
+        let bytes = serde_json::to_vec(&candidate).expect("candidate schema should serialize");
+        let panic = std::panic::catch_unwind(|| {
+            parse_functional_schema(&bytes, "candidate schema");
+        });
+        assert!(panic.is_err(), "an empty referenced definition should fail");
     }
 }
