@@ -18,8 +18,19 @@ import { verifyPackages, verifyTarball } from "../scripts/verify-package.ts";
 
 let temporaryDirectory: string;
 let assetsDirectory: string;
+let releaseVersion: string;
 
 beforeAll(async () => {
+  const cargoManifest = await readFile(
+    join(import.meta.dir, "../..", "Cargo.toml"),
+    "utf8",
+  );
+  const cargoVersion = cargoManifest.match(/^version = "([^"]+)"/m)?.[1];
+  if (cargoVersion === undefined) {
+    throw new Error("Could not read Cargo package version");
+  }
+  releaseVersion = cargoVersion;
+
   temporaryDirectory = await mkdtemp(join(tmpdir(), "treeboot-npm-test-"));
   assetsDirectory = join(temporaryDirectory, "assets");
   await mkdir(assetsDirectory);
@@ -42,7 +53,7 @@ describe("release package staging", () => {
       assetsDirectory,
       outputDirectory,
       placeholder: false,
-      version: "0.13.0",
+      version: releaseVersion,
     });
 
     expect(manifest.packages).toHaveLength(7);
@@ -55,13 +66,13 @@ describe("release package staging", () => {
       assetsDirectory,
       outputDirectory: join(temporaryDirectory, "deterministic-a"),
       placeholder: false,
-      version: "0.13.0",
+      version: releaseVersion,
     });
     const second = await packageRelease({
       assetsDirectory,
       outputDirectory: join(temporaryDirectory, "deterministic-b"),
       placeholder: false,
-      version: "0.13.0",
+      version: releaseVersion,
     });
 
     expect(second.packages.map(({ integrity }) => integrity)).toEqual(
@@ -81,7 +92,7 @@ describe("release package staging", () => {
           assetsDirectory,
           outputDirectory,
           placeholder: false,
-          version: "0.13.0",
+          version: releaseVersion,
         }),
       ).rejects.toThrow("not owned by the Treeboot npm packager"),
     );
@@ -98,7 +109,7 @@ describe("release package staging", () => {
           assetsDirectory,
           outputDirectory: ".",
           placeholder: false,
-          version: "0.13.0",
+          version: releaseVersion,
         }),
       ).rejects.toThrow("Refusing unsafe npm output directory"),
     );
@@ -112,7 +123,7 @@ describe("release package staging", () => {
       assetsDirectory,
       outputDirectory,
       placeholder: false,
-      version: "0.13.0",
+      version: releaseVersion,
     });
     const staleFile = join(outputDirectory, "stale.txt");
     await writeFile(staleFile, "stale\n");
@@ -121,7 +132,7 @@ describe("release package staging", () => {
       assetsDirectory,
       outputDirectory,
       placeholder: false,
-      version: "0.13.0",
+      version: releaseVersion,
     });
 
     await Promise.resolve(
@@ -136,7 +147,7 @@ describe("release package staging", () => {
       assetsDirectory,
       outputDirectory,
       placeholder: false,
-      version: "0.13.0",
+      version: releaseVersion,
     });
     await appendFile(
       join(outputDirectory, "tarballs", manifest.packages[0]!.filename),
@@ -195,15 +206,15 @@ describe("release package staging", () => {
         string,
         unknown
       >;
-      packageJson.version = "0.13.0";
+      packageJson.version = releaseVersion;
       return {
         ...entry,
         bytes: Buffer.from(`${JSON.stringify(packageJson)}\n`),
       };
     });
 
-    expect(() => verifyTarball(artifact.name, "0.13.0", entries, true)).toThrow(
-      "missing packaged executable",
-    );
+    expect(() =>
+      verifyTarball(artifact.name, releaseVersion, entries, true),
+    ).toThrow("missing packaged executable");
   });
 });

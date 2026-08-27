@@ -10,6 +10,7 @@
     "CHANGELOG.md",
     "Cargo.toml",
     "crates/treeboot-core/assets/config.schema.json",
+    "crates/treeboot-spec/assets/treeboot.schema.json",
     "npm-dist",
     "npm/treeboot/dist",
     "schemas/treeboot.schema.json",
