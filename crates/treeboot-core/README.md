@@ -185,6 +185,17 @@ Direct field reads remain supported. Removing a field, changing its type, or
 changing one of the intentionally closed config enums can still be a breaking
 change.
 
+`EnvOptions`, `WorktreeIdentityOptions`, and `WorktreeInspectionOptions` are
+non-exhaustive because inspection commands can gain optional inputs over time.
+Construct them through `Default`, then assign the public fields you need.
+`WorktreeEntry`, `WorktreeIdReport`, `WorktreeSlugReport`, `WorktreePathReport`,
+and `WorktreeListReport` are also non-exhaustive so reports can gain additive
+metadata without breaking downstream source.
+
+These Rust API compatibility rules belong to `treeboot-core`. The portable
+Treeboot compatibility contract covers the executable's observable behavior, not
+this crate's types or construction patterns.
+
 The crate exposes typed errors through `treeboot_core::Error` and avoids
 CLI-specific dependencies.
 

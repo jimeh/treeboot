@@ -305,7 +305,7 @@ fn package_config_schema_in_project(
     project_dir: &Path,
     dist_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let schema = project_dir.join("schemas/treeboot.schema.json");
+    let schema = project_dir.join("crates/treeboot-spec/assets/treeboot.schema.json");
     if !schema.is_file() {
         return Err(format!("missing config schema: {}", schema.display()).into());
     }
@@ -718,9 +718,11 @@ mod tests {
     #[test]
     fn packages_config_schema_asset() {
         let project = fixture_project("x86_64-unknown-linux-musl", "");
-        fs::create_dir(project.path().join("schemas")).unwrap();
+        fs::create_dir_all(project.path().join("crates/treeboot-spec/assets")).unwrap();
         fs::write(
-            project.path().join("schemas/treeboot.schema.json"),
+            project
+                .path()
+                .join("crates/treeboot-spec/assets/treeboot.schema.json"),
             r#"{"title":"treeboot"}"#,
         )
         .unwrap();

@@ -1,10 +1,8 @@
 use predicates::prelude::*;
 
-mod common;
-
 #[cfg(unix)]
-use common::symlink_dir;
-use common::{
+use crate::cases::support::symlink_dir;
+use crate::cases::support::{
     assert_json_object_keys, canonical_path, git, git_repo, git_worktree, parse_json, treeboot,
     write_file,
 };
@@ -25,8 +23,7 @@ const ENV_KEYS: &[&str] = &[
     "TREEBOOT_WORKTREE_SLUG",
 ];
 
-#[test]
-fn env_should_print_child_environment_as_text_json_and_yaml() {
+pub(crate) fn env_should_print_child_environment_as_text_json_and_yaml() {
     let repo = git_worktree();
     let expected_worktree = canonical_path(repo.worktree_path());
 
@@ -91,8 +88,7 @@ fn env_should_print_child_environment_as_text_json_and_yaml() {
         )));
 }
 
-#[test]
-fn env_should_use_discovered_worktree_identifier_config() {
+pub(crate) fn env_should_use_discovered_worktree_identifier_config() {
     let repo = git_worktree();
     write_file(
         &repo.worktree_path().join(".treeboot.toml"),
@@ -123,8 +119,7 @@ fn env_should_use_discovered_worktree_identifier_config() {
     assert!(slug.len() <= 20);
 }
 
-#[test]
-fn env_config_option_should_select_requested_identifier_config() {
+pub(crate) fn env_config_option_should_select_requested_identifier_config() {
     let repo = git_worktree();
     write_file(
         &repo.worktree_path().join("custom.toml"),
@@ -148,8 +143,7 @@ fn env_config_option_should_select_requested_identifier_config() {
     assert_eq!(id.len(), 10);
 }
 
-#[test]
-fn env_should_fail_for_invalid_discovered_config() {
+pub(crate) fn env_should_fail_for_invalid_discovered_config() {
     let repo = git_worktree();
     write_file(
         &repo.worktree_path().join(".treeboot.toml"),
@@ -166,8 +160,7 @@ fn env_should_fail_for_invalid_discovered_config() {
         ));
 }
 
-#[test]
-fn env_should_fail_for_missing_explicit_config() {
+pub(crate) fn env_should_fail_for_missing_explicit_config() {
     let repo = git_worktree();
 
     treeboot()
@@ -178,8 +171,7 @@ fn env_should_fail_for_missing_explicit_config() {
         .stderr(predicate::str::contains("config file not found"));
 }
 
-#[test]
-fn env_should_resolve_configured_identifier_in_root_checkout() {
+pub(crate) fn env_should_resolve_configured_identifier_in_root_checkout() {
     let repo = git_repo();
     write_file(
         &repo.path().join(".treeboot.toml"),
@@ -203,8 +195,7 @@ fn env_should_resolve_configured_identifier_in_root_checkout() {
     assert_eq!(id.len(), 9);
 }
 
-#[test]
-fn env_paths_should_not_use_windows_verbatim_prefix() {
+pub(crate) fn env_paths_should_not_use_windows_verbatim_prefix() {
     let repo = git_worktree();
     let expected_root = canonical_path(repo.root_path());
     let expected_worktree = canonical_path(repo.worktree_path());
@@ -237,8 +228,7 @@ fn env_paths_should_not_use_windows_verbatim_prefix() {
     );
 }
 
-#[test]
-fn env_should_support_text_format_and_yaml_shortcut() {
+pub(crate) fn env_should_support_text_format_and_yaml_shortcut() {
     let repo = git_worktree();
 
     treeboot()
@@ -258,8 +248,7 @@ fn env_should_support_text_format_and_yaml_shortcut() {
         .stdout(predicate::str::contains("TREEBOOT_WORKTREE_PATH:"));
 }
 
-#[test]
-fn env_root_option_should_override_source_checkout() {
+pub(crate) fn env_root_option_should_override_source_checkout() {
     let repo = git_worktree();
     let expected_root = canonical_path(repo.root_path());
 
@@ -281,8 +270,7 @@ fn env_root_option_should_override_source_checkout() {
     );
 }
 
-#[test]
-fn env_root_override_should_not_change_worktree_identifier() {
+pub(crate) fn env_root_override_should_not_change_worktree_identifier() {
     let repo = git_worktree();
     let alternate_root = tempfile::TempDir::new().expect("alternate root should exist");
 
@@ -312,8 +300,7 @@ fn env_root_override_should_not_change_worktree_identifier() {
     );
 }
 
-#[test]
-fn env_root_aliases_should_not_change_worktree_identifier() {
+pub(crate) fn env_root_aliases_should_not_change_worktree_identifier() {
     let repo = git_worktree();
     let alternate_root = tempfile::TempDir::new().expect("alternate root should exist");
     let default = treeboot()
@@ -349,8 +336,7 @@ fn env_root_aliases_should_not_change_worktree_identifier() {
     }
 }
 
-#[test]
-fn env_branch_creation_checkout_rename_and_detach_should_not_change_identifier() {
+pub(crate) fn env_branch_creation_checkout_rename_and_detach_should_not_change_identifier() {
     let repo = git_worktree();
     let read_identifier = || {
         let output = treeboot()
@@ -376,8 +362,7 @@ fn env_branch_creation_checkout_rename_and_detach_should_not_change_identifier()
 }
 
 #[cfg(unix)]
-#[test]
-fn env_symlink_alias_should_not_change_worktree_identifier() {
+pub(crate) fn env_symlink_alias_should_not_change_worktree_identifier() {
     let repo = git_worktree();
     let alias_parent = tempfile::TempDir::new().expect("alias parent should exist");
     let alias = alias_parent.path().join("alias");
@@ -406,8 +391,7 @@ fn env_symlink_alias_should_not_change_worktree_identifier() {
     );
 }
 
-#[test]
-fn env_root_environment_alias_should_override_source_checkout() {
+pub(crate) fn env_root_environment_alias_should_override_source_checkout() {
     let repo = git_worktree();
     let expected_root = canonical_path(repo.root_path());
 
@@ -432,8 +416,7 @@ fn env_root_environment_alias_should_override_source_checkout() {
     );
 }
 
-#[test]
-fn env_root_environment_alias_should_resolve_relative_to_cwd() {
+pub(crate) fn env_root_environment_alias_should_resolve_relative_to_cwd() {
     let repo = git_worktree();
     let expected_root = canonical_path(repo.root_path());
 
@@ -454,8 +437,7 @@ fn env_root_environment_alias_should_resolve_relative_to_cwd() {
     );
 }
 
-#[test]
-fn env_should_fail_when_root_override_does_not_exist() {
+pub(crate) fn env_should_fail_when_root_override_does_not_exist() {
     let repo = git_worktree();
 
     treeboot()
@@ -467,8 +449,7 @@ fn env_should_fail_when_root_override_does_not_exist() {
         .stderr(predicate::str::contains("missing-root"));
 }
 
-#[test]
-fn env_output_shortcuts_should_conflict_with_format() {
+pub(crate) fn env_output_shortcuts_should_conflict_with_format() {
     let repo = git_worktree();
 
     treeboot()
@@ -476,18 +457,17 @@ fn env_output_shortcuts_should_conflict_with_format() {
         .current_dir(repo.worktree_path())
         .assert()
         .code(2)
-        .stderr(predicate::str::contains("cannot be used with"));
+        .stderr(predicate::str::is_empty().not());
 
     treeboot()
         .args(["env", "--json", "--yaml"])
         .current_dir(repo.worktree_path())
         .assert()
         .code(2)
-        .stderr(predicate::str::contains("cannot be used with"));
+        .stderr(predicate::str::is_empty().not());
 }
 
-#[test]
-fn env_should_fail_outside_git_worktree() {
+pub(crate) fn env_should_fail_outside_git_worktree() {
     let dir = tempfile::TempDir::new().expect("tempdir should be created");
 
     treeboot()

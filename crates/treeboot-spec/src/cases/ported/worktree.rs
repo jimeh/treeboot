@@ -1,24 +1,20 @@
 use std::path::{Path, PathBuf};
-#[cfg(unix)]
-use std::process::Command;
 
 use predicates::prelude::*;
 use tempfile::TempDir;
 
-mod common;
-
-use common::{
+use crate::cases::support::{
     assert_json_object_keys, canonical_path, git, git_worktree, parse_json, treeboot, write_file,
 };
 #[cfg(unix)]
-use common::{symlink_dir, symlink_file};
+use crate::cases::support::{symlink_dir, symlink_file};
 
-struct ExtraWorktree {
+pub(crate) struct ExtraWorktree {
     _parent: TempDir,
     path: PathBuf,
 }
 
-fn add_worktree(root: &Path, name: &str) -> ExtraWorktree {
+pub(crate) fn add_worktree(root: &Path, name: &str) -> ExtraWorktree {
     let parent = TempDir::new().expect("worktree parent should be created");
     let path = parent.path().join(name);
     let path_text = path.to_str().expect("test path should be UTF-8");
@@ -38,7 +34,7 @@ fn add_worktree(root: &Path, name: &str) -> ExtraWorktree {
     }
 }
 
-fn worktree_id(cwd: &Path) -> String {
+pub(crate) fn worktree_id(cwd: &Path) -> String {
     let output = treeboot()
         .args(["worktree", "id"])
         .current_dir(cwd)
@@ -51,13 +47,13 @@ fn worktree_id(cwd: &Path) -> String {
         .to_owned()
 }
 
-struct BarePrimaryWorktree {
+pub(crate) struct BarePrimaryWorktree {
     _temp: TempDir,
     bare_path: PathBuf,
     linked_path: PathBuf,
 }
 
-fn bare_primary_worktree() -> BarePrimaryWorktree {
+pub(crate) fn bare_primary_worktree() -> BarePrimaryWorktree {
     let temp = TempDir::new().expect("tempdir should be created");
     let bare_path = temp.path().join("bare.git");
     let seed_path = temp.path().join("seed");
@@ -91,8 +87,7 @@ fn bare_primary_worktree() -> BarePrimaryWorktree {
     }
 }
 
-#[test]
-fn worktree_id_and_slug_should_print_bare_text_and_exact_structured_shapes() {
+pub(crate) fn worktree_id_and_slug_should_print_bare_text_and_exact_structured_shapes() {
     let repo = git_worktree();
     write_file(
         &repo.worktree_path().join(".treeboot.toml"),
@@ -189,8 +184,7 @@ fn worktree_id_and_slug_should_print_bare_text_and_exact_structured_shapes() {
         .stdout(predicate::str::contains(format!("slug: {}", slug.trim())));
 }
 
-#[test]
-fn worktree_path_and_list_should_use_candidate_local_config_and_contract_order() {
+pub(crate) fn worktree_path_and_list_should_use_candidate_local_config_and_contract_order() {
     let repo = git_worktree();
     let second = add_worktree(repo.root_path(), "zeta");
     write_file(
@@ -286,8 +280,7 @@ fn worktree_path_and_list_should_use_candidate_local_config_and_contract_order()
         .stdout(predicate::str::contains("path:"));
 }
 
-#[test]
-fn worktree_list_should_keep_main_first_when_a_linked_path_sorts_before_it() {
+pub(crate) fn worktree_list_should_keep_main_first_when_a_linked_path_sorts_before_it() {
     let temp = TempDir::new().expect("tempdir should be created");
     let root = temp.path().join("z-root");
     let linked = temp.path().join("a-linked");
@@ -331,8 +324,7 @@ fn worktree_list_should_keep_main_first_when_a_linked_path_sorts_before_it() {
     assert_eq!(entries[1]["path"], linked.display().to_string());
 }
 
-#[test]
-fn worktree_commands_should_support_a_bare_primary_repository() {
+pub(crate) fn worktree_commands_should_support_a_bare_primary_repository() {
     let repo = bare_primary_worktree();
     let linked = canonical_path(&repo.linked_path);
     let bare = canonical_path(&repo.bare_path);
@@ -377,8 +369,7 @@ fn worktree_commands_should_support_a_bare_primary_repository() {
         .stdout(format!("{}\n", linked.display()));
 }
 
-#[test]
-fn worktree_path_should_emit_exact_structured_shapes() {
+pub(crate) fn worktree_path_should_emit_exact_structured_shapes() {
     let repo = git_worktree();
     let id = worktree_id(repo.worktree_path());
     let path = canonical_path(repo.worktree_path());
@@ -415,8 +406,7 @@ fn worktree_path_should_emit_exact_structured_shapes() {
     assert_eq!(yaml["path"], path.display().to_string());
 }
 
-#[test]
-fn worktree_inspection_should_use_defaults_without_config() {
+pub(crate) fn worktree_inspection_should_use_defaults_without_config() {
     let repo = git_worktree();
     let id = worktree_id(repo.worktree_path());
 
@@ -430,8 +420,7 @@ fn worktree_inspection_should_use_defaults_without_config() {
     }));
 }
 
-#[test]
-fn explicit_actual_worktree_identity_should_match_implicit_and_local_config() {
+pub(crate) fn explicit_actual_worktree_identity_should_match_implicit_and_local_config() {
     let repo = git_worktree();
     write_file(
         &repo.worktree_path().join(".treeboot.toml"),
@@ -464,8 +453,7 @@ fn explicit_actual_worktree_identity_should_match_implicit_and_local_config() {
     }
 }
 
-#[test]
-fn explicit_ordinary_directory_identity_should_work_outside_git_and_use_local_config() {
+pub(crate) fn explicit_ordinary_directory_identity_should_work_outside_git_and_use_local_config() {
     let parent = TempDir::new().expect("tempdir should be created");
     let target = parent.path().join("Feature Login");
     std::fs::create_dir(&target).expect("target should be created");
@@ -504,8 +492,7 @@ fn explicit_ordinary_directory_identity_should_work_outside_git_and_use_local_co
     assert_eq!(slug.trim().len(), 22);
 }
 
-#[test]
-fn explicit_identity_relative_absolute_dot_and_dotdot_should_normalize_to_one_target() {
+pub(crate) fn explicit_identity_relative_absolute_dot_and_dotdot_should_normalize_to_one_target() {
     let parent = TempDir::new().expect("tempdir should be created");
     let real_parent = parent.path().join("real");
     let target = real_parent.join("target");
@@ -526,8 +513,7 @@ fn explicit_identity_relative_absolute_dot_and_dotdot_should_normalize_to_one_ta
 }
 
 #[cfg(unix)]
-#[test]
-fn explicit_identity_symlink_alias_should_normalize_to_target() {
+pub(crate) fn explicit_identity_symlink_alias_should_normalize_to_target() {
     let parent = TempDir::new().expect("tempdir should be created");
     let real_parent = parent.path().join("real");
     let target = real_parent.join("target");
@@ -543,8 +529,7 @@ fn explicit_identity_symlink_alias_should_normalize_to_target() {
     }
 }
 
-#[test]
-fn explicit_nonexistent_identity_should_survive_ordinary_directory_creation() {
+pub(crate) fn explicit_nonexistent_identity_should_survive_ordinary_directory_creation() {
     let parent = TempDir::new().expect("tempdir should be created");
     let target = parent.path().join("future").join("worktree");
 
@@ -558,8 +543,7 @@ fn explicit_nonexistent_identity_should_survive_ordinary_directory_creation() {
     assert_eq!(before_slug, after_slug);
 }
 
-#[test]
-fn explicit_nonexistent_git_targets_should_keep_fallback_slug_after_creation() {
+pub(crate) fn explicit_nonexistent_git_targets_should_keep_fallback_slug_after_creation() {
     let repo = git_worktree();
     let targets = [
         repo.worktree_path().join("future").join("deadbeef"),
@@ -578,8 +562,7 @@ fn explicit_nonexistent_git_targets_should_keep_fallback_slug_after_creation() {
     }
 }
 
-#[test]
-fn explicit_git_subdirectory_should_keep_exact_identity_and_config_scope() {
+pub(crate) fn explicit_git_subdirectory_should_keep_exact_identity_and_config_scope() {
     let repo = git_worktree();
     write_file(
         &repo.root_path().join(".treeboot.toml"),
@@ -600,8 +583,7 @@ fn explicit_git_subdirectory_should_keep_exact_identity_and_config_scope() {
     assert_ne!(subdirectory, worktree);
 }
 
-#[test]
-fn explicit_regular_file_and_invalid_config_should_fail_before_stdout() {
+pub(crate) fn explicit_regular_file_and_invalid_config_should_fail_before_stdout() {
     let parent = TempDir::new().expect("tempdir should be created");
     let file = parent.path().join("file");
     write_file(&file, "not a directory\n");
@@ -655,8 +637,7 @@ fn explicit_regular_file_and_invalid_config_should_fail_before_stdout() {
 }
 
 #[cfg(unix)]
-#[test]
-fn explicit_dangling_symlink_should_fail_before_stdout() {
+pub(crate) fn explicit_dangling_symlink_should_fail_before_stdout() {
     let parent = TempDir::new().expect("tempdir should be created");
     let dangling = parent.path().join("dangling");
     symlink_file(parent.path().join("missing"), &dangling);
@@ -673,8 +654,7 @@ fn explicit_dangling_symlink_should_fail_before_stdout() {
     }
 }
 
-#[test]
-fn explicit_empty_path_should_be_a_usage_error_without_stdout() {
+pub(crate) fn explicit_empty_path_should_be_a_usage_error_without_stdout() {
     for command in ["id", "slug"] {
         treeboot()
             .args(["worktree", command, ""])
@@ -686,8 +666,7 @@ fn explicit_empty_path_should_be_a_usage_error_without_stdout() {
 }
 
 #[cfg(windows)]
-#[test]
-fn explicit_windows_special_relative_paths_should_fail_before_stdout() {
+pub(crate) fn explicit_windows_special_relative_paths_should_fail_before_stdout() {
     let parent = TempDir::new().expect("tempdir should be created");
     for (path, reason) in [
         (r"C:relative", "drive-relative paths are not supported"),
@@ -709,8 +688,7 @@ fn explicit_windows_special_relative_paths_should_fail_before_stdout() {
 }
 
 #[cfg(target_os = "linux")]
-#[test]
-fn explicit_identity_path_parser_should_preserve_native_non_utf8_input() {
+pub(crate) fn explicit_identity_path_parser_should_preserve_native_non_utf8_input() {
     use std::ffi::OsString;
     use std::os::unix::ffi::OsStringExt;
 
@@ -732,8 +710,7 @@ fn explicit_identity_path_parser_should_preserve_native_non_utf8_input() {
     }
 }
 
-#[test]
-fn explicit_identity_should_ignore_ambient_discovery_overrides() {
+pub(crate) fn explicit_identity_should_ignore_ambient_discovery_overrides() {
     let parent = TempDir::new().expect("tempdir should be created");
     let target = parent.path().join("target");
     std::fs::create_dir(&target).expect("target should be created");
@@ -753,7 +730,7 @@ fn explicit_identity_should_ignore_ambient_discovery_overrides() {
     }
 }
 
-fn worktree_identity_for_path(command: &str, cwd: &Path, path: &Path) -> String {
+pub(crate) fn worktree_identity_for_path(command: &str, cwd: &Path, path: &Path) -> String {
     let output = treeboot()
         .args(["worktree", command])
         .arg(path)
@@ -771,8 +748,7 @@ fn worktree_identity_for_path(command: &str, cwd: &Path, path: &Path) -> String 
         .to_owned()
 }
 
-#[test]
-fn worktree_list_should_skip_stale_registered_paths() {
+pub(crate) fn worktree_list_should_skip_stale_registered_paths() {
     let repo = git_worktree();
     let stale_parent = TempDir::new().expect("stale parent should be created");
     let stale_path = stale_parent.path().join("stale");
@@ -796,8 +772,7 @@ fn worktree_list_should_skip_stale_registered_paths() {
 
 // Git on macOS rejects non-UTF-8 worktree administrative directory names.
 #[cfg(target_os = "linux")]
-#[test]
-fn worktree_text_paths_should_preserve_native_bytes_and_structured_fail_atomically() {
+pub(crate) fn worktree_text_paths_should_preserve_native_bytes_and_structured_fail_atomically() {
     use std::ffi::OsString;
     use std::os::unix::ffi::{OsStrExt, OsStringExt};
 
@@ -806,18 +781,13 @@ fn worktree_text_paths_should_preserve_native_bytes_and_structured_fail_atomical
     let path = parent
         .path()
         .join(OsString::from_vec(b"non-utf8-\xff".to_vec()));
-    let output = Command::new("git")
+    let output = crate::cases::support::host_process("git")
         .args(["worktree", "add", "-b", "treeboot-non-utf8"])
         .arg(&path)
         .current_dir(repo.root_path())
         .output()
         .expect("git should run");
-    assert!(
-        output.status.success(),
-        "git worktree add should succeed\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    crate::cases::support::assert_fixture_process_success("git worktree add", &output);
     let path = canonical_path(&path);
     let id = worktree_id(&path);
     let mut expected_path = path.as_os_str().as_bytes().to_vec();
@@ -862,12 +832,11 @@ fn worktree_text_paths_should_preserve_native_bytes_and_structured_fail_atomical
             .assert()
             .failure()
             .stdout(predicate::str::is_empty())
-            .stderr(predicate::str::contains("failed to write output"));
+            .stderr(predicate::str::is_empty().not());
     }
 }
 
-#[test]
-fn worktree_path_should_report_missing_and_ambiguous_ids_without_stdout() {
+pub(crate) fn worktree_path_should_report_missing_and_ambiguous_ids_without_stdout() {
     let repo = git_worktree();
 
     treeboot()
@@ -948,8 +917,7 @@ fn worktree_path_should_report_missing_and_ambiguous_ids_without_stdout() {
     assert_eq!(duplicate_count, collision_paths.len());
 }
 
-#[test]
-fn malformed_sibling_config_should_fail_atomically_with_candidate_path() {
+pub(crate) fn malformed_sibling_config_should_fail_atomically_with_candidate_path() {
     let repo = git_worktree();
     let sibling = add_worktree(repo.root_path(), "malformed");
     write_file(
@@ -975,8 +943,7 @@ fn malformed_sibling_config_should_fail_atomically_with_candidate_path() {
     }
 }
 
-#[test]
-fn worktree_commands_should_fail_outside_git() {
+pub(crate) fn worktree_commands_should_fail_outside_git() {
     let dir = TempDir::new().expect("tempdir should be created");
 
     for args in [
@@ -995,8 +962,7 @@ fn worktree_commands_should_fail_outside_git() {
     }
 }
 
-#[test]
-fn worktree_commands_should_honor_recognized_ambient_environment() {
+pub(crate) fn worktree_commands_should_honor_recognized_ambient_environment() {
     let repo = git_worktree();
     let missing_root = repo.root_path().join("missing-root");
 
@@ -1017,14 +983,13 @@ fn worktree_commands_should_honor_recognized_ambient_environment() {
     }
 }
 
-#[test]
-fn worktree_nested_help_and_version_should_be_exposed() {
+pub(crate) fn worktree_nested_help_and_version_should_be_exposed() {
     treeboot()
         .arg("worktree")
         .assert()
         .code(2)
         .stdout(predicate::str::is_empty())
-        .stderr(predicate::str::contains("Usage:"));
+        .stderr(predicate::str::is_empty().not());
 
     treeboot()
         .args(["worktree", "--help"])
@@ -1051,9 +1016,38 @@ fn worktree_nested_help_and_version_should_be_exposed() {
         .stdout(predicate::str::contains("[PATH]"))
         .stdout(predicate::str::contains("--format"));
 
-    treeboot()
-        .args(["worktree", "--version"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains(treeboot_core::TREEBOOT_VERSION));
+    for flag in ["--version", "-V"] {
+        let output = treeboot()
+            .args(["worktree", flag])
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+        let text = std::str::from_utf8(&output).expect("worktree version should be valid UTF-8");
+        assert!(
+            text.starts_with(&format!(
+                "treeboot-worktree {} (spec ",
+                crate::cases::support::candidate_package_version()
+            )),
+            "unexpected worktree version output: {text:?}"
+        );
+        assert!(
+            text.ends_with(")\n") && !text.ends_with("(spec )\n"),
+            "unexpected worktree version output: {text:?}"
+        );
+    }
+}
+
+pub(crate) fn worktree_version_flags_should_declare_suite_spec() {
+    for flag in ["--version", "-V"] {
+        treeboot()
+            .args(["worktree", flag])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains(format!(
+                "(spec {})",
+                crate::SPEC_VERSION
+            )));
+    }
 }

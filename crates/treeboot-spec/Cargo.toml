@@ -1,0 +1,37 @@
+[package]
+name = "treeboot-spec"
+version = "0.13.0"
+description = "Executable language-agnostic conformance specification for Treeboot."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/treeboot-spec"
+readme = "README.md"
+keywords = ["git", "worktree", "testing", "specification"]
+categories = ["command-line-utilities", "development-tools::testing"]
+
+[lints]
+workspace = true
+
+[dependencies]
+assert_cmd = "2"
+clap = { version = "4", features = ["derive", "wrap_help"] }
+dunce = "1"
+predicates = "3"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+tempfile = "3"
+thiserror = "2"
+yaml_serde = "0.10"
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.30", features = ["signal"] }
+
+[target.'cfg(windows)'.dependencies]
+process-wrap = { version = "10.0.0", default-features = false, features = ["job-object", "std"] }
+
+[[bin]]
+name = "treeboot-spec"
+path = "src/main.rs"

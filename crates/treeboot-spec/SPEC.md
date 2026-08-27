@@ -1,10 +1,10 @@
-# treeboot Specification v2.4.0
+# treeboot Specification v2.5.1
 
 A portable worktree lifecycle helper that lets every coding agent, editor, and
 orchestration tool run the same repo-local bootstrap and teardown commands.
 
-**Tags:** compatibility contract, Rust executable, TOML config, idempotent
-default, configured commands, teardown commands, agent-tool aliases
+**Tags:** compatibility contract, command-line executable, TOML config,
+idempotent default, configured commands, teardown commands, agent-tool aliases
 
 | Term            | Description                                                |
 | --------------- | ---------------------------------------------------------- |
@@ -50,15 +50,39 @@ default. Bootstrap and teardown commands always run when their phase is
 executed, so users must make configured commands safe to rerun when that
 matters.
 
-### Implementation bar
+### Conformance scope
 
-The first implementation should target the full documented behavior in this
-spec.
+A compatible implementation is any executable that provides the observable CLI
+behavior defined by this specification. The executable's implementation
+language, internal APIs, parser library, and release process are outside this
+contract.
+
+Contractual behavior appears as declarative behavior descriptions, required text
+or data shapes, durable output, and explicit mandatory requirements, which
+typically use `must`. `should` marks non-binding design or adoption guidance.
+Examples and rationale do not add requirements. Placeholder and example values
+are illustrative unless the surrounding text identifies an exact value. A
+conformance result applies to the specification version, host platform, and
+capabilities exercised by that run. A result on one host does not establish
+support for other platforms.
 
 ## CLI surface: Fifteen subcommands, one default path
 
 The common integration point is intentionally short: `treeboot`. Tool-specific
 setup hooks only need to invoke the declarative treeboot config.
+
+`TB-CLI-HELP`: The top-level command, every subcommand, and every nested
+subcommand must accept `--help`, exit `0`, and write human-readable help to
+stdout. Help must identify the invoked command and its supported arguments,
+options, and immediate subcommands. Exact layout, capitalization, wrapping, and
+parser-generated prose are not contractual.
+
+`TB-CLI-USAGE`: Invalid command syntax must exit `2`, write a non-empty
+diagnostic to stderr, and not execute treeboot behavior. This includes unknown
+options or commands, missing required arguments, conflicting options, and
+unsupported enumerated values. Exact parser wording, suggestions, quoting,
+color, and usage layout are not contractual unless another section requires
+specific text.
 
 ### `treeboot run`
 
@@ -131,9 +155,8 @@ JSON and YAML output are defined in
 ### `treeboot version`
 
 Prints version metadata and exits without discovering Git context or config.
-`treeboot --version` and `treeboot -V` are global version flags that print
-package and spec version details through the CLI parser's built-in version
-handling.
+`treeboot --version` and `treeboot -V` are global version flags. Nested command
+parsers also accept both flags.
 
 ```sh
 treeboot version
@@ -148,8 +171,17 @@ treeboot -V
 Human-readable output is a compact, flag-like summary:
 
 ```text
-treeboot 0.10.0 (spec 2.4.0)
+treeboot <PACKAGE_VERSION> (spec <SPEC_VERSION>)
 ```
+
+`TB-CLI-VERSION`: Every version flag must report the implementation's package
+version and implemented specification version and exit `0` without Git or config
+discovery. A nested version flag may identify the invoked command in its leading
+label; that label and the parser's exact formatting are not contractual.
+`treeboot version` text output retains the exact compact summary shape shown
+above, substituting the implementation's actual package version for
+`<PACKAGE_VERSION>` and its implemented specification version for
+`<SPEC_VERSION>`.
 
 JSON and YAML output are defined in
 [Structured output formats](#structured-output-formats).
@@ -247,10 +279,12 @@ treeboot schema -o config.schema.json
 treeboot schema > config.schema.json
 ```
 
-The emitted schema is the same config schema published as the release asset
-`config.schema.json`. When `--output` is provided, treeboot writes the schema to
-that path instead of stdout. Parent directories must already exist. Existing
-regular files are replaced.
+The emitted schema is the canonical config schema at
+`crates/treeboot-spec/assets/treeboot.schema.json`. Stdout and `--output` must
+contain that document's exact UTF-8 bytes without added framing or byte changes.
+When `--output` is provided, treeboot writes the schema to that path instead of
+stdout. Parent directories must already exist. Existing regular files are
+replaced.
 
 `schema` does not support `--format`, `--json`, or `--yaml`; the schema payload
 is already JSON.
@@ -304,6 +338,13 @@ treeboot completions fish
 treeboot completions powershell
 treeboot completions elvish
 ```
+
+`TB-COMPLETION-SCRIPTS`: Each supported shell invocation must emit a usable
+registration script for the named shell without Git or config discovery. The
+installed script must complete the commands, options, option values, and nested
+commands documented by this specification. The emitted script bytes, helper
+process protocol, and environment variables used to obtain candidates are not
+contractual.
 
 ### `treeboot doctor`
 
@@ -484,7 +525,7 @@ a CLI usage error and exits with code `2`.
 | `-o`, `--format <text\|json\|yaml>`                        | status/version/config/check/doctor/env/worktree leaves        | Selects human-readable, JSON, or YAML output. Defaults to `text`.                                                                                                                                                                                                           |
 | `-J`, `--json`                                             | status/version/config/check/doctor/env/worktree leaves        | Shortcut for `--format json`. Conflicts with `--format` and `--yaml`.                                                                                                                                                                                                       |
 | `-Y`, `--yaml`                                             | status/version/config/check/doctor/env/worktree leaves        | Shortcut for `--format yaml`. Conflicts with `--format` and `--json`.                                                                                                                                                                                                       |
-| `-V`, `--version`                                          | global                                                        | Prints package and spec version details and exits before command validation.                                                                                                                                                                                                |
+| `-V`, `--version`                                          | global and nested command parsers                             | Prints package and spec version details and exits before command validation.                                                                                                                                                                                                |
 | `-o`, `--output <path>`                                    | schema                                                        | Writes the bundled config schema to a file instead of stdout.                                                                                                                                                                                                               |
 | `-S`, `--strict`                                           | run/check/copy/symlink/sync/doctor                            | Fails if a copy/symlink target exists; rejects sync operations; exits non-zero when run from the root checkout. Declarative config can also enable strict mode with top-level `strict = true`. For doctor, strict failures are reported as fatal diagnostics when possible. |
 | `-f`, `--force`                                            | run/copy/symlink/sync                                         | Replaces existing file-operation targets where supported.                                                                                                                                                                                                                   |
@@ -550,13 +591,14 @@ The shared worktree context object has this shape:
 ```json
 {
   "package": "treeboot",
-  "version": "0.8.0",
-  "spec_version": "2.4.0"
+  "version": "<PACKAGE_VERSION>",
+  "spec_version": "<SPEC_VERSION>"
 }
 ```
 
 `package` is the CLI package name. `version` is the package version.
-`spec_version` is the TreeBoot spec version implemented by the build.
+`spec_version` is the TreeBoot spec version implemented by the build. The
+angle-bracketed values above are placeholders, not literals.
 
 ### `treeboot config` JSON
 
@@ -859,7 +901,8 @@ The YAML forms have the same fields and nesting.
 
 `treeboot schema` emits the bundled config JSON Schema document directly. It is
 not wrapped in a treeboot report object and it does not support the structured
-output flags. The schema payload is defined by `schemas/treeboot.schema.json`.
+output flags. The schema payload is defined by
+`crates/treeboot-spec/assets/treeboot.schema.json`.
 
 ### Commands without structured output
 
@@ -868,14 +911,6 @@ output flags. The schema payload is defined by `schemas/treeboot.schema.json`.
 `--format`, `--json`, or `--yaml`. Their output is text-only and follows the
 command sections plus
 [Operator experience](#operator-experience-output-and-exit-codes).
-
-## Public library compatibility
-
-`EnvOptions`, `WorktreeIdentityOptions`, and `WorktreeInspectionOptions` are
-non-exhaustive because inspection can gain optional inputs over time. Downstream
-callers must construct them through `Default` and then assign the public fields
-they need. Worktree inspection report and entry structs are also non-exhaustive
-so reports can gain additive metadata without breaking downstream source.
 
 ## Path model: Root path feeds the worktree path
 
@@ -1131,7 +1166,7 @@ SUPERSET_ROOT_PATH
 
 treeboot does not set `CONDUCTOR_IS_LOCAL`, `CONDUCTOR_PORT`, or
 `SUPERSET_PORT_BASE`. Those variables are owned by the tools that define them
-and should not be fabricated.
+and must not be fabricated.
 
 ## Execution: Run flow
 
@@ -1302,10 +1337,17 @@ shape is unchanged.
 
 ### JSON Schema
 
-The checked-in JSON Schema for the config file format lives at
-`schemas/treeboot.schema.json`. It is generated from the Rust schema model with
-`mise run generate` and checked in CI with `mise run generate:schema:check`
-through the aggregate `mise run generate:check` task.
+`TB-CONFIG-SCHEMA`: The JSON Schema at
+`crates/treeboot-spec/assets/treeboot.schema.json` is the normative
+machine-readable definition of the config document's structure. It must describe
+the accepted document shapes, rejected fields, and constraints that the schema
+expresses. Passing schema validation does not guarantee runtime acceptance:
+semantic rules that depend on normalized values, path or pattern syntax,
+filesystem state, repository context, or runtime policy remain defined by the
+prose contract and conformance requirements. Runtime defaults also remain
+defined by the prose contract. `treeboot schema` stdout and `--output` must emit
+the canonical document's exact UTF-8 bytes as described in
+[`treeboot schema`](#treeboot-schema).
 
 ```toml
 #:schema https://github.com/jimeh/treeboot/releases/latest/download/config.schema.json
@@ -1487,8 +1529,8 @@ command declarations.
 
 ## Before execution: Operation validation
 
-treeboot should catch surprising or self-conflicting file operations before it
-starts changing the worktree.
+treeboot validates self-conflicting file operations before it starts changing
+the worktree.
 
 ### Whole-document and phase boundary
 
@@ -1518,11 +1560,11 @@ successful parse-only status.
 
 ### Normalize first
 
-Config parsing should normalize `copy`, `symlink`, `sync`, `files`, and
-`[[file]]` into one ordered list of file operations with resolved source and
-target paths. It normalizes bootstrap and teardown declarations into separate
-ordered command collections. Manual `copy`, `symlink`, and `sync` commands
-should produce the same normalized operation shape.
+Config parsing normalizes `copy`, `symlink`, `sync`, `files`, and `[[file]]`
+into one ordered list of file operations with resolved source and target paths.
+It normalizes bootstrap and teardown declarations into separate ordered command
+collections. Manual `copy`, `symlink`, and `sync` commands must produce the same
+normalized operation shape.
 
 Relative file-operation source paths resolve from `TREEBOOT_ROOT_PATH`. Relative
 file-operation target paths and command `cwd` paths resolve from
@@ -1543,7 +1585,7 @@ because they depend on process-local current-drive state.
 ### Conflicting targets
 
 If multiple file operations target the same normalized absolute path, or one
-target is inside another target, treeboot should report every conflicting entry
+target is inside another target, treeboot must report every conflicting entry
 with its operation, source, target, and declaration location when available.
 
 ### Target boundary
@@ -1604,12 +1646,12 @@ normal command-start `allow_failure` policy.
 ### Conflicting targets are invalid config
 
 A config that copies a file and later symlinks to the same target is ambiguous
-at best and destructive under force mode. treeboot should reject duplicate
-configured targets in every mode. It should also reject ancestor/descendant
-target pairs because a sync operation with `delete = true` can remove
-target-only children produced by another operation in the same plan. Manual
-commands should reject duplicate and overlapping targets derived from their
-source arguments and `--target` before any file changes are made.
+at best and destructive under force mode. treeboot must reject duplicate
+configured targets in every mode. It must also reject ancestor/descendant target
+pairs because a sync operation with `delete = true` can remove target-only
+children produced by another operation in the same plan. Manual commands must
+reject duplicate and overlapping targets derived from their source arguments and
+`--target` before any file changes are made.
 
 ### Outside-worktree targets need an explicit escape hatch
 
@@ -1642,15 +1684,15 @@ path. Parent target directories are created as needed.
 
 ### Manual operation source completion
 
-Shell completions for the source arguments of `treeboot copy`,
-`treeboot symlink`, and `treeboot sync` should list files and directories from
-the resolved root path, not from the current worktree. Completion candidates
-should be relative to the root path so completed values can be reused as default
-targets.
+`TB-COMPLETION-SOURCES`: Installed shell completions for the source arguments of
+`treeboot copy`, `treeboot symlink`, and `treeboot sync` must list files and
+directories from the resolved root path, not from the current worktree.
 
-Root-relative source completion is part of the completion contract for every
-shell supported by `treeboot completions`: Bash, Zsh, Fish, PowerShell, and
-Elvish.
+Completion candidates must be relative to the root path so completed values can
+be reused as default targets.
+
+Root-relative source completion applies to every shell supported by
+`treeboot completions`: Bash, Zsh, Fish, PowerShell, and Elvish.
 
 Completion candidate generation uses root/worktree discovery only. It must not
 parse config files, run configured commands, or fail because config is missing
@@ -1859,19 +1901,24 @@ Normalized file operations expose the operation-local include list in their
 ### Symlinks inside copy and sync
 
 Copy and sync use `symlinks = "preserve"` by default: safe source symlinks are
-recreated as symlinks instead of copying their referents. A symlink is unsafe if
-it is empty or resolves outside `TREEBOOT_ROOT_PATH`. Preserved source symlinks
-are rechecked immediately before target mutation; if the source stops being a
-symlink, changes the planned target, or resolves outside `TREEBOOT_ROOT_PATH`,
-treeboot fails the operation before creating or replacing the worktree link.
-When source and target layouts differ, treeboot rewrites copied symlinks to
-point at the analogous worktree destination when it can. Root-local symlink
-targets are mapped by root-relative path into the worktree before treeboot
-computes the destination symlink. When no rewrite is needed, treeboot preserves
-the symlink target text. If the final symlink target does not exist and will not
-be created by the current run, treeboot prints a warning. Unsafe symlinks are
-validation errors in declarative config. Projects that need custom symlink
-handling should use a configured command.
+recreated as symlinks instead of copying their referents. A source symlink whose
+target text is empty, whose target is dangling or otherwise cannot be resolved,
+or whose resolved target is outside `TREEBOOT_ROOT_PATH` is a validation error.
+Ignored paths and paths outside include scope may be skipped before this
+validation under [Path ignore rules](#path-ignore-rules) and
+[Path include rules](#path-include-rules). Preserved source symlinks are
+rechecked immediately before target mutation; if the source stops being a
+symlink, changes the planned target, cannot be resolved, or resolves outside
+`TREEBOOT_ROOT_PATH`, treeboot fails the operation before creating or replacing
+the worktree link. When source and target layouts differ, treeboot rewrites
+copied symlinks to point at the analogous worktree destination when it can.
+Root-local symlink targets are mapped by root-relative path into the worktree
+before treeboot computes the destination symlink. When no rewrite is needed,
+treeboot preserves the symlink target text. For a safe, resolvable root-local
+source symlink, treeboot prints a warning if its final worktree referent does
+not exist and will not be created by the current run. This warning does not
+apply to a dangling source symlink, which fails validation. Projects that need
+custom symlink handling should use a configured command.
 
 ### File metadata preservation
 
@@ -1927,8 +1974,8 @@ document order.
 ## Safety: Conflict modes
 
 The default mode is optimized for repeated worktree setup. Strict mode is for
-CI-like validation. Force mode is intentionally destructive and should be
-explicit.
+CI-like validation. Force mode is intentionally destructive and requires
+explicit selection.
 
 ### Trusted setup inputs
 
@@ -1990,10 +2037,10 @@ explicit deletes.
 
 ## File operation output and progress
 
-File-operation output should stay compact by default while preserving detailed
-diagnostics when requested. Default text output is grouped by top-level file
-operation. Top-level operations are declarative config entries or normalized
-manual source arguments.
+File-operation output is compact by default and preserves detailed diagnostics
+when requested. Default text output is grouped by top-level file operation.
+Top-level operations are declarative config entries or normalized manual source
+arguments.
 
 Single concrete actions omit parenthesized counts because the source and target
 already describe the work:
@@ -2137,9 +2184,9 @@ warns and later commands continue.
 
 ### Cross-platform contract
 
-Windows support is part of the design contract. Implementation and tests must
-account for platform differences in shell execution, path handling, symlink
-creation, and canonical path presentation.
+Windows support is part of the compatibility contract. Shell execution, path
+handling, symlink creation, and canonical path presentation must follow the
+platform-specific rules in this specification.
 
 ## Operator experience: Output and exit codes
 
@@ -2203,142 +2250,24 @@ treeboot: no config detected
 treeboot: no teardown commands configured
 ```
 
-Manual file operation validation errors should identify the CLI operation,
-source, and target involved. They must not report synthetic config file paths,
-TOML line numbers, or TOML column numbers for command-line arguments. Config
-parse or normalization errors found while loading manual command policy still
-report the real config path and TOML location.
+Command-wide manual argument or option validation errors must identify the CLI
+operation and the offending option, value, or reason. An error while normalizing
+a manual operation's declared source-to-target mapping must identify the CLI
+operation and source. It must also identify the target once target derivation
+has succeeded. After normalization, a file-operation planning or execution error
+must identify the CLI operation, the path involved, and the reason. A recursive
+source-tree inspection or resolution error must identify the CLI operation and a
+source path associated with the failure. That path may be the operation's
+declared top-level source, its normalized location, or a nested source path. It
+should identify the most specific failing source path available. None of these
+error categories reports synthetic config paths or TOML locations for
+command-line arguments. Config parse or normalization errors found while loading
+manual command policy still report the real config path and TOML location.
 
 | Exit | Meaning                                                                                                             |
 | ---- | ------------------------------------------------------------------------------------------------------------------- |
 | `0`  | Success, including missing discovered config or no teardown commands.                                               |
 | `1`  | Runtime failure, config error, operation or command failure, teardown decline, or missing non-interactive approval. |
 | `2`  | CLI usage error.                                                                                                    |
-
-## Distribution: Install and releases
-
-Release assets should be predictable enough for direct GitHub release installers
-such as `ubi` and `mise`.
-
-Archive assets:
-
-```text
-treeboot-aarch64-apple-darwin.tar.gz
-treeboot-x86_64-apple-darwin.tar.gz
-treeboot-x86_64-unknown-linux-musl.tar.gz
-treeboot-aarch64-unknown-linux-musl.tar.gz
-treeboot-x86_64-pc-windows-msvc.zip
-treeboot-aarch64-pc-windows-msvc.zip
-treeboot-x86_64-android.tar.gz
-treeboot-aarch64-android.tar.gz
-```
-
-Raw executable assets:
-
-```text
-treeboot-aarch64-apple-darwin
-treeboot-x86_64-apple-darwin
-treeboot-x86_64-unknown-linux-musl
-treeboot-aarch64-unknown-linux-musl
-treeboot-x86_64-pc-windows-msvc.exe
-treeboot-aarch64-pc-windows-msvc.exe
-treeboot-x86_64-android
-treeboot-aarch64-android
-```
-
-Release metadata assets:
-
-```text
-treeboot-checksums.txt
-config.schema.json
-treeboot-sbom.spdx.json
-```
-
-- **Archive contents**: `treeboot`, `README.md`, and `LICENSE`. Android asset
-  labels omit the Rust target triple's `linux` segment so desktop Linux
-  installers do not classify Android archives as generic Linux assets.
-- **Raw executable assets**: Publish the platform executable itself as a
-  separate asset so installers can download, chmod when needed, and run without
-  unpacking an archive.
-- **Config schema**: Publish the config JSON Schema as `config.schema.json`. It
-  should match the checked-in `schemas/treeboot.schema.json` generated from the
-  Rust schema model.
-- **Checksums**: Publish a checksum manifest that covers every release asset
-  uploaded to the GitHub Release, including archives, raw executables, the
-  config schema, and SBOMs.
-- **GPG signatures**: Planned distribution hardening should publish one detached
-  GPG signature for `treeboot-checksums.txt`. The checksum manifest is the
-  signed statement for the other release assets.
-- **SBOM**: Publish a machine-readable SPDX JSON software bill of materials for
-  each release.
-- **Attestations**: Publish provenance attestations from GitHub Actions release
-  automation. Consumers should be able to verify release assets with
-  `gh attestation verify`.
-- **Apple signing**: Planned distribution hardening should sign macOS CLI
-  binaries with Apple Developer ID and notarize them through Apple's developer
-  tooling before publication.
-- **Release targets**: macOS Apple Silicon, macOS Intel, Linux x86_64 musl,
-  Linux ARM64 musl, Windows x86_64/ARM64 MSVC, and Android x86_64/ARM64.
-- **Crates.io packages**: Publish `treeboot-core` before `treeboot`. The
-  `treeboot` package depends on the matching registry version of `treeboot-core`
-  when published, while local development continues to use the workspace path.
-- **Target source**: The expanded target list uses triples available from
-  `rustc --print target-list`. Release automation should only publish targets
-  that build and pass the configured release smoke test on the selected runner.
-- **Release flow**: Release PR automation updates version files and
-  `CHANGELOG.md`, creates a `vX.Y.Z` tag, and leaves a draft GitHub Release.
-  Tag-triggered release automation builds assets, reuses that draft when
-  present, falls back to the matching changelog section for release notes when
-  needed, uploads assets, and publishes the release only after uploads complete.
-
-## Verification: Testing strategy
-
-The test suite should prove the behavior that users will rely on: discovery,
-idempotency, compatibility env vars, and real Git worktree behavior.
-
-### Unit tests
-
-- Config parsing.
-- Duplicate file operation target detection.
-- Outside-worktree target validation.
-- String and object file parsing.
-- Sync comparison and explicit delete behavior.
-- String and object command parsing.
-- Compact and verbose teardown command parsing and declaration order.
-- Whole-document normalization failure before phase planning.
-- Independent bootstrap and teardown semantic validation.
-- Discovery order.
-- Environment variable construction.
-- Conflict mode behavior.
-- Relative symlink calculation.
-- Manual source-to-target normalization.
-
-### Integration tests
-
-- Create a temporary Git repository.
-- Create a linked worktree.
-- Run treeboot from the linked worktree.
-- Prepare and execute teardown for the current and an explicitly selected linked
-  worktree.
-- Run manual copy, symlink, and sync operations.
-- Verify files, symlinks, bootstrap and teardown commands, and env vars.
-- Revalidate command cwd immediately before both bootstrap and teardown spawn.
-
-### CLI tests
-
-- `treeboot` equals `treeboot run`.
-- `teardown` requires approval, rejects the root checkout, and never removes a
-  worktree.
-- `teardown --dry-run` neither prompts nor spawns.
-- missing discovered config and empty teardown commands are no-op successes.
-- non-terminal teardown requires `--yes`; refusal exits `1`.
-- `status` reports discovery paths without execution.
-- `init` creates config by default.
-- `init --config` creates config.
-- `copy`, `symlink`, and `sync` require sources.
-- Manual `--target` handles one and many sources.
-- Manual operation source completion reads from root path.
-- `completions` emits scripts for supported shells.
-- Conflict flags behave as specified.
 
 This Markdown document is the project specification for treeboot.

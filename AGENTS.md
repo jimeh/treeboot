@@ -5,38 +5,48 @@
 `treeboot` is a Rust CLI and public core library for bootstrapping Git worktrees
 from one repo-local setup contract.
 
-The implementation target is the behavior in [docs/SPEC.md](docs/SPEC.md). The
-README is the user-facing summary; the spec is the contract when they differ.
+The CLI implementation target is the language-agnostic behavior in
+[crates/treeboot-spec/SPEC.md](crates/treeboot-spec/SPEC.md). The README is the
+user-facing summary; the spec is the executable compatibility contract when they
+differ. Rust API compatibility belongs to the core crate README, rustdoc, and
+architecture documentation.
 
 ## Spec Discipline
 
-Treat [docs/SPEC.md](docs/SPEC.md) as the source of truth for observable
-behavior. If implementation behavior and the spec disagree, fix the
-implementation to match the spec unless the task is explicitly changing the
-contract. Do not leave drift between code, tests, CLI output, and the spec.
+Treat [crates/treeboot-spec/SPEC.md](crates/treeboot-spec/SPEC.md) as the source
+of truth for observable behavior. If implementation behavior and the spec
+disagree, fix the implementation to match the spec unless the task is explicitly
+changing the contract. Do not leave drift between code, tests, CLI output, and
+the spec.
 
-Keep [docs/SPEC.md](docs/SPEC.md) complete enough that a separate
-implementation, in another language or runtime, could build a compatible
-`treeboot` from the spec alone. When planning uncovers observable behavior,
-edge-case semantics, CLI output, validation rules, or compatibility
-requirements, update the spec instead of leaving those details only in
-implementation plans or roadmap notes. Keep implementation tactics in
+Keep [crates/treeboot-spec/SPEC.md](crates/treeboot-spec/SPEC.md) complete
+enough that a separate implementation, in another language or runtime, could
+build a compatible `treeboot` from the spec alone. When planning uncovers
+observable behavior, edge-case semantics, CLI output, validation rules, or
+compatibility requirements, update the spec instead of leaving those details
+only in implementation plans or roadmap notes. Keep implementation tactics in
 `docs/agents/` planning docs.
 
+Do not put Rust API compatibility, official packaging or release automation, or
+implementation test-layer guidance in the portable spec. Keep the canonical JSON
+Schema normative even while its current generation mechanism remains an
+implementation detail.
+
 Keep implementation plans focused on sequencing, placement, and behavior/test
-closure. Link to settled behavior in [docs/SPEC.md](docs/SPEC.md) and current
+closure. Link to settled behavior in
+[crates/treeboot-spec/SPEC.md](crates/treeboot-spec/SPEC.md) and current
 architecture in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) instead of
 duplicating either contract in a planning document.
 
-When changing the observable contract in [docs/SPEC.md](docs/SPEC.md), bump the
-visible spec version in that file and keep the README's referenced spec version
-in sync.
+When changing the observable contract in
+[crates/treeboot-spec/SPEC.md](crates/treeboot-spec/SPEC.md), bump the visible
+spec version in that file and keep the README's referenced spec version in sync.
 
 Before handoff on behavior changes, verify the implementation behavior matches
-[docs/SPEC.md](docs/SPEC.md). For changes that affect CLI behavior, config
-semantics, validation, filesystem effects, command execution, output, or
-compatibility, update the spec in the same change unless it already describes
-the final behavior.
+[crates/treeboot-spec/SPEC.md](crates/treeboot-spec/SPEC.md). For changes that
+affect CLI behavior, config semantics, validation, filesystem effects, command
+execution, output, or compatibility, update the spec in the same change unless
+it already describes the final behavior.
 
 ## Architecture Discipline
 
@@ -47,9 +57,10 @@ output/reporting architecture, or the documented "Current refactor pressure"
 changes.
 
 Use [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the current system map and
-[docs/SPEC.md](docs/SPEC.md) for behavioral truth. If those documents appear to
-conflict, preserve the spec as the behavior contract and update architecture
-wording to describe how the implementation currently satisfies it.
+[crates/treeboot-spec/SPEC.md](crates/treeboot-spec/SPEC.md) for behavioral
+truth. If those documents appear to conflict, preserve the spec as the behavior
+contract and update architecture wording to describe how the implementation
+currently satisfies it.
 
 ## Pull Request Titles
 
@@ -92,6 +103,9 @@ validation and review before requesting the final CodeRabbit result.
 - `crates/treeboot` is the CLI package and should stay thin.
 - `crates/treeboot-core` is the public library crate, exposed as
   `treeboot_core`.
+- `crates/treeboot-spec` owns the portable specification, canonical schema,
+  black-box conformance API, and `treeboot-spec` CLI. It must not depend on the
+  reference implementation crates.
 - `tools/release-helper` contains release workflow helper logic behind thin
   shell wrappers in `scripts/`.
 - `docs/agents/` contains deeper guidance for future agent work.
@@ -185,6 +199,9 @@ mise run lint:markdown
 mise run test
 mise run test:core
 mise run test:cli
+mise run test:spec
+mise run test:conformance
+mise run test:spec:standalone
 mise run test:release-helper
 mise run release:check
 mise run msrv
@@ -244,9 +261,20 @@ work. Lefthook checks staged Markdown files through
   so automation never receives a partial document.
 - For bug fixes, add a regression test that fails without the fix unless the
   scenario cannot be reproduced in the local harness.
-- Use CLI integration tests for user-visible command behavior.
-- For run/config CLI behavior inside Git, prefer `git_worktree()` so tests run
-  from an actual linked worktree; reserve `git_repo()` for root-checkout cases.
+- Put portable user-visible CLI behavior in `treeboot-spec` conformance cases.
+  Those cases should assert exit status, durable output, side effects, and
+  completion through installed shell scripts.
+- Keep only reference-implementation details such as parser-library structure,
+  direct completion helper protocols, generated Rust schema-model structure, and
+  diagnostics intentionally more specific than the portable contract in
+  `crates/treeboot/tests/` alongside the official conformance driver.
+- When executing generated PowerShell completion scripts, pass the script path
+  through an environment variable and dot-source it with
+  `-ExecutionPolicy Bypass`; trailing arguments after `-Command` do not portably
+  populate `$args`.
+- For portable run/config behavior inside Git, prefer `git_worktree()` so cases
+  run from an actual linked worktree; reserve `git_repo()` for root-checkout
+  cases.
 - Use core unit tests for pure helpers, formatting, and validation logic.
 - Unit-test chunked or buffered I/O through injected `Read`/`Write` adapters
   (short or staggered reads, `Interrupted`), not just real temp files, and size
@@ -258,7 +286,14 @@ work. Lefthook checks staged Markdown files through
 - Git on macOS rejects non-UTF-8 worktree administrative directory names with
   `Illegal byte sequence`; keep filesystem-backed non-UTF-8 worktree fixtures
   Linux-gated while retaining platform-independent native-path coverage.
-- Put reusable CLI integration helpers in `crates/treeboot/tests/common/`.
+- Put helpers needed by the retained reference-only integration tests in
+  `crates/treeboot/tests/common/`; portable fixtures belong in `treeboot-spec`.
+- Inventory checks must deduplicate generated registry source keys before
+  counting them; `generated.rs` intentionally repeats keys across `cfg`-gated
+  runnable and skipped definitions.
+- Keep the official conformance-driver source-shape check in
+  `scripts/check-spec-cases.sh` aligned with the supported `RunOptions`
+  construction API; it verifies an explicit full-profile selection.
 - Use affected targeted tasks during implementation and correction rounds; see
   the validation guide for correction and cross-platform preflight rules.
 - Run `mise run check` on the intended handoff head for ordinary code changes.
@@ -274,9 +309,9 @@ work. Lefthook checks staged Markdown files through
 - Repo harness invariants are wrapped by `mise run harness:check`; keep
   dependency-boundary and spec-version drift checks there when they can be
   expressed without heavyweight tooling.
-- Do not require package-version literals in `docs/SPEC.md` examples to match
-  Cargo package versions. Release-please does not update spec examples, and
-  example version drift should not block release PRs.
+- Do not require package-version literals in `crates/treeboot-spec/SPEC.md`
+  examples to match Cargo package versions. Release-please does not update spec
+  examples, and example version drift should not block release PRs.
 - Dependabot Cargo and GitHub Actions version updates use a 7-day cooldown.
   Security updates are not affected by Dependabot cooldown and should stay
   alert-driven.
@@ -366,5 +401,6 @@ work. Lefthook checks staged Markdown files through
   them with `readme = false`. Keep the crate-local `LICENSE` copies in sync with
   the root `LICENSE` so published crate tarballs include the license text.
 - crates.io Trusted Publishing is bound to `.github/workflows/release.yml` and
-  the GitHub Actions `release` environment for both published crates. Keep the
-  crates.io Trusted Publisher settings in sync if either name changes.
+  the GitHub Actions `release` environment for `treeboot-spec`, `treeboot-core`,
+  and `treeboot`. Keep the crates.io Trusted Publisher settings in sync if any
+  package name changes.

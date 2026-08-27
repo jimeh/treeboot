@@ -1,27 +1,8 @@
-#![allow(dead_code)]
-
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
 
 use assert_cmd::Command;
-use serde_json::Value;
 use tempfile::TempDir;
-
-pub fn canonical_path(path: &Path) -> PathBuf {
-    dunce::canonicalize(path).expect("path should canonicalize")
-}
-
-pub fn display_path(path: &str) -> String {
-    path.split('/').collect::<PathBuf>().display().to_string()
-}
-
-pub fn toml_string_path(path: &Path) -> String {
-    toml_string(&path.display().to_string())
-}
-
-pub fn toml_string(value: &str) -> String {
-    value.replace('\\', "\\\\").replace('"', "\\\"")
-}
 
 pub fn treeboot() -> Command {
     let mut command = Command::cargo_bin("treeboot").expect("treeboot binary should build");
@@ -30,13 +11,14 @@ pub fn treeboot() -> Command {
         .env_remove("CODEX_SOURCE_TREE_PATH")
         .env_remove("CONDUCTOR_ROOT_PATH")
         .env_remove("SUPERSET_ROOT_PATH")
+        .env_remove("CONDUCTOR_DEFAULT_BRANCH")
         .env_remove("TREEBOOT_STRICT")
         .env_remove("TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT")
         .env_remove("TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE");
     command
 }
 
-pub fn git(args: &[&str], cwd: &Path) {
+fn git(args: &[&str], cwd: &Path) {
     let output = StdCommand::new("git")
         .args(args)
         .current_dir(cwd)
@@ -51,7 +33,7 @@ pub fn git(args: &[&str], cwd: &Path) {
     );
 }
 
-pub fn git_repo() -> TempDir {
+fn git_repo() -> TempDir {
     let repo = TempDir::new().expect("tempdir should be created");
     git(&["init"], repo.path());
     repo
@@ -104,65 +86,4 @@ pub fn git_worktree() -> GitWorktree {
 
 pub fn write_file(path: &Path, content: &str) {
     std::fs::write(path, content).expect("file should be written");
-}
-
-#[cfg(unix)]
-pub fn symlink_file(source: impl AsRef<Path>, target: impl AsRef<Path>) {
-    std::os::unix::fs::symlink(source.as_ref(), target.as_ref())
-        .expect("file symlink should be created");
-}
-
-#[cfg(windows)]
-pub fn symlink_file(source: impl AsRef<Path>, target: impl AsRef<Path>) {
-    std::os::windows::fs::symlink_file(source.as_ref(), target.as_ref())
-        .expect("file symlink should be created");
-}
-
-#[cfg(unix)]
-pub fn symlink_dir(source: impl AsRef<Path>, target: impl AsRef<Path>) {
-    std::os::unix::fs::symlink(source.as_ref(), target.as_ref())
-        .expect("directory symlink should be created");
-}
-
-#[cfg(windows)]
-pub fn symlink_dir(source: impl AsRef<Path>, target: impl AsRef<Path>) {
-    std::os::windows::fs::symlink_dir(source.as_ref(), target.as_ref())
-        .expect("directory symlink should be created");
-}
-
-pub fn parse_json(stdout: Vec<u8>, context: &str) -> Value {
-    serde_json::from_slice(&stdout).unwrap_or_else(|error| {
-        panic!("{context} JSON should parse: {error}");
-    })
-}
-
-pub fn assert_json_object_keys(value: &Value, expected: &[&str]) {
-    let object = value.as_object().expect("value should be a JSON object");
-    let mut actual = object.keys().map(String::as_str).collect::<Vec<_>>();
-    actual.sort_unstable();
-
-    let mut expected = expected.to_vec();
-    expected.sort_unstable();
-
-    assert_eq!(actual, expected);
-}
-
-pub fn assert_context_shape(value: &Value) {
-    assert_json_object_keys(value, &["default_branch", "root_path", "worktree_path"]);
-    assert!(value["root_path"].is_string());
-    assert!(value["worktree_path"].is_string());
-    assert!(value["default_branch"].is_string());
-}
-
-#[cfg(unix)]
-pub fn write_executable_script(path: &Path, content: &str) {
-    use std::os::unix::fs::PermissionsExt;
-
-    write_file(path, content);
-    let mut permissions = path
-        .metadata()
-        .expect("script metadata should be readable")
-        .permissions();
-    permissions.set_mode(0o755);
-    std::fs::set_permissions(path, permissions).expect("script permissions should be set");
 }

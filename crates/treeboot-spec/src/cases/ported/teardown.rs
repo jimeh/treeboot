@@ -1,13 +1,10 @@
 use predicates::prelude::*;
 
-mod common;
-
 #[cfg(unix)]
-use common::git;
-use common::{git_repo, git_worktree, toml_string_path, treeboot, write_file};
+use crate::cases::support::git;
+use crate::cases::support::{git_repo, git_worktree, toml_string_path, treeboot, write_file};
 
-#[test]
-fn teardown_should_reject_root_checkout() {
+pub(crate) fn teardown_should_reject_root_checkout() {
     let repo = git_repo();
 
     treeboot()
@@ -20,8 +17,7 @@ fn teardown_should_reject_root_checkout() {
         ));
 }
 
-#[test]
-fn teardown_should_reject_actual_root_with_explicit_source_root_override() {
+pub(crate) fn teardown_should_reject_actual_root_with_explicit_source_root_override() {
     let repo = git_worktree();
     let alternate_root = tempfile::TempDir::new().expect("alternate root should be created");
 
@@ -37,8 +33,7 @@ fn teardown_should_reject_actual_root_with_explicit_source_root_override() {
         ));
 }
 
-#[test]
-fn teardown_should_reject_actual_root_with_source_root_environment_aliases() {
+pub(crate) fn teardown_should_reject_actual_root_with_source_root_environment_aliases() {
     let repo = git_worktree();
     let alternate_root = tempfile::TempDir::new().expect("alternate root should be created");
 
@@ -60,8 +55,7 @@ fn teardown_should_reject_actual_root_with_source_root_environment_aliases() {
     }
 }
 
-#[test]
-fn teardown_should_noop_when_discovered_config_is_missing() {
+pub(crate) fn teardown_should_noop_when_discovered_config_is_missing() {
     let repo = git_worktree();
 
     treeboot()
@@ -72,8 +66,7 @@ fn teardown_should_noop_when_discovered_config_is_missing() {
         .stdout("treeboot: no config detected\n");
 }
 
-#[test]
-fn teardown_should_fail_when_requested_config_is_missing() {
+pub(crate) fn teardown_should_fail_when_requested_config_is_missing() {
     let repo = git_worktree();
 
     treeboot()
@@ -84,8 +77,7 @@ fn teardown_should_fail_when_requested_config_is_missing() {
         .stderr(predicate::str::contains("config file not found"));
 }
 
-#[test]
-fn teardown_should_noop_without_configured_commands() {
+pub(crate) fn teardown_should_noop_without_configured_commands() {
     let repo = git_worktree();
     write_file(
         &repo.worktree_path().join(".treeboot.toml"),
@@ -102,8 +94,7 @@ fn teardown_should_noop_without_configured_commands() {
         ));
 }
 
-#[test]
-fn teardown_should_require_yes_when_input_is_not_a_terminal() {
+pub(crate) fn teardown_should_require_yes_when_input_is_not_a_terminal() {
     let repo = git_worktree();
     write_file(
         &repo.worktree_path().join(".treeboot.toml"),
@@ -119,8 +110,7 @@ fn teardown_should_require_yes_when_input_is_not_a_terminal() {
         .stderr(predicate::str::contains("rerun with --yes"));
 }
 
-#[test]
-fn teardown_dry_run_should_not_require_approval_or_spawn() {
+pub(crate) fn teardown_dry_run_should_not_require_approval_or_spawn() {
     let repo = git_worktree();
     let marker = repo.worktree_path().join("teardown-marker");
     write_file(
@@ -143,8 +133,7 @@ fn teardown_dry_run_should_not_require_approval_or_spawn() {
 }
 
 #[cfg(unix)]
-#[test]
-fn teardown_yes_should_run_only_teardown_commands() {
+pub(crate) fn teardown_yes_should_run_only_teardown_commands() {
     let repo = git_worktree();
     let bootstrap = repo.worktree_path().join("bootstrap-marker");
     let teardown = repo.worktree_path().join("teardown-marker");
@@ -170,8 +159,7 @@ fn teardown_yes_should_run_only_teardown_commands() {
 }
 
 #[cfg(unix)]
-#[test]
-fn bootstrap_and_teardown_commands_should_share_worktree_identity_after_branch_rename() {
+pub(crate) fn bootstrap_and_teardown_commands_should_share_worktree_identity_after_branch_rename() {
     let repo = git_worktree();
     let bootstrap_shell = repo.worktree_path().join("bootstrap-shell.out");
     let bootstrap_direct = repo.worktree_path().join("bootstrap-direct.out");
@@ -236,8 +224,7 @@ teardown_commands = [
 }
 
 #[cfg(unix)]
-#[test]
-fn teardown_can_target_linked_worktree_from_root() {
+pub(crate) fn teardown_can_target_linked_worktree_from_root() {
     let repo = git_worktree();
     let marker = repo.worktree_path().join("targeted-marker");
     write_file(
@@ -260,8 +247,7 @@ fn teardown_can_target_linked_worktree_from_root() {
 }
 
 #[cfg(unix)]
-#[test]
-fn bootstrap_semantic_failure_should_not_block_teardown() {
+pub(crate) fn bootstrap_semantic_failure_should_not_block_teardown() {
     let repo = git_worktree();
     let marker = repo.worktree_path().join("cleanup-marker");
     write_file(
@@ -283,8 +269,7 @@ fn bootstrap_semantic_failure_should_not_block_teardown() {
 }
 
 #[cfg(unix)]
-#[test]
-fn bootstrap_command_cwd_escape_should_not_block_teardown() {
+pub(crate) fn bootstrap_command_cwd_escape_should_not_block_teardown() {
     let repo = git_worktree();
     let marker = repo.worktree_path().join("cleanup-after-cwd-error");
     write_file(
@@ -305,8 +290,7 @@ fn bootstrap_command_cwd_escape_should_not_block_teardown() {
     assert!(marker.exists());
 }
 
-#[test]
-fn whole_config_parse_failure_should_block_teardown() {
+pub(crate) fn whole_config_parse_failure_should_block_teardown() {
     let repo = git_worktree();
     write_file(
         &repo.worktree_path().join(".treeboot.toml"),
@@ -325,8 +309,7 @@ fn whole_config_parse_failure_should_block_teardown() {
         ));
 }
 
-#[test]
-fn teardown_worktree_identity_overrides_should_fail_before_any_command() {
+pub(crate) fn teardown_worktree_identity_overrides_should_fail_before_any_command() {
     for variable in ["TREEBOOT_WORKTREE_ID", "TREEBOOT_WORKTREE_SLUG"] {
         let repo = git_worktree();
         let marker = repo.worktree_path().join("should-not-run");
@@ -358,8 +341,7 @@ teardown_commands = [
     }
 }
 
-#[test]
-fn teardown_should_ignore_bootstrap_strict_environment() {
+pub(crate) fn teardown_should_ignore_bootstrap_strict_environment() {
     let repo = git_worktree();
 
     treeboot()
@@ -372,8 +354,7 @@ fn teardown_should_ignore_bootstrap_strict_environment() {
 }
 
 #[cfg(unix)]
-#[test]
-fn teardown_should_continue_after_allowed_failure() {
+pub(crate) fn teardown_should_continue_after_allowed_failure() {
     let repo = git_worktree();
     let marker = repo.worktree_path().join("continued-marker");
     write_file(
@@ -400,8 +381,7 @@ fn teardown_should_continue_after_allowed_failure() {
 }
 
 #[cfg(unix)]
-#[test]
-fn teardown_should_stop_after_fatal_failure() {
+pub(crate) fn teardown_should_stop_after_fatal_failure() {
     let repo = git_worktree();
     let marker = repo.worktree_path().join("must-not-exist");
     write_file(

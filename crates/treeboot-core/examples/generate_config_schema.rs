@@ -166,6 +166,15 @@ struct SymlinkObject {
 
 #[derive(JsonSchema, Serialize)]
 #[serde(deny_unknown_fields)]
+#[schemars(extend(
+    "not" = {
+        "properties": {
+            "delete": { "const": true },
+            "include": { "minItems": 1 }
+        },
+        "required": ["delete", "include"]
+    }
+))]
 struct SyncObject {
     /// Source path, relative to the root checkout unless absolute.
     source: String,
@@ -235,6 +244,15 @@ enum MixedFileObject {
         required: Option<bool>,
     },
     /// Sync object entry for mixed `files` and `[[file]]` declarations.
+    #[schemars(extend(
+        "not" = {
+            "properties": {
+                "delete": { "const": true },
+                "include": { "minItems": 1 }
+            },
+            "required": ["delete", "include"]
+        }
+    ))]
     Sync {
         /// Source path, relative to the root checkout unless absolute.
         source: String,
@@ -343,10 +361,8 @@ fn main() {
     let path = std::env::args_os()
         .nth(1)
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("schemas/treeboot.schema.json"));
-    let schema = schemars::schema_for!(TreebootConfig);
-    let mut schema = serde_json::to_value(schema).expect("schema should serialize as JSON");
-    strip_null_type(&mut schema);
+        .unwrap_or_else(|| PathBuf::from("crates/treeboot-spec/assets/treeboot.schema.json"));
+    let schema = treeboot_config_schema();
     let content = serde_json::to_string_pretty(&schema).expect("schema should serialize as JSON");
 
     if let Some(parent) = path.parent() {
@@ -354,6 +370,13 @@ fn main() {
     }
 
     std::fs::write(&path, format!("{content}\n")).expect("schema should be written");
+}
+
+fn treeboot_config_schema() -> serde_json::Value {
+    let schema = schemars::schema_for!(TreebootConfig);
+    let mut schema = serde_json::to_value(schema).expect("schema should serialize as JSON");
+    strip_null_type(&mut schema);
+    schema
 }
 
 fn strip_null_type(value: &mut serde_json::Value) {
@@ -408,5 +431,50 @@ fn strip_null_any_of(object: &mut serde_json::Map<String, serde_json::Value>) {
             object.remove("anyOf");
             object.extend(only);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{Value, json};
+
+    use super::treeboot_config_schema;
+
+    #[test]
+    fn schema_should_reject_include_with_delete_for_sync_entries() {
+        let schema = treeboot_config_schema();
+
+        assert_eq!(
+            schema.pointer("/$defs/SyncObject/not"),
+            Some(&include_with_delete_shape())
+        );
+    }
+
+    #[test]
+    fn schema_should_reject_include_with_delete_for_mixed_sync_entries() {
+        let schema = treeboot_config_schema();
+        let sync = schema
+            .pointer("/$defs/MixedFileObject/oneOf")
+            .and_then(Value::as_array)
+            .and_then(|variants| {
+                variants.iter().find(|variant| {
+                    variant.pointer("/properties/operation/const") == Some(&json!("sync"))
+                })
+            });
+
+        assert_eq!(
+            sync.and_then(|variant| variant.get("not")),
+            Some(&include_with_delete_shape())
+        );
+    }
+
+    fn include_with_delete_shape() -> Value {
+        json!({
+            "properties": {
+                "delete": { "const": true },
+                "include": { "minItems": 1 }
+            },
+            "required": ["delete", "include"]
+        })
     }
 }

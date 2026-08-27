@@ -7,8 +7,9 @@ compatibility boundary to make Treeboot's public normalized config structs
 forward-compatible with additive fields.
 
 The observable behavior in this plan must be incorporated into
-[`docs/SPEC.md`](../SPEC.md) before implementation is considered complete.
-Implementation placement and public API structure must remain consistent with
+[`crates/treeboot-spec/SPEC.md`](../../crates/treeboot-spec/SPEC.md) before
+implementation is considered complete. Implementation placement and public API
+structure must remain consistent with
 [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md).
 
 ## Goals
@@ -591,7 +592,7 @@ the existing public enum policy.
     teardown-specific copies
 - `crates/treeboot-core/src/init.rs`
   - add the empty starter teardown section
-- `schemas/treeboot.schema.json`
+- `crates/treeboot-spec/assets/treeboot.schema.json`
   - regenerate; do not hand-edit
 - `crates/treeboot-core/assets/config.schema.json`
   - refresh through the normal generation task
@@ -652,7 +653,7 @@ the existing public enum policy.
 
 ### Documentation and metadata
 
-- `docs/SPEC.md`
+- `crates/treeboot-spec/SPEC.md`
   - bump spec `2.0.0` to `2.1.0`
   - add the fourteenth subcommand
   - define config, prompt, no-op, dry-run, failure, output, and targeting
@@ -814,8 +815,9 @@ same contract confidence.
 
 ## Implementation Sequence
 
-1. Update `docs/SPEC.md` to the complete `2.1.0` contract before coding,
-   including the parse/normalization boundary and durable prompt/output text.
+1. Update `crates/treeboot-spec/SPEC.md` to the complete `2.1.0` contract before
+   coding, including the parse/normalization boundary and durable prompt/output
+   text.
 2. Apply non-exhaustive attributes, add replacement constructors, add
    `Worktree::is_root`, and consolidate file-operation construction.
 3. Update public API tests and documentation so the compatibility break is
