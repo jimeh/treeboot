@@ -210,7 +210,7 @@ never runs them.
 
 The [JSON Schema](#schema) provides editor completion and documents all config
 fields. The full observable behavior is defined by the
-[treeboot specification](./docs/SPEC.md).
+[treeboot specification](./crates/treeboot-spec/SPEC.md).
 
 ## Inspect and troubleshoot
 
@@ -237,8 +237,8 @@ shortcuts.
 Use `treeboot worktree path <ID>` to resolve an exact ID in the current
 repository. Repository-wide lookup and listing use each worktree's own config,
 skip stale registered paths, and report ID collisions instead of choosing a
-path. The [treeboot specification](./docs/SPEC.md) defines platform-specific
-path and structured-output behavior.
+path. The [treeboot specification](./crates/treeboot-spec/SPEC.md) defines
+platform-specific path and structured-output behavior.
 
 If no config is found, `treeboot` prints an info message and exits successfully.
 Add `--strict` to bootstrap when that should be an error. Missing discovered
@@ -363,8 +363,9 @@ the current repository, and `treeboot worktree list` inventories its worktrees.
 The ID defaults to a six-character lowercase Crockford base32 digest prefix. The
 slug defaults to at most 48 DNS-label-compatible characters and ends with the
 complete ID. Configure them through the top-level `worktree_id` and
-`worktree_slug` objects. The [treeboot specification](./docs/SPEC.md) defines
-path normalization, platform restrictions, and config-aware lookup behavior.
+`worktree_slug` objects. The
+[treeboot specification](./crates/treeboot-spec/SPEC.md) defines path
+normalization, platform restrictions, and config-aware lookup behavior.
 
 ## Schema
 
@@ -375,8 +376,8 @@ https://github.com/jimeh/treeboot/releases/latest/download/config.schema.json
 ```
 
 It is also checked into this repository at
-[`schemas/treeboot.schema.json`](./schemas/treeboot.schema.json). Use
-`treeboot schema` to print the embedded schema or
+[`crates/treeboot-spec/assets/treeboot.schema.json`](./crates/treeboot-spec/assets/treeboot.schema.json).
+Use `treeboot schema` to print the embedded schema or
 `treeboot schema --output <path>` to write it to a file.
 
 ## Shell completions
@@ -392,11 +393,26 @@ treeboot completions fish > ~/.config/fish/completions/treeboot.fish
 
 The command only prints the script; it does not install completion files.
 
+## Compatibility suite
+
+The publishable [`treeboot-spec`](./crates/treeboot-spec/README.md) crate owns
+the canonical specification, schema, and black-box CLI conformance suite. Its
+CLI can test the official binary or an independent implementation:
+
+```sh
+treeboot-spec test -- /path/to/treeboot
+treeboot-spec test --format json -- /path/to/treeboot
+```
+
+The suite tests only the language-agnostic CLI contract. It does not specify the
+`treeboot-core` Rust API.
+
 ## Project status
 
 Treeboot bootstraps linked worktrees and runs explicitly approved teardown
 commands. The current language-agnostic CLI compatibility contract is
-[spec v2.5.0](./docs/SPEC.md); this README is the shorter, human-facing guide.
+[spec v2.5.0](./crates/treeboot-spec/SPEC.md); this README is the shorter,
+human-facing guide.
 
 The name `treeboot` means "worktree bootstrap."
 

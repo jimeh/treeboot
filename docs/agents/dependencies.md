@@ -35,6 +35,13 @@ dependencies for small wrappers around the standard library.
 - `schemars` and `serde_json` are dev-dependencies in `treeboot-core` for the
   JSON Schema generator example.
 - `assert_cmd`, `predicates`, and `tempfile` support CLI integration tests.
+- `nix` gives `treeboot-spec`'s local runner a safe Unix process-group signal
+  API, so invocation timeouts terminate descendants without calling an external
+  `kill` executable.
+- `process-wrap` gives `treeboot-spec`'s local runner a Windows Job Object child
+  handle. Its `JobObject` wrapper suspends the candidate until assignment, then
+  terminates the complete job on timeout even if the candidate's leader has
+  already exited.
 - `markdown` belongs in `tools/release-helper` so release-note extraction can
   identify changelog sections structurally while preserving source Markdown.
 - `zip` belongs in `tools/release-helper` so Windows release archives do not

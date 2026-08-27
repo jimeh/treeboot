@@ -1,9 +1,23 @@
 use predicates::prelude::*;
+#[cfg(unix)]
+use std::path::PathBuf;
+#[cfg(unix)]
+use std::process::Command as StdCommand;
 use tempfile::TempDir;
 
 mod common;
 
+#[cfg(unix)]
+use common::{GitWorktree, git_worktree};
 use common::{treeboot, write_file};
+
+#[cfg(unix)]
+const TREEBOOT_ENVIRONMENT: &[&str] = &[
+    "TREEBOOT_ROOT_PATH",
+    "CODEX_SOURCE_TREE_PATH",
+    "CONDUCTOR_ROOT_PATH",
+    "SUPERSET_ROOT_PATH",
+];
 
 #[test]
 fn completions_supported_shells_should_emit_scripts() {
@@ -153,4 +167,123 @@ fn completions_should_not_require_git_or_config_discovery() {
         .success()
         .stderr(predicate::str::is_empty())
         .stdout(predicate::str::contains("treeboot"));
+}
+
+#[cfg(unix)]
+#[test]
+fn installed_bash_completion_helper_should_list_root_sources() {
+    if !shell_available("bash", &["--version"]) {
+        eprintln!("skipping reference-only Bash completion helper test: Bash is unavailable");
+        return;
+    }
+
+    let (repo, _temp, script_path) = completion_fixture("bash", "bash");
+    let script = std::fs::read_to_string(&script_path).expect("completion script should be read");
+    write_file(
+        &script_path,
+        &format!(
+            "{script}\nCOMP_WORDS=(treeboot copy sh)\nCOMP_CWORD=2\nCOMP_TYPE=9\n_clap_complete_treeboot '' 'sh'\nprintf '%s\\n' \"${{COMPREPLY[@]}}\"\n"
+        ),
+    );
+
+    let mut command = StdCommand::new("bash");
+    scrub_treeboot_environment(&mut command);
+    let completion = command
+        .arg(&script_path)
+        .current_dir(repo.worktree_path())
+        .output()
+        .expect("installed Bash completion script should run");
+
+    assert_completion(&completion);
+}
+
+#[cfg(unix)]
+#[test]
+fn installed_zsh_completion_helper_should_list_root_sources() {
+    if !shell_available(
+        "zsh",
+        &[
+            "-f",
+            "-c",
+            "autoload -Uz compinit; compinit; whence compdef >/dev/null",
+        ],
+    ) {
+        eprintln!("skipping reference-only Zsh completion helper test: Zsh is unavailable");
+        return;
+    }
+
+    let (repo, _temp, script_path) = completion_fixture("zsh", "zsh");
+    let mut command = StdCommand::new("zsh");
+    scrub_treeboot_environment(&mut command);
+    let completion = command
+        .args([
+            "-f",
+            "-c",
+            "autoload -Uz compinit; compinit; source \"$1\"; function _describe { print -rl -- \"${(@P)3}\"; }; words=(treeboot copy sh); CURRENT=3; _clap_dynamic_completer_treeboot; true",
+            "completion-test",
+        ])
+        .arg(&script_path)
+        .current_dir(repo.worktree_path())
+        .output()
+        .expect("installed Zsh completion script should run");
+
+    assert_completion(&completion);
+}
+
+#[cfg(unix)]
+fn shell_available(shell: &str, args: &[&str]) -> bool {
+    let mut command = StdCommand::new(shell);
+    scrub_treeboot_environment(&mut command);
+    command
+        .args(args)
+        .output()
+        .is_ok_and(|output| output.status.success())
+}
+
+#[cfg(unix)]
+fn scrub_treeboot_environment(command: &mut StdCommand) {
+    for name in TREEBOOT_ENVIRONMENT {
+        command.env_remove(name);
+    }
+}
+
+#[cfg(unix)]
+fn completion_fixture(shell: &str, extension: &str) -> (GitWorktree, TempDir, PathBuf) {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared-source"))
+        .expect("root source directory should be created");
+    let output = treeboot()
+        .args(["completions", shell])
+        .current_dir(repo.worktree_path())
+        .output()
+        .expect("candidate should generate completion script");
+    assert!(
+        output.status.success(),
+        "candidate failed to generate {shell} completion script with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let temp = TempDir::new().expect("completion script directory should be created");
+    let script_path = temp.path().join(format!("completion-test.{extension}"));
+    std::fs::write(&script_path, &output.stdout).expect("completion script should be written");
+    (repo, temp, script_path)
+}
+
+#[cfg(unix)]
+fn assert_completion(completion: &std::process::Output) {
+    assert!(
+        completion.status.success(),
+        "completion shell failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        completion.status.code(),
+        String::from_utf8_lossy(&completion.stdout),
+        String::from_utf8_lossy(&completion.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&completion.stdout).contains("shared-source"),
+        "completion output did not contain shared-source\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&completion.stdout),
+        String::from_utf8_lossy(&completion.stderr)
+    );
 }

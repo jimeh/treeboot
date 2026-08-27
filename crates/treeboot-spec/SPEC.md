@@ -280,9 +280,9 @@ treeboot schema > config.schema.json
 ```
 
 The emitted schema is the canonical config schema at
-`schemas/treeboot.schema.json`. Stdout and `--output` must contain that
-document's exact UTF-8 bytes without added framing or byte changes. When
-`--output` is provided, treeboot writes the schema to that path instead of
+`crates/treeboot-spec/assets/treeboot.schema.json`. Stdout and `--output` must
+contain that document's exact UTF-8 bytes without added framing or byte changes.
+When `--output` is provided, treeboot writes the schema to that path instead of
 stdout. Parent directories must already exist. Existing regular files are
 replaced.
 
@@ -901,7 +901,8 @@ The YAML forms have the same fields and nesting.
 
 `treeboot schema` emits the bundled config JSON Schema document directly. It is
 not wrapped in a treeboot report object and it does not support the structured
-output flags. The schema payload is defined by `schemas/treeboot.schema.json`.
+output flags. The schema payload is defined by
+`crates/treeboot-spec/assets/treeboot.schema.json`.
 
 ### Commands without structured output
 
@@ -1336,13 +1337,14 @@ shape is unchanged.
 
 ### JSON Schema
 
-`TB-CONFIG-SCHEMA`: The JSON Schema at `schemas/treeboot.schema.json` is the
-normative machine-readable definition of the config document's structure. It
-must describe the accepted document shapes, rejected fields, and constraints
-that the schema expresses. Passing schema validation does not guarantee runtime
-acceptance: semantic rules that depend on normalized values, path or pattern
-syntax, filesystem state, repository context, or runtime policy remain defined
-by the prose contract and conformance requirements. Runtime defaults also remain
+`TB-CONFIG-SCHEMA`: The JSON Schema at
+`crates/treeboot-spec/assets/treeboot.schema.json` is the normative
+machine-readable definition of the config document's structure. It must describe
+the accepted document shapes, rejected fields, and constraints that the schema
+expresses. Passing schema validation does not guarantee runtime acceptance:
+semantic rules that depend on normalized values, path or pattern syntax,
+filesystem state, repository context, or runtime policy remain defined by the
+prose contract and conformance requirements. Runtime defaults also remain
 defined by the prose contract. `treeboot schema` stdout and `--output` must emit
 the canonical document's exact UTF-8 bytes as described in
 [`treeboot schema`](#treeboot-schema).

@@ -1,8 +1,8 @@
 # Implementation Roadmap
 
 This roadmap keeps future implementation work aligned with
-[docs/SPEC.md](../SPEC.md). Update it when a milestone is completed or the spec
-changes.
+[crates/treeboot-spec/SPEC.md](../../crates/treeboot-spec/SPEC.md). Update it
+when a milestone is completed or the spec changes.
 
 ## Milestone 1: Run Context And Discovery
 

@@ -3,16 +3,18 @@
 Use this file for implementation tactics while editing code. It is not the
 canonical architecture overview. For the current system map, module graph, and
 refactor pressure, use [docs/ARCHITECTURE.md](../ARCHITECTURE.md). For
-observable behavior, use [docs/SPEC.md](../SPEC.md).
+observable behavior, use
+[crates/treeboot-spec/SPEC.md](../../crates/treeboot-spec/SPEC.md).
 
 If this file and `docs/ARCHITECTURE.md` disagree about architecture, update this
 file or the architecture document so the split is clear. If either file
-disagrees with `docs/SPEC.md` about behavior, the spec wins unless the task is
-explicitly changing the behavior contract.
+disagrees with `crates/treeboot-spec/SPEC.md` about behavior, the spec wins
+unless the task is explicitly changing the behavior contract.
 
 ## What To Use Each Doc For
 
-- `docs/SPEC.md`: decide what behavior the code must implement and test.
+- `crates/treeboot-spec/SPEC.md`: decide what behavior the code must implement
+  and test.
 - `docs/ARCHITECTURE.md`: understand current crate/module responsibilities,
   public APIs, command flow, validation/planning/execution flow, reporting, and
   refactor pressure.
@@ -47,8 +49,8 @@ explicitly changing the behavior contract.
   command runtime, and output event formatting.
 - Use CLI integration tests for user-visible command behavior, stdout/stderr,
   exit codes, output formats, and Git linked-worktree behavior.
-- Update `docs/SPEC.md` and spec-version metadata when observable behavior
-  changes.
+- Update `crates/treeboot-spec/SPEC.md` and spec-version metadata when
+  observable behavior changes.
 - Update `docs/ARCHITECTURE.md` when module boundaries, public core APIs,
   command flow, validation/planning/execution flow, reporting, or refactor
   pressure changes.
@@ -72,4 +74,4 @@ teardown approval and root rejection, dry-run non-mutation, no-op config cases,
 status discovery, init defaults, required manual sources, one-source and
 many-source targets, completion scripts and root-relative candidates, and
 conflict policy. These are implementation testing responsibilities; the
-observable behavior itself remains in `docs/SPEC.md`.
+observable behavior itself remains in `crates/treeboot-spec/SPEC.md`.
