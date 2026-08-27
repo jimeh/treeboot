@@ -567,8 +567,9 @@ specification.
 
 ## Verification boundaries: Testing Architecture
 
-Tests are split by behavior layer. Use core unit tests for pure helpers and CLI
-integration tests for user-visible command behavior.
+Tests are split by behavior layer. Use core unit tests for pure helpers,
+`treeboot-spec` for portable user-visible CLI behavior, and reference-only
+integration tests for implementation details outside the portable contract.
 
 ### Core unit tests
 
@@ -580,24 +581,25 @@ integration tests for user-visible command behavior.
 - Output event formatting.
 - Inspection report construction and metadata helpers.
 
-### CLI integration tests
+### Reference-only CLI integration tests
 
-- Run/teardown/config/init/manual command behavior.
-- Status/check/doctor/env/schema/version command behavior.
-- JSON and YAML output structure for inspection commands.
-- Actual Git linked worktree fixtures.
-- Stdout/stderr and exit status.
-- Shell completion surface.
-- Root-checkout edge cases.
-- Teardown confirmation, no-op, targeting, and non-removal behavior.
+- Clap command and flag structure, parser wording, and embedded version linkage.
+- Direct completion-helper protocol behavior and candidate generation.
+- Generated-script markers plus Bash and Zsh helper behavior specific to the
+  reference scripts.
+- Generated Rust schema-model structure that is not part of the portable JSON
+  Schema contract.
+- Output-error wording and diagnostic normalization choices that the portable
+  specification intentionally leaves implementation-defined.
 
 ### CLI conformance suite
 
-`treeboot-spec` owns the canonical specification, schema, fixtures, and stable
-portable case registry. Its Rust API and CLI run the same case functions against
-an arbitrary candidate base command. Drivers in the `treeboot` package run that
-suite against `CARGO_BIN_EXE_treeboot`, so the official binary must satisfy the
-same contract available to independent implementations.
+`treeboot-spec` owns all portable observable CLI tests together with the
+canonical specification, schema, fixtures, and stable case registry. Its Rust
+API and CLI run the same case functions against an arbitrary candidate base
+command. The driver in the `treeboot` package runs that suite against
+`CARGO_BIN_EXE_treeboot`, so the official binary must satisfy the same contract
+available to independent implementations.
 
 ### Generated artifacts
 
@@ -614,19 +616,19 @@ same contract available to independent implementations.
 These are the boundaries to preserve when adding new behavior or refactoring
 existing modules.
 
-| If changing                   | Touch                                                                                                                                                     | Keep invariant                                                                                                                                                                                         |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Config file format            | `crates/treeboot-spec/SPEC.md`, `config.rs`, schema generator, schema file, parser tests.                                                                 | The spec is the contract; generated schema must be fresh.                                                                                                                                              |
-| Worktree identity contract    | `worktree_id.rs`, `worktree.rs`, `context.rs`, `config.rs`, `validation.rs`, `env.rs`, CLI reporting, spec, schema, and cross-phase tests.                | Hash input and encoding stay path-only and versioned; plans refine both owned variables before validation; bootstrap and teardown agree.                                                               |
-| Runtime policy semantics      | `runtime.rs`, command facade modules, config/check/doctor/run/manual tests, spec when observable.                                                         | Config/env/CLI precedence must stay centralized and consistent across run-like commands.                                                                                                               |
-| File operation behavior       | `config.rs`, `manual.rs`, `validation.rs`, `file_actions.rs`, `file_operations.rs`, `file_planning.rs`, `file_execution.rs`, `file_system.rs`, CLI tests. | Declarative config and manual commands must share planning and file execution semantics; keep policy, planning, action modeling, execution, and low-level filesystem helpers separated by module role. |
-| Command runtime               | `config.rs`, `validation.rs`, `commands.rs`, `executor.rs`, `teardown.rs`, phase tests, spec.                                                             | Bootstrap and teardown share one planner/runtime; plans and output events stay phase-specific.                                                                                                         |
-| Teardown workflow             | `teardown.rs`, CLI adapter, `validation.rs`, `commands.rs`, output/error types, spec.                                                                     | Prepare once, confirm only in the binary, execute the approved plan, and never remove the worktree.                                                                                                    |
-| Public non-exhaustive structs | `config.rs`, `context.rs`, `env.rs`, rustdoc and public API policy tests, crate README, architecture policy.                                              | Growth-prone structs remain non-exhaustive and retain stable construction paths; closed-domain enums remain exhaustive.                                                                                |
-| Inspection/reporting commands | core command facade module, CLI command adapter, output-format tests, spec.                                                                               | Core owns report data; CLI owns text/JSON/YAML rendering.                                                                                                                                              |
-| Metadata and generated assets | `crates/treeboot-spec/SPEC.md`, `metadata.rs`, `scripts/generate-metadata.sh`, schema generator, asset files.                                             | Canonical assets stay in `treeboot-spec`; generated implementation copies must remain fresh for installed binaries.                                                                                    |
-| CLI-only surface              | `crates/treeboot/src/main.rs`, `crates/treeboot/src/commands/`, and CLI tests.                                                                            | CLI stays an adapter. Core owns reusable behavior and typed semantics.                                                                                                                                 |
-| Output wording                | `output.rs`, CLI integration tests, spec if contractual.                                                                                                  | Structured events stay separate from command-line formatting decisions where practical.                                                                                                                |
+| If changing                   | Touch                                                                                                                                                                                      | Keep invariant                                                                                                                                                                                         |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Config file format            | `crates/treeboot-spec/SPEC.md`, `config.rs`, schema generator, schema file, parser tests.                                                                                                  | The spec is the contract; generated schema must be fresh.                                                                                                                                              |
+| Worktree identity contract    | `worktree_id.rs`, `worktree.rs`, `context.rs`, `config.rs`, `validation.rs`, `env.rs`, CLI reporting, spec, schema, and cross-phase tests.                                                 | Hash input and encoding stay path-only and versioned; plans refine both owned variables before validation; bootstrap and teardown agree.                                                               |
+| Runtime policy semantics      | `runtime.rs`, command facade modules, core tests, portable conformance cases, and spec when observable.                                                                                    | Config/env/CLI precedence must stay centralized and consistent across run-like commands.                                                                                                               |
+| File operation behavior       | `config.rs`, `manual.rs`, `validation.rs`, `file_actions.rs`, `file_operations.rs`, `file_planning.rs`, `file_execution.rs`, `file_system.rs`, core tests, and portable conformance cases. | Declarative config and manual commands must share planning and file execution semantics; keep policy, planning, action modeling, execution, and low-level filesystem helpers separated by module role. |
+| Command runtime               | `config.rs`, `validation.rs`, `commands.rs`, `executor.rs`, `teardown.rs`, phase tests, spec.                                                                                              | Bootstrap and teardown share one planner/runtime; plans and output events stay phase-specific.                                                                                                         |
+| Teardown workflow             | `teardown.rs`, CLI adapter, `validation.rs`, `commands.rs`, output/error types, spec.                                                                                                      | Prepare once, confirm only in the binary, execute the approved plan, and never remove the worktree.                                                                                                    |
+| Public non-exhaustive structs | `config.rs`, `context.rs`, `env.rs`, rustdoc and public API policy tests, crate README, architecture policy.                                                                               | Growth-prone structs remain non-exhaustive and retain stable construction paths; closed-domain enums remain exhaustive.                                                                                |
+| Inspection/reporting commands | core command facade module, CLI command adapter, portable conformance cases, spec.                                                                                                         | Core owns report data; CLI owns text/JSON/YAML rendering.                                                                                                                                              |
+| Metadata and generated assets | `crates/treeboot-spec/SPEC.md`, `metadata.rs`, `scripts/generate-metadata.sh`, schema generator, asset files.                                                                              | Canonical assets stay in `treeboot-spec`; generated implementation copies must remain fresh for installed binaries.                                                                                    |
+| CLI-only surface              | `crates/treeboot/src/main.rs`, `crates/treeboot/src/commands/`, portable conformance cases, and reference-only tests where applicable.                                                     | CLI stays an adapter. Core owns reusable behavior and typed semantics.                                                                                                                                 |
+| Output wording                | `output.rs`, portable conformance cases, spec if contractual.                                                                                                                              | Structured events stay separate from command-line formatting decisions where practical.                                                                                                                |
 
 This document describes the current implementation architecture. It is not a
 replacement for [crates/treeboot-spec/SPEC.md](../crates/treeboot-spec/SPEC.md),

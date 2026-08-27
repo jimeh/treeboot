@@ -15,15 +15,19 @@ mise run format:markdown
 mise run lint:markdown
 mise run test:core
 mise run test:cli
+mise run test:spec
+mise run test:conformance
 mise run test:release-helper
 ```
 
-Use `test:core` for library behavior and `test:cli` for user-visible command
-behavior. Use `test:release-helper` for release workflow helper logic. Running
-`mise run test` executes the same packages together. The aggregate and core test
-tasks also run doctests so compile-fail public API contracts stay enforced.
-`format` applies Rust and Markdown formatting, while `format:check` is
-non-mutating.
+Use `test:core` for library behavior, `test:spec` for conformance-crate
+self-tests, `test:conformance` for the official binary's portable contract, and
+`test:cli` for adapter unit tests plus retained reference-only integration tests
+and the official conformance driver. Use `test:release-helper` for release
+workflow helper logic. Running `mise run test` executes the same packages
+together. The aggregate and core test tasks also run doctests so compile-fail
+public API contracts stay enforced. `format` applies Rust and Markdown
+formatting, while `format:check` is non-mutating.
 
 Run `mise run audit:deps` after dependency changes to check `Cargo.lock` against
 the current RustSec advisory database.

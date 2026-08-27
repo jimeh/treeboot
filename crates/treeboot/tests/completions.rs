@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::process::Command as StdCommand;
 use tempfile::TempDir;
 
+#[cfg_attr(not(unix), allow(dead_code))]
 mod common;
 
 #[cfg(unix)]
@@ -17,20 +18,11 @@ const TREEBOOT_ENVIRONMENT: &[&str] = &[
     "CODEX_SOURCE_TREE_PATH",
     "CONDUCTOR_ROOT_PATH",
     "SUPERSET_ROOT_PATH",
+    "CONDUCTOR_DEFAULT_BRANCH",
+    "TREEBOOT_STRICT",
+    "TREEBOOT_DANGEROUSLY_ALLOW_SOURCES_OUTSIDE_ROOT",
+    "TREEBOOT_DANGEROUSLY_ALLOW_TARGETS_OUTSIDE_WORKTREE",
 ];
-
-#[test]
-fn completions_supported_shells_should_emit_scripts() {
-    for shell in ["bash", "zsh", "fish", "powershell", "elvish"] {
-        treeboot()
-            .args(["completions", shell])
-            .assert()
-            .success()
-            .stderr(predicate::str::is_empty())
-            .stdout(predicate::str::contains("treeboot"))
-            .stdout(predicate::str::contains("COMPLETE"));
-    }
-}
 
 #[test]
 fn completions_should_include_current_subcommands_and_flags() {
@@ -141,32 +133,6 @@ fn completions_should_omit_removed_init_script_flag() {
         .success()
         .stdout(predicate::str::contains("--config"))
         .stdout(predicate::str::contains("--script").not());
-}
-
-#[test]
-fn completions_unsupported_shell_should_exit_with_usage_error() {
-    treeboot()
-        .args(["completions", "nu"])
-        .assert()
-        .code(2)
-        .stdout(predicate::str::is_empty())
-        .stderr(predicate::str::contains("invalid value"))
-        .stderr(predicate::str::contains("possible values"));
-}
-
-#[test]
-fn completions_should_not_require_git_or_config_discovery() {
-    let dir = TempDir::new().expect("tempdir should be created");
-    write_file(&dir.path().join(".treeboot.toml"), "invalid toml = [\n");
-
-    treeboot()
-        .args(["completions", "fish"])
-        .env("TREEBOOT_STRICT", "not-a-bool")
-        .current_dir(dir.path())
-        .assert()
-        .success()
-        .stderr(predicate::str::is_empty())
-        .stdout(predicate::str::contains("treeboot"));
 }
 
 #[cfg(unix)]
