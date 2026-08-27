@@ -9,14 +9,14 @@ mod report;
 mod runner;
 mod suite;
 
-pub use case::CaseMetadata;
+pub use case::{CaseMetadata, CaseRequirement};
 pub use command::{CommandReport, CommandTemplate};
 pub use report::{CaseOutcome, CaseResult, SuiteReport};
 pub use runner::{
     EnvironmentChange, Invocation, InvocationResult, LocalProcessRunner, Runner,
     RunnerCapabilities, RunnerError, StdinMode, Termination,
 };
-pub use suite::{RunOptions, Suite, SuiteError};
+pub use suite::{ConformanceProfile, RunOptions, Suite, SuiteError, SuiteEvent};
 
 /// Treeboot specification version implemented by this crate.
 pub const SPEC_VERSION: &str = "2.5.1";

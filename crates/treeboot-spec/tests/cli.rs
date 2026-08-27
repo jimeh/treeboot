@@ -12,8 +12,37 @@ fn list_prints_the_stable_registry() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert_eq!(stdout.lines().count(), 316);
+    assert_eq!(stdout.lines().count(), 322);
     assert!(stdout.lines().all(|line| !line.trim().is_empty()));
+}
+
+#[cfg(unix)]
+#[test]
+fn functional_exact_only_filter_is_a_selection_error() {
+    let output = spec_command()
+        .args([
+            "test",
+            "--profile",
+            "functional",
+            "--filter",
+            "closure.exact.",
+            "--",
+            "sh",
+            "-c",
+            "exit 0",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "functional profile omitted 6 exact-identity cases that matched the requested filter"
+        ),
+        "{stderr}"
+    );
 }
 
 #[test]
@@ -82,7 +111,7 @@ fn json_failure_report_is_valid_and_does_not_leak_caught_panics() {
 
 #[cfg(unix)]
 #[test]
-fn human_report_includes_full_candidate_case_reference_duration_and_details() {
+fn concise_human_report_defers_failure_details_and_omits_passes() {
     let output = spec_command()
         .args([
             "test",
@@ -100,13 +129,150 @@ fn human_report_includes_full_candidate_case_reference_duration_and_details() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("candidate: "));
     assert!(stdout.contains("sh -c \"exit 0\""), "{stdout}");
-    assert!(stdout.contains("FAIL cli.help.print-usage"), "{stdout}");
+    assert!(stdout.contains("profile: full"), "{stdout}");
+    assert!(stdout.contains("1 case:"), "{stdout}");
+    assert!(stdout.contains("Failures:"), "{stdout}");
+    assert!(stdout.contains("1. cli.help.print-usage"), "{stdout}");
+    assert!(!stdout.contains("PASS "), "{stdout}");
     assert!(
         stdout.contains("#cli-surface-fifteen-subcommands-one-default-path"),
         "{stdout}"
     );
-    assert!(stdout.contains(" ms)"), "{stdout}");
+    assert!(stdout.contains("duration: "), "{stdout}");
     assert!(stdout.contains(":"), "{stdout}");
+    assert!(
+        stdout.find("Result:").unwrap() < stdout.find("Failures:").unwrap()
+            && stdout.find("Failures:").unwrap() < stdout.find("Failure details:").unwrap(),
+        "{stdout}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn concise_human_report_counts_pass_without_printing_pass_line() {
+    let output = spec_command()
+        .args([
+            "test",
+            "--no-progress",
+            "--filter",
+            "cli.help.print-usage",
+            "--",
+            "sh",
+            "-c",
+            "printf 'treeboot usage\\n'",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("Result: PASSED"), "{stdout}");
+    assert!(stdout.contains("1 case: 1 passed"), "{stdout}");
+    assert!(!stdout.contains("PASS cli.help.print-usage"), "{stdout}");
+}
+
+#[cfg(unix)]
+#[test]
+fn candidate_metadata_output_limit_is_ignored_after_passing_suite() {
+    let output = spec_command()
+        .args([
+            "test",
+            "--no-progress",
+            "--filter",
+            "cli.help.print-usage",
+            "--",
+            "sh",
+            "-c",
+            "if [ \"$1\" = --help ]; then printf 'treeboot usage\\n'; else head -c 70000 /dev/zero; head -c 70000 /dev/zero >&2; fi",
+            "candidate",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("Result: PASSED"), "{stdout}");
+    assert!(!stdout.contains("candidate version:"), "{stdout}");
+    assert!(output.stderr.is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn skipped_only_functional_report_is_passed_not_compatibility_claim() {
+    let output = spec_command()
+        .args([
+            "test",
+            "--profile",
+            "functional",
+            "--no-progress",
+            "--filter",
+            "closure.completions.installed-bash-script-lists-root-sources",
+            "--",
+            "sh",
+            "-c",
+            "exit 0",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("Result: PASSED"), "{stdout}");
+    assert!(stdout.contains("1 case: 0 passed, 1 skipped"), "{stdout}");
+    assert!(!stdout.contains("FUNCTIONALLY COMPATIBLE"), "{stdout}");
+}
+
+#[cfg(unix)]
+#[test]
+fn verbose_human_report_restores_pass_lines() {
+    let output = spec_command()
+        .args([
+            "test",
+            "--verbose",
+            "--no-progress",
+            "--filter",
+            "cli.help.print-usage",
+            "--",
+            "sh",
+            "-c",
+            "printf 'treeboot usage\\n'",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("PASS cli.help.print-usage"), "{stdout}");
+    assert!(!stdout.contains("candidate version:"), "{stdout}");
+    assert!(output.stderr.is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn timeout_uses_human_label_and_exit_three() {
+    let output = spec_command()
+        .args([
+            "test",
+            "--timeout-ms",
+            "10",
+            "--filter",
+            "cli.help.print-usage",
+            "--",
+            "sh",
+            "-c",
+            "sleep 1",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(3));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("Result: ERROR"), "{stdout}");
+    assert!(stdout.contains("TIMEOUT cli.help.print-usage"), "{stdout}");
+    assert!(
+        stdout.contains("1. cli.help.print-usage [TIMEOUT]"),
+        "{stdout}"
+    );
 }
 
 #[cfg(unix)]

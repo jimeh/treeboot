@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::{CaseMetadata, CommandReport};
+use crate::{CaseMetadata, CommandReport, ConformanceProfile};
 
 /// Serializable result of one conformance case.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -66,9 +66,25 @@ pub struct SuiteReport {
     pub candidate: CommandReport,
     /// Ordered case results.
     pub cases: Vec<CaseResult>,
+    /// Compatibility profile selected for this execution.
+    #[serde(skip)]
+    pub profile: ConformanceProfile,
+    /// Exact-identity cases excluded by the selected profile and case filter.
+    #[serde(skip)]
+    pub omitted_exact_case_count: usize,
 }
 
 impl SuiteReport {
+    /// Returns the compatibility profile selected for this execution.
+    pub const fn profile(&self) -> ConformanceProfile {
+        self.profile
+    }
+
+    /// Returns the number of matching exact-identity cases omitted by the profile.
+    pub const fn omitted_exact_case_count(&self) -> usize {
+        self.omitted_exact_case_count
+    }
+
     /// Returns true when every executed case passed and all other cases skipped.
     pub fn passed(&self) -> bool {
         !self.cases.is_empty()

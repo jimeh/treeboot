@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use treeboot_spec::{
-    CommandTemplate, Invocation, InvocationResult, RunOptions, Runner, RunnerError, Suite,
-    Termination,
+    CaseOutcome, CommandTemplate, ConformanceProfile, Invocation, InvocationResult, RunOptions,
+    Runner, RunnerError, Suite, SuiteEvent, Termination,
 };
 
 struct RecordingRunner {
@@ -169,6 +169,94 @@ fn empty_report_cannot_pass() {
 
     assert!(!report.passed());
     assert!(report.cases.is_empty());
+}
+
+#[test]
+fn functional_profile_omits_exact_cases_before_execution() {
+    let runner = Arc::new(RecordingRunner {
+        command: CommandTemplate::new("remote-treeboot"),
+        invocations: AtomicUsize::new(0),
+    });
+    let mut events = Vec::new();
+    let report = Suite::current().run_with_observer(
+        runner.clone(),
+        RunOptions {
+            profile: ConformanceProfile::Functional,
+            filter: Some("closure.exact.".to_owned()),
+            ..RunOptions::default()
+        },
+        |event| match event {
+            SuiteEvent::SuiteStarted { selected_cases } => events.push(selected_cases),
+            _ => panic!("an omitted case must not emit a case event"),
+        },
+    );
+
+    assert!(report.cases.is_empty());
+    assert_eq!(report.profile(), ConformanceProfile::Functional);
+    assert_eq!(report.omitted_exact_case_count(), 6);
+    assert_eq!(runner.invocations.load(Ordering::Relaxed), 0);
+    assert_eq!(events, [0]);
+}
+
+#[test]
+fn observed_run_emits_ordered_events_for_selected_skip() {
+    let mut events = Vec::new();
+    let report = Suite::current().run_with_observer(
+        Arc::new(RecordingRunner {
+            command: CommandTemplate::new("remote-treeboot"),
+            invocations: AtomicUsize::new(0),
+        }),
+        RunOptions {
+            filter: Some("closure.completions.installed-bash-script-lists-root-sources".to_owned()),
+            ..RunOptions::default()
+        },
+        |event| match event {
+            SuiteEvent::SuiteStarted { selected_cases } => {
+                events.push(format!("suite:{selected_cases}"));
+            }
+            SuiteEvent::CaseStarted { index, total, case } => {
+                events.push(format!("start:{index}/{total}:{}", case.id()))
+            }
+            SuiteEvent::CaseFinished {
+                index,
+                total,
+                result,
+            } => {
+                assert!(matches!(result.outcome, CaseOutcome::Skipped { .. }));
+                events.push(format!("finish:{index}/{total}:{}", result.case.id()));
+            }
+            _ => {}
+        },
+    );
+
+    assert_eq!(report.cases.len(), 1);
+    assert_eq!(
+        events,
+        [
+            "suite:1",
+            "start:1/1:closure.completions.installed-bash-script-lists-root-sources",
+            "finish:1/1:closure.completions.installed-bash-script-lists-root-sources",
+        ]
+    );
+}
+
+#[test]
+fn profile_fields_do_not_change_serialized_report_shape() {
+    let report = Suite::current().run_with(
+        Arc::new(RecordingRunner {
+            command: CommandTemplate::new("remote-treeboot"),
+            invocations: AtomicUsize::new(0),
+        }),
+        RunOptions {
+            profile: ConformanceProfile::Functional,
+            filter: Some("no-case-has-this-id".to_owned()),
+            ..RunOptions::default()
+        },
+    );
+    let value = serde_json::to_value(report).unwrap();
+
+    assert!(value.get("profile").is_none());
+    assert!(value.get("omitted_exact_case_count").is_none());
 }
 
 #[test]

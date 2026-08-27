@@ -17,4 +17,4 @@ suite="${temp_dir}/treeboot-spec${executable_suffix}"
 cp "target/debug/treeboot${executable_suffix}" "${candidate}"
 cp "target/debug/treeboot-spec${executable_suffix}" "${suite}"
 
-"${suite}" test -- "${candidate}"
+"${suite}" test --profile full -- "${candidate}"

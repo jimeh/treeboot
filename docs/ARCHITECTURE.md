@@ -71,8 +71,17 @@ option structs and prints core output events._
 - Owns the canonical language-agnostic specification and JSON Schema.
 - Publishes stable case metadata, serializable reports, and embedded asset
   accessors.
+- Separates functional compatibility from exact specification identity through
+  explicit full and functional profiles. The official implementation always runs
+  the full profile.
 - Runs the same private black-box case bodies through a local process runner or
   a caller-provided `Runner` adapter.
+- Emits synchronous, presentation-neutral suite and case progress events. The
+  CLI turns them into a single terminal progress line without changing JSON
+  reports.
+- Bounds the CLI's best-effort candidate metadata probe by time and retained
+  bytes. Local runner capture limits keep draining both process pipes and report
+  excess output as a typed runner error.
 - Reports candidate assertion failures as failed cases, fixture subprocess
   failures as infrastructure errors prefixed with `fixture setup failed:`, and
   bounded process overruns as timed-out cases.
@@ -603,6 +612,13 @@ API and CLI run the same case functions against an arbitrary candidate base
 command. The driver in the `treeboot` package runs that suite against
 `CARGO_BIN_EXE_treeboot`, so the official binary must satisfy the same contract
 available to independent implementations.
+
+The functional profile selects behavior cases before execution and omits exact
+specification-version and canonical-schema identity cases. The full profile adds
+those exact cases. Both profiles preserve stable registry order, and observers
+receive the selected total before any case starts. Human CLI reports omit
+passing cases unless `--verbose` is set, group skips and failures at the end,
+and keep schema mismatch diagnostics to bounded JSON-pointer differences.
 
 ### Generated artifacts
 

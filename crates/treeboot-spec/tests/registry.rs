@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use treeboot_spec::Suite;
+use treeboot_spec::{CaseRequirement, Suite};
 
 #[test]
 fn current_registry_should_cover_each_portable_inventory_row_once() {
@@ -11,7 +11,7 @@ fn current_registry_should_cover_each_portable_inventory_row_once() {
         .filter_map(|case| case.source_test())
         .collect::<HashSet<_>>();
 
-    assert_eq!(cases.len(), 316, "302 audited cases plus 14 closure cases");
+    assert_eq!(cases.len(), 322, "302 audited cases plus 20 closure cases");
     assert_eq!(ids.len(), cases.len());
     assert_eq!(source_tests.len(), 302);
     assert_eq!(
@@ -22,4 +22,20 @@ fn current_registry_should_cover_each_portable_inventory_row_once() {
         302
     );
     assert!(cases.iter().all(|case| !case.spec_references().is_empty()));
+    assert_eq!(
+        cases
+            .iter()
+            .filter(|case| case.requirement() == CaseRequirement::Exact)
+            .count(),
+        6
+    );
+    assert_eq!(
+        cases
+            .iter()
+            .filter(|case| case.requirement() == CaseRequirement::Functional)
+            .count(),
+        316
+    );
+    let serialized = serde_json::to_value(cases[0]).unwrap();
+    assert!(serialized.get("requirement").is_none());
 }
