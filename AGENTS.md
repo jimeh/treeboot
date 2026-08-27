@@ -309,6 +309,10 @@ work. Lefthook checks staged Markdown files through
 
 ## Harness Notes
 
+- `bunx --no-install` can fall back to a globally available executable on
+  `PATH`. Bun install smoke tests must assert the local shim exists and isolate
+  `PATH` so a missing package-local `treeboot` cannot false-pass.
+
 - GitHub Actions are pinned and checked with `pinact`.
 - Workflow syntax/security checks are wrapped by `mise run actions:lint`.
 - Rust dependencies are checked against RustSec by `mise run audit:deps`.

@@ -3,6 +3,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
   writeFile,
 } from "node:fs/promises";
@@ -12,6 +13,7 @@ import { fileURLToPath } from "node:url";
 
 import { packageRelease } from "./package-release.ts";
 import { facadePackageName, platformPackages } from "./packages.ts";
+import { isolateTreebootPath, treebootShims } from "./path-isolation.ts";
 import { verifyPackages } from "./verify-package.ts";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -155,17 +157,80 @@ async function smokeInstall(
       directory,
     );
   }
-  const launcher = manager === "npm" ? "npx" : "bunx";
-  const versionOutput = await runWithOutput(
-    [launcher, "--no-install", "treeboot", "--version"],
-    directory,
-  );
+  const localBinDirectory = join(directory, "node_modules", ".bin");
+  const localShims = treebootShims(localBinDirectory);
+  if (localShims.length === 0) {
+    throw new Error(`${manager} installed no local treeboot executable shim`);
+  }
+  const environment =
+    manager === "bun" ? isolatedBunEnvironment(localBinDirectory) : undefined;
+  const launcher =
+    manager === "npm"
+      ? ["npx", "--no-install", "treeboot", "--version"]
+      : [process.execPath, "x", "--no-install", "treeboot", "--version"];
+  const versionOutput = await runWithOutput(launcher, directory, environment);
   if (!/^treeboot \S+/m.test(versionOutput)) {
     throw new Error(
       `${manager} installed treeboot shim returned no version output`,
     );
   }
   console.log(versionOutput.trim());
+
+  if (manager === "bun") {
+    if (environment === undefined) {
+      throw new Error("Bun launcher environment was not isolated");
+    }
+    await assertMissingLocalBunShimFails(directory, localShims, environment);
+  }
+}
+
+function isolatedBunEnvironment(
+  localBinDirectory: string,
+): Record<string, string | undefined> {
+  const environment = { ...process.env };
+  const pathKeys = Object.keys(environment).filter(
+    (key) => key.toLowerCase() === "path",
+  );
+  const originalPath =
+    pathKeys
+      .map((key) => environment[key])
+      .find((value) => value !== undefined) ?? "";
+  for (const key of pathKeys) {
+    delete environment[key];
+  }
+  environment[process.platform === "win32" ? "Path" : "PATH"] =
+    isolateTreebootPath(localBinDirectory, originalPath);
+  return environment;
+}
+
+async function assertMissingLocalBunShimFails(
+  directory: string,
+  localShims: readonly string[],
+  environment: Record<string, string | undefined>,
+): Promise<void> {
+  const disabledShims = localShims.map((path) => `${path}.disabled`);
+  for (const [index, path] of localShims.entries()) {
+    await rename(path, disabledShims[index]!);
+  }
+  try {
+    const child = Bun.spawn(
+      [process.execPath, "x", "--no-install", "treeboot", "--version"],
+      { cwd: directory, env: environment, stderr: "pipe", stdout: "pipe" },
+    );
+    const status = await child.exited;
+    if (status === 0) {
+      throw new Error(
+        "Bun launcher resolved treeboot after every local shim was disabled",
+      );
+    }
+    console.log(
+      "Bun launcher rejected global fallback with every local shim disabled",
+    );
+  } finally {
+    for (const [index, path] of localShims.entries()) {
+      await rename(disabledShims[index]!, path);
+    }
+  }
 }
 
 async function smokeMissingOptional(facade: string): Promise<void> {
@@ -215,9 +280,11 @@ async function run(command: readonly string[], cwd: string): Promise<void> {
 async function runWithOutput(
   command: readonly string[],
   cwd: string,
+  env?: Record<string, string | undefined>,
 ): Promise<string> {
   const child = Bun.spawn([...command], {
     cwd,
+    ...(env === undefined ? {} : { env }),
     stderr: "pipe",
     stdout: "pipe",
   });
