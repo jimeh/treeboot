@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/jimeh/treeboot/compare/v0.13.0...v0.14.0) (2026-08-27)
+
+
+### Features
+
+* add a reusable Treeboot CLI conformance suite ([#140](https://github.com/jimeh/treeboot/issues/140)) ([4d08e84](https://github.com/jimeh/treeboot/commit/4d08e84308cccbfee0a747a127c0d0b037a03767))
+
 ## [0.13.0](https://github.com/jimeh/treeboot/compare/v0.12.0...v0.13.0) (2026-07-29)
 
 
