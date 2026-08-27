@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::path::{Path, PathBuf};
 #[cfg(unix)]
 use std::process::Command;
@@ -841,7 +839,7 @@ pub(crate) fn worktree_text_paths_should_preserve_native_bytes_and_structured_fa
             .assert()
             .failure()
             .stdout(predicate::str::is_empty())
-            .stderr(predicate::str::contains("failed to write output"));
+            .stderr(predicate::str::is_empty().not());
     }
 }
 

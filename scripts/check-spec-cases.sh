@@ -31,6 +31,8 @@ completions.dynamic_completions_should_include_manual_command_flags
 completions.dynamic_completions_should_include_nested_worktree_commands_and_formats
 completions.dynamic_completions_should_include_teardown_flags
 completions.dynamic_identity_completions_should_suggest_directories
+completions.installed_bash_completion_helper_should_list_root_sources
+completions.installed_zsh_completion_helper_should_list_root_sources
 manual.dynamic_completion_should_list_root_relative_sources
 manual.dynamic_completion_should_use_root_equals_option_for_sources
 manual.dynamic_completion_should_use_root_option_for_sources
@@ -45,12 +47,12 @@ sed -nE \
   crates/treeboot-spec/src/cases/generated.rs |
   sort -u >"${registry_tests}"
 
-if [[ "$(wc -l <"${source_tests}")" -ne 313 ]]; then
-  printf 'treeboot spec cases: expected 313 source tests\n' >&2
+if [[ "$(wc -l <"${source_tests}")" -ne 315 ]]; then
+  printf 'treeboot spec cases: expected 315 source tests\n' >&2
   exit 1
 fi
-if [[ "$(wc -l <"${reference_tests}")" -ne 11 ]]; then
-  printf 'treeboot spec cases: expected 11 reference-only tests\n' >&2
+if [[ "$(wc -l <"${reference_tests}")" -ne 13 ]]; then
+  printf 'treeboot spec cases: expected 13 reference-only tests\n' >&2
   exit 1
 fi
 if [[ "$(wc -l <"${portable_tests}")" -ne 302 ]]; then
@@ -62,4 +64,4 @@ if ! diff -u "${portable_tests}" "${registry_tests}"; then
   exit 1
 fi
 
-printf 'treeboot spec cases: 302 portable, 11 reference-only\n'
+printf 'treeboot spec cases: 302 portable, 13 reference-only\n'

@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use predicates::prelude::*;
 
 use crate::cases::support::{assert_json_object_keys, parse_json, treeboot};

@@ -31,6 +31,9 @@ pub enum StdinMode {
     #[default]
     Empty,
     /// Writes the provided bytes to a pipe connected to the child.
+    ///
+    /// A candidate closing the pipe before consuming every byte is normal
+    /// completion, not a runner error.
     Piped(Vec<u8>),
     /// Requests a terminal-backed input stream containing the provided bytes.
     Terminal(Vec<u8>),
@@ -257,7 +260,8 @@ pub trait Runner: Send + Sync {
     /// # Errors
     ///
     /// Returns [`RunnerError`] when the candidate cannot be launched or the
-    /// adapter cannot complete process I/O.
+    /// adapter cannot complete process I/O. A candidate closing piped stdin
+    /// before consuming every byte is normal completion, not an I/O failure.
     fn run(&self, invocation: &Invocation) -> Result<InvocationResult, RunnerError>;
 }
 

@@ -191,5 +191,37 @@ fn completion_execution_case_skips_before_using_runner_without_capability() {
         treeboot_spec::CaseOutcome::Skipped { reason }
             if reason == "runner cannot execute generated completion scripts on the fixture host"
     ));
+    assert_eq!(report.cases.len(), 1);
     assert_eq!(runner.invocations.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn terminal_backed_completion_gaps_should_remain_explicit() {
+    for (id, expected_reason) in [
+        (
+            "closure.completions.installed-bash-script-lists-root-sources",
+            "requires a terminal-backed Bash Readline harness because Bash has no portable non-interactive public completion API",
+        ),
+        (
+            "closure.completions.installed-zsh-script-lists-root-sources",
+            "requires a terminal-backed Zsh ZLE harness because Zsh has no portable non-interactive public completion API",
+        ),
+    ] {
+        let report = Suite::current().run_with(
+            Arc::new(RecordingRunner {
+                command: CommandTemplate::new("remote-treeboot"),
+                invocations: AtomicUsize::new(0),
+            }),
+            RunOptions {
+                filter: Some(id.to_owned()),
+                ..RunOptions::default()
+            },
+        );
+
+        assert_eq!(report.cases.len(), 1);
+        assert!(matches!(
+            &report.cases[0].outcome,
+            treeboot_spec::CaseOutcome::Skipped { reason } if reason == expected_reason
+        ));
+    }
 }

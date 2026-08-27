@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use predicates::prelude::*;
 
 #[cfg(unix)]
