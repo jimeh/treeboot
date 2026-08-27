@@ -44,13 +44,13 @@ config.schema.json
 treeboot-sbom.spdx.json
 ```
 
-Each archive contains `treeboot`, `README.md`, and `LICENSE`. Publish the raw
-platform executable separately so installers can download it, make it executable
-when needed, and run it without unpacking an archive. Publish
-`config.schema.json` from the canonical checked-in
-`schemas/treeboot.schema.json`.
+Unix archives contain `treeboot`, `README.md`, and `LICENSE`. Windows archives
+contain `treeboot.exe`, `README.md`, and `LICENSE`. Publish the raw platform
+executable separately so installers can download it, make it executable when
+needed, and run it without unpacking an archive. Publish `config.schema.json`
+from the canonical checked-in `schemas/treeboot.schema.json`.
 
-The checksum manifest covers every asset uploaded to the GitHub Release,
+The checksum manifest covers every other asset uploaded to the GitHub Release,
 including archives, raw executables, the config schema, and SBOMs. Publish one
 machine-readable SPDX JSON SBOM for the release and provenance attestations from
 GitHub Actions. Consumers can verify release assets with

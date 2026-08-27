@@ -214,6 +214,20 @@
         {
           "additionalProperties": false,
           "description": "Sync object entry for mixed `files` and `[[file]]` declarations.",
+          "not": {
+            "properties": {
+              "delete": {
+                "const": true
+              },
+              "include": {
+                "minItems": 1
+              }
+            },
+            "required": [
+              "delete",
+              "include"
+            ]
+          },
           "properties": {
             "compare": {
               "$ref": "#/$defs/SyncCompare",
@@ -365,6 +379,20 @@
     },
     "SyncObject": {
       "additionalProperties": false,
+      "not": {
+        "properties": {
+          "delete": {
+            "const": true
+          },
+          "include": {
+            "minItems": 1
+          }
+        },
+        "required": [
+          "delete",
+          "include"
+        ]
+      },
       "properties": {
         "compare": {
           "$ref": "#/$defs/SyncCompare",
