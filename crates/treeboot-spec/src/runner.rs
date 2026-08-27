@@ -418,10 +418,12 @@ fn take_stderr(child: &mut ManagedChild) -> Option<ChildStderr> {
 }
 
 fn join_stdin(handle: thread::JoinHandle<std::io::Result<()>>) -> Result<(), RunnerError> {
-    handle
-        .join()
-        .map_err(|_| RunnerError::WriterPanicked)?
-        .map_err(|source| RunnerError::WriteStdin { source })
+    let result = handle.join().map_err(|_| RunnerError::WriterPanicked)?;
+    match result {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        Err(source) => Err(RunnerError::WriteStdin { source }),
+    }
 }
 
 struct PipeCapture {

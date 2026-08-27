@@ -89,6 +89,18 @@ fn local_runner_timeout_should_cover_blocked_stdin_writes() {
 }
 
 #[test]
+fn local_runner_should_ignore_broken_pipe_when_candidate_exits_early() {
+    let template = shell_command("exit 0");
+    let invocation = Invocation::new().stdin(StdinMode::Piped(vec![b'x'; 16 * 1024 * 1024]));
+
+    let output = LocalProcessRunner::new(template)
+        .run(&invocation)
+        .expect("an early candidate exit should close stdin normally");
+
+    assert_eq!(output.termination(), Termination::Exited { code: 0 });
+}
+
+#[test]
 #[cfg(unix)]
 fn local_runner_timeout_should_cover_output_held_by_descendant_after_leader_exit() {
     let template = shell_command("(sleep 30) & printf leader-exited; exit 0");

@@ -365,8 +365,13 @@ pub(crate) fn symlink_file(source: impl AsRef<Path>, target: impl AsRef<Path>) {
 
 #[cfg(windows)]
 pub(crate) fn symlink_file(source: impl AsRef<Path>, target: impl AsRef<Path>) {
-    std::os::windows::fs::symlink_file(source.as_ref(), target.as_ref())
-        .expect("file symlink should be created");
+    match std::os::windows::fs::symlink_file(source.as_ref(), target.as_ref()) {
+        Ok(()) => {}
+        Err(error) if error.raw_os_error() == Some(1314) => skip(
+            "requires Windows symbolic-link privilege or Developer Mode to create fixture links",
+        ),
+        Err(error) => panic!("file symlink should be created: {error}"),
+    }
 }
 
 #[cfg(unix)]
@@ -377,8 +382,13 @@ pub(crate) fn symlink_dir(source: impl AsRef<Path>, target: impl AsRef<Path>) {
 
 #[cfg(windows)]
 pub(crate) fn symlink_dir(source: impl AsRef<Path>, target: impl AsRef<Path>) {
-    std::os::windows::fs::symlink_dir(source.as_ref(), target.as_ref())
-        .expect("directory symlink should be created");
+    match std::os::windows::fs::symlink_dir(source.as_ref(), target.as_ref()) {
+        Ok(()) => {}
+        Err(error) if error.raw_os_error() == Some(1314) => skip(
+            "requires Windows symbolic-link privilege or Developer Mode to create fixture links",
+        ),
+        Err(error) => panic!("directory symlink should be created: {error}"),
+    }
 }
 
 pub(crate) fn parse_json(stdout: Vec<u8>, context: &str) -> Value {

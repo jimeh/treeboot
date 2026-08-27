@@ -27,6 +27,15 @@ git_path_exists() {
   git cat-file -e "$1:$2" 2>/dev/null
 }
 
+normalize_legacy_spec_relocation() {
+  sed 's#schemas/treeboot\.schema\.json#crates/treeboot-spec/assets/treeboot.schema.json#g' |
+    awk -v schema_path='crates/treeboot-spec/assets/treeboot.schema.json' '
+      BEGIN { RS = ""; ORS = "\n\n" }
+      index($0, schema_path) { gsub(/\n/, " ") }
+      { print }
+    '
+}
+
 version_greater_than() {
   local current="$1"
   local base="$2"
@@ -136,28 +145,38 @@ spec_base_ref="$(resolve_spec_base_ref || true)"
 if [[ -n "${spec_base_ref}" ]]; then
   if ! git rev-parse --verify --quiet "${spec_base_ref}" >/dev/null; then
     fail "spec version base ref '${spec_base_ref}' is not available"
-  elif [[ -n "$(git diff --name-only \
-    "${spec_base_ref}...HEAD" -- crates/treeboot-spec/SPEC.md docs/SPEC.md)" ]]; then
-    base_spec=""
-    if git_path_exists "${spec_base_ref}" crates/treeboot-spec/SPEC.md; then
-      base_spec="$(git show "${spec_base_ref}:crates/treeboot-spec/SPEC.md" |
-        extract_spec_version)"
-    elif git_path_exists "${spec_base_ref}" docs/SPEC.md; then
-      base_spec="$(git show "${spec_base_ref}:docs/SPEC.md" |
-        extract_spec_version)"
-    elif git_path_exists "${spec_base_ref}" docs/SPEC.html; then
-      base_spec="$(git show "${spec_base_ref}:docs/SPEC.html" |
-        extract_spec_version)"
-    fi
+  else
+    base_spec_path=""
+    for candidate in crates/treeboot-spec/SPEC.md docs/SPEC.md docs/SPEC.html; do
+      if git_path_exists "${spec_base_ref}" "${candidate}"; then
+        base_spec_path="${candidate}"
+        break
+      fi
+    done
 
-    if [[ -z "${base_spec}" ]]; then
-      fail "base spec must mention 'Specification vX.Y.Z'"
-    elif [[ -z "${spec_version}" ]]; then
+    if [[ -z "${base_spec_path}" ]]; then
+      fail "base ref '${spec_base_ref}' has no canonical or legacy spec document"
+    elif [[ "${base_spec_path}" == "docs/SPEC.md" ]] &&
+      cmp -s \
+        <(normalize_legacy_spec_relocation <crates/treeboot-spec/SPEC.md) \
+        <(git show "${spec_base_ref}:${base_spec_path}" |
+          normalize_legacy_spec_relocation); then
       :
-    elif [[ "${spec_version}" != "${base_spec}" ]] &&
-      ! version_greater_than "${spec_version}" "${base_spec}"; then
-      fail "crates/treeboot-spec/SPEC.md changed without increasing spec version"
-      fail "base v${base_spec}, current v${spec_version}"
+    elif [[ "${base_spec_path}" != "docs/SPEC.md" ]] &&
+      cmp -s crates/treeboot-spec/SPEC.md \
+        <(git show "${spec_base_ref}:${base_spec_path}"); then
+      :
+    else
+      base_spec="$(git show "${spec_base_ref}:${base_spec_path}" |
+        extract_spec_version)"
+      if [[ -z "${base_spec}" ]]; then
+        fail "base spec '${base_spec_path}' must mention 'Specification vX.Y.Z'"
+      elif [[ -z "${spec_version}" ]]; then
+        :
+      elif ! version_greater_than "${spec_version}" "${base_spec}"; then
+        fail "crates/treeboot-spec/SPEC.md differs from '${base_spec_path}' without a strictly greater spec version"
+        fail "base v${base_spec}, current v${spec_version}"
+      fi
     fi
   fi
 fi

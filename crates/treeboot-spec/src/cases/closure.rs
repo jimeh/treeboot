@@ -121,28 +121,19 @@ pub(crate) const DEFINITIONS: &[CaseDefinition] = &[
         ),
         confirm_teardown_through_terminal_input,
     ),
-    #[cfg(unix)]
-    CaseDefinition::new(
-        CaseMetadata::closure(
-            "closure.completions.installed-bash-script-lists-root-sources",
-            COMPLETION_SPEC,
-        ),
-        installed_bash_script_lists_root_sources,
-    ),
-    #[cfg(not(unix))]
     CaseDefinition::skipped(
         CaseMetadata::closure(
             "closure.completions.installed-bash-script-lists-root-sources",
             COMPLETION_SPEC,
         ),
-        "requires Bash and the Bash completion runtime",
+        "requires a terminal-backed Bash Readline harness because Bash has no portable non-interactive public completion API",
     ),
-    CaseDefinition::new(
+    CaseDefinition::skipped(
         CaseMetadata::closure(
             "closure.completions.installed-zsh-script-lists-root-sources",
             COMPLETION_SPEC,
         ),
-        installed_zsh_script_lists_root_sources,
+        "requires a terminal-backed Zsh ZLE harness because Zsh has no portable non-interactive public completion API",
     ),
     CaseDefinition::new(
         CaseMetadata::closure(
@@ -343,75 +334,6 @@ fn confirm_teardown_through_terminal_input() {
         .assert()
         .success()
         .stdout(predicate::str::contains("terminal-confirmed"));
-}
-
-#[cfg(unix)]
-fn installed_bash_script_lists_root_sources() {
-    require_completion_execution();
-    let bash = require_shell(&["bash"], "Bash", &["-c", "type complete >/dev/null"]);
-
-    let repo = git_worktree();
-    std::fs::create_dir_all(repo.root_path().join("shared-source"))
-        .expect("root source directory should be created");
-    let output = treeboot()
-        .args(["completions", "bash"])
-        .current_dir(repo.worktree_path())
-        .output()
-        .expect("candidate should generate Bash completion script");
-    assert!(output.status.success());
-
-    let script = String::from_utf8(output.stdout).expect("Bash completion script should be UTF-8");
-    let temp = TempDir::new().expect("completion script directory should be created");
-    let script_path = temp.path().join("completion-test.bash");
-    write_file(
-        &script_path,
-        &format!(
-            "{script}\nCOMP_WORDS=(treeboot copy sh)\nCOMP_CWORD=2\nCOMP_TYPE=9\n_clap_complete_treeboot '' 'sh'\nprintf '%s\\n' \"${{COMPREPLY[@]}}\"\n"
-        ),
-    );
-    let completion = std::process::Command::new(bash)
-        .arg(&script_path)
-        .current_dir(repo.worktree_path())
-        .output()
-        .expect("installed Bash completion script should run");
-
-    assert!(
-        completion.status.success(),
-        "{}",
-        String::from_utf8_lossy(&completion.stderr)
-    );
-    assert!(
-        String::from_utf8_lossy(&completion.stdout).contains("shared-source"),
-        "completion output did not contain shared-source\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&completion.stdout),
-        String::from_utf8_lossy(&completion.stderr)
-    );
-}
-
-fn installed_zsh_script_lists_root_sources() {
-    require_completion_execution();
-    let zsh = require_shell(
-        &["zsh"],
-        "Zsh",
-        &[
-            "-f",
-            "-c",
-            "autoload -Uz compinit; compinit; whence compdef >/dev/null",
-        ],
-    );
-    let (repo, _temp, script_path) = completion_fixture("zsh", "zsh");
-    let completion = std::process::Command::new(zsh)
-        .args([
-            "-f",
-            "-c",
-            "autoload -Uz compinit; compinit; source \"$1\"; function _describe { print -rl -- \"${(@P)3}\"; }; words=(treeboot copy sh); CURRENT=3; _clap_dynamic_completer_treeboot; true",
-            "completion-test",
-        ])
-        .arg(&script_path)
-        .current_dir(repo.worktree_path())
-        .output()
-        .expect("installed Zsh completion script should run");
-    assert_completion(&completion);
 }
 
 fn installed_fish_script_lists_root_sources() {

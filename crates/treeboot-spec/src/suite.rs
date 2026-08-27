@@ -94,11 +94,16 @@ impl Suite {
                 options.invocation_timeout,
             ));
             let started = Instant::now();
+            let Some(run) = definition.run else {
+                results.push(CaseResult {
+                    case: definition.metadata,
+                    duration_ms: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
+                    outcome: malformed_definition_outcome(definition.metadata),
+                });
+                continue;
+            };
             let execution = std::panic::catch_unwind(std::panic::AssertUnwindSafe({
                 let context = Arc::clone(&context);
-                let run = definition
-                    .run
-                    .expect("non-skipped case definitions must have a function");
                 move || with_context(context, run)
             }));
             let recorded = context.take_failure();
@@ -131,6 +136,15 @@ impl Suite {
     }
 }
 
+fn malformed_definition_outcome(metadata: CaseMetadata) -> CaseOutcome {
+    CaseOutcome::Error {
+        details: format!(
+            "malformed conformance registry: case '{}' has neither a function nor a skip reason",
+            metadata.id()
+        ),
+    }
+}
+
 fn panic_message(payload: Box<dyn Any + Send>) -> String {
     if let Some(message) = payload.downcast_ref::<String>() {
         return message.clone();
@@ -152,4 +166,18 @@ pub enum SuiteError {
         #[source]
         source: std::io::Error,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn malformed_definition_should_be_an_infrastructure_error() {
+        let metadata = CaseMetadata::closure("malformed.case", &["#test"]);
+
+        let outcome = malformed_definition_outcome(metadata);
+
+        assert!(matches!(outcome, CaseOutcome::Error { .. }));
+    }
 }

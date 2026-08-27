@@ -1,7 +1,4 @@
-#![allow(dead_code)]
-
-use std::ffi::{OsStr, OsString};
-use std::path::Path;
+use std::ffi::OsStr;
 
 use predicates::prelude::*;
 
@@ -11,35 +8,6 @@ use crate::cases::support::{
 
 #[cfg(unix)]
 use crate::cases::support::write_executable_script;
-
-const COMPLETION_SHELLS: [&str; 5] = ["bash", "zsh", "fish", "powershell", "elvish"];
-
-fn complete_source_candidates<I, S>(
-    shell: &str,
-    args: I,
-    current_dir: &Path,
-) -> assert_cmd::assert::Assert
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<OsStr>,
-{
-    let args = args
-        .into_iter()
-        .map(|arg| arg.as_ref().to_os_string())
-        .collect::<Vec<OsString>>();
-    let index = args.len().saturating_sub(1).to_string();
-    let mut command = treeboot();
-
-    command
-        .env("COMPLETE", shell)
-        .env("_CLAP_COMPLETE_INDEX", index)
-        .env("_CLAP_IFS", "\n")
-        .arg("--")
-        .args(args)
-        .current_dir(current_dir);
-
-    command.assert()
-}
 
 pub(crate) fn manual_commands_should_require_sources() {
     for command in ["copy", "symlink", "sync"] {
@@ -623,9 +591,9 @@ pub(crate) fn overlapping_manual_sync_delete_targets_should_fail_before_side_eff
 pub(crate) fn unsafe_source_symlink_should_fail_before_side_effects() {
     let repo = git_worktree();
     let outside = repo
-        .root_path()
+        .worktree_path()
         .parent()
-        .expect("root should have parent")
+        .expect("worktree should have parent")
         .join("outside-secret");
     write_file(&outside, "secret\n");
     std::fs::create_dir_all(repo.root_path().join("unsafe"))
@@ -664,9 +632,9 @@ pub(crate) fn manual_commands_should_fail_on_invalid_config_before_side_effects(
 pub(crate) fn manual_commands_should_use_config_runtime_policy() {
     let repo = git_worktree();
     let outside = repo
-        .root_path()
+        .worktree_path()
         .parent()
-        .expect("root should have parent")
+        .expect("worktree should have parent")
         .join("outside.env");
     write_file(&outside, "TOKEN=1\n");
     write_file(
@@ -833,71 +801,6 @@ pub(crate) fn manual_commands_should_ignore_executable_legacy_script() {
 
     assert!(!marker.exists());
     assert!(repo.worktree_path().join(".env").is_file());
-}
-
-pub(crate) fn dynamic_completion_should_list_root_relative_sources() {
-    let repo = git_worktree();
-    write_file(&repo.root_path().join(".env"), "TOKEN=1\n");
-    write_file(
-        &repo.worktree_path().join(".treeboot.toml"),
-        "invalid = [\n",
-    );
-    std::fs::create_dir_all(repo.root_path().join("shared"))
-        .expect("source directory should be created");
-
-    for shell in COMPLETION_SHELLS {
-        complete_source_candidates(shell, ["treeboot", "copy", ""], repo.worktree_path())
-            .success()
-            .stdout(predicate::str::contains(".env"))
-            .stdout(predicate::str::contains("shared"));
-    }
-}
-
-pub(crate) fn dynamic_completion_should_use_root_option_for_sources() {
-    let repo = git_worktree();
-    let root = tempfile::TempDir::new().expect("override root should be created");
-    write_file(&root.path().join("override.env"), "TOKEN=1\n");
-    write_file(&repo.root_path().join("default.env"), "TOKEN=1\n");
-
-    for shell in COMPLETION_SHELLS {
-        complete_source_candidates(
-            shell,
-            [
-                OsStr::new("treeboot"),
-                OsStr::new("copy"),
-                OsStr::new("--root"),
-                root.path().as_os_str(),
-                OsStr::new(""),
-            ],
-            repo.worktree_path(),
-        )
-        .success()
-        .stdout(predicate::str::contains("override.env"))
-        .stdout(predicate::str::contains("default.env").not());
-    }
-}
-
-pub(crate) fn dynamic_completion_should_use_root_equals_option_for_sources() {
-    let repo = git_worktree();
-    let root = tempfile::TempDir::new().expect("override root should be created");
-    write_file(&root.path().join("override.env"), "TOKEN=1\n");
-    write_file(&repo.root_path().join("default.env"), "TOKEN=1\n");
-
-    for shell in COMPLETION_SHELLS {
-        complete_source_candidates(
-            shell,
-            [
-                OsString::from("treeboot"),
-                OsString::from("copy"),
-                OsString::from(format!("--root={}", root.path().display())),
-                OsString::new(),
-            ],
-            repo.worktree_path(),
-        )
-        .success()
-        .stdout(predicate::str::contains("override.env"))
-        .stdout(predicate::str::contains("default.env").not());
-    }
 }
 
 pub(crate) fn copy_should_apply_include_patterns() {
