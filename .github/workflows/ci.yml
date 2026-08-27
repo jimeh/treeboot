@@ -137,10 +137,23 @@ jobs:
           cache_key: mise-v2-${{ github.event_name }}-{{platform}}-{{file_hash}}
       - run: mise run msrv
 
+  npm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          cache_key: mise-v2-${{ github.event_name }}-npm-{{platform}}-{{file_hash}}
+      - run: mise run npm:check
+
   test:
     name: test (${{ matrix.runner }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 10
+    timeout-minutes: 25
     env:
       MISE_RUSTUP_HOME: ${{ github.workspace }}/.mise-rustup
     strategy:
@@ -170,6 +183,24 @@ jobs:
             --component rust-src \
             --component rustfmt
       - run: mise run test
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.3.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+
+      - name: Smoke-test the host npm package
+        shell: bash
+        run: |
+          target="$(rustc -vV | sed -n 's/^host: //p')"
+          exe=""
+          if [[ "${target}" == *windows* ]]; then
+            exe=".exe"
+          fi
+          cargo build -p treeboot --locked --release --target "${target}"
+          mise run npm:build
+          bun run npm/scripts/smoke-host.ts \
+            "target/${target}/release/treeboot${exe}"
 
   standalone-conformance:
     runs-on: ubuntu-latest

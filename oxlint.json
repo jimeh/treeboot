@@ -1,0 +1,10 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error",
+    "perf": "warn",
+    "suspicious": "error"
+  },
+  "ignorePatterns": ["npm-dist/**", "npm/treeboot/dist/**", "target/**"],
+  "plugins": ["typescript"]
+}

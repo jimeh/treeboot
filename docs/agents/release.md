@@ -88,13 +88,13 @@ instead of major bumps.
 
 The tag-triggered release workflow should reuse the draft GitHub Release for the
 pushed tag. If no draft exists, it should extract the matching changelog section
-as release notes, create a draft, upload all assets, publish the crates.io
-packages, and publish the GitHub Release only after uploads and crate
-publication complete.
+as release notes, create a draft, upload all assets, publish the crates.io and
+npm packages, and publish the GitHub Release only after uploads and both
+registries complete.
 
-The manual release workflow path should generate the same build assets but
-default to workflow artifacts only. It must not publish a GitHub Release or
-crates.io packages. Manual runs derive their test artifact version from the
+The manual release workflow path should generate the same build and npm assets
+but default to workflow artifacts only. It must not publish a GitHub Release or
+registry packages. Manual runs derive their test artifact version from the
 checked-out Git state; do not add a manual version input.
 
 Crates.io publishing uses three packages: publish `treeboot-spec` first,
@@ -113,6 +113,31 @@ configure its crates.io Trusted Publisher for the GitHub Actions `release`
 environment in `.github/workflows/release.yml`. Do not create the tag until both
 steps are complete. The release workflow intentionally fails closed if
 `treeboot-spec` cannot publish before `treeboot-core` and `treeboot`.
+
+npm publishing uses the unscoped `treeboot` facade and six platform packages
+under `@treeboot-rs`. The TypeScript packager consumes the raw desktop
+executables assembled in `dist/`, creates seven tarballs under `npm-dist/`, and
+writes `manifest.json` with exact SHA-512 integrity values. The npm artifact is
+separate from GitHub Release assets and their checksum manifest.
+
+Publish the six platform packages first, wait for each exact version and
+integrity to appear, then publish `treeboot` last. On reruns, skip an existing
+version only when npm's `dist.integrity` matches the staged tarball. A mismatch
+must fail the release. npm uses Trusted Publishing from the same `release`
+environment and `.github/workflows/release.yml`, with Node.js 24, npm 11.15 or
+newer, and no `NPM_TOKEN`. GitHub Actions must retain `id-token: write`.
+
+All npm source manifests stay `private` with version `0.0.0-development`.
+Publish only tarballs produced and checked by `npm/scripts/package-release.ts`
+and `npm/scripts/verify-package.ts`. Never run `npm publish` from the repository
+root or a source workspace.
+
+Before the first functional release, a maintainer must publish the six inert
+`0.0.0` platform placeholders, configure all seven package trusted-publisher
+relationships, and verify them with `npm trust list`. The exact one-time
+commands are in [npm-distribution-plan.md](npm-distribution-plan.md). After the
+first successful OIDC release, set every package to require 2FA and disallow
+token publication.
 
 Release workflow scripts in `scripts/` are thin wrappers around the Rust
 `treeboot-release-helper` workspace package. Keep release version derivation,
@@ -145,6 +170,8 @@ command that does not publish anything:
 mise run release:check
 mise run release:package:local
 cargo publish --dry-run -p treeboot-spec --locked
+mise run npm:pack -- "$(mise run release:version)" dist npm-dist
+mise run npm:pack:check npm-dist
 cargo publish --dry-run -p treeboot-core --locked
 cargo publish --dry-run -p treeboot --locked
 ```

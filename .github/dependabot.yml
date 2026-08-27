@@ -1,6 +1,21 @@
 version: 2
 
 updates:
+  - package-ecosystem: "bun"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    cooldown:
+      default-days: 7
+    groups:
+      bun-dependencies:
+        patterns: ["*"]
+      bun-security:
+        applies-to: "security-updates"
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(deps)"
+
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
