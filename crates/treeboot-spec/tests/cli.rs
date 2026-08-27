@@ -127,7 +127,13 @@ fn fixture_setup_failure_is_error_with_exit_three() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(3));
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
     let report: serde_json::Value =
         serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
             panic!(
@@ -136,11 +142,12 @@ fn fixture_setup_failure_is_error_with_exit_three() {
                 String::from_utf8_lossy(&output.stderr)
             )
         });
-    assert_eq!(report["cases"][0]["outcome"]["kind"], "error");
-    assert!(
-        report["cases"][0]["outcome"]["details"]
-            .as_str()
-            .unwrap()
-            .contains("fixture setup")
+    assert_eq!(
+        report["cases"][0]["outcome"]["kind"], "error",
+        "report: {report:#}"
     );
+    let details = report["cases"][0]["outcome"]["details"]
+        .as_str()
+        .unwrap_or_else(|| panic!("fixture error details should be text; report: {report:#}"));
+    assert!(details.contains("fixture setup"), "report: {report:#}");
 }

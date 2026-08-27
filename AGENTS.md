@@ -265,6 +265,10 @@ work. Lefthook checks staged Markdown files through
 - Keep parser-library diagnostics and direct completion helper protocols in
   reference-only tests. Portable behavior tests should assert exit status,
   durable output, side effects, and completion through installed shell scripts.
+- When executing generated PowerShell completion scripts, pass the script path
+  through an environment variable and dot-source it with
+  `-ExecutionPolicy Bypass`; trailing arguments after `-Command` do not portably
+  populate `$args`.
 - For run/config CLI behavior inside Git, prefer `git_worktree()` so tests run
   from an actual linked worktree; reserve `git_repo()` for root-checkout cases.
 - Use core unit tests for pure helpers, formatting, and validation logic.

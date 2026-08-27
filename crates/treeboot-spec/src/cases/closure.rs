@@ -447,6 +447,8 @@ fn installed_powershell_script_lists_root_sources() {
         .args([
             "-NoProfile",
             "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
             "-Command",
             ". $env:TREEBOOT_SPEC_COMPLETION_SCRIPT; $line = 'treeboot copy sh'; [System.Management.Automation.CommandCompletion]::CompleteInput($line, $line.Length, $null).CompletionMatches | ForEach-Object CompletionText",
         ])

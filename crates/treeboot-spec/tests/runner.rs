@@ -107,8 +107,20 @@ fn local_runner_timeout_should_cover_output_held_by_descendant_after_leader_exit
 #[test]
 #[cfg(windows)]
 fn local_runner_timeout_should_terminate_job_after_leader_exit() {
-    let template = shell_command("start \"\" /B ping -n 31 127.0.0.1 & echo leader-exited");
-    let invocation = Invocation::new().timeout(Duration::from_secs(1));
+    let fixture = tempfile::TempDir::new().expect("fixture directory should be created");
+    let held_file = fixture.path().join("descendant-held-file");
+    let template = CommandTemplate::with_args(
+        std::env::current_exe().expect("current test executable should resolve"),
+        [
+            "windows_job_leader_helper",
+            "--exact",
+            "--ignored",
+            "--nocapture",
+        ],
+    );
+    let invocation = Invocation::new()
+        .env("TREEBOOT_SPEC_HELD_FILE", &held_file)
+        .timeout(Duration::from_secs(5));
     let started = std::time::Instant::now();
 
     let output = LocalProcessRunner::new(template)
@@ -121,7 +133,80 @@ fn local_runner_timeout_should_terminate_job_after_leader_exit() {
         "{}",
         String::from_utf8_lossy(output.stdout())
     );
-    assert!(started.elapsed() < Duration::from_secs(5));
+    assert!(started.elapsed() < Duration::from_secs(10));
+    assert!(held_file.exists(), "descendant should signal readiness");
+
+    let removal_deadline = std::time::Instant::now() + Duration::from_secs(2);
+    loop {
+        match std::fs::remove_file(&held_file) {
+            Ok(()) => break,
+            Err(_) if std::time::Instant::now() < removal_deadline => {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Err(error) => panic!(
+                "descendant still holds its non-shareable file after Job Object termination: {error}"
+            ),
+        }
+    }
+}
+
+#[test]
+#[cfg(windows)]
+#[ignore = "helper process for the Windows Job Object timeout regression"]
+fn windows_job_leader_helper() {
+    use std::io::Write as _;
+
+    let held_file = std::env::var_os("TREEBOOT_SPEC_HELD_FILE")
+        .expect("held-file path should be provided to leader helper");
+    let _descendant = std::process::Command::new(
+        std::env::current_exe().expect("test executable should resolve"),
+    )
+    .args([
+        "windows_job_descendant_helper",
+        "--exact",
+        "--ignored",
+        "--nocapture",
+    ])
+    .env("TREEBOOT_SPEC_HELD_FILE", &held_file)
+    .spawn()
+    .expect("descendant helper should spawn");
+
+    let held_file = std::path::Path::new(&held_file);
+    let readiness_deadline = std::time::Instant::now() + Duration::from_secs(3);
+    while !held_file.exists() && std::time::Instant::now() < readiness_deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        held_file.exists(),
+        "descendant helper should signal readiness"
+    );
+    println!("leader-exited");
+    std::io::stdout()
+        .flush()
+        .expect("leader progress output should flush");
+}
+
+#[test]
+#[cfg(windows)]
+#[ignore = "helper process for the Windows Job Object timeout regression"]
+fn windows_job_descendant_helper() {
+    use std::io::Write as _;
+    use std::os::windows::fs::OpenOptionsExt as _;
+
+    let held_file = std::env::var_os("TREEBOOT_SPEC_HELD_FILE")
+        .expect("held-file path should be provided to descendant helper");
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .share_mode(0)
+        .open(held_file)
+        .expect("descendant should open its readiness file without delete sharing");
+    file.write_all(b"descendant-ready\n")
+        .expect("descendant should write its readiness signal");
+    file.flush()
+        .expect("descendant readiness signal should flush");
+    std::thread::sleep(Duration::from_secs(30));
 }
 
 #[test]
