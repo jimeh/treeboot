@@ -11,6 +11,14 @@ mod common;
 use common::{GitWorktree, git_worktree};
 use common::{treeboot, write_file};
 
+#[cfg(unix)]
+const TREEBOOT_ENVIRONMENT: &[&str] = &[
+    "TREEBOOT_ROOT_PATH",
+    "CODEX_SOURCE_TREE_PATH",
+    "CONDUCTOR_ROOT_PATH",
+    "SUPERSET_ROOT_PATH",
+];
+
 #[test]
 fn completions_supported_shells_should_emit_scripts() {
     for shell in ["bash", "zsh", "fish", "powershell", "elvish"] {
@@ -164,6 +172,11 @@ fn completions_should_not_require_git_or_config_discovery() {
 #[cfg(unix)]
 #[test]
 fn installed_bash_completion_helper_should_list_root_sources() {
+    if !shell_available("bash", &["--version"]) {
+        eprintln!("skipping reference-only Bash completion helper test: Bash is unavailable");
+        return;
+    }
+
     let (repo, _temp, script_path) = completion_fixture("bash", "bash");
     let script = std::fs::read_to_string(&script_path).expect("completion script should be read");
     write_file(
@@ -173,7 +186,9 @@ fn installed_bash_completion_helper_should_list_root_sources() {
         ),
     );
 
-    let completion = StdCommand::new("bash")
+    let mut command = StdCommand::new("bash");
+    scrub_treeboot_environment(&mut command);
+    let completion = command
         .arg(&script_path)
         .current_dir(repo.worktree_path())
         .output()
@@ -185,21 +200,22 @@ fn installed_bash_completion_helper_should_list_root_sources() {
 #[cfg(unix)]
 #[test]
 fn installed_zsh_completion_helper_should_list_root_sources() {
-    let available = StdCommand::new("zsh")
-        .args([
+    if !shell_available(
+        "zsh",
+        &[
             "-f",
             "-c",
             "autoload -Uz compinit; compinit; whence compdef >/dev/null",
-        ])
-        .status()
-        .is_ok_and(|status| status.success());
-    if !available {
+        ],
+    ) {
         eprintln!("skipping reference-only Zsh completion helper test: Zsh is unavailable");
         return;
     }
 
     let (repo, _temp, script_path) = completion_fixture("zsh", "zsh");
-    let completion = StdCommand::new("zsh")
+    let mut command = StdCommand::new("zsh");
+    scrub_treeboot_environment(&mut command);
+    let completion = command
         .args([
             "-f",
             "-c",
@@ -212,6 +228,23 @@ fn installed_zsh_completion_helper_should_list_root_sources() {
         .expect("installed Zsh completion script should run");
 
     assert_completion(&completion);
+}
+
+#[cfg(unix)]
+fn shell_available(shell: &str, args: &[&str]) -> bool {
+    let mut command = StdCommand::new(shell);
+    scrub_treeboot_environment(&mut command);
+    command
+        .args(args)
+        .output()
+        .is_ok_and(|output| output.status.success())
+}
+
+#[cfg(unix)]
+fn scrub_treeboot_environment(command: &mut StdCommand) {
+    for name in TREEBOOT_ENVIRONMENT {
+        command.env_remove(name);
+    }
 }
 
 #[cfg(unix)]

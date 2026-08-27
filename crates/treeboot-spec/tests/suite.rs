@@ -207,11 +207,13 @@ fn terminal_backed_completion_gaps_should_remain_explicit() {
             "requires a terminal-backed Zsh ZLE harness because Zsh has no portable non-interactive public completion API",
         ),
     ] {
+        let runner = Arc::new(RecordingRunner {
+            command: CommandTemplate::new("remote-treeboot"),
+            invocations: AtomicUsize::new(0),
+        });
+        let adapter: Arc<dyn Runner> = runner.clone();
         let report = Suite::current().run_with(
-            Arc::new(RecordingRunner {
-                command: CommandTemplate::new("remote-treeboot"),
-                invocations: AtomicUsize::new(0),
-            }),
+            adapter,
             RunOptions {
                 filter: Some(id.to_owned()),
                 ..RunOptions::default()
@@ -223,5 +225,6 @@ fn terminal_backed_completion_gaps_should_remain_explicit() {
             &report.cases[0].outcome,
             treeboot_spec::CaseOutcome::Skipped { reason } if reason == expected_reason
         ));
+        assert_eq!(runner.invocations.load(Ordering::Relaxed), 0);
     }
 }

@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::cell::RefCell;
 use std::ffi::OsStr;
 use std::io;
@@ -119,18 +117,6 @@ pub(crate) fn skip(reason: impl Into<String>) -> ! {
     panic!("case skipped: {reason}");
 }
 
-pub(crate) fn skip_requires_unix() {
-    skip("requires a Unix host");
-}
-
-pub(crate) fn skip_requires_windows() {
-    skip("requires a Windows host");
-}
-
-pub(crate) fn skip_requires_linux() {
-    skip("requires Linux because the case uses non-UTF-8 Git worktree paths");
-}
-
 pub(crate) struct Command {
     invocation: Invocation,
 }
@@ -167,26 +153,9 @@ impl Command {
         self
     }
 
-    pub(crate) fn env_remove(&mut self, name: impl AsRef<OsStr>) -> &mut Self {
-        self.invocation =
-            std::mem::take(&mut self.invocation).env_remove(name.as_ref().to_os_string());
-        self
-    }
-
-    pub(crate) fn write_stdin(&mut self, input: impl Into<Vec<u8>>) -> &mut Self {
-        self.invocation =
-            std::mem::take(&mut self.invocation).stdin(StdinMode::Piped(input.into()));
-        self
-    }
-
     pub(crate) fn write_terminal(&mut self, input: impl Into<Vec<u8>>) -> &mut Self {
         self.invocation =
             std::mem::take(&mut self.invocation).stdin(StdinMode::Terminal(input.into()));
-        self
-    }
-
-    pub(crate) fn timeout(&mut self, timeout: Duration) -> &mut Self {
-        self.invocation = std::mem::take(&mut self.invocation).timeout(timeout);
         self
     }
 
