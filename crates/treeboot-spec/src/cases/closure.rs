@@ -448,9 +448,9 @@ fn installed_powershell_script_lists_root_sources() {
             "-NoProfile",
             "-NonInteractive",
             "-Command",
-            ". $args[0]; $line = 'treeboot copy sh'; [System.Management.Automation.CommandCompletion]::CompleteInput($line, $line.Length, $null).CompletionMatches | ForEach-Object CompletionText",
+            ". $env:TREEBOOT_SPEC_COMPLETION_SCRIPT; $line = 'treeboot copy sh'; [System.Management.Automation.CommandCompletion]::CompleteInput($line, $line.Length, $null).CompletionMatches | ForEach-Object CompletionText",
         ])
-        .arg(&script_path)
+        .env("TREEBOOT_SPEC_COMPLETION_SCRIPT", &script_path)
         .current_dir(repo.worktree_path())
         .output()
         .expect("installed PowerShell completion script should run");
