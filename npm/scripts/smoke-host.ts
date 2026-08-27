@@ -127,14 +127,51 @@ async function smokeInstall(
     ],
     directory,
   );
-  await run(
-    [
-      "node",
-      join(directory, "node_modules", "treeboot", "dist", "cli.js"),
-      "--version",
-    ],
+  if (manager === "npm") {
+    await writeFile(
+      join(directory, "consumer.cts"),
+      'import treeboot = require("treeboot");\n' +
+        "const binaryPath: string = treeboot.getBinaryPath();\n" +
+        "treeboot.spawnTreeboot([binaryPath]);\n",
+    );
+    await run(
+      [
+        "node",
+        join(root, "node_modules", "typescript", "bin", "tsc"),
+        "--noEmit",
+        "--strict",
+        "--module",
+        "NodeNext",
+        "--moduleResolution",
+        "NodeNext",
+        "--target",
+        "ES2022",
+        "--types",
+        "node",
+        "--typeRoots",
+        join(root, "node_modules", "@types"),
+        "consumer.cts",
+      ],
+      directory,
+    );
+  }
+  const shim = join(
     directory,
+    "node_modules",
+    ".bin",
+    process.platform === "win32" ? "treeboot.cmd" : "treeboot",
   );
+  const shimCommand =
+    process.platform === "win32"
+      ? ["cmd.exe", "/d", "/s", "/c", `"${shim}" --version`]
+      : [shim, "--version"];
+  const versionOutput = await runWithOutput(shimCommand, directory);
+  if (!/^treeboot \S+/m.test(versionOutput)) {
+    throw new Error(
+      `${manager} installed treeboot shim returned no version output`,
+    );
+  }
+  console.log(versionOutput.trim());
 }
 
 async function smokeMissingOptional(facade: string): Promise<void> {
@@ -179,6 +216,28 @@ async function run(command: readonly string[], cwd: string): Promise<void> {
   if (status !== 0) {
     throw new Error(`${command[0]} failed with status ${status}`);
   }
+}
+
+async function runWithOutput(
+  command: readonly string[],
+  cwd: string,
+): Promise<string> {
+  const child = Bun.spawn([...command], {
+    cwd,
+    stderr: "pipe",
+    stdout: "pipe",
+  });
+  const [status, stderr, stdout] = await Promise.all([
+    child.exited,
+    new Response(child.stderr).text(),
+    new Response(child.stdout).text(),
+  ]);
+  if (status !== 0) {
+    throw new Error(
+      `${command[0]} failed with status ${status}: ${stderr.trim()}`,
+    );
+  }
+  return stdout;
 }
 
 function tarballFor(

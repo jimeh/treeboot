@@ -1,6 +1,3 @@
-#!/usr/bin/env node
-
-import { fileURLToPath } from "node:url";
 import { constants } from "node:os";
 
 import { spawnTreeboot } from "./index.js";
@@ -51,17 +48,4 @@ export async function runCli(
 
 function signalNumber(signal: NodeJS.Signals): number {
   return constants.signals[signal] ?? 1;
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  runCli(process.argv.slice(2)).then(
-    (code) => {
-      process.exitCode = code;
-    },
-    (error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
-      process.stderr.write(`treeboot: ${message}\n`);
-      process.exitCode = 1;
-    },
-  );
 }

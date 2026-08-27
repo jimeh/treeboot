@@ -238,7 +238,7 @@ run = "bun run npm:build"
 
 [tasks."npm:test"]
 description = "Run npm distribution tests"
-depends = ["npm:deps"]
+depends = ["npm:build"]
 run = "bun run npm:test"
 
 [tasks."npm:pack"]
@@ -276,7 +276,7 @@ bun run npm:pack:check -- --output-dir "${usage_output_dir}"
 
 [tasks."npm:check"]
 description = "Build, lint, type-check, and test the npm distribution"
-depends = ["npm:build", "lint:npm", "npm:test"]
+depends = ["lint:npm", "npm:test"]
 
 # Coverage
 

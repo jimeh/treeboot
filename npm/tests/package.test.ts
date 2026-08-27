@@ -12,8 +12,9 @@ import { tmpdir } from "node:os";
 
 import { packageRelease } from "../scripts/package-release.ts";
 import { platformPackages } from "../scripts/packages.ts";
-import { verifyPackages } from "../scripts/verify-package.ts";
 import { publishPackages } from "../scripts/publish-packages.ts";
+import { readTarGzip } from "../scripts/tar.ts";
+import { verifyPackages, verifyTarball } from "../scripts/verify-package.ts";
 
 let temporaryDirectory: string;
 let assetsDirectory: string;
@@ -28,11 +29,6 @@ beforeAll(async () => {
       "fixture treeboot executable\n",
     );
   }
-  const build = Bun.spawn([process.execPath, "run", "npm:build"], {
-    stderr: "inherit",
-    stdout: "inherit",
-  });
-  expect(await build.exited).toBe(0);
 });
 
 afterAll(async () => {
@@ -79,15 +75,35 @@ describe("release package staging", () => {
     await mkdir(outputDirectory);
     await writeFile(sentinel, "keep me\n");
 
-    expect(
-      packageRelease({
-        assetsDirectory,
-        outputDirectory,
-        placeholder: false,
-        version: "0.13.0",
-      }),
-    ).rejects.toThrow("not owned by the Treeboot npm packager");
+    await Promise.resolve(
+      expect(
+        packageRelease({
+          assetsDirectory,
+          outputDirectory,
+          placeholder: false,
+          version: "0.13.0",
+        }),
+      ).rejects.toThrow("not owned by the Treeboot npm packager"),
+    );
     expect(await readFile(sentinel, "utf8")).toBe("keep me\n");
+  });
+
+  test("refuses the repository root as an unsafe output directory", async () => {
+    const workspaceManifest = join(import.meta.dir, "../..", "package.json");
+    const before = await readFile(workspaceManifest, "utf8");
+
+    await Promise.resolve(
+      expect(
+        packageRelease({
+          assetsDirectory,
+          outputDirectory: ".",
+          placeholder: false,
+          version: "0.13.0",
+        }),
+      ).rejects.toThrow("Refusing unsafe npm output directory"),
+    );
+
+    expect(await readFile(workspaceManifest, "utf8")).toBe(before);
   });
 
   test("clears and recreates an owned output directory on rerun", async () => {
@@ -108,7 +124,9 @@ describe("release package staging", () => {
       version: "0.13.0",
     });
 
-    expect(Bun.file(staleFile).exists()).resolves.toBe(false);
+    await Promise.resolve(
+      expect(Bun.file(staleFile).exists()).resolves.toBe(false),
+    );
     await verifyPackages(outputDirectory);
   });
 
@@ -126,12 +144,14 @@ describe("release package staging", () => {
     );
     let registryCalls = 0;
 
-    expect(
-      publishPackages(outputDirectory, async () => {
-        registryCalls += 1;
-        return { json: async () => ({}), status: 404 };
-      }),
-    ).rejects.toThrow("size");
+    await Promise.resolve(
+      expect(
+        publishPackages(outputDirectory, async () => {
+          registryCalls += 1;
+          return { json: async () => ({}), status: 404 };
+        }),
+      ).rejects.toThrow("size"),
+    );
     expect(registryCalls).toBe(0);
   });
 
@@ -153,5 +173,37 @@ describe("release package staging", () => {
       join(outputDirectory, "tarballs", manifest.packages[0]!.filename),
     );
     expect(firstTarball.length).toBeGreaterThan(0);
+  });
+
+  test("rejects a non-placeholder platform package without its binary", async () => {
+    const outputDirectory = join(temporaryDirectory, "missing-binary");
+    const manifest = await packageRelease({
+      assetsDirectory,
+      outputDirectory,
+      placeholder: true,
+      version: "0.0.0",
+    });
+    const artifact = manifest.packages[0]!;
+    const tarball = await readFile(
+      join(outputDirectory, "tarballs", artifact.filename),
+    );
+    const entries = readTarGzip(tarball).map((entry) => {
+      if (entry.name !== "package/package.json") {
+        return entry;
+      }
+      const packageJson = JSON.parse(entry.bytes.toString("utf8")) as Record<
+        string,
+        unknown
+      >;
+      packageJson.version = "0.13.0";
+      return {
+        ...entry,
+        bytes: Buffer.from(`${JSON.stringify(packageJson)}\n`),
+      };
+    });
+
+    expect(() => verifyTarball(artifact.name, "0.13.0", entries, true)).toThrow(
+      "missing packaged executable",
+    );
   });
 });

@@ -27,7 +27,7 @@ export interface PackageReleaseOptions {
   readonly version: string;
 }
 
-const root = fileURLToPath(new URL("../..", import.meta.url));
+const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const outputMarker = ".treeboot-npm-dist";
 const outputMarkerContents = "treeboot npm distribution output\n";
 

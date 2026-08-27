@@ -19,11 +19,18 @@
     "LICENSE"
   ],
   "type": "module",
+  "main": "./dist/index.cjs",
+  "types": "./dist/types/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/types/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/types/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/types/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     }
   },
   "publishConfig": {

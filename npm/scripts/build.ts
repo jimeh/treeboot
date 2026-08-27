@@ -1,4 +1,4 @@
-import { chmod, rm } from "node:fs/promises";
+import { chmod, copyFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -27,7 +27,7 @@ await build({
   naming: "index.cjs",
 });
 await build({
-  entrypoints: [join(source, "cli.ts")],
+  entrypoints: [join(source, "bin.ts")],
   format: "esm",
   naming: "cli.js",
 });
@@ -48,6 +48,11 @@ if (declarationStatus !== 0) {
     `TypeScript declaration build failed with ${declarationStatus}`,
   );
 }
+
+await copyFile(
+  join(output, "types", "index.d.ts"),
+  join(output, "types", "index.d.cts"),
+);
 
 await chmod(join(output, "cli.js"), 0o755);
 

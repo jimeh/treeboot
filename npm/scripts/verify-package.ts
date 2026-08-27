@@ -73,7 +73,7 @@ export async function verifyPackages(
   );
 }
 
-function verifyTarball(
+export function verifyTarball(
   name: string,
   version: string,
   entries: readonly TarEntry[],
@@ -109,6 +109,7 @@ function verifyTarball(
       "package/dist/cli.js",
       "package/dist/index.cjs",
       "package/dist/index.js",
+      "package/dist/types/index.d.cts",
       "package/dist/types/cli.d.ts",
       "package/dist/types/errors.d.ts",
       "package/dist/types/index.d.ts",
@@ -118,6 +119,16 @@ function verifyTarball(
     assertFiles(entries, expectedFiles, name);
     assertEqual(packageJson.type, "module", `${name} package type`);
     assertEqual(
+      packageJson.main,
+      "./dist/index.cjs",
+      `${name} CommonJS fallback`,
+    );
+    assertEqual(
+      packageJson.types,
+      "./dist/types/index.d.ts",
+      `${name} declaration fallback`,
+    );
+    assertEqual(
       packageJson.bin,
       { treeboot: "./dist/cli.js" },
       `${name} executable mapping`,
@@ -126,9 +137,14 @@ function verifyTarball(
       packageJson.exports,
       {
         ".": {
-          types: "./dist/types/index.d.ts",
-          import: "./dist/index.js",
-          require: "./dist/index.cjs",
+          import: {
+            types: "./dist/types/index.d.ts",
+            default: "./dist/index.js",
+          },
+          require: {
+            types: "./dist/types/index.d.cts",
+            default: "./dist/index.cjs",
+          },
         },
       },
       `${name} exports`,
@@ -180,6 +196,9 @@ function verifyTarball(
   );
   const binaryName = `package/bin/${platformPackage.executableName}`;
   const hasBinary = byName.has(binaryName);
+  if (!hasBinary && version !== "0.0.0") {
+    throw new Error(`${name}: missing packaged executable ${binaryName}`);
+  }
   assertFiles(entries, hasBinary ? [...common, binaryName] : common, name);
   if (hasBinary && platformPackage.os !== "win32" && checkUnixModes) {
     assertExecutable(byName.get(binaryName), name);

@@ -8,5 +8,5 @@
     "rootDir": "./src"
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/index.cjs.ts"]
+  "exclude": ["src/bin.ts", "src/index.cjs.ts"]
 }

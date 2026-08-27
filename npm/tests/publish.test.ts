@@ -29,12 +29,14 @@ describe("npm publication reruns", () => {
   });
 
   test("rejects an existing package with different bytes", async () => {
-    expect(
-      decidePublication(
-        artifact,
-        response(200, { dist: { integrity: "sha512-different" } }),
-      ),
-    ).rejects.toThrow("with integrity sha512-different");
+    await Promise.resolve(
+      expect(
+        decidePublication(
+          artifact,
+          response(200, { dist: { integrity: "sha512-different" } }),
+        ),
+      ).rejects.toThrow("with integrity sha512-different"),
+    );
   });
 
   test("encodes a scoped package name as one registry path segment", async () => {
