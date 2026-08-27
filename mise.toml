@@ -242,6 +242,7 @@ depends = [
   "lint",
   "msrv",
   "test",
+  "test:spec:standalone",
 ]
 description = "Run all CI checks"
 
