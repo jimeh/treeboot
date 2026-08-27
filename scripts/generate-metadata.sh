@@ -5,12 +5,12 @@ mode="${1:-write}"
 
 spec_version="$(
   sed -nE 's/.*Specification v([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' \
-    docs/SPEC.md |
+    crates/treeboot-spec/SPEC.md |
     head -n 1
 )"
 
 if [[ -z "${spec_version}" ]]; then
-  printf 'failed to determine spec version from docs/SPEC.md\n' >&2
+  printf 'failed to determine spec version from crates/treeboot-spec/SPEC.md\n' >&2
   exit 1
 fi
 

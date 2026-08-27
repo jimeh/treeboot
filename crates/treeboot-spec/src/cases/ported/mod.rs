@@ -1,0 +1,14 @@
+pub(crate) mod check;
+pub(crate) mod cli;
+pub(crate) mod completions;
+pub(crate) mod config;
+pub(crate) mod doctor;
+pub(crate) mod env;
+pub(crate) mod init;
+pub(crate) mod manual;
+pub(crate) mod run;
+pub(crate) mod schema;
+pub(crate) mod status;
+pub(crate) mod teardown;
+pub(crate) mod version;
+pub(crate) mod worktree;

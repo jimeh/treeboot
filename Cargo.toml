@@ -10,10 +10,16 @@ publish = false
 workspace = true
 
 [workspace]
-members = ["crates/treeboot", "crates/treeboot-core", "tools/release-helper"]
+members = [
+    "crates/treeboot",
+    "crates/treeboot-core",
+    "crates/treeboot-spec",
+    "tools/release-helper",
+]
 default-members = [
     "crates/treeboot",
     "crates/treeboot-core",
+    "crates/treeboot-spec",
     "tools/release-helper",
 ]
 resolver = "3"

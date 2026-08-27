@@ -38,3 +38,4 @@ assert_cmd = "2"
 dunce = "1"
 predicates = "3"
 tempfile = "3"
+treeboot-spec = { path = "../treeboot-spec", version = "0.13.0" }

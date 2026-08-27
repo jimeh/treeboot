@@ -140,9 +140,10 @@ run = ["mise run generate:schema", "mise run generate:metadata"]
 [tasks."generate:schema"]
 description = "Generate JSON Schema for treeboot config"
 run = '''
-cargo run -p treeboot-core --example generate_config_schema --locked -- schemas/treeboot.schema.json
-mkdir -p crates/treeboot-core/assets
-cp schemas/treeboot.schema.json crates/treeboot-core/assets/config.schema.json
+cargo run -p treeboot-core --example generate_config_schema --locked -- crates/treeboot-spec/assets/treeboot.schema.json
+mkdir -p crates/treeboot-core/assets schemas
+cp crates/treeboot-spec/assets/treeboot.schema.json crates/treeboot-core/assets/config.schema.json
+cp crates/treeboot-spec/assets/treeboot.schema.json schemas/treeboot.schema.json
 '''
 
 [tasks."generate:metadata"]
@@ -159,8 +160,9 @@ run = '''
 tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
 cargo run -p treeboot-core --example generate_config_schema --locked -- "$tmp"
-diff -u schemas/treeboot.schema.json "$tmp"
-diff -u schemas/treeboot.schema.json crates/treeboot-core/assets/config.schema.json
+diff -u crates/treeboot-spec/assets/treeboot.schema.json "$tmp"
+diff -u crates/treeboot-spec/assets/treeboot.schema.json crates/treeboot-core/assets/config.schema.json
+diff -u crates/treeboot-spec/assets/treeboot.schema.json schemas/treeboot.schema.json
 '''
 
 [tasks."generate:metadata:check"]
@@ -186,6 +188,18 @@ run = [
 [tasks."test:cli"]
 description = "Run treeboot CLI tests"
 run = "cargo test -p treeboot --all-targets --all-features --locked"
+
+[tasks."test:spec"]
+description = "Run treeboot-spec self-tests"
+run = "cargo test -p treeboot-spec --all-targets --all-features --locked"
+
+[tasks."test:conformance"]
+description = "Run treeboot-spec against the official Treeboot binary"
+run = "cargo test -p treeboot --test conformance --locked"
+
+[tasks."test:spec:standalone"]
+description = "Run a copied treeboot-spec binary against a copied Treeboot binary"
+run = "bash scripts/test-treeboot-spec-standalone.sh"
 
 [tasks."test:release-helper"]
 description = "Run release helper tests"

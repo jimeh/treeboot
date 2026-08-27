@@ -48,7 +48,8 @@ Unix archives contain `treeboot`, `README.md`, and `LICENSE`. Windows archives
 contain `treeboot.exe`, `README.md`, and `LICENSE`. Publish the raw platform
 executable separately so installers can download it, make it executable when
 needed, and run it without unpacking an archive. Publish `config.schema.json`
-from the canonical checked-in `schemas/treeboot.schema.json`.
+from the canonical checked-in
+`crates/treeboot-spec/assets/treeboot.schema.json`.
 
 The checksum manifest covers every other asset uploaded to the GitHub Release,
 including archives, raw executables, the config schema, and SBOMs. Publish one
@@ -96,14 +97,15 @@ default to workflow artifacts only. It must not publish a GitHub Release or
 crates.io packages. Manual runs derive their test artifact version from the
 checked-out Git state; do not add a manual version input.
 
-Crates.io publishing uses two packages: publish `treeboot-core` first, then
-publish `treeboot` after the registry index can resolve the matching
-`treeboot-core` version. The CLI package must keep its `treeboot-core`
-dependency as both a local `path` and the matching registry `version` so local
-workspace development and published dependency resolution both work. Publishing
-is authenticated with crates.io Trusted Publishing, bound to the GitHub Actions
-`release` environment in `.github/workflows/release.yml`. Reruns should check
-crates.io first and skip any package version that is already published.
+Crates.io publishing uses three packages: publish `treeboot-spec` first,
+`treeboot-core` second, then publish `treeboot` after the registry index can
+resolve the matching `treeboot-core` version. The CLI package must keep its
+`treeboot-core` dependency as both a local `path` and the matching registry
+`version` so local workspace development and published dependency resolution
+both work. All three crate publishers use crates.io Trusted Publishing, bound to
+the GitHub Actions `release` environment in `.github/workflows/release.yml`.
+Reruns should check crates.io first and skip any package version that is already
+published.
 
 Release workflow scripts in `scripts/` are thin wrappers around the Rust
 `treeboot-release-helper` workspace package. Keep release version derivation,
@@ -135,6 +137,7 @@ command that does not publish anything:
 ```sh
 mise run release:check
 mise run release:package:local
+cargo publish --dry-run -p treeboot-spec --locked
 cargo publish --dry-run -p treeboot-core --locked
 cargo publish --dry-run -p treeboot --locked
 ```
@@ -143,7 +146,7 @@ Use `release:check` as the default release-maintenance gate. It packages the
 current host artifact and smoke-checks completion generation for every supported
 shell.
 
-Before publishing a new version, dry-run both crates in publish order. If
+Before publishing a new version, dry-run all three crates in publish order. If
 `treeboot-core` has not been published for that version yet, the `treeboot`
 dry-run may only fully verify after the matching core version reaches the
 registry index; use `cargo package -p treeboot --list` to inspect the CLI

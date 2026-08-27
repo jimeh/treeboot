@@ -361,7 +361,7 @@ fn main() {
     let path = std::env::args_os()
         .nth(1)
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("schemas/treeboot.schema.json"));
+        .unwrap_or_else(|| PathBuf::from("crates/treeboot-spec/assets/treeboot.schema.json"));
     let schema = treeboot_config_schema();
     let content = serde_json::to_string_pretty(&schema).expect("schema should serialize as JSON");
 

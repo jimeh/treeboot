@@ -12,10 +12,11 @@ according to known worktree-manager layouts; its hash portion distinguishes
 identical-looking labels in different locations.
 
 The implemented observable contract is canonical in
-[`docs/SPEC.md`](../SPEC.md), and the current placement and public API structure
-are canonical in [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md). This plan retains
-the approved rationale and implementation workflow that produced those
-documents; if they differ, follow the canonical documents.
+[`crates/treeboot-spec/SPEC.md`](../../crates/treeboot-spec/SPEC.md), and the
+current placement and public API structure are canonical in
+[`docs/ARCHITECTURE.md`](../ARCHITECTURE.md). This plan retains the approved
+rationale and implementation workflow that produced those documents; if they
+differ, follow the canonical documents.
 
 ## Recommendation At A Glance
 
@@ -486,7 +487,7 @@ No new merge layer is needed. Once the effective plan context contains
 This is additive for existing config files but changes observable config,
 environment, and inspection output. Update the contract together:
 
-- bump `docs/SPEC.md` from v2.1.0 to v2.2.0;
+- bump `crates/treeboot-spec/SPEC.md` from v2.1.0 to v2.2.0;
 - update the README's referenced spec version;
 - regenerate `crates/treeboot-core/assets/spec-version.txt`;
 - document the variable, exact base32 algorithm, name recognizers, sanitization,
@@ -521,7 +522,8 @@ decision and migration consideration.
 
 1. **Specify the contract first**
    - Add the exact algorithm, defaults, recognizers, sanitization, validation,
-     environment ownership, inspection behavior, and examples to `docs/SPEC.md`.
+     environment ownership, inspection behavior, and examples to
+     `crates/treeboot-spec/SPEC.md`.
    - Bump and regenerate spec-version metadata.
 2. **Write failing algorithm and config tests**
    - Add fixed SHA-256/Crockford base32 vectors and normalization/truncation
@@ -792,5 +794,5 @@ from the spec.
     additional case folding.
 
 These user-facing decisions were approved and are implemented. The resulting
-behavior and current architecture are canonical in `docs/SPEC.md` and
-`docs/ARCHITECTURE.md`.
+behavior and current architecture are canonical in
+`crates/treeboot-spec/SPEC.md` and `docs/ARCHITECTURE.md`.

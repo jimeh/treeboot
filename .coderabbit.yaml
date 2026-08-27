@@ -18,16 +18,16 @@ reviews:
   path_instructions:
     - path: "crates/**"
       instructions: |
-        - Treat docs/SPEC.md as the language-agnostic source of truth for
+        - Treat crates/treeboot-spec/SPEC.md as the language-agnostic source of truth for
           observable CLI behavior, not Rust API compatibility.
-        - Flag implementation behavior that contradicts docs/SPEC.md unless
+        - Flag implementation behavior that contradicts crates/treeboot-spec/SPEC.md unless
           the PR intentionally updates the spec.
         - When behavior, CLI output, validation semantics, config format, or
-          compatibility changes, verify docs/SPEC.md is updated in the same PR.
+          compatibility changes, verify crates/treeboot-spec/SPEC.md is updated in the same PR.
         - When crate boundaries, public core APIs, command flow, execution
           pipeline, or reporting architecture changes, verify
           docs/ARCHITECTURE.md is updated in the same PR.
-    - path: "docs/SPEC.md"
+    - path: "crates/treeboot-spec/SPEC.md"
       instructions: |
         - Verify the spec remains the authoritative language-agnostic CLI,
           config, filesystem, process, output, exit-code, and platform contract.
@@ -36,7 +36,7 @@ reviews:
           misplaced implementation details.
         - Check that described behavior is implementable and matches the Rust
           implementation and CLI tests.
-        - Verify schemas/treeboot.schema.json remains the normative config
+        - Verify crates/treeboot-spec/assets/treeboot.schema.json remains the normative config
           schema without making its Rust generator part of portability.
         - For observable contract changes, verify the visible spec version is
           bumped and README references stay in sync.
@@ -50,17 +50,17 @@ reviews:
     - path: "crates/treeboot-core/**"
       instructions: |
         - Verify public Rust API compatibility and construction guidance stays
-          owned by treeboot-core rather than docs/SPEC.md.
+          owned by treeboot-core rather than crates/treeboot-spec/SPEC.md.
         - Flag public non-exhaustive types that lack a stable construction path.
     - path: "AGENTS.md"
       instructions: |
-        - Verify agent instructions continue to state that docs/SPEC.md is the
+        - Verify agent instructions continue to state that crates/treeboot-spec/SPEC.md is the
           behavior source of truth and docs/ARCHITECTURE.md must stay current
           with implementation architecture.
     - path: "docs/agents/**"
       instructions: |
         - Verify agent guidance does not duplicate the canonical architecture
-          map from docs/ARCHITECTURE.md or behavior contract from docs/SPEC.md.
+          map from docs/ARCHITECTURE.md or behavior contract from crates/treeboot-spec/SPEC.md.
         - Agent docs should explain implementation workflow, validation, or
           placement guidance and link to the canonical docs when needed.
 
@@ -72,8 +72,8 @@ reviews:
           Pass only when implementation and documentation agree on observable
           behavior. If a PR changes CLI behavior, config semantics, validation,
           filesystem effects, command execution, output, compatibility, or
-          public behavior, docs/SPEC.md must describe the final behavior. If
-          the code contradicts docs/SPEC.md and the spec is not intentionally
+          public behavior, crates/treeboot-spec/SPEC.md must describe the final behavior. If
+          the code contradicts crates/treeboot-spec/SPEC.md and the spec is not intentionally
           updated, flag the implementation as wrong.
       - name: "Architecture freshness"
         mode: "warning"
@@ -91,7 +91,7 @@ knowledge_base:
     filePatterns:
       - "AGENTS.md"
       - "docs/agents/*.md"
-      - "docs/SPEC.md"
+      - "crates/treeboot-spec/SPEC.md"
       - "docs/ARCHITECTURE.md"
 
 chat:

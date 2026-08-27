@@ -364,6 +364,8 @@ jobs:
             cargo publish -p "${package}" --locked
           }
 
+          publish_crate treeboot-spec treeboot-spec "${VERSION}"
+          wait_for_crate_version treeboot-spec "${VERSION}"
           publish_crate treeboot-core treeboot-core "${VERSION}"
           wait_for_crate_version treeboot-core "${VERSION}"
           publish_crate treeboot treeboot "${VERSION}"

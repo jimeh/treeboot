@@ -879,6 +879,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "treeboot-core",
+ "treeboot-spec",
  "yaml_serde",
 ]
 
@@ -905,6 +906,21 @@ dependencies = [
  "markdown",
  "tempfile",
  "zip",
+]
+
+[[package]]
+name = "treeboot-spec"
+version = "0.13.0"
+dependencies = [
+ "assert_cmd",
+ "clap",
+ "dunce",
+ "predicates",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "yaml_serde",
 ]
 
 [[package]]

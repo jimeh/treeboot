@@ -1,0 +1,581 @@
+{
+  "$defs": {
+    "CommandEntry": {
+      "anyOf": [
+        {
+          "description": "Shell command string.",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/CommandObject",
+          "description": "Command object entry."
+        }
+      ]
+    },
+    "CommandObject": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ShellCommandObject",
+          "description": "Shell command object."
+        },
+        {
+          "$ref": "#/$defs/DirectCommandObject",
+          "description": "Direct program command object."
+        }
+      ]
+    },
+    "CopyEntry": {
+      "anyOf": [
+        {
+          "description": "Source and target use the same relative path.",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/CopyObject",
+          "description": "Copy object entry."
+        }
+      ]
+    },
+    "CopyObject": {
+      "additionalProperties": false,
+      "properties": {
+        "ignore": {
+          "description": "Source-relative path patterns that copy should skip.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "ignore_metadata": {
+          "description": "Metadata fields that copy should not compare or apply.",
+          "items": {
+            "$ref": "#/$defs/MetadataField"
+          },
+          "type": "array"
+        },
+        "include": {
+          "description": "Source-relative path patterns that narrow directory copies to\nmatching source paths.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "required": {
+          "description": "Whether a missing source should fail validation.",
+          "type": "boolean"
+        },
+        "source": {
+          "description": "Source path, relative to the root checkout unless absolute.",
+          "type": "string"
+        },
+        "symlinks": {
+          "$ref": "#/$defs/SymlinkMode",
+          "description": "How safe source symlinks are handled."
+        },
+        "target": {
+          "description": "Target path, relative to the current worktree unless absolute.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "type": "object"
+    },
+    "DirectCommandObject": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_failure": {
+          "description": "Whether a non-zero exit status should be non-fatal.",
+          "type": "boolean"
+        },
+        "args": {
+          "description": "Program arguments.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "cwd": {
+          "description": "Command working directory, relative to the worktree unless absolute.",
+          "type": "string"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Extra environment variables for this command.",
+          "type": "object"
+        },
+        "name": {
+          "description": "Optional display name.",
+          "type": "string"
+        },
+        "program": {
+          "description": "Program executable.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "program"
+      ],
+      "type": "object"
+    },
+    "MetadataField": {
+      "enum": [
+        "permissions",
+        "owner",
+        "group",
+        "ownership"
+      ],
+      "type": "string"
+    },
+    "MixedFileObject": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Copy object entry for mixed `files` and `[[file]]` declarations.",
+          "properties": {
+            "ignore": {
+              "description": "Source-relative path patterns that copy should skip.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "ignore_metadata": {
+              "description": "Metadata fields that copy should not compare or apply.",
+              "items": {
+                "$ref": "#/$defs/MetadataField"
+              },
+              "type": "array"
+            },
+            "include": {
+              "description": "Source-relative path patterns that narrow directory copies to\nmatching source paths.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "operation": {
+              "const": "copy",
+              "type": "string"
+            },
+            "required": {
+              "description": "Whether a missing source should fail validation.",
+              "type": "boolean"
+            },
+            "source": {
+              "description": "Source path, relative to the root checkout unless absolute.",
+              "type": "string"
+            },
+            "symlinks": {
+              "$ref": "#/$defs/SymlinkMode",
+              "description": "How safe source symlinks are handled."
+            },
+            "target": {
+              "description": "Target path, relative to the current worktree unless absolute.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "operation",
+            "source"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Symlink object entry for mixed `files` and `[[file]]` declarations.",
+          "properties": {
+            "operation": {
+              "const": "symlink",
+              "type": "string"
+            },
+            "required": {
+              "description": "Whether a missing source should fail validation.",
+              "type": "boolean"
+            },
+            "source": {
+              "description": "Source path, relative to the root checkout unless absolute.",
+              "type": "string"
+            },
+            "target": {
+              "description": "Target path, relative to the current worktree unless absolute.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "operation",
+            "source"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Sync object entry for mixed `files` and `[[file]]` declarations.",
+          "not": {
+            "properties": {
+              "delete": {
+                "const": true
+              },
+              "include": {
+                "minItems": 1
+              }
+            },
+            "required": [
+              "delete",
+              "include"
+            ]
+          },
+          "properties": {
+            "compare": {
+              "$ref": "#/$defs/SyncCompare",
+              "description": "File comparison mode."
+            },
+            "delete": {
+              "description": "Whether target-only files are deleted for directory sync.",
+              "type": "boolean"
+            },
+            "ignore": {
+              "description": "Source-relative path patterns that sync should skip.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "ignore_metadata": {
+              "description": "Metadata fields that sync should not compare or apply.",
+              "items": {
+                "$ref": "#/$defs/MetadataField"
+              },
+              "type": "array"
+            },
+            "include": {
+              "description": "Source-relative path patterns that narrow directory sync to\nmatching source paths. A non-empty list cannot combine with\n`delete = true`.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "operation": {
+              "const": "sync",
+              "type": "string"
+            },
+            "required": {
+              "description": "Whether a missing source should fail validation.",
+              "type": "boolean"
+            },
+            "source": {
+              "description": "Source path, relative to the root checkout unless absolute.",
+              "type": "string"
+            },
+            "symlinks": {
+              "$ref": "#/$defs/SymlinkMode",
+              "description": "How safe source symlinks are handled."
+            },
+            "target": {
+              "description": "Target path, relative to the current worktree unless absolute.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "operation",
+            "source"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ShellCommandObject": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_failure": {
+          "description": "Whether a non-zero exit status should be non-fatal.",
+          "type": "boolean"
+        },
+        "cwd": {
+          "description": "Command working directory, relative to the worktree unless absolute.",
+          "type": "string"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Extra environment variables for this command.",
+          "type": "object"
+        },
+        "name": {
+          "description": "Optional display name.",
+          "type": "string"
+        },
+        "run": {
+          "description": "Shell command to execute.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run"
+      ],
+      "type": "object"
+    },
+    "SymlinkEntry": {
+      "anyOf": [
+        {
+          "description": "Source and target use the same relative path.",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/SymlinkObject",
+          "description": "Symlink object entry."
+        }
+      ]
+    },
+    "SymlinkMode": {
+      "enum": [
+        "preserve"
+      ],
+      "type": "string"
+    },
+    "SymlinkObject": {
+      "additionalProperties": false,
+      "properties": {
+        "required": {
+          "description": "Whether a missing source should fail validation.",
+          "type": "boolean"
+        },
+        "source": {
+          "description": "Source path, relative to the root checkout unless absolute.",
+          "type": "string"
+        },
+        "target": {
+          "description": "Target path, relative to the current worktree unless absolute.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "type": "object"
+    },
+    "SyncCompare": {
+      "enum": [
+        "metadata",
+        "checksum"
+      ],
+      "type": "string"
+    },
+    "SyncEntry": {
+      "anyOf": [
+        {
+          "description": "Source and target use the same relative path.",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/SyncObject",
+          "description": "Sync object entry."
+        }
+      ]
+    },
+    "SyncObject": {
+      "additionalProperties": false,
+      "not": {
+        "properties": {
+          "delete": {
+            "const": true
+          },
+          "include": {
+            "minItems": 1
+          }
+        },
+        "required": [
+          "delete",
+          "include"
+        ]
+      },
+      "properties": {
+        "compare": {
+          "$ref": "#/$defs/SyncCompare",
+          "description": "File comparison mode."
+        },
+        "delete": {
+          "description": "Whether target-only files are deleted for directory sync.",
+          "type": "boolean"
+        },
+        "ignore": {
+          "description": "Source-relative path patterns that sync should skip.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "ignore_metadata": {
+          "description": "Metadata fields that sync should not compare or apply.",
+          "items": {
+            "$ref": "#/$defs/MetadataField"
+          },
+          "type": "array"
+        },
+        "include": {
+          "description": "Source-relative path patterns that narrow directory sync to matching\nsource paths. A non-empty list cannot combine with `delete = true`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "required": {
+          "description": "Whether a missing source should fail validation.",
+          "type": "boolean"
+        },
+        "source": {
+          "description": "Source path, relative to the root checkout unless absolute.",
+          "type": "string"
+        },
+        "symlinks": {
+          "$ref": "#/$defs/SymlinkMode",
+          "description": "How safe source symlinks are handled."
+        },
+        "target": {
+          "description": "Target path, relative to the current worktree unless absolute.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "type": "object"
+    },
+    "WorktreeIdConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "length": {
+          "description": "Number of lowercase Crockford base32 digest characters.",
+          "format": "uint",
+          "maximum": 52,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "WorktreeSlugConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "max_length": {
+          "description": "Maximum length of the complete slug.",
+          "format": "uint",
+          "minimum": 3,
+          "type": "integer"
+        },
+        "separator": {
+          "$ref": "#/$defs/WorktreeSlugSeparator",
+          "description": "Separator used inside the readable name and before the ID."
+        }
+      },
+      "type": "object"
+    },
+    "WorktreeSlugSeparator": {
+      "enum": [
+        "-",
+        "_"
+      ],
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "command": {
+      "description": "Verbose command entries. TOML uses this as [[command]].",
+      "items": {
+        "$ref": "#/$defs/CommandObject"
+      },
+      "type": "array"
+    },
+    "commands": {
+      "description": "Command entries. Entries run before verbose [[command]] entries.",
+      "items": {
+        "$ref": "#/$defs/CommandEntry"
+      },
+      "type": "array"
+    },
+    "copy": {
+      "description": "Copy file entries. Entries run before symlink, sync, files, and file.",
+      "items": {
+        "$ref": "#/$defs/CopyEntry"
+      },
+      "type": "array"
+    },
+    "dangerously_allow_sources_outside_root": {
+      "description": "Allows file operation sources outside the root checkout.",
+      "type": "boolean"
+    },
+    "dangerously_allow_targets_outside_worktree": {
+      "description": "Allows file operation targets outside the current worktree.",
+      "type": "boolean"
+    },
+    "default_ignore": {
+      "description": "Default path ignore patterns prepended to copy and sync operations.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "file": {
+      "description": "Verbose mixed file operation entries. TOML uses this as [[file]].",
+      "items": {
+        "$ref": "#/$defs/MixedFileObject"
+      },
+      "type": "array"
+    },
+    "files": {
+      "description": "Mixed file operation entries. Entries run after copy, symlink, and sync.",
+      "items": {
+        "$ref": "#/$defs/MixedFileObject"
+      },
+      "type": "array"
+    },
+    "strict": {
+      "description": "Enables strict declarative validation and conflict handling.",
+      "type": "boolean"
+    },
+    "symlink": {
+      "description": "Symlink file entries. Entries run after copy and before sync.",
+      "items": {
+        "$ref": "#/$defs/SymlinkEntry"
+      },
+      "type": "array"
+    },
+    "sync": {
+      "description": "Sync file entries. Entries run after symlink and before files.",
+      "items": {
+        "$ref": "#/$defs/SyncEntry"
+      },
+      "type": "array"
+    },
+    "teardown_command": {
+      "description": "Verbose teardown entries. TOML uses this as [[teardown_command]].",
+      "items": {
+        "$ref": "#/$defs/CommandObject"
+      },
+      "type": "array"
+    },
+    "teardown_commands": {
+      "description": "Teardown command entries. Entries run before verbose\n[[teardown_command]] entries.",
+      "items": {
+        "$ref": "#/$defs/CommandEntry"
+      },
+      "type": "array"
+    },
+    "worktree_id": {
+      "$ref": "#/$defs/WorktreeIdConfig",
+      "description": "Stable compact worktree ID settings."
+    },
+    "worktree_slug": {
+      "$ref": "#/$defs/WorktreeSlugConfig",
+      "description": "Readable worktree slug presentation settings."
+    }
+  },
+  "title": "TreebootConfig",
+  "type": "object"
+}

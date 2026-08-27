@@ -72,10 +72,17 @@ readme_spec="$(
   extract_readme_spec README.md
 )"
 spec_version="$(
-  extract_spec_version docs/SPEC.md
+  extract_spec_version crates/treeboot-spec/SPEC.md
 )"
 package_version="$(
   extract_package_version crates/treeboot/Cargo.toml
+)"
+spec_package_version="$(
+  extract_package_version crates/treeboot-spec/Cargo.toml
+)"
+embedded_spec_version="$(
+  sed -nE 's/^pub const SPEC_VERSION: &str = "([0-9]+\.[0-9]+\.[0-9]+)";/\1/p' \
+    crates/treeboot-spec/src/lib.rs
 )"
 
 if [[ -z "${readme_spec}" ]]; then
@@ -83,27 +90,27 @@ if [[ -z "${readme_spec}" ]]; then
 fi
 
 if [[ -z "${spec_version}" ]]; then
-  fail "docs/SPEC.md must mention the current spec version as 'Specification vX.Y.Z'"
+  fail "crates/treeboot-spec/SPEC.md must mention the current spec version as 'Specification vX.Y.Z'"
 fi
 
 if [[ -n "${readme_spec}" && -n "${spec_version}" && "${readme_spec}" != "${spec_version}" ]]; then
-  fail "README.md spec v${readme_spec} does not match docs/SPEC.md v${spec_version}"
+  fail "README.md spec v${readme_spec} does not match crates/treeboot-spec/SPEC.md v${spec_version}"
 fi
 
 for implementation_heading in \
   "Public library compatibility" \
   "Distribution: Install and releases" \
   "Verification: Testing strategy"; do
-  if grep -Fqx "## ${implementation_heading}" docs/SPEC.md; then
-    fail "docs/SPEC.md must not own implementation-specific '${implementation_heading}' guidance"
+  if grep -Fqx "## ${implementation_heading}" crates/treeboot-spec/SPEC.md; then
+    fail "crates/treeboot-spec/SPEC.md must not own implementation-specific '${implementation_heading}' guidance"
   fi
 done
 
 for implementation_phrase in \
   "Rust executable" \
   "generated from the Rust schema model"; do
-  if grep -Fq "${implementation_phrase}" docs/SPEC.md; then
-    fail "docs/SPEC.md must remain language-agnostic; found '${implementation_phrase}'"
+  if grep -Fq "${implementation_phrase}" crates/treeboot-spec/SPEC.md; then
+    fail "crates/treeboot-spec/SPEC.md must remain language-agnostic; found '${implementation_phrase}'"
   fi
 done
 
@@ -111,7 +118,15 @@ if [[ -z "${package_version}" ]]; then
   fail "crates/treeboot/Cargo.toml must expose package version X.Y.Z"
 fi
 
-for crate_license in crates/treeboot/LICENSE crates/treeboot-core/LICENSE; do
+if [[ "${spec_package_version}" != "${package_version}" ]]; then
+  fail "treeboot-spec package v${spec_package_version} must match treeboot v${package_version}"
+fi
+
+if [[ "${embedded_spec_version}" != "${spec_version}" ]]; then
+  fail "treeboot-spec SPEC_VERSION v${embedded_spec_version} must match canonical spec v${spec_version}"
+fi
+
+for crate_license in crates/treeboot/LICENSE crates/treeboot-core/LICENSE crates/treeboot-spec/LICENSE; do
   if ! cmp -s LICENSE "${crate_license}"; then
     fail "${crate_license} must match root LICENSE"
   fi
@@ -122,9 +137,12 @@ if [[ -n "${spec_base_ref}" ]]; then
   if ! git rev-parse --verify --quiet "${spec_base_ref}" >/dev/null; then
     fail "spec version base ref '${spec_base_ref}' is not available"
   elif [[ -n "$(git diff --name-only \
-    "${spec_base_ref}...HEAD" -- docs/SPEC.md)" ]]; then
+    "${spec_base_ref}...HEAD" -- crates/treeboot-spec/SPEC.md docs/SPEC.md)" ]]; then
     base_spec=""
-    if git_path_exists "${spec_base_ref}" docs/SPEC.md; then
+    if git_path_exists "${spec_base_ref}" crates/treeboot-spec/SPEC.md; then
+      base_spec="$(git show "${spec_base_ref}:crates/treeboot-spec/SPEC.md" |
+        extract_spec_version)"
+    elif git_path_exists "${spec_base_ref}" docs/SPEC.md; then
       base_spec="$(git show "${spec_base_ref}:docs/SPEC.md" |
         extract_spec_version)"
     elif git_path_exists "${spec_base_ref}" docs/SPEC.html; then
@@ -138,7 +156,7 @@ if [[ -n "${spec_base_ref}" ]]; then
       :
     elif [[ "${spec_version}" != "${base_spec}" ]] &&
       ! version_greater_than "${spec_version}" "${base_spec}"; then
-      fail "docs/SPEC.md changed without increasing spec version"
+      fail "crates/treeboot-spec/SPEC.md changed without increasing spec version"
       fail "base v${base_spec}, current v${spec_version}"
     fi
   fi
@@ -150,6 +168,17 @@ for package in clap clap_complete anyhow; do
     fail "treeboot-core must not depend on CLI/error-boundary package '${package}'"
   fi
 done
+
+spec_tree="$(cargo tree -p treeboot-spec --locked --prefix none)"
+for package in treeboot treeboot-core; do
+  if printf '%s\n' "${spec_tree}" | grep -Eq "^${package} v"; then
+    fail "treeboot-spec must not depend on reference package '${package}'"
+  fi
+done
+
+if ! bash scripts/check-spec-cases.sh; then
+  fail "treeboot-spec case inventory is out of sync"
+fi
 
 if ((failures > 0)); then
   exit 1
