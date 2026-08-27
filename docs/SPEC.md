@@ -2239,11 +2239,13 @@ treeboot: no config detected
 treeboot: no teardown commands configured
 ```
 
-Manual file operation validation errors must identify the CLI operation, source,
-and target involved. They must not report synthetic config file paths, TOML line
-numbers, or TOML column numbers for command-line arguments. Config parse or
-normalization errors found while loading manual command policy still report the
-real config path and TOML location.
+Command-wide manual argument or option validation errors must identify the CLI
+operation and the offending option, value, or reason. A path or planning error
+tied to a normalized manual operation must identify the CLI operation, source,
+and target. Neither error category reports synthetic config paths or TOML
+locations for command-line arguments. Config parse or normalization errors found
+while loading manual command policy still report the real config path and TOML
+location.
 
 | Exit | Meaning                                                                                                             |
 | ---- | ------------------------------------------------------------------------------------------------------------------- |
