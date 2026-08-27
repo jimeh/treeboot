@@ -1898,19 +1898,21 @@ Copy and sync use `symlinks = "preserve"` by default: safe source symlinks are
 recreated as symlinks instead of copying their referents. A source symlink whose
 target text is empty, whose target is dangling or otherwise cannot be resolved,
 or whose resolved target is outside `TREEBOOT_ROOT_PATH` is a validation error.
-Preserved source symlinks are rechecked immediately before target mutation; if
-the source stops being a symlink, changes the planned target, cannot be
-resolved, or resolves outside `TREEBOOT_ROOT_PATH`, treeboot fails the operation
-before creating or replacing the worktree link. When source and target layouts
-differ, treeboot rewrites copied symlinks to point at the analogous worktree
-destination when it can. Root-local symlink targets are mapped by root-relative
-path into the worktree before treeboot computes the destination symlink. When no
-rewrite is needed, treeboot preserves the symlink target text. For a safe,
-resolvable root-local source symlink, treeboot prints a warning if its final
-worktree referent does not exist and will not be created by the current run.
-This warning does not apply to a dangling source symlink, which fails
-validation. Projects that need custom symlink handling should use a configured
-command.
+Ignored paths and paths outside include scope may be skipped before this
+validation under [Path ignore rules](#path-ignore-rules) and
+[Path include rules](#path-include-rules). Preserved source symlinks are
+rechecked immediately before target mutation; if the source stops being a
+symlink, changes the planned target, cannot be resolved, or resolves outside
+`TREEBOOT_ROOT_PATH`, treeboot fails the operation before creating or replacing
+the worktree link. When source and target layouts differ, treeboot rewrites
+copied symlinks to point at the analogous worktree destination when it can.
+Root-local symlink targets are mapped by root-relative path into the worktree
+before treeboot computes the destination symlink. When no rewrite is needed,
+treeboot preserves the symlink target text. For a safe, resolvable root-local
+source symlink, treeboot prints a warning if its final worktree referent does
+not exist and will not be created by the current run. This warning does not
+apply to a dangling source symlink, which fails validation. Projects that need
+custom symlink handling should use a configured command.
 
 ### File metadata preservation
 
@@ -2245,12 +2247,14 @@ treeboot: no teardown commands configured
 Command-wide manual argument or option validation errors must identify the CLI
 operation and the offending option, value, or reason. A path or planning error
 in a normalized operation's source-to-target mapping must identify the CLI
-operation, source, and target. A recursive source-tree inspection or resolution
-error must identify the CLI operation and the exact failing source path; it need
-not repeat the top-level target. None of these error categories reports
-synthetic config paths or TOML locations for command-line arguments. Config
-parse or normalization errors found while loading manual command policy still
-report the real config path and TOML location.
+operation and source. It must also identify the target once target derivation
+has succeeded. A recursive source-tree inspection or resolution error must
+identify the CLI operation and the most specific source path available when the
+failure occurs. If a traversal race makes the failing nested path unavailable,
+the operation's top-level source is sufficient. None of these error categories
+reports synthetic config paths or TOML locations for command-line arguments.
+Config parse or normalization errors found while loading manual command policy
+still report the real config path and TOML location.
 
 | Exit | Meaning                                                                                                             |
 | ---- | ------------------------------------------------------------------------------------------------------------------- |
