@@ -553,10 +553,12 @@ fn report(reporter: &mut dyn Reporter, event: OutputEvent) -> Result<()> {
         .map_err(|source| Error::Output { source })
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    #[cfg(unix)]
     use std::ffi::OsString;
+    #[cfg(unix)]
     use std::os::unix::ffi::OsStringExt;
 
     use super::*;
@@ -570,6 +572,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn preflight_group_paths_should_reject_non_utf8_action_paths() {
         let non_utf8_path = PathBuf::from(OsString::from_vec(vec![b'f', 0x80]));

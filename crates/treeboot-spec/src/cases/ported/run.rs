@@ -2643,9 +2643,11 @@ pub(crate) fn structured_mode_combinations_and_text_verbose_plan_should_be_suppo
         .current_dir(repo.worktree_path())
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "treeboot: would copy shared/file.txt -> shared/file.txt",
-        ));
+        .stdout(predicate::str::contains(format!(
+            "treeboot: would copy {} -> {}",
+            display_path("shared/file.txt"),
+            display_path("shared/file.txt")
+        )));
 
     let output = treeboot()
         .args(["run", "--dry-run", "--skip-commands", "--yaml"])
