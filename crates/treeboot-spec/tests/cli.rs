@@ -12,7 +12,7 @@ fn list_prints_the_stable_registry() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert_eq!(stdout.lines().count(), 322);
+    assert_eq!(stdout.lines().count(), 335);
     assert!(stdout.lines().all(|line| !line.trim().is_empty()));
 }
 
@@ -135,7 +135,7 @@ fn concise_human_report_defers_failure_details_and_omits_passes() {
     assert!(stdout.contains("1. cli.help.print-usage"), "{stdout}");
     assert!(!stdout.contains("PASS "), "{stdout}");
     assert!(
-        stdout.contains("#cli-surface-fifteen-subcommands-one-default-path"),
+        stdout.contains("#cli-surface-subcommands-and-one-default-path"),
         "{stdout}"
     );
     assert!(stdout.contains("duration: "), "{stdout}");

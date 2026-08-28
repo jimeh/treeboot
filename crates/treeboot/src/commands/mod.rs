@@ -1,3 +1,4 @@
+use clap::error::ErrorKind;
 use clap::{Command as ClapCommand, CommandFactory, FromArgMatches, Parser, Subcommand};
 use treeboot_core::Reporter;
 
@@ -9,6 +10,7 @@ mod env;
 mod init;
 mod manual;
 mod output;
+mod plan;
 mod run;
 mod schema;
 mod status;
@@ -23,7 +25,8 @@ use doctor::DoctorArgs;
 use env::EnvArgs;
 use init::InitArgs;
 use manual::{CopyArgs, SymlinkArgs, SyncArgs};
-use run::RunArgs;
+use plan::PlanArgs;
+use run::{RunArgs, run_run_command};
 use schema::SchemaArgs;
 use status::StatusArgs;
 use teardown::TeardownArgs;
@@ -47,6 +50,8 @@ pub(crate) struct Cli {
 enum Command {
     /// Run worktree bootstrap.
     Run(RunArgs),
+    /// Preview worktree bootstrap without side effects.
+    Plan(PlanArgs),
     /// Print worktree, root, and config discovery status.
     #[command(alias = "info")]
     Status(StatusArgs),
@@ -86,7 +91,27 @@ pub(crate) fn command() -> ClapCommand {
 
 pub(crate) fn parse() -> Cli {
     let matches = command().get_matches();
-    Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit())
+    let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
+    if let Err(message) = cli.validate() {
+        clap::Error::raw(ErrorKind::ArgumentConflict, message)
+            .with_cmd(&command())
+            .exit();
+    }
+    cli
+}
+
+impl Cli {
+    fn validate(&self) -> Result<(), &'static str> {
+        if self.command.is_some() && self.run.output_is_specified() {
+            return Err("run output flags placed before an explicit subcommand are not allowed");
+        }
+        match &self.command {
+            Some(Command::Run(args)) => args.validate(),
+            Some(Command::Plan(args)) => args.validate(),
+            Some(_) => Ok(()),
+            None => self.run.validate(),
+        }
+    }
 }
 
 pub(crate) fn environment_input() -> treeboot_core::EnvironmentInput {
@@ -133,9 +158,8 @@ impl CliError {
 
 pub(crate) fn run_cli(cli: Cli, reporter: &mut dyn Reporter) -> Result<(), CliError> {
     match cli.command {
-        Some(Command::Run(args)) => treeboot_core::run(args.into(), reporter)
-            .map(|_| ())
-            .map_err(Into::into),
+        Some(Command::Run(args)) => run_run_command(args, reporter).map_err(Into::into),
+        Some(Command::Plan(args)) => plan::run_plan_command(args, reporter).map_err(Into::into),
         Some(Command::Status(args)) => status::run_status_command(args).map_err(Into::into),
         Some(Command::Version(args)) => version::run_version_command(args).map_err(Into::into),
         Some(Command::Copy(args)) => {
@@ -166,8 +190,6 @@ pub(crate) fn run_cli(cli: Cli, reporter: &mut dyn Reporter) -> Result<(), CliEr
         }
         Some(Command::Teardown(args)) => teardown::run_teardown_command(args, reporter),
         Some(Command::Worktree(args)) => worktree::run_worktree_command(args).map_err(Into::into),
-        None => treeboot_core::run(cli.run.into(), reporter)
-            .map(|_| ())
-            .map_err(Into::into),
+        None => run_run_command(cli.run, reporter).map_err(Into::into),
     }
 }

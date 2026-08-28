@@ -1,10 +1,8 @@
 use std::path::PathBuf;
 
-use crate::context;
-use crate::{
-    ActionPlan, Config, EnvironmentInput, Error, ExecuteOptions, Executor, OutputEvent, Reporter,
-    Result, RuntimePolicy, Worktree, WorktreeOptions,
-};
+use crate::file_operations::FileApplyOptions;
+use crate::plan::{BootstrapPreparationOptions, prepare_bootstrap};
+use crate::{BootstrapAction, BootstrapReport, EnvironmentInput, Reporter, Result, Worktree};
 
 /// Options for running worktree bootstrap.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -68,74 +66,82 @@ pub struct RunReport {
 ///
 /// # Errors
 ///
-/// Returns an error if context discovery fails, output reporting fails, a
-/// configured file cannot be read, or strict mode treats a missing config as a
-/// failure.
+/// Returns an error if context discovery, config loading, validation, file or
+/// command execution, or output reporting fails.
 pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport> {
-    let runtime_policy = RuntimePolicy::from_environment(&options.environment, options.strict)?;
-    let pre_config_strict = runtime_policy.pre_config_strict();
-    let context = context::resolve(&WorktreeOptions {
-        cwd: options.cwd.clone(),
-        root: options.root.clone(),
-        environment: options.environment.clone(),
-    })?;
+    let dry_run = options.dry_run;
+    let verbose = options.verbose;
+    let skip_commands = options.skip_commands;
+    let force = options.force;
+    let strict = options.strict;
+    let mut prepared = prepare_bootstrap(options.into(), false, reporter)?;
+    prepared.execute(
+        FileApplyOptions {
+            strict,
+            force,
+            dry_run,
+            verbose,
+        },
+        skip_commands,
+        reporter,
+    )?;
 
-    if context.is_root() {
-        report(reporter, OutputEvent::RootWorktreeDetected)?;
+    Ok(RunReport {
+        context: prepared.context,
+        action: run_action(&prepared.report.action),
+    })
+}
 
-        if pre_config_strict {
-            return Err(Error::RootWorktreeStrict);
-        }
+/// Runs worktree bootstrap and returns the complete decision report.
+///
+/// This facade preflights every prepared action path for structured
+/// serialization before it applies any file changes. Existing text callers
+/// should continue to use [`run`].
+///
+/// # Errors
+///
+/// Returns an error if discovery, planning, structured path preflight, file or
+/// command execution, or output reporting fails.
+pub fn run_detailed(options: RunOptions, reporter: &mut dyn Reporter) -> Result<BootstrapReport> {
+    let dry_run = options.dry_run;
+    let verbose = options.verbose;
+    let skip_commands = options.skip_commands;
+    let force = options.force;
+    let strict = options.strict;
+    let mut prepared = prepare_bootstrap(options.into(), false, reporter)?;
+    prepared.preflight_structured_paths()?;
+    prepared.execute(
+        FileApplyOptions {
+            strict,
+            force,
+            dry_run,
+            verbose,
+        },
+        skip_commands,
+        reporter,
+    )?;
+    Ok(prepared.report)
+}
 
-        return Ok(RunReport {
-            context,
-            action: RunAction::RootWorktreeSkipped,
-        });
-    }
-
-    match Config::discover_path(&context, options.config.as_deref())? {
-        Some(path) => {
-            report(reporter, OutputEvent::ConfigDetected { path: path.clone() })?;
-            let config = Config::load(&path, &context)?;
-            let plan_options = runtime_policy.resolve(&config.options);
-            let strict = plan_options.strict();
-            let plan = ActionPlan::from_manifest(
-                &path,
-                &config,
-                &context,
-                plan_options.into_action_plan_options(),
-            )?;
-            Executor::new(ExecuteOptions {
-                strict,
-                force: options.force,
-                dry_run: options.dry_run,
-                verbose: options.verbose,
-                skip_commands: options.skip_commands,
-            })
-            .execute(&plan, reporter)?;
-
-            Ok(RunReport {
-                context: plan.context().clone(),
-                action: RunAction::ConfigApplied { path },
-            })
-        }
-        None => {
-            report(reporter, OutputEvent::NoConfigDetected)?;
-
-            if pre_config_strict {
-                Err(Error::NoConfigDetectedStrict)
-            } else {
-                Ok(RunReport {
-                    context,
-                    action: RunAction::MissingConfig,
-                })
-            }
+impl From<RunOptions> for BootstrapPreparationOptions {
+    fn from(options: RunOptions) -> Self {
+        Self {
+            cwd: options.cwd,
+            root: options.root,
+            environment: options.environment,
+            config: options.config,
+            strict: options.strict,
+            force: options.force,
+            verbose: options.verbose,
+            skip_commands: options.skip_commands,
         }
     }
 }
 
-fn report(reporter: &mut dyn Reporter, event: OutputEvent) -> Result<()> {
-    reporter
-        .report(event)
-        .map_err(|source| Error::Output { source })
+fn run_action(action: &BootstrapAction) -> RunAction {
+    match action {
+        BootstrapAction::MissingConfig => RunAction::MissingConfig,
+        BootstrapAction::RootWorktreeSkipped => RunAction::RootWorktreeSkipped,
+        BootstrapAction::Config { path } => RunAction::ConfigApplied { path: path.clone() },
+    }
 }

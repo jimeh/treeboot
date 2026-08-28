@@ -14,14 +14,36 @@ pub(crate) struct FileExecutionOptions {
     pub(crate) verbose: bool,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct FileExecutionReport {
+    pub(crate) action_count: usize,
+    pub(crate) execution_warnings: Vec<crate::BootstrapWarning>,
+}
+
+pub(crate) type ExecutionWarningInjector = fn(&FileAction) -> Option<crate::BootstrapWarning>;
+
+#[cfg(test)]
 pub(crate) fn execute_file_operation_group(
     plan: &ActionPlan,
     group: &PlannedFileOperationActions,
     options: FileExecutionOptions,
     reporter: &mut dyn Reporter,
 ) -> Result<usize> {
+    execute_file_operation_group_detailed_with_warning_injector(
+        plan, group, options, reporter, None,
+    )
+    .map(|report| report.action_count)
+}
+
+pub(crate) fn execute_file_operation_group_detailed_with_warning_injector(
+    plan: &ActionPlan,
+    group: &PlannedFileOperationActions,
+    options: FileExecutionOptions,
+    reporter: &mut dyn Reporter,
+    warning_injector: Option<ExecutionWarningInjector>,
+) -> Result<FileExecutionReport> {
     if group.actions.is_empty() {
-        return Ok(0);
+        return Ok(FileExecutionReport::default());
     }
 
     let progress_action_count = group.progress_action_count();
@@ -37,12 +59,22 @@ pub(crate) fn execute_file_operation_group(
         )?;
     }
 
+    let mut execution_warnings = Vec::new();
     for action in &group.actions {
         let progress_action = action.counts();
         if options.dry_run {
             report_dry_run(action, reporter, options.verbose)?;
         } else {
-            apply_action(plan, action, reporter, options.verbose)?;
+            apply_action(
+                plan,
+                action,
+                reporter,
+                options.verbose,
+                &mut execution_warnings,
+            )?;
+            if let Some(warning) = warning_injector.and_then(|inject| inject(action)) {
+                execution_warnings.push(warning);
+            }
         }
 
         if !options.verbose && progress_action {
@@ -73,7 +105,10 @@ pub(crate) fn execute_file_operation_group(
         }
     }
 
-    Ok(progress_action_count)
+    Ok(FileExecutionReport {
+        action_count: progress_action_count,
+        execution_warnings,
+    })
 }
 
 fn report_dry_run(action: &FileAction, reporter: &mut dyn Reporter, detailed: bool) -> Result<()> {
@@ -153,6 +188,7 @@ fn apply_action(
     action: &FileAction,
     reporter: &mut dyn Reporter,
     detailed: bool,
+    execution_warnings: &mut Vec<crate::BootstrapWarning>,
 ) -> Result<()> {
     match action {
         FileAction::CreateDirectory {
@@ -194,7 +230,7 @@ fn apply_action(
                             &plan.context().worktree_path,
                         )?;
                     }
-                    copy_file_with_metadata_with_policy(
+                    let warning = copy_file_with_metadata_with_policy(
                         *operation,
                         source_path,
                         target_path,
@@ -202,7 +238,9 @@ fn apply_action(
                         &plan.context().worktree_path,
                         *metadata_policy,
                         Some(reporter),
-                    )
+                    )?;
+                    execution_warnings.extend(warning);
+                    Ok(())
                 },
             )?;
             if detailed {
@@ -225,14 +263,16 @@ fn apply_action(
                 target_path,
                 &plan.context().worktree_path,
                 || {
-                    apply_metadata(
+                    let warning = apply_metadata(
                         *operation,
                         source_path,
                         target_path,
                         *metadata_policy,
                         *target_kind,
                         Some(reporter),
-                    )
+                    )?;
+                    execution_warnings.extend(warning);
+                    Ok(())
                 },
             )?;
             if detailed && *should_report {

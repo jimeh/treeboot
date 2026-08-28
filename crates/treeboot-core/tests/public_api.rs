@@ -4,18 +4,18 @@ use std::process::Command;
 
 use tempfile::TempDir;
 use treeboot_core::{
-    ActionPlan, ActionPlanOptions, CheckAction, CommandKind, CommandOperation, Config,
-    ConfigOptions, ConfigRuntimeOptions, DiagnosticStatus, EnvOptions, Environment,
+    ActionPlan, ActionPlanOptions, BootstrapAction, CheckAction, CommandKind, CommandOperation,
+    Config, ConfigOptions, ConfigRuntimeOptions, DiagnosticStatus, EnvOptions, Environment,
     EnvironmentInput, Error, ExecuteOptions, Executor, FileOperation, FileOperationAction,
     FileOperationCompletionOptions, FileOperationKind, FileOperationOptions, FileOperationSummary,
-    InitOptions, LoadedConfig, ManualFileOperationOptions, MetadataField, OutputEvent, PlanOrigin,
-    PlannedFileStatus, Reporter, RunAction, RunOptions, SourceSpan, StatusOptions, SymlinkMode,
-    SyncCompare, TeardownOptions, Worktree, WorktreeIdConfig, WorktreeIdentityOptions,
+    InitOptions, LoadedConfig, ManualFileOperationOptions, MetadataField, OutputEvent, PlanOptions,
+    PlanOrigin, PlannedFileStatus, Reporter, RunAction, RunOptions, SourceSpan, StatusOptions,
+    SymlinkMode, SyncCompare, TeardownOptions, Worktree, WorktreeIdConfig, WorktreeIdentityOptions,
     WorktreeInspectionOptions, WorktreeOptions, WorktreeSlugConfig, check, config_schema_json,
     diagnose, file_operation_source_candidates, init, inspect_config, inspect_env, inspect_status,
     inspect_status_snapshot, inspect_worktree_id, inspect_worktree_list, inspect_worktree_path,
-    inspect_worktree_slug, prepare_teardown, run, run_file_operation, treeboot_version_info,
-    version_info,
+    inspect_worktree_slug, plan, prepare_teardown, run, run_detailed, run_file_operation,
+    treeboot_version_info, version_info,
 };
 
 #[derive(Default)]
@@ -109,6 +109,7 @@ fn public_enum_policy_should_keep_open_enums_non_exhaustive() {
     assert_non_exhaustive(include_str!("../src/check.rs"), "CheckAction");
     assert_non_exhaustive(include_str!("../src/manual.rs"), "FileOperationAction");
     assert_non_exhaustive(include_str!("../src/validation.rs"), "PlanWarning");
+    assert_non_exhaustive(include_str!("../src/plan.rs"), "BootstrapAction");
 }
 
 #[test]
@@ -149,6 +150,14 @@ fn public_struct_policy_should_keep_selected_types_non_exhaustive() {
     assert_non_exhaustive(include_str!("../src/worktree.rs"), "WorktreeEntry");
     assert_non_exhaustive(include_str!("../src/worktree.rs"), "WorktreePathReport");
     assert_non_exhaustive(include_str!("../src/worktree.rs"), "WorktreeListReport");
+    let plan = include_str!("../src/plan.rs");
+    assert_non_exhaustive(plan, "PlanOptions");
+    assert_non_exhaustive(plan, "BootstrapReport");
+    assert_non_exhaustive(plan, "BootstrapFileSummary");
+    assert_non_exhaustive(plan, "BootstrapFileOperation");
+    assert_non_exhaustive(plan, "BootstrapFileOperationSummary");
+    assert_non_exhaustive(plan, "BootstrapCommand");
+    assert_non_exhaustive(plan, "BootstrapWarning");
 }
 
 #[test]
@@ -945,6 +954,51 @@ fn public_api_run_should_apply_discovered_config() {
         .to_string_lossy();
     assert_eq!(id.len(), 9);
     assert!(slug.ends_with(id.as_ref()));
+}
+
+#[test]
+fn public_api_plan_should_report_file_changes_without_mutation() {
+    let repo = git_worktree();
+    write_file(&repo.root_path().join("shared.txt"), "root\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        "copy = [{ source = \"shared.txt\", target = \"shared.txt\" }]\n",
+    );
+    let mut options = PlanOptions::default();
+    options.cwd = Some(repo.worktree_path().to_path_buf());
+    options.skip_commands = true;
+    let mut reporter = VecReporter::default();
+
+    let report = plan(options, &mut reporter).expect("bootstrap should plan");
+
+    assert!(report.has_file_changes);
+    assert_eq!(report.file_summary.changed, 1);
+    assert_eq!(report.files.len(), 1);
+    assert!(!repo.worktree_path().join("shared.txt").exists());
+}
+
+#[test]
+fn public_api_run_detailed_should_preserve_run_report_compatibility() {
+    let repo = git_worktree();
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        "commands = []\n",
+    );
+    let mut reporter = VecReporter::default();
+
+    let report = run_detailed(
+        RunOptions {
+            cwd: Some(repo.worktree_path().to_path_buf()),
+            dry_run: true,
+            ..RunOptions::default()
+        },
+        &mut reporter,
+    )
+    .expect("detailed dry run should succeed");
+
+    assert!(matches!(report.action, BootstrapAction::Config { .. }));
+    assert!(!report.has_file_changes);
+    assert!(report.execution_warnings.is_empty());
 }
 
 #[test]

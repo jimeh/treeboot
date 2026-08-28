@@ -31,6 +31,7 @@ mod metadata;
 mod output;
 mod path_filter;
 mod paths;
+mod plan;
 mod run;
 mod runtime;
 mod status;
@@ -57,7 +58,11 @@ pub use metadata::{
     treeboot_version_info, treeboot_version_summary, version_info,
 };
 pub use output::{FileOperationSummary, OutputEvent, Reporter};
-pub use run::{RunAction, RunOptions, RunReport, run};
+pub use plan::{
+    BootstrapAction, BootstrapCommand, BootstrapFileOperation, BootstrapFileOperationSummary,
+    BootstrapFileSummary, BootstrapReport, BootstrapWarning, PlanOptions, plan,
+};
+pub use run::{RunAction, RunOptions, RunReport, run, run_detailed};
 pub use runtime::{ResolvedRuntimePolicy, RuntimeOptionOverrides, RuntimePolicy};
 pub use status::{
     StatusOptions, StatusReport, StatusSnapshotReport, inspect_status, inspect_status_snapshot,

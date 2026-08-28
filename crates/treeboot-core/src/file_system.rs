@@ -536,6 +536,7 @@ pub(crate) fn copy_file_with_metadata(
         MetadataPolicy::default(),
         None,
     )
+    .map(|_| ())
 }
 
 pub(crate) fn copy_file_with_metadata_with_policy(
@@ -546,7 +547,7 @@ pub(crate) fn copy_file_with_metadata_with_policy(
     worktree_path: &Path,
     metadata_policy: MetadataPolicy,
     reporter: Option<&mut dyn Reporter>,
-) -> Result<()> {
+) -> Result<Option<crate::BootstrapWarning>> {
     let source_metadata = ensure_source_file_safe(operation, source_path, root_path)?;
     let mut source_file = File::open(source_path).map_err(|source| Error::FileOperationIo {
         operation: operation.as_str(),
@@ -588,7 +589,7 @@ pub(crate) fn apply_metadata(
     policy: MetadataPolicy,
     target_kind: MetadataTarget,
     reporter: Option<&mut dyn Reporter>,
-) -> Result<()> {
+) -> Result<Option<crate::BootstrapWarning>> {
     let metadata = metadata(source_path, operation)?;
     apply_metadata_from_source(
         operation,
@@ -607,8 +608,8 @@ fn apply_metadata_from_source(
     policy: MetadataPolicy,
     target_kind: MetadataTarget,
     reporter: Option<&mut dyn Reporter>,
-) -> Result<()> {
-    apply_ownership(operation, target_path, metadata, policy, reporter)?;
+) -> Result<Option<crate::BootstrapWarning>> {
+    let ownership_warning = apply_ownership(operation, target_path, metadata, policy, reporter)?;
     if target_kind == MetadataTarget::File {
         apply_file_times(operation, target_path, metadata)?;
     }
@@ -621,7 +622,7 @@ fn apply_metadata_from_source(
             }
         })?;
     }
-    Ok(())
+    Ok(ownership_warning)
 }
 
 fn apply_file_times(
@@ -663,9 +664,9 @@ fn apply_ownership(
     metadata: &Metadata,
     policy: MetadataPolicy,
     reporter: Option<&mut dyn Reporter>,
-) -> Result<()> {
+) -> Result<Option<crate::BootstrapWarning>> {
     if !policy.owner && !policy.group {
-        return Ok(());
+        return Ok(None);
     }
 
     let target_metadata =
@@ -677,22 +678,26 @@ fn apply_ownership(
     let uid = (policy.owner && metadata.uid() != target_metadata.uid()).then_some(metadata.uid());
     let gid = (policy.group && metadata.gid() != target_metadata.gid()).then_some(metadata.gid());
     if uid.is_none() && gid.is_none() {
-        return Ok(());
+        return Ok(None);
     }
 
     match std::os::unix::fs::chown(target_path, uid, gid) {
-        Ok(()) => Ok(()),
+        Ok(()) => Ok(None),
         Err(source) if source.kind() == std::io::ErrorKind::PermissionDenied => {
+            let warning = crate::BootstrapWarning {
+                path: target_path.to_path_buf(),
+                reason: source.to_string(),
+            };
             if let Some(reporter) = reporter {
                 report(
                     reporter,
                     OutputEvent::OwnershipWarning {
-                        path: target_path.to_path_buf(),
-                        reason: source.to_string(),
+                        path: warning.path.clone(),
+                        reason: warning.reason.clone(),
                     },
                 )?;
             }
-            Ok(())
+            Ok(Some(warning))
         }
         Err(source) => Err(Error::FileOperationIo {
             operation: operation.as_str(),
@@ -709,8 +714,8 @@ fn apply_ownership(
     _metadata: &Metadata,
     _policy: MetadataPolicy,
     _reporter: Option<&mut dyn Reporter>,
-) -> Result<()> {
-    Ok(())
+) -> Result<Option<crate::BootstrapWarning>> {
+    Ok(None)
 }
 
 fn ensure_source_file_safe(

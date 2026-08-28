@@ -22,7 +22,7 @@ output events.
 ```mermaid
 flowchart LR
   CLI["crates/treeboot<br/>clap commands<br/>text/JSON/YAML output<br/>stdout/stderr reporting<br/>exit-code mapping"]
-  API["treeboot_core public API<br/>run / prepare_teardown / execute_teardown<br/>inspect_* / check / diagnose<br/>init / run_file_operation<br/>Worktree / Config / plans<br/>OutputEvent / Reporter"]
+  API["treeboot_core public API<br/>plan / run / run_detailed<br/>prepare_teardown / execute_teardown<br/>inspect_* / check / diagnose<br/>init / run_file_operation<br/>Worktree / Config / plans<br/>OutputEvent / Reporter"]
   GIT["Git boundary<br/>native path bytes<br/>NUL-delimited worktree list<br/>origin/HEAD"]
   FS["Filesystem boundary<br/>copy / symlink / sync<br/>read config<br/>write init files"]
   PROC["Process boundary<br/>configured commands"]
@@ -59,6 +59,8 @@ option structs and prints core output events._
 - Parses and normalizes declarative TOML config.
 - Builds separate validated bootstrap `ActionPlan` and command-only
   `TeardownPlan` values.
+- Plans declarative bootstrap through a shared prepared-group boundary used by
+  `plan`, dry-run, and execution reports.
 - Executes bootstrap plans through `Executor` and both command phases through
   one shared command runtime.
 - Prepares immutable teardown plans without reading stdin or deciding approval.
@@ -129,22 +131,23 @@ facade functions for full treeboot behavior, and composable primitives for
 callers that want to discover a `Worktree`, load a `LoadedConfig`, build an
 `ActionPlan`, and execute it themselves.
 
-| CLI command                        | Core API                                                                                                 | Primary modules                                                                                             | Side effects                                                                                                         |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `treeboot`, `treeboot run`         | `run(RunOptions, Reporter)`                                                                              | `run`, `runtime`, `context`, `discovery`, `config`, `validation`, `executor`, `file_operations`, `commands` | May apply file operations and run configured bootstrap commands.                                                     |
-| `treeboot teardown`                | `prepare_teardown(TeardownOptions, Reporter)` then `execute_teardown(...)`                               | `teardown`, `context`, `discovery`, `config`, `validation`, `commands`, `output`                            | Preparation is side-effect-free except reporting; execution may run teardown commands, but never removes a worktree. |
-| `treeboot status`, `info`          | `inspect_status(StatusOptions)`; `inspect_status_snapshot(StatusOptions)` for serializable callers       | `status`, `context`, `discovery`, `config`                                                                  | View-only. Reports worktree, root, and config discovery without parsing config.                                      |
-| `treeboot version`                 | `treeboot_version_info()`, `version_info(...)`                                                           | `metadata`                                                                                                  | View-only. Reports package and implemented spec versions.                                                            |
-| `treeboot copy`, `symlink`, `sync` | `run_file_operation(FileOperationOptions, Reporter)`                                                     | `manual`, `runtime`, `context`, `config`, `validation`, `executor`, `file_operations`                       | Applies one manual file-operation batch. Skips configured actions, but loads config policy when present.             |
-| `treeboot config`                  | `inspect_config(ConfigOptions)`                                                                          | `config`, `runtime`, `context`, `validation`                                                                | View-only. Prints normalized config and phase-labelled validation warnings.                                          |
-| `treeboot check`                   | `check(CheckOptions)`                                                                                    | `check`, `runtime`, `context`, `discovery`, `config`, `validation`                                          | View-only. Validates bootstrap and teardown phases without applying effects.                                         |
-| `treeboot init`                    | `init(InitOptions, Reporter)`                                                                            | `init`, `context`, `output`                                                                                 | Writes a starter config.                                                                                             |
-| `treeboot schema`                  | `config_schema_json()`                                                                                   | `metadata`                                                                                                  | View-only unless `--output` is used. Prints or writes the bundled config schema.                                     |
-| `treeboot doctor`                  | `diagnose(DoctorOptions)`                                                                                | `doctor`, `runtime`, `context`, `discovery`, `config`, `validation`                                         | View-only. Reports diagnostic statuses for discovery and validation, including strict diagnostics when requested.    |
-| `treeboot env`                     | `inspect_env(EnvOptions)`                                                                                | `env`, `context`, `config`, `worktree_id`                                                                   | View-only. Loads config to report the effective child environment passed to configured commands.                     |
-| `treeboot worktree id/slug`        | `inspect_worktree_id(WorktreeIdentityOptions)`, `inspect_worktree_slug(...)`                             | `worktree`, `git`, `env`, `context`, `config`, `worktree_id`                                                | View-only. Derives one config-aware identity from implicit Git context or an exact explicit target.                  |
-| `treeboot worktree path/list`      | `inspect_worktree_path(WorktreeInspectionOptions)`, `inspect_worktree_list(...)`                         | `worktree`, `git`, `env`, `context`, `config`, `worktree_id`                                                | View-only. Resolves candidate-local IDs, slugs, and canonical paths without changing Git metadata.                   |
-| `treeboot completions`             | CLI-owned completion registration; `file_operation_source_candidates(...)` for dynamic source completion | `main.rs`, `commands/completions.rs`, `manual`                                                              | Prints shell registration. Dynamic source candidates delegate to core.                                               |
+| CLI command                        | Core API                                                                                                 | Primary modules                                                                                         | Side effects                                                                                                         |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `treeboot`, `treeboot run`         | `run(RunOptions, Reporter)`; `run_detailed(...)` for structured reports                                  | `run`, `plan`, `runtime`, `context`, `discovery`, `config`, `validation`, `file_operations`, `commands` | May apply file operations and run configured bootstrap commands.                                                     |
+| `treeboot plan`                    | `plan(PlanOptions, Reporter)`                                                                            | `plan`, `runtime`, `context`, `discovery`, `config`, `validation`, `file_operations`, `commands`        | View-only. Reports the current file decisions and configured commands without applying or spawning them.             |
+| `treeboot teardown`                | `prepare_teardown(TeardownOptions, Reporter)` then `execute_teardown(...)`                               | `teardown`, `context`, `discovery`, `config`, `validation`, `commands`, `output`                        | Preparation is side-effect-free except reporting; execution may run teardown commands, but never removes a worktree. |
+| `treeboot status`, `info`          | `inspect_status(StatusOptions)`; `inspect_status_snapshot(StatusOptions)` for serializable callers       | `status`, `context`, `discovery`, `config`                                                              | View-only. Reports worktree, root, and config discovery without parsing config.                                      |
+| `treeboot version`                 | `treeboot_version_info()`, `version_info(...)`                                                           | `metadata`                                                                                              | View-only. Reports package and implemented spec versions.                                                            |
+| `treeboot copy`, `symlink`, `sync` | `run_file_operation(FileOperationOptions, Reporter)`                                                     | `manual`, `runtime`, `context`, `config`, `validation`, `executor`, `file_operations`                   | Applies one manual file-operation batch. Skips configured actions, but loads config policy when present.             |
+| `treeboot config`                  | `inspect_config(ConfigOptions)`                                                                          | `config`, `runtime`, `context`, `validation`                                                            | View-only. Prints normalized config and phase-labelled validation warnings.                                          |
+| `treeboot check`                   | `check(CheckOptions)`                                                                                    | `check`, `runtime`, `context`, `discovery`, `config`, `validation`                                      | View-only. Validates bootstrap and teardown phases without applying effects.                                         |
+| `treeboot init`                    | `init(InitOptions, Reporter)`                                                                            | `init`, `context`, `output`                                                                             | Writes a starter config.                                                                                             |
+| `treeboot schema`                  | `config_schema_json()`                                                                                   | `metadata`                                                                                              | View-only unless `--output` is used. Prints or writes the bundled config schema.                                     |
+| `treeboot doctor`                  | `diagnose(DoctorOptions)`                                                                                | `doctor`, `runtime`, `context`, `discovery`, `config`, `validation`                                     | View-only. Reports diagnostic statuses for discovery and validation, including strict diagnostics when requested.    |
+| `treeboot env`                     | `inspect_env(EnvOptions)`                                                                                | `env`, `context`, `config`, `worktree_id`                                                               | View-only. Loads config to report the effective child environment passed to configured commands.                     |
+| `treeboot worktree id/slug`        | `inspect_worktree_id(WorktreeIdentityOptions)`, `inspect_worktree_slug(...)`                             | `worktree`, `git`, `env`, `context`, `config`, `worktree_id`                                            | View-only. Derives one config-aware identity from implicit Git context or an exact explicit target.                  |
+| `treeboot worktree path/list`      | `inspect_worktree_path(WorktreeInspectionOptions)`, `inspect_worktree_list(...)`                         | `worktree`, `git`, `env`, `context`, `config`, `worktree_id`                                            | View-only. Resolves candidate-local IDs, slugs, and canonical paths without changing Git metadata.                   |
+| `treeboot completions`             | CLI-owned completion registration; `file_operation_source_candidates(...)` for dynamic source completion | `main.rs`, `commands/completions.rs`, `manual`                                                          | Prints shell registration. Dynamic source candidates delegate to core.                                               |
 
 ## Anchors: Runtime Context
 
@@ -220,19 +223,23 @@ Repository inventory and reverse lookup remain separate behind
 `WorktreeInspectionOptions`, preventing explicit-target inputs from leaking into
 candidate scans.
 
-## Primary orchestration: `treeboot run` Flow
+## Primary orchestration: Plan and run flow
 
-Run mode first checks for root-checkout no-op behavior, then discovers config
-before planning file and command work.
+Plan and run first check for root-checkout no-op behavior, then discover config
+before preparing file and command work. The prepared concrete groups produce the
+public `BootstrapReport` and are either previewed or applied immediately.
 
 ```mermaid
 flowchart TD
-  CLI["CLI dispatch<br/>RunOptions"] --> CTX["Resolve context<br/>context::resolve"]
+  CLI["CLI dispatch<br/>PlanOptions / RunOptions"] --> CTX["Resolve context<br/>context::resolve"]
   CTX --> ROOT{"Root checkout?<br/>Git main == worktree"}
   ROOT -->|no| CONFIG["Discover config<br/>requested or default path<br/>load TOML"]
   ROOT -->|yes| DONE["Report RootWorktreeDetected<br/>exit 0, or error under pre-config strict"]
   CONFIG --> PLAN["Plan config<br/>ActionPlan"]
-  PLAN --> FILES["Apply files<br/>copy / symlink / sync"]
+  PLAN --> PREPARE["Prepare every file group<br/>cross-operation warnings<br/>BootstrapReport"]
+  PREPARE --> MODE{"Plan, dry-run,<br/>or execute?"}
+  MODE -->|plan / dry-run| PREVIEW["Report files and commands<br/>no effects"]
+  MODE -->|execute| FILES["Apply prepared files<br/>copy / symlink / sync"]
   FILES --> CMDS["Run commands<br/>unless --skip-commands"]
 ```
 
@@ -346,6 +353,7 @@ executor before file operations and commands run.
 ```mermaid
 flowchart LR
   RUN["run.rs<br/>orchestrator"]
+  PLAN["plan.rs<br/>shared bootstrap preparation<br/>public reports"]
   TEARDOWN["teardown.rs<br/>prepare + execute"]
   STATUS["status.rs<br/>discovery reports"]
   CHECK["check.rs<br/>side-effect-free validation"]
@@ -373,6 +381,14 @@ flowchart LR
   OUT["output.rs<br/>events"]
 
   RUN --> CONTEXT
+  RUN --> PLAN
+  PLAN --> CONTEXT
+  PLAN --> RUNTIME
+  PLAN --> DISC
+  PLAN --> CONFIG
+  PLAN --> VALID
+  PLAN --> FILE_OPS
+  PLAN --> CMDS
   RUN --> RUNTIME
   RUN --> DISC
   TEARDOWN --> CONTEXT
@@ -421,9 +437,10 @@ flowchart LR
   CMDS -.-> OUT
 ```
 
-_`run.rs` is the broad orchestrator. Manual file commands load top-level config
-policy when present, skip configured commands, and reuse validation and
-file-operation execution._
+_`plan.rs` owns shared bootstrap preparation and report projection. `run.rs`
+selects preview or execution after that boundary. Manual file commands load
+top-level config policy when present, skip configured commands, and reuse
+validation and file-operation execution._
 
 | Module               | Owns                                                                                                                                                                             | Does not own                                                                                                 |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
@@ -432,10 +449,12 @@ file-operation execution._
 | `config.rs`          | TOML parsing, defaulting, normalized config data.                                                                                                                                | Boundary validation or execution.                                                                            |
 | `doctor.rs`          | Diagnostic aggregation across discovery and validation.                                                                                                                          | Fixing problems or applying effects.                                                                         |
 | `env.rs`             | Config-aware effective child environment inspection.                                                                                                                             | File operations, command execution, or identity algorithms.                                                  |
+| `plan.rs`            | Shared bootstrap discovery, validation, concrete file-action preparation, report projection, and structured-output path preflight.                                               | Choosing CLI output modes or mutating the filesystem.                                                        |
+| `run.rs`             | Bootstrap preview/execution dispatch and compatibility projection to `RunReport`.                                                                                                | Discovery, validation, concrete file planning, or CLI presentation.                                          |
 | `worktree.rs`        | Exact-target ID/slug inspection, candidate-local repository inventory ordering, stale filtering, and exact ID reverse lookup.                                                    | Git mutation, config parsing details, or CLI presentation.                                                   |
 | `executor.rs`        | Sequencing validated bootstrap file and command execution.                                                                                                                       | Teardown dispatch, validation, or CLI policy.                                                                |
 | `file_actions.rs`    | Concrete file action model, grouped operation actions, summary construction, and cross-action symlink warnings.                                                                  | Filesystem traversal or mutation.                                                                            |
-| `file_operations.rs` | Operation-level file application facade, apply options/report types, planning lifecycle events, and planning/execution sequencing.                                               | Concrete planning decisions, action mutation details, or low-level filesystem helper implementation.         |
+| `file_operations.rs` | Operation-level preparation/execution facade, prepared-group ownership, apply options/report types, lifecycle events, and compatibility application sequencing.                  | Concrete planning decisions, action mutation details, or low-level filesystem helper implementation.         |
 | `file_planning.rs`   | Planning concrete filesystem actions from validated file operations.                                                                                                             | Config semantics, CLI argument validation, action summary modeling, output lifecycle, or mutation execution. |
 | `file_execution.rs`  | Executing planned file-action groups and emitting compact/verbose file-operation output events.                                                                                  | Planning filesystem actions or low-level filesystem helper implementation.                                   |
 | `file_system.rs`     | Low-level filesystem inspection, comparison, metadata, writable-parent, copy, symlink, delete helpers, and permission-denied ownership warnings for file planning and execution. | File-operation policy, action grouping, or output lifecycle.                                                 |
@@ -452,11 +471,11 @@ file-operation execution._
 
 File execution is grouped by top-level validated file operation.
 `file_operations.rs` is the operation-level facade: it emits planning lifecycle
-events, asks `file_planning.rs` to plan each operation group, asks
-`file_actions.rs` to add cross-action warnings, then asks `file_execution.rs` to
-report or apply each group. `file_planning.rs` uses `file_system.rs` for
-filesystem inspection and comparison. `file_execution.rs` delegates low-level
-mutation helpers, including ownership-preservation warnings, to
+events, asks `file_planning.rs` to plan every operation group, asks
+`file_actions.rs` to add cross-action warnings, and returns one owned
+`PreparedFileOperations` value. Planning, reporting, and execution consume the
+same concrete groups; execution does not re-plan. `file_execution.rs` delegates
+low-level mutation helpers, including ownership-preservation warnings, to
 `file_system.rs`. Compact mode reports lifecycle events and one summary per
 group; verbose mode reports the concrete action stream.
 
@@ -489,12 +508,14 @@ group; verbose mode reports the concrete action stream.
 
 ```text
 ActionPlan::files()
-  -> file_operations::apply_file_operations
+  -> file_operations::prepare_file_operations
   -> file_planning::plan_file_operation_group
   -> plan_operation
   -> FileAction::{CreateDirectory, CopyFile, CreateSymlink, RepairMetadata, Delete, Skip, Warning}
   -> grouped PlannedFileOperationActions
-  -> file_execution::execute_file_operation_group
+  -> PreparedFileOperations
+  -> file_operations::execute_prepared_file_operations
+  -> file_execution::execute_file_operation_group_detailed
   -> report OutputEvent file-operation lifecycle events
   -> report_dry_run(action) or apply_action(action)
   -> compact OutputEvent::FileOperationFinished summary

@@ -46,6 +46,20 @@ fn bootstrap(reporter: &mut dyn Reporter) -> treeboot_core::Result<()> {
 environment-pure. Pass `EnvironmentInput::from_process_env()` when embedding the
 CLI's process-environment compatibility behavior.
 
+Use `plan` when an embedding needs the same concrete file decisions without
+effects. `run_detailed` applies or dry-runs the same preparation path and
+returns the shared `BootstrapReport`; the existing `run` facade and `RunReport`
+remain the compact compatibility API.
+
+```rust
+use treeboot_core::{PlanOptions, Reporter, plan};
+
+fn pending_files(reporter: &mut dyn Reporter) -> treeboot_core::Result<bool> {
+    let report = plan(PlanOptions::default(), reporter)?;
+    Ok(report.has_file_changes)
+}
+```
+
 Use lower-level types when embedding pieces of the workflow. Action plans are
 validated values: build them through constructors, then inspect them through
 accessor methods before execution if needed.
@@ -131,6 +145,7 @@ breaking exhaustive downstream patterns.
 Use the stable construction paths instead:
 
 - `EnvOptions::default()` for environment inspection options
+- `PlanOptions::default()` for side-effect-free bootstrap planning
 - `WorktreeIdentityOptions::default()` for one-target ID/slug inspection
 - `WorktreeInspectionOptions::default()` for repository inventory and lookup
 - `Config::default()` for an empty normalized config

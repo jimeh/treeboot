@@ -35,6 +35,7 @@ fn completions_should_include_current_subcommands_and_flags() {
         .stdout(predicate::str::contains("symlink"))
         .stdout(predicate::str::contains("sync"))
         .stdout(predicate::str::contains("run"))
+        .stdout(predicate::str::contains("plan"))
         .stdout(predicate::str::contains("status"))
         .stdout(predicate::str::contains("config"))
         .stdout(predicate::str::contains("init"))
