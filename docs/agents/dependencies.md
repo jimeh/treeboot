@@ -51,7 +51,9 @@ dependencies for small wrappers around the standard library.
 - `cargo-audit` is a task-scoped mise development tool used by local and GitHub
   Actions CI to reject known RustSec vulnerabilities in `Cargo.lock`.
 - Mise-managed tools use a 7-day `minimum_release_age` cooldown and checked-in
-  `mise.lock` to avoid adopting freshly published binaries by default.
+  `mise.lock` to avoid adopting freshly published binaries by default. Pinact
+  applies the same cooldown to GitHub Actions, and Bun applies it to new npm
+  package resolutions.
 - Renovate owns Rust toolchain updates so each `rust-toolchain.toml` change is
   paired with the corresponding `mise lock rust` refresh.
 - Bun is the npm workspace package manager and development runtime. Mise owns

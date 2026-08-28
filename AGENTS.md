@@ -313,7 +313,10 @@ work. Lefthook checks staged Markdown files through
   `PATH`. Bun install smoke tests must assert the local shim exists and isolate
   `PATH` so a missing package-local `treeboot` cannot false-pass.
 
-- GitHub Actions are pinned and checked with `pinact`.
+- GitHub Actions are pinned and checked with `pinact`. `.pinact.yaml` applies a
+  7-day minimum release age to updates and API-backed checks. Pinact does not
+  downgrade a current pin that is newer than the latest age-eligible release;
+  restore that pin first when correcting an update made without the cooldown.
 - Workflow syntax/security checks are wrapped by `mise run actions:lint`.
 - Rust dependencies are checked against RustSec by `mise run audit:deps`.
 - Repo harness invariants are wrapped by `mise run harness:check`; keep
@@ -322,9 +325,9 @@ work. Lefthook checks staged Markdown files through
 - Do not require package-version literals in `crates/treeboot-spec/SPEC.md`
   examples to match Cargo package versions. Release-please does not update spec
   examples, and example version drift should not block release PRs.
-- Dependabot Cargo and GitHub Actions version updates use a 7-day cooldown.
-  Security updates are not affected by Dependabot cooldown and should stay
-  alert-driven.
+- Dependabot Bun, Cargo, and GitHub Actions version updates use a 7-day
+  cooldown. Security updates are not affected by Dependabot cooldown and should
+  stay alert-driven.
 - Renovate is scoped to monthly mise tool, lockfile, and Rust toolchain
   maintenance. It runs from `.github/workflows/renovate-mise.yml` with the
   release bot GitHub App token and uses `.github/renovate-mise.config.js` as
