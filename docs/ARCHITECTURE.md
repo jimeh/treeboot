@@ -89,6 +89,38 @@ option structs and prints core output events._
   and testing any candidate command without depending on `treeboot` or
   `treeboot-core`.
 
+### npm distribution workspace
+
+The private Bun workspace under `npm/` adapts the released CLI executable for
+Node.js consumers. It does not bind to or reimplement `treeboot-core`.
+
+- `npm/treeboot` owns the TypeScript resolver, process wrappers, and Node CLI
+  shim. Bun builds ESM, CommonJS, and declarations for Node.js 22 or newer.
+- `npm/platforms/*` contains private source manifests for six public binary
+  packages. Their release contents come from the canonical raw executable assets
+  produced by the Rust release helper.
+- `npm/scripts/package-release.ts` copies built JavaScript and executables into
+  isolated staging directories, stamps one release version, packs seven
+  tarballs, and writes their SHA-512 integrity manifest.
+- `npm/scripts/verify-package.ts` enforces package metadata, file allowlists,
+  modes, and synchronized optional dependencies before publication.
+- `npm/scripts/publish-packages.ts` publishes platforms before the facade and
+  makes release reruns conditional on exact registry integrity.
+
+Source manifests stay private at `0.0.0-development`; release automation never
+publishes a workspace directory. `npm-dist/` is an ignored build boundary and
+the workflow artifact is the only input to the npm publish step.
+
+```mermaid
+flowchart LR
+  RUST["Rust target builds"] --> RAW["Canonical raw executables"]
+  TS["TypeScript facade build"] --> STAGE["Isolated npm staging"]
+  RAW --> STAGE
+  STAGE --> VERIFY["Seven verified tarballs<br/>SHA-512 manifest"]
+  VERIFY --> PLATFORMS["Six @treeboot-rs packages"]
+  PLATFORMS --> FACADE["treeboot facade last"]
+```
+
 ## Entry points: Command Surface
 
 Most commands map to a small public core API. The default `treeboot` invocation
@@ -629,6 +661,9 @@ and keep schema mismatch diagnostics to bounded JSON-pointer differences.
 - `mise run generate:check` guards freshness.
 - `mise run check` is normal handoff validation.
 - `mise run verify` adds broader CI/coverage checks.
+- npm release tarballs and their integrity manifest are generated under
+  `npm-dist/` and remain untracked. The manual release workflow retains them as
+  an inspectable artifact without publishing.
 
 ## Change guide: Extension Points And Invariants
 

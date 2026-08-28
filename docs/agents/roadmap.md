@@ -258,3 +258,29 @@ Validation focus:
 - compile-time non-exhaustive policy and positive constructor coverage
 - explicit proof that teardown never applies bootstrap actions or removes the
   worktree
+
+## Milestone 13: npm Distribution
+
+Status: implemented; registry bootstrap remains before the first npm release.
+
+Scope:
+
+- Node.js 22 facade with ESM, CommonJS, declarations, and CLI shim
+- typed platform and missing-package failures with no downloader fallback
+- six exact-version `@treeboot-rs` desktop binary packages
+- Electron ASAR-unpacked resolution and packaging guidance
+- Bun-managed TypeScript build, lint, tests, and deterministic staging
+- npm Trusted Publishing in the existing tag release workflow
+- integrity-aware partial-release reruns with the facade published last
+
+Validation focus:
+
+- platform selection, ASAR paths, no-shell argument handling, and CLI status
+- strict tarball contents, metadata, versions, modes, and deterministic bytes
+- Node.js ESM/CommonJS loading and omitted-optional-dependency errors
+- real executable smoke tests across the six desktop CI runners
+- absent, matching, and mismatched npm registry state
+
+Android npm packages, native bindings, browser/renderer APIs, and first-party
+Electron packager automation remain deferred until desktop usage provides a
+specific need.

@@ -54,6 +54,14 @@ dependencies for small wrappers around the standard library.
   `mise.lock` to avoid adopting freshly published binaries by default.
 - Renovate owns Rust toolchain updates so each `rust-toolchain.toml` change is
   paired with the corresponding `mise lock rust` refresh.
+- Bun is the npm workspace package manager and development runtime. Mise owns
+  the locked Bun executable; `bun.lock` owns JavaScript dependency resolutions.
+- TypeScript 7 and `@types/node` 22 define the Node.js 22 facade contract.
+  `@types/bun` types the Bun-only build and release scripts, which are not
+  shipped to consumers.
+- Oxfmt, Oxlint, and `oxlint-tsgolint` are Bun dev dependencies so one install
+  provides npm formatting, linting, and type-aware lint support. Do not add
+  separate mise-managed Oxc versions.
 
 ## Guidelines
 

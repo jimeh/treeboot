@@ -1,0 +1,30 @@
+{
+  "name": "@treeboot-rs/darwin-arm64",
+  "version": "0.0.0-development",
+  "private": true,
+  "description": "Treeboot binary for macOS ARM64",
+  "homepage": "https://github.com/jimeh/treeboot#readme",
+  "bugs": "https://github.com/jimeh/treeboot/issues",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jimeh/treeboot.git"
+  },
+  "files": [
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "exports": {
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -159,6 +159,8 @@ commands:
   file operations
 - release-please version/changelog automation
 - tag-triggered and manual release asset packaging
+- Node.js 22 npm facade with six `@treeboot-rs` desktop binary packages
+- deterministic npm staging and Trusted Publishing release integration
 - structured output events
 
 Declarative TOML config execution currently applies `copy`, `symlink`, and
@@ -203,6 +205,10 @@ mise run test:spec
 mise run test:conformance
 mise run test:spec:standalone
 mise run test:release-helper
+mise run npm:build
+mise run npm:test
+mise run npm:pack <version> <assets-dir> <output-dir>
+mise run npm:pack:check <output-dir>
 mise run release:check
 mise run msrv
 mise run actions:lint
@@ -302,6 +308,10 @@ work. Lefthook checks staged Markdown files through
   that broad evidence.
 
 ## Harness Notes
+
+- `bunx --no-install` can fall back to a globally available executable on
+  `PATH`. Bun install smoke tests must assert the local shim exists and isolate
+  `PATH` so a missing package-local `treeboot` cannot false-pass.
 
 - GitHub Actions are pinned and checked with `pinact`.
 - Workflow syntax/security checks are wrapped by `mise run actions:lint`.
@@ -404,3 +414,17 @@ work. Lefthook checks staged Markdown files through
   the GitHub Actions `release` environment for `treeboot-spec`, `treeboot-core`,
   and `treeboot`. Keep the crates.io Trusted Publisher settings in sync if any
   package name changes.
+- npm source workspaces are always private and use `0.0.0-development`. Publish
+  only verified tarballs staged under the ignored `npm-dist/` boundary; never
+  publish from a source workspace.
+- All seven npm packages use the Cargo/tag version. The release publishes the
+  six `@treeboot-rs` platform packages first and the unscoped `treeboot` facade
+  last. Existing versions may be skipped only when npm registry integrity
+  matches the staged tarball.
+- npm Trusted Publishing is bound to `.github/workflows/release.yml` and the
+  GitHub Actions `release` environment for all seven packages. Do not add an
+  `NPM_TOKEN`. Update every npm and crates.io relationship if the workflow file
+  or environment changes.
+- Bun is mise-managed, while TypeScript, Oxfmt, Oxlint, and their type packages
+  are Bun dev dependencies locked in `bun.lock`. Keep the existing mise task
+  names as the repository entrypoints.

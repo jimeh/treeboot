@@ -316,6 +316,38 @@ can install from crates.io:
 cargo install treeboot
 ```
 
+## Node.js and Electron integration
+
+The npm package is for Node.js tools and Electron applications that need to
+invoke Treeboot as a dependency. Keep using mise when Treeboot is installed
+directly in a project.
+
+```sh
+bun add treeboot
+```
+
+```ts
+import { getBinaryPath, spawnTreeboot } from "treeboot";
+
+console.log(getBinaryPath());
+spawnTreeboot(["status", "--json"], { stdio: "inherit" });
+```
+
+The package supports Node.js 22 and newer and also provides `npx treeboot` and
+`bunx treeboot`. It installs one matching `@treeboot-rs/*` binary package as an
+optional dependency. Installs do not run a downloader or lifecycle script.
+
+Electron applications should call Treeboot from the main process, a Node-enabled
+utility process, or a backend. Configure the application packager to leave this
+path outside `app.asar`:
+
+```text
+node_modules/@treeboot-rs/**/bin/**
+```
+
+Universal and cross-architecture builds must explicitly retain each target
+platform package. See the npm package README for the full packaging notes.
+
 ## Custom scripts
 
 Declarative bootstrap and teardown commands can execute any custom project

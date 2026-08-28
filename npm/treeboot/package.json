@@ -1,0 +1,50 @@
+{
+  "name": "treeboot",
+  "version": "0.0.0-development",
+  "private": true,
+  "description": "Use the Treeboot CLI from Node.js and Electron applications",
+  "homepage": "https://github.com/jimeh/treeboot#readme",
+  "bugs": "https://github.com/jimeh/treeboot/issues",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jimeh/treeboot.git"
+  },
+  "bin": {
+    "treeboot": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/types/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/types/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "optionalDependencies": {
+    "@treeboot-rs/darwin-arm64": "workspace:*",
+    "@treeboot-rs/darwin-x64": "workspace:*",
+    "@treeboot-rs/linux-arm64": "workspace:*",
+    "@treeboot-rs/linux-x64": "workspace:*",
+    "@treeboot-rs/win32-arm64": "workspace:*",
+    "@treeboot-rs/win32-x64": "workspace:*"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

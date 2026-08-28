@@ -1,3 +1,6 @@
 /target/
 /dist/
+node_modules/
+/npm-dist/
+/npm/treeboot/dist/
 .codegraph/

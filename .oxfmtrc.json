@@ -2,5 +2,18 @@
   "proseWrap": "always",
   "printWidth": 80,
   "embeddedLanguageFormatting": "off",
-  "ignorePatterns": ["target/", "CHANGELOG.md"]
+  "ignorePatterns": [
+    ".github/renovate-mise.config.js",
+    ".github/workflows",
+    ".markdownlint-cli2.jsonc",
+    "bun.lock",
+    "CHANGELOG.md",
+    "Cargo.toml",
+    "crates/treeboot-core/assets/config.schema.json",
+    "crates/treeboot-spec/assets/treeboot.schema.json",
+    "npm-dist",
+    "npm/treeboot/dist",
+    "schemas/treeboot.schema.json",
+    "target"
+  ]
 }
