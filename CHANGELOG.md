@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/jimeh/treeboot/compare/v0.14.0...v0.15.0) (2026-08-28)
+
+
+### Features
+
+* add npm distribution for Node.js and Electron ([#136](https://github.com/jimeh/treeboot/issues/136)) ([26ab19b](https://github.com/jimeh/treeboot/commit/26ab19bec6a1a0c8caf15afe77ecc71f617d96dc))
+
 ## [0.14.0](https://github.com/jimeh/treeboot/compare/v0.13.0...v0.14.0) (2026-08-27)
 
 
