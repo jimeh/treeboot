@@ -102,8 +102,10 @@ pub(crate) fn parse() -> Cli {
 
 impl Cli {
     fn validate(&self) -> Result<(), &'static str> {
-        if self.command.is_some() && self.run.output_is_specified() {
-            return Err("run output flags placed before an explicit subcommand are not allowed");
+        if self.command.is_some() && self.run.is_specified() {
+            return Err(
+                "implicit run options placed before an explicit subcommand are not allowed",
+            );
         }
         match &self.command {
             Some(Command::Run(args)) => args.validate(),

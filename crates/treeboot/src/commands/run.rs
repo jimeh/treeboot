@@ -54,8 +54,15 @@ impl RunArgs {
         Ok(())
     }
 
-    pub(crate) fn output_is_specified(&self) -> bool {
-        self.output.is_specified()
+    pub(crate) fn is_specified(&self) -> bool {
+        self.root.is_some()
+            || self.config.is_some()
+            || self.strict
+            || self.force
+            || self.dry_run
+            || self.verbose
+            || self.skip_commands
+            || self.output.is_specified()
     }
 }
 

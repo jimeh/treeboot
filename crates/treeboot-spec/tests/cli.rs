@@ -12,7 +12,7 @@ fn list_prints_the_stable_registry() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert_eq!(stdout.lines().count(), 336);
+    assert_eq!(stdout.lines().count(), 338);
     assert!(stdout.lines().all(|line| !line.trim().is_empty()));
 }
 

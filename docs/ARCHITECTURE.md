@@ -515,7 +515,7 @@ ActionPlan::files()
   -> grouped PlannedFileOperationActions
   -> PreparedFileOperations
   -> file_operations::execute_prepared_file_operations
-  -> file_execution::execute_file_operation_group_detailed
+  -> file_execution applies each prepared group and returns action counts and warnings
   -> report OutputEvent file-operation lifecycle events
   -> report_dry_run(action) or apply_action(action)
   -> compact OutputEvent::FileOperationFinished summary

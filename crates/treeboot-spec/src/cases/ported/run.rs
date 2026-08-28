@@ -6,6 +6,8 @@ use crate::cases::support::{
     toml_string_path, treeboot, write_file,
 };
 
+#[cfg(target_os = "linux")]
+use crate::cases::support::skip;
 #[cfg(unix)]
 use crate::cases::support::write_executable_script;
 
@@ -2408,6 +2410,48 @@ pub(crate) fn structured_output_validation_should_precede_discovery() {
     }
 }
 
+pub(crate) fn implicit_run_option_before_explicit_plan_should_be_usage_error() {
+    let repo = git_worktree();
+    write_file(&repo.root_path().join("shared.txt"), "root\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "shared.txt", target = "shared.txt" }]"#,
+    );
+
+    treeboot()
+        .args(["--config", "alternate.toml", "plan"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(2)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "implicit run options placed before an explicit subcommand are not allowed",
+        ));
+
+    assert!(!repo.worktree_path().join("shared.txt").exists());
+}
+
+pub(crate) fn implicit_run_option_before_explicit_run_should_be_usage_error() {
+    let repo = git_worktree();
+    write_file(&repo.root_path().join("shared.txt"), "root\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "shared.txt", target = "shared.txt" }]"#,
+    );
+
+    treeboot()
+        .args(["--force", "run", "--dry-run", "--skip-commands"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(2)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "implicit run options placed before an explicit subcommand are not allowed",
+        ));
+
+    assert!(!repo.worktree_path().join("shared.txt").exists());
+}
+
 pub(crate) fn structured_run_planning_error_should_leave_stdout_empty_and_files_unmodified() {
     let repo = git_worktree();
     write_file(
@@ -2755,18 +2799,25 @@ pub(crate) fn structured_execute_failure_should_keep_stdout_empty_and_prior_effe
 
     let repo = git_worktree();
     let unreadable_source = std::path::Path::new("/proc/self/mem");
-    let metadata = std::fs::metadata(unreadable_source)
-        .expect("the Linux fixture requires /proc/self/mem metadata");
-    assert!(
-        metadata.is_file(),
-        "/proc/self/mem should be a regular file"
-    );
+    let metadata = std::fs::metadata(unreadable_source).unwrap_or_else(|error| {
+        skip(format!(
+            "requires readable /proc/self/mem metadata: {error}"
+        ))
+    });
+    if !metadata.is_file() {
+        skip("requires /proc/self/mem to report as a regular file");
+    }
     let mut probe = std::fs::File::open(unreadable_source)
-        .expect("the process should be able to open its own procfs memory file");
-    let source_error = probe
-        .read(&mut [0_u8; 1])
-        .expect_err("reading /proc/self/mem from offset zero should fail");
-    assert_ne!(source_error.kind(), std::io::ErrorKind::PermissionDenied);
+        .unwrap_or_else(|error| skip(format!("requires /proc/self/mem to open: {error}")));
+    match probe.read(&mut [0_u8; 1]) {
+        Ok(count) => skip(format!(
+            "requires an offset-zero /proc/self/mem read failure, read {count} bytes"
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            skip("requires an offset-zero /proc/self/mem failure other than permission denied")
+        }
+        Err(_) => {}
+    }
     write_file(&repo.root_path().join("first.txt"), "first\n");
     write_file(
         &repo.worktree_path().join(".treeboot.toml"),

@@ -900,8 +900,9 @@ do not change the precomputed file counts.
 JSON/YAML run output is valid only with `--dry-run` or `--skip-commands`.
 `treeboot run --json`, `treeboot run --yaml`, and equivalent non-text format
 uses without either option are usage errors. Structured run and plan also reject
-`--verbose`. These checks happen before Git or config discovery. Output flags
-for the implicit run placed before an explicit subcommand are usage errors.
+`--verbose`. These checks happen before Git or config discovery. Any implicit
+run option placed before an explicit subcommand is a usage error. Implicit run
+options are accepted before command selection only when no subcommand follows.
 
 Structured output never contains configured command stdout. Dry-run never spawns
 commands, while `--skip-commands` omits them. Implementations must buffer the
