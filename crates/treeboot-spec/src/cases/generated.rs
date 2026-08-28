@@ -195,6 +195,10 @@ pub(crate) const DEFINITIONS: &[CaseDefinition] = &[
     #[cfg(not(target_os = "linux"))]
     CaseDefinition::skipped(CaseMetadata::new("run.plan-text-support-non-utf8-worktrees-while-structured-output-fails-atomically", "run.plan_text_should_support_non_utf8_worktrees_while_structured_output_fails_atomically", &["#treeboot-plan-and-structured-treeboot-run"]), "requires Linux because the case uses a non-UTF-8 Git worktree path"),
     #[cfg(target_os = "linux")]
+    CaseDefinition::new(CaseMetadata::new("run.structured-run-preflight-non-utf8-expanded-child-before-mutation", "run.structured_run_should_preflight_non_utf8_expanded_child_before_mutation", &["#treeboot-plan-and-structured-treeboot-run"]), ported::run::structured_run_should_preflight_non_utf8_expanded_child_before_mutation),
+    #[cfg(not(target_os = "linux"))]
+    CaseDefinition::skipped(CaseMetadata::new("run.structured-run-preflight-non-utf8-expanded-child-before-mutation", "run.structured_run_should_preflight_non_utf8_expanded_child_before_mutation", &["#treeboot-plan-and-structured-treeboot-run"]), "requires Linux because the case uses a non-UTF-8 expanded child path"),
+    #[cfg(target_os = "linux")]
     CaseDefinition::new(CaseMetadata::new("run.structured-execute-failure.keep-stdout-empty-and-prior-effects-only", "run.structured_execute_failure_should_keep_stdout_empty_and_prior_effects_only", &["#treeboot-plan-and-structured-treeboot-run"]), ported::run::structured_execute_failure_should_keep_stdout_empty_and_prior_effects_only),
     #[cfg(not(target_os = "linux"))]
     CaseDefinition::skipped(CaseMetadata::new("run.structured-execute-failure.keep-stdout-empty-and-prior-effects-only", "run.structured_execute_failure_should_keep_stdout_empty_and_prior_effects_only", &["#treeboot-plan-and-structured-treeboot-run"]), "requires Linux procfs where /proc/self/mem is an openable regular file whose offset-zero read fails"),

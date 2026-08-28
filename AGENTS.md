@@ -129,8 +129,8 @@ shell completions, milestone 8 manual file operations, and the first pass of
 milestone 9 release packaging, plus milestone 10 inspection and metadata
 commands:
 
-- CLI parsing for `run`, `status`, `config`, `check`, `doctor`, `env`, `schema`,
-  `version`, `init`, `copy`, `symlink`, `sync`, `completions`, and the
+- CLI parsing for `run`, `plan`, `status`, `config`, `check`, `doctor`, `env`,
+  `schema`, `version`, `init`, `copy`, `symlink`, `sync`, `completions`, and the
   `worktree id`, `worktree slug`, `worktree path`, and `worktree list`
   inspection commands
 - Git worktree/root/default-branch discovery

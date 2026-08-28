@@ -98,6 +98,10 @@ pub fn run(options: RunOptions, reporter: &mut dyn Reporter) -> Result<RunReport
 /// serialization before it applies any file changes. Existing text callers
 /// should continue to use [`run`].
 ///
+/// Direct callers that set neither [`RunOptions::dry_run`] nor
+/// [`RunOptions::skip_commands`] may spawn configured commands with inherited
+/// stdio. The CLI rejects that combination for structured output.
+///
 /// # Errors
 ///
 /// Returns an error if discovery, planning, structured path preflight, file or

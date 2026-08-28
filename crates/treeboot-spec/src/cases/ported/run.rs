@@ -2485,6 +2485,13 @@ commands = [{ run = "exit 42" }]
     assert_eq!(plan["file_summary"]["skipped"], 1);
     assert_eq!(plan["file_summary"]["deleted"], 1);
     assert_eq!(plan["file_summary"]["file_warnings"], 1);
+    assert_eq!(plan["files"][0]["summary"]["expanded"], false);
+    assert_eq!(plan["files"][0]["summary"]["skip_reason"], "target exists");
+    assert_eq!(plan["files"][2]["summary"]["expanded"], true);
+    assert_eq!(
+        plan["files"][2]["summary"]["skip_reason"],
+        serde_json::Value::Null
+    );
     assert_eq!(plan["commands"][0]["label"], "exit 42");
     assert_eq!(plan["execution_warnings"], serde_json::json!([]));
     assert_eq!(
@@ -2583,9 +2590,40 @@ pub(crate) fn plan_structured_noops_and_validation_warnings_should_be_explicit()
     let warning: serde_json::Value =
         serde_json::from_slice(&warning_output).expect("warning report should parse");
     assert_eq!(warning["has_file_changes"], false);
+    assert_eq!(warning["files"].as_array().map(Vec::len), Some(1));
+    assert_eq!(warning["files"][0]["operation"], "copy");
     assert_eq!(
-        warning["validation_warnings"].as_array().map(Vec::len),
-        Some(1)
+        warning["files"][0]["summary"],
+        serde_json::json!({
+            "changed": 0,
+            "skipped": 0,
+            "deleted": 0,
+            "metadata_changed": 0,
+            "file_warnings": 0,
+            "expanded": true,
+            "skip_reason": null,
+        })
+    );
+    assert_eq!(
+        warning["validation_warnings"],
+        serde_json::json!(["include patterns match no source paths for copy shared -> shared"])
+    );
+
+    let text_output = treeboot()
+        .arg("plan")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(text_output).expect("text plan output should be UTF-8");
+    let expected_warning =
+        "treeboot: warning: include patterns match no source paths for copy shared -> shared";
+    assert!(
+        text.lines().any(|line| line == expected_warning),
+        "text plan output should contain the exact warning line: {text}"
     );
 }
 
@@ -2671,6 +2709,42 @@ pub(crate) fn plan_text_should_support_non_utf8_worktrees_while_structured_outpu
             .stderr(predicate::str::is_empty().not());
         assert!(!path.join("shared.txt").exists());
     }
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn structured_run_should_preflight_non_utf8_expanded_child_before_mutation() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let repo = git_worktree();
+    let source = repo.root_path().join("shared");
+    std::fs::create_dir_all(&source).expect("source directory should be created");
+    let child = OsString::from_vec(b"child-\xff.txt".to_vec());
+    let child_path = source.join(child);
+    write_file(&child_path, "value\n");
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(
+        &config,
+        r#"copy = [{ source = "shared", target = "copied" }]"#,
+    );
+    assert!(repo.root_path().to_str().is_some());
+    assert!(repo.worktree_path().to_str().is_some());
+    assert!(config.to_str().is_some());
+    assert!(source.to_str().is_some());
+    assert!(child_path.to_str().is_none());
+
+    treeboot()
+        .args(["run", "--skip-commands", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::is_empty().not());
+
+    assert!(
+        !repo.worktree_path().join("copied").exists(),
+        "structured child-path preflight should finish before creating the target directory"
+    );
 }
 
 #[cfg(target_os = "linux")]

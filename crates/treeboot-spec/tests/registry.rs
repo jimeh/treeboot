@@ -11,15 +11,15 @@ fn current_registry_should_cover_each_portable_inventory_row_once() {
         .filter_map(|case| case.source_test())
         .collect::<HashSet<_>>();
 
-    assert_eq!(cases.len(), 335, "315 audited cases plus 20 closure cases");
+    assert_eq!(cases.len(), 336, "316 audited cases plus 20 closure cases");
     assert_eq!(ids.len(), cases.len());
-    assert_eq!(source_tests.len(), 315);
+    assert_eq!(source_tests.len(), 316);
     assert_eq!(
         cases
             .iter()
             .filter(|case| case.source_test().is_some())
             .count(),
-        315
+        316
     );
     assert!(cases.iter().all(|case| !case.spec_references().is_empty()));
     assert_eq!(
@@ -34,7 +34,7 @@ fn current_registry_should_cover_each_portable_inventory_row_once() {
             .iter()
             .filter(|case| case.requirement() == CaseRequirement::Functional)
             .count(),
-        329
+        330
     );
     let serialized = serde_json::to_value(cases[0]).unwrap();
     assert!(serialized.get("requirement").is_none());

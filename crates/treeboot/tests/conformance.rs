@@ -14,7 +14,7 @@ fn official_binary_should_pass_full_conformance_suite() {
         )
         .expect("conformance suite should start");
     assert_eq!(report.profile(), ConformanceProfile::Full);
-    assert_eq!(report.cases.len(), 335);
+    assert_eq!(report.cases.len(), 336);
     assert_eq!(report.omitted_exact_case_count(), 0);
 
     let failures = report
