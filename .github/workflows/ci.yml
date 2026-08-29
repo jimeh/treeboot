@@ -15,6 +15,7 @@ permissions:
   contents: read
 
 env:
+  ACTIONS_CACHE_SERVICE_V2: "on"
   CARGO_INCREMENTAL: "0"
   CARGO_HTTP_MULTIPLEXING: "false"
   CARGO_NET_RETRY: "10"
@@ -109,7 +110,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
     env:
-      MISE_RUSTUP_HOME: ${{ matrix.runner == 'windows-2025' && format('{0}/.mise-rustup', github.workspace) || '/home/runner/.local/share/mise/rustup' }}
+      MISE_RUSTUP_HOME: ${{ startsWith(matrix.runner, 'windows') && format('{0}/.mise-rustup', github.workspace) || '/home/runner/.local/share/mise/rustup' }}
       SCCACHE_GHA_ENABLED: "on"
     strategy:
       fail-fast: false
