@@ -44,6 +44,10 @@ struct SignaledRunner {
     command: CommandTemplate,
 }
 
+struct TimedOutRunner {
+    command: CommandTemplate,
+}
+
 struct ConcurrentRunner {
     command: CommandTemplate,
     active: AtomicUsize,
@@ -62,6 +66,21 @@ impl Runner for SignaledRunner {
             b"treeboot: no config detected".to_vec(),
             b"treeboot: no config detected".to_vec(),
             Duration::from_millis(1),
+        ))
+    }
+}
+
+impl Runner for TimedOutRunner {
+    fn command(&self) -> &CommandTemplate {
+        &self.command
+    }
+
+    fn run(&self, _invocation: &Invocation) -> Result<InvocationResult, RunnerError> {
+        Ok(InvocationResult::new(
+            Termination::TimedOut,
+            b"partial stdout".to_vec(),
+            b"partial stderr".to_vec(),
+            Duration::from_millis(10),
         ))
     }
 }
@@ -153,6 +172,63 @@ fn concurrent_run_overlaps_cases_and_preserves_registry_order() {
         .collect::<Vec<_>>();
     assert_eq!(report_ids, expected_ids);
     assert!(runner.maximum_active.load(Ordering::SeqCst) >= 2);
+}
+
+#[test]
+fn concurrent_run_preserves_error_failure_and_timeout_outcomes() {
+    #[derive(Debug, Clone, Copy)]
+    enum ExpectedOutcome {
+        Error,
+        Failed,
+        TimedOut,
+    }
+
+    for (runner, expected) in [
+        (
+            Arc::new(ErrorRunner {
+                command: CommandTemplate::new("remote-treeboot"),
+                unsupported: false,
+            }) as Arc<dyn Runner>,
+            ExpectedOutcome::Error,
+        ),
+        (
+            Arc::new(SignaledRunner {
+                command: CommandTemplate::new("remote-treeboot"),
+            }) as Arc<dyn Runner>,
+            ExpectedOutcome::Failed,
+        ),
+        (
+            Arc::new(TimedOutRunner {
+                command: CommandTemplate::new("remote-treeboot"),
+            }) as Arc<dyn Runner>,
+            ExpectedOutcome::TimedOut,
+        ),
+    ] {
+        let serial =
+            Suite::current().run_with(runner.clone(), RunOptions::new().with_filter("cli."));
+        let concurrent = Suite::current().run_with(
+            runner,
+            RunOptions::new()
+                .with_filter("cli.")
+                .with_concurrency(NonZeroUsize::new(3).unwrap()),
+        );
+
+        assert_eq!(serial.cases.len(), concurrent.cases.len());
+        for (serial, concurrent) in serial.cases.iter().zip(&concurrent.cases) {
+            assert_eq!(serial.case.id(), concurrent.case.id());
+            assert_eq!(serial.outcome, concurrent.outcome);
+        }
+        assert!(
+            concurrent.cases.iter().any(|result| match expected {
+                ExpectedOutcome::Error => matches!(result.outcome, CaseOutcome::Error { .. }),
+                ExpectedOutcome::Failed => matches!(result.outcome, CaseOutcome::Failed { .. }),
+                ExpectedOutcome::TimedOut => {
+                    matches!(result.outcome, CaseOutcome::TimedOut { .. })
+                }
+            }),
+            "expected at least one {expected:?} result",
+        );
+    }
 }
 
 #[test]

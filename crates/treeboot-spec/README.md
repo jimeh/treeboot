@@ -59,7 +59,8 @@ Custom `Runner` implementations can execute the same cases in another process
 environment. A complete adapter must expose each temporary fixture filesystem to
 the candidate and honor native arguments, working directories, environment
 changes, stdin mode, deadlines, and per-stream output capture limits. A runner
-must continue draining output after a limit is reached, then return
+must tolerate concurrent `run` calls when callers opt into suite concurrency. It
+must also continue draining output after a limit is reached, then return
 `RunnerError::OutputLimitExceeded`.
 
 The default local runner captures output through pipes, so terminal-input cases
