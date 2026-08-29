@@ -329,7 +329,7 @@ description = "Run all CI checks"
 
 [tasks."ci:sccache:stats"]
 description = "Report sccache statistics and warn when writable caching degrades"
-run = "scripts/show-sccache-stats.sh"
+run = "bash scripts/show-sccache-stats.sh"
 
 [tasks.msrv]
 description = "Check Rust MSRV compatibility"
