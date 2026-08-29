@@ -46,6 +46,11 @@ assert!(report.passed());
 # Ok::<(), treeboot_spec::SuiteError>(())
 ```
 
+Suite execution is serial by default. Call `RunOptions::with_concurrency` to opt
+into bounded case-level concurrency; reports retain stable registry order.
+Progress events from different cases may interleave, but observers still run on
+the suite thread.
+
 Use `Suite::run_observed` or `Suite::run_with_observer` to receive synchronous
 suite-start, case-start, and case-finish events. Observers can render progress
 or collect telemetry without coupling the suite to a terminal.
@@ -54,7 +59,8 @@ Custom `Runner` implementations can execute the same cases in another process
 environment. A complete adapter must expose each temporary fixture filesystem to
 the candidate and honor native arguments, working directories, environment
 changes, stdin mode, deadlines, and per-stream output capture limits. A runner
-must continue draining output after a limit is reached, then return
+must tolerate concurrent `run` calls when callers opt into suite concurrency. It
+must also continue draining output after a limit is reached, then return
 `RunnerError::OutputLimitExceeded`.
 
 The default local runner captures output through pipes, so terminal-input cases

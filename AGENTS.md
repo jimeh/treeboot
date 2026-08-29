@@ -355,6 +355,12 @@ work. Lefthook checks staged Markdown files through
 - Mise-managed tools use a 7-day release-age cooldown and checked-in
   `mise.lock`; use a narrow override only for urgent security or CI-maintenance
   updates.
+- Keep `ACTIONS_CACHE_SERVICE_V2` enabled with sccache's GitHub Actions backend.
+  Without it, the v2 results URL accepts reads but every cache write fails while
+  jobs remain green.
+- Limit sccache write mode to one CI job per host/toolchain; duplicate consumers
+  should be read-only because concurrent uploads race on identical cache
+  objects.
 - `mise run treeboot` is the repo-local bootstrap entrypoint. The released
   `treeboot` binary is a project-wide mise tool so it is available to direct
   commands and other tasks; the task runs the declarative `.treeboot.toml` setup
@@ -380,6 +386,9 @@ work. Lefthook checks staged Markdown files through
 - CI sets `MISE_RUSTUP_HOME` so `mise-action` caches the rustup toolchains and
   components declared by the project; cross-OS test jobs use a workspace-local
   path instead of the Ubuntu-only default.
+- Runner-dependent contexts such as `github.workspace` are empty while matrix
+  values are expanded. Compute workspace-derived paths in job or step
+  expressions instead.
 - CI test jobs install the configured Rust toolchain in one serial step before
   `mise run test`; the aggregate test task uses one Cargo invocation so shared
   test-profile compilation is not split across parallel package tasks.

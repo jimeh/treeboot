@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use treeboot_spec::{CommandTemplate, ConformanceProfile, RunOptions, Suite};
@@ -5,12 +6,16 @@ use treeboot_spec::{CommandTemplate, ConformanceProfile, RunOptions, Suite};
 #[test]
 fn official_binary_should_pass_full_conformance_suite() {
     let command = CommandTemplate::new(env!("CARGO_BIN_EXE_treeboot"));
+    let concurrency = std::thread::available_parallelism()
+        .map(|available| available.min(NonZeroUsize::new(4).unwrap()))
+        .unwrap_or(NonZeroUsize::MIN);
     let report = Suite::current()
         .run(
             &command,
             RunOptions::new()
                 .with_profile(ConformanceProfile::Full)
-                .with_invocation_timeout(Duration::from_secs(10)),
+                .with_invocation_timeout(Duration::from_secs(10))
+                .with_concurrency(concurrency),
         )
         .expect("conformance suite should start");
     assert_eq!(report.profile(), ConformanceProfile::Full);

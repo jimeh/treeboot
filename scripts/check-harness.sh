@@ -93,6 +93,14 @@ embedded_spec_version="$(
   sed -nE 's/^pub const SPEC_VERSION: &str = "([0-9]+\.[0-9]+\.[0-9]+)";/\1/p' \
     crates/treeboot-spec/src/lib.rs
 )"
+mise_cargo_audit_version="$(
+  sed -nE 's/^tools\."cargo:cargo-audit" = "([0-9]+\.[0-9]+\.[0-9]+)"/\1/p' \
+    mise.toml | sort -u
+)"
+ci_cargo_audit_version="$(
+  sed -nE 's/^[[:space:]]+tool: cargo-audit@([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' \
+    .github/workflows/ci.yml
+)"
 
 if [[ -z "${readme_spec}" ]]; then
   fail "README.md must mention the current spec version as 'spec vX.Y.Z'"
@@ -133,6 +141,14 @@ fi
 
 if [[ "${embedded_spec_version}" != "${spec_version}" ]]; then
   fail "treeboot-spec SPEC_VERSION v${embedded_spec_version} must match canonical spec v${spec_version}"
+fi
+
+if [[ -z "${mise_cargo_audit_version}" || "${mise_cargo_audit_version}" == *$'\n'* ]]; then
+  fail "mise.toml must use one cargo-audit version"
+elif [[ -z "${ci_cargo_audit_version}" ]]; then
+  fail ".github/workflows/ci.yml must pin cargo-audit"
+elif [[ "${mise_cargo_audit_version}" != "${ci_cargo_audit_version}" ]]; then
+  fail "CI cargo-audit v${ci_cargo_audit_version} must match mise v${mise_cargo_audit_version}"
 fi
 
 for crate_license in crates/treeboot/LICENSE crates/treeboot-core/LICENSE crates/treeboot-spec/LICENSE; do
