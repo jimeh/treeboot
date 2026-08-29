@@ -380,6 +380,8 @@ work. Lefthook checks staged Markdown files through
 - CI sets `MISE_RUSTUP_HOME` so `mise-action` caches the rustup toolchains and
   components declared by the project; cross-OS test jobs use a workspace-local
   path instead of the Ubuntu-only default.
+- GitHub expressions inside matrix values are not recursively evaluated. Compute
+  workspace-derived paths in job or step expressions instead.
 - CI test jobs install the configured Rust toolchain in one serial step before
   `mise run test`; the aggregate test task uses one Cargo invocation so shared
   test-profile compilation is not split across parallel package tasks.

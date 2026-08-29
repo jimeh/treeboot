@@ -46,6 +46,11 @@ assert!(report.passed());
 # Ok::<(), treeboot_spec::SuiteError>(())
 ```
 
+Suite execution is serial by default. Call `RunOptions::with_concurrency` to opt
+into bounded case-level concurrency; reports retain stable registry order.
+Progress events from different cases may interleave, but observers still run on
+the suite thread.
+
 Use `Suite::run_observed` or `Suite::run_with_observer` to receive synchronous
 suite-start, case-start, and case-finish events. Observers can render progress
 or collect telemetry without coupling the suite to a terminal.

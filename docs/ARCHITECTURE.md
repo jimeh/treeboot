@@ -668,10 +668,13 @@ available to independent implementations.
 
 The functional profile selects behavior cases before execution and omits exact
 specification-version and canonical-schema identity cases. The full profile adds
-those exact cases. Both profiles preserve stable registry order, and observers
-receive the selected total before any case starts. Human CLI reports omit
-passing cases unless `--verbose` is set, group skips and failures at the end,
-and keep schema mismatch diagnostics to bounded JSON-pointer differences.
+those exact cases. Execution is serial by default, while Rust API callers can
+opt into bounded case-level concurrency. Both profiles preserve stable registry
+order in reports. Observers receive the selected total before any case starts;
+case events may interleave during concurrent runs but remain on the suite
+thread. Human CLI reports omit passing cases unless `--verbose` is set, group
+skips and failures at the end, and keep schema mismatch diagnostics to bounded
+JSON-pointer differences.
 
 ### Generated artifacts
 

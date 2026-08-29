@@ -111,6 +111,7 @@ if [[ ! -f "${conformance_driver}" ]] ||
     "${conformance_driver}" ||
   ! grep -Fq 'Suite::current()' "${conformance_driver}" ||
   ! grep -Fq '.with_profile(ConformanceProfile::Full)' "${conformance_driver}" ||
+  ! grep -Fq '.with_concurrency(concurrency)' "${conformance_driver}" ||
   ! grep -Fq 'CARGO_BIN_EXE_treeboot' "${conformance_driver}"; then
   printf 'treeboot spec cases: official conformance driver is missing or incomplete\n' >&2
   printf 'expected %s to run Suite::current() against CARGO_BIN_EXE_treeboot\n' \
