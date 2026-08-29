@@ -71,6 +71,7 @@ jobs:
     timeout-minutes: 10
     env:
       SCCACHE_GHA_ENABLED: "on"
+      SCCACHE_GHA_RW_MODE: READ_ONLY
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -87,7 +88,7 @@ jobs:
       - run: mise run generate:check
       - name: Show sccache stats
         if: always()
-        run: sccache --show-stats
+        run: mise run ci:sccache:stats
 
   harness:
     runs-on: ubuntu-latest
@@ -112,6 +113,7 @@ jobs:
     env:
       MISE_RUSTUP_HOME: ${{ startsWith(matrix.runner, 'windows') && format('{0}/.mise-rustup', github.workspace) || '/home/runner/.local/share/mise/rustup' }}
       SCCACHE_GHA_ENABLED: "on"
+      SCCACHE_GHA_RW_MODE: READ_ONLY
     strategy:
       fail-fast: false
       matrix:
@@ -145,7 +147,7 @@ jobs:
       - run: mise run ${{ matrix.task }}
       - name: Show sccache stats
         if: always()
-        run: sccache --show-stats
+        run: mise run ci:sccache:stats
 
   msrv:
     runs-on: ubuntu-latest
@@ -168,7 +170,7 @@ jobs:
       - run: mise run msrv
       - name: Show sccache stats
         if: always()
-        run: sccache --show-stats
+        run: mise run ci:sccache:stats
 
   npm:
     runs-on: ubuntu-latest
@@ -241,13 +243,14 @@ jobs:
 
       - name: Show sccache stats
         if: always()
-        run: sccache --show-stats
+        run: mise run ci:sccache:stats
 
   standalone-conformance:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       SCCACHE_GHA_ENABLED: "on"
+      SCCACHE_GHA_RW_MODE: READ_ONLY
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -272,4 +275,4 @@ jobs:
       - run: mise run test:spec:standalone
       - name: Show sccache stats
         if: always()
-        run: sccache --show-stats
+        run: mise run ci:sccache:stats

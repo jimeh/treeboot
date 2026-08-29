@@ -358,6 +358,9 @@ work. Lefthook checks staged Markdown files through
 - Keep `ACTIONS_CACHE_SERVICE_V2` enabled with sccache's GitHub Actions backend.
   Without it, the v2 results URL accepts reads but every cache write fails while
   jobs remain green.
+- Limit sccache write mode to one CI job per host/toolchain; duplicate consumers
+  should be read-only because concurrent uploads race on identical cache
+  objects.
 - `mise run treeboot` is the repo-local bootstrap entrypoint. The released
   `treeboot` binary is a project-wide mise tool so it is available to direct
   commands and other tasks; the task runs the declarative `.treeboot.toml` setup
