@@ -34,6 +34,7 @@ fn reference_help_and_versions_should_match_embedded_assets() {
 
     for command in [
         &["run"][..],
+        &["plan"][..],
         &["teardown"][..],
         &["status"][..],
         &["config"][..],
@@ -80,17 +81,21 @@ fn reference_help_and_versions_should_match_embedded_assets() {
 
 #[test]
 fn reference_clap_diagnostics_should_preserve_parser_wording() {
-    for args in [
-        &["--unknown"][..],
-        &["--no-commands"][..],
-        &["run", "--json"][..],
-    ] {
+    for args in [&["--unknown"][..], &["--no-commands"][..]] {
         treeboot()
             .args(args)
             .assert()
             .code(2)
             .stderr(predicate::str::contains("unexpected argument"));
     }
+
+    treeboot()
+        .args(["run", "--json"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "structured run output requires --dry-run or --skip-commands",
+        ));
 
     treeboot()
         .args(["version", "--json", "--yaml"])

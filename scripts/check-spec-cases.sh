@@ -92,8 +92,8 @@ if ! diff -u "${expected_tests}" "${source_tests}"; then
   exit 1
 fi
 
-if [[ "$(wc -l <"${registry_tests}")" -ne 302 ]]; then
-  printf 'treeboot spec cases: expected 302 unique generated registry source keys\n' >&2
+if [[ "$(wc -l <"${registry_tests}")" -ne 318 ]]; then
+  printf 'treeboot spec cases: expected 318 unique generated registry source keys\n' >&2
   printf 'found %s unique keys\n' "$(wc -l <"${registry_tests}")" >&2
   exit 1
 fi
@@ -134,4 +134,4 @@ if [[ "$(wc -l <"${closure_cases}")" -ne 20 ]] ||
   exit 1
 fi
 
-printf 'treeboot spec cases: 302 audited cases, 20 closure cases, 18 reference-only tests, full conformance drivers present\n'
+printf 'treeboot spec cases: 318 audited cases, 20 closure cases, 18 reference-only tests, full conformance drivers present\n'

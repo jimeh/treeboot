@@ -92,6 +92,12 @@ pub enum OutputEvent {
         path: PathBuf,
     },
 
+    /// A non-fatal semantic validation warning was produced.
+    ValidationWarning {
+        /// Human-readable warning detail.
+        message: String,
+    },
+
     /// A valid config contains no teardown commands.
     NoTeardownCommandsConfigured,
 
@@ -296,6 +302,9 @@ impl OutputEvent {
             Self::RootWorktreeDetected => "treeboot: This is not a work tree".to_owned(),
             Self::ConfigDetected { path } => {
                 format!("treeboot: config detected {}", path.display())
+            }
+            Self::ValidationWarning { message } => {
+                format!("treeboot: warning: {message}")
             }
             Self::NoTeardownCommandsConfigured => {
                 "treeboot: no teardown commands configured".to_owned()
@@ -507,6 +516,18 @@ mod tests {
         };
 
         assert_eq!(event.message(), "treeboot: config detected .treeboot.toml");
+    }
+
+    #[test]
+    fn message_should_format_validation_warning() {
+        let event = OutputEvent::ValidationWarning {
+            message: "copy include patterns matched no source paths".to_owned(),
+        };
+
+        assert_eq!(
+            event.message(),
+            "treeboot: warning: copy include patterns matched no source paths"
+        );
     }
 
     #[test]

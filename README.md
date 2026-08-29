@@ -226,13 +226,22 @@ treeboot env           # Print effective treeboot-owned command environment
 treeboot worktree id [PATH]   # Print a compact path-derived ID
 treeboot worktree slug [PATH] # Print the matching readable slug
 treeboot worktree list        # List registered IDs, slugs, and paths
+treeboot plan                 # Preview bootstrap without side effects
 treeboot run --dry-run # Preview file operations and commands
 treeboot teardown --dry-run # Preview teardown commands without prompting
 ```
 
-`status`, `config`, `check`, `doctor`, `env`, `version`, and all `worktree` leaf
-commands support `--format text|json|yaml`, with `--json` and `--yaml`
-shortcuts.
+`plan`, `status`, `config`, `check`, `doctor`, `env`, `version`, and all
+`worktree` leaf commands support `--format text|json|yaml`, with `--json` and
+`--yaml` shortcuts. `treeboot plan --skip-commands --json` is the machine-facing
+check for editor integrations. Read `has_file_changes` to decide whether file
+operations are pending.
+
+Structured run output is available when configured commands cannot write into
+the report: use `treeboot run --dry-run --json` to preview everything or
+`treeboot run --skip-commands --json` to apply files and return the decisions.
+`treeboot run --json` is rejected because normal configured commands inherit
+stdout.
 
 Use `treeboot worktree path <ID>` to resolve an exact ID in the current
 repository. Repository-wide lookup and listing use each worktree's own config,
@@ -280,7 +289,7 @@ treeboot teardown --worktree "$path" --yes &&
 
 | Purpose         | Commands                                                 |
 | --------------- | -------------------------------------------------------- |
-| Bootstrap       | `run`                                                    |
+| Bootstrap       | `run`, `plan`                                            |
 | Teardown        | `teardown`                                               |
 | Inspect         | `status`, `config`, `check`, `doctor`, `env`, `worktree` |
 | File operations | `copy`, `symlink`, `sync`                                |
@@ -290,6 +299,8 @@ Common examples:
 
 ```sh
 treeboot run --dry-run
+treeboot plan --skip-commands --json
+treeboot run --skip-commands --json
 treeboot run --strict
 treeboot run --force
 treeboot run --root /path/to/root-checkout
@@ -443,7 +454,7 @@ The suite tests only the language-agnostic CLI contract. It does not specify the
 
 Treeboot bootstraps linked worktrees and runs explicitly approved teardown
 commands. The current language-agnostic CLI compatibility contract is
-[spec v2.5.1](./crates/treeboot-spec/SPEC.md); this README is the shorter,
+[spec v2.6.0](./crates/treeboot-spec/SPEC.md); this README is the shorter,
 human-facing guide.
 
 The name `treeboot` means "worktree bootstrap."

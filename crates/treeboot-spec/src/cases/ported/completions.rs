@@ -36,3 +36,23 @@ pub(crate) fn completions_should_not_require_git_or_config_discovery() {
         .stderr(predicate::str::is_empty())
         .stdout(predicate::str::contains("treeboot"));
 }
+
+pub(crate) fn completions_should_expose_plan_and_structured_output_flags() {
+    treeboot()
+        .env("COMPLETE", "fish")
+        .args(["--", "treeboot", ""])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("plan"));
+
+    treeboot()
+        .env("COMPLETE", "fish")
+        .args(["--", "treeboot", "plan", "--"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--format"))
+        .stdout(predicate::str::contains("--json"))
+        .stdout(predicate::str::contains("--yaml"))
+        .stdout(predicate::str::contains("--skip-commands"))
+        .stdout(predicate::str::contains("--verbose"));
+}

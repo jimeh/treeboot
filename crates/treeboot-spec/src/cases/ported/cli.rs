@@ -10,6 +10,16 @@ pub(crate) fn help_should_print_usage() {
         .stdout(predicate::str::contains("treeboot"));
 }
 
+pub(crate) fn plan_help_should_print_usage() {
+    treeboot()
+        .args(["plan", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("plan"))
+        .stdout(predicate::str::contains("--format"))
+        .stdout(predicate::str::contains("--skip-commands"));
+}
+
 pub(crate) fn version_flags_should_print_package_and_spec_version() {
     let version = crate::cases::support::candidate_package_version();
     for flag in ["--version", "-V"] {
@@ -25,6 +35,7 @@ pub(crate) fn version_flags_should_print_package_and_spec_version() {
 
     for command in [
         &["run"][..],
+        &["plan"][..],
         &["teardown"][..],
         &["status"][..],
         &["config"][..],
@@ -91,6 +102,7 @@ pub(crate) fn version_flags_should_declare_suite_spec() {
     }
     for command in [
         &["run"][..],
+        &["plan"][..],
         &["teardown"][..],
         &["status"][..],
         &["config"][..],
@@ -137,7 +149,7 @@ pub(crate) fn legacy_no_commands_option_should_exit_with_usage_error() {
         .stderr(predicate::str::is_empty().not());
 }
 
-pub(crate) fn text_only_commands_should_reject_structured_output_options() {
+pub(crate) fn unsupported_structured_output_options_should_be_usage_errors() {
     for args in [
         &["run", "--json"][..],
         &["init", "--json"][..],
@@ -146,6 +158,11 @@ pub(crate) fn text_only_commands_should_reject_structured_output_options() {
         &["sync", "source", "--json"][..],
         &["completions", "bash", "--json"][..],
         &["run", "--format", "json"][..],
+        &["run", "--dry-run", "--json", "--verbose"][..],
+        &["--dry-run", "--json", "--verbose"][..],
+        &["plan", "--yaml", "--verbose"][..],
+        &["plan", "--dry-run"][..],
+        &["--json", "plan"][..],
         &["init", "--format", "json"][..],
         &["copy", "source", "--format", "json"][..],
         &["symlink", "source", "--format", "json"][..],

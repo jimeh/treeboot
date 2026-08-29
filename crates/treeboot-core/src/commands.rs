@@ -212,7 +212,7 @@ fn build_shell_command(run: &str) -> Command {
     process
 }
 
-fn command_label(command: &PlannedCommand) -> String {
+pub(crate) fn command_label(command: &PlannedCommand) -> String {
     let invocation = invocation_label(command.command());
 
     if let Some(name) = command.name() {

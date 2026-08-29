@@ -6,6 +6,8 @@ use crate::cases::support::{
     toml_string_path, treeboot, write_file,
 };
 
+#[cfg(target_os = "linux")]
+use crate::cases::support::skip;
 #[cfg(unix)]
 use crate::cases::support::write_executable_script;
 
@@ -2275,5 +2277,580 @@ pub(crate) fn run_should_reject_include_with_sync_delete_before_side_effects() {
     assert!(
         !repo.worktree_path().join("shared").exists(),
         "validation failure should not create targets"
+    );
+}
+
+pub(crate) fn plan_json_should_report_pending_files_without_mutation() {
+    let repo = git_worktree();
+    write_file(&repo.root_path().join("shared.txt"), "root\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        "copy = [{ source = \"shared.txt\", target = \"shared.txt\" }]\n\
+         commands = [{ run = \"exit 42\" }]\n",
+    );
+
+    let output = treeboot()
+        .args(["plan", "--skip-commands", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    let report: serde_json::Value =
+        serde_json::from_slice(&output).expect("plan JSON should parse");
+
+    assert_eq!(report["mode"], "plan");
+    assert_eq!(report["has_file_changes"], true);
+    assert_eq!(report["file_summary"]["changed"], 1);
+    assert_eq!(report["commands_skipped"], true);
+    assert_eq!(report["commands"], serde_json::json!([]));
+    assert!(!repo.worktree_path().join("shared.txt").exists());
+}
+
+pub(crate) fn plan_yaml_should_match_json_shape() {
+    let repo = git_worktree();
+    write_file(&repo.root_path().join("shared.txt"), "root\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        "copy = [{ source = \"shared.txt\", target = \"shared.txt\" }]\n",
+    );
+
+    let output = treeboot()
+        .args(["plan", "--yaml"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    let report: serde_json::Value =
+        yaml_serde::from_slice(&output).expect("plan YAML should parse");
+
+    assert_eq!(report["mode"], "plan");
+    assert_eq!(report["has_file_changes"], true);
+    assert_eq!(report["files"][0]["operation"], "copy");
+    assert_eq!(report["execution_warnings"], serde_json::json!([]));
+    assert!(!repo.worktree_path().join("shared.txt").exists());
+}
+
+pub(crate) fn structured_file_only_run_should_apply_without_spawning_commands() {
+    let repo = git_worktree();
+    write_file(&repo.root_path().join("shared.txt"), "root\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        "copy = [{ source = \"shared.txt\", target = \"shared.txt\" }]\n\
+         commands = [{ run = \"exit 42\" }]\n",
+    );
+
+    let output = treeboot()
+        .args(["run", "--skip-commands", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    let report: serde_json::Value = serde_json::from_slice(&output).expect("run JSON should parse");
+
+    assert_eq!(report["mode"], "execute");
+    assert_eq!(report["has_file_changes"], true);
+    assert_eq!(report["commands_skipped"], true);
+    assert_eq!(report["execution_warnings"], serde_json::json!([]));
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("shared.txt"))
+            .expect("copied target should be readable"),
+        "root\n"
+    );
+}
+
+pub(crate) fn implicit_structured_dry_run_should_include_commands_without_effects() {
+    let repo = git_worktree();
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        "commands = [{ name = \"fail\", run = \"exit 42\", allow_failure = true }]\n",
+    );
+
+    let output = treeboot()
+        .args(["--dry-run", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    let report: serde_json::Value =
+        serde_json::from_slice(&output).expect("dry-run JSON should parse");
+
+    assert_eq!(report["mode"], "dry_run");
+    assert_eq!(report["commands_skipped"], false);
+    assert_eq!(report["commands"][0]["label"], "fail: exit 42");
+    assert_eq!(report["commands"][0]["allow_failure"], true);
+}
+
+pub(crate) fn structured_output_validation_should_precede_discovery() {
+    let dir = TempDir::new().expect("tempdir should be created");
+
+    for args in [
+        &["run", "--json"][..],
+        &["plan", "--json", "--verbose"][..],
+        &["--json", "status"][..],
+    ] {
+        treeboot()
+            .args(args)
+            .current_dir(dir.path())
+            .assert()
+            .code(2)
+            .stdout(predicate::str::is_empty())
+            .stderr(predicate::str::is_empty().not());
+    }
+}
+
+pub(crate) fn implicit_run_option_before_explicit_plan_should_be_usage_error() {
+    let repo = git_worktree();
+    write_file(&repo.root_path().join("shared.txt"), "root\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "shared.txt", target = "shared.txt" }]"#,
+    );
+
+    treeboot()
+        .args(["--config", "alternate.toml", "plan"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(2)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "implicit run options placed before an explicit subcommand are not allowed",
+        ));
+
+    assert!(!repo.worktree_path().join("shared.txt").exists());
+}
+
+pub(crate) fn implicit_run_option_before_explicit_run_should_be_usage_error() {
+    let repo = git_worktree();
+    write_file(&repo.root_path().join("shared.txt"), "root\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "shared.txt", target = "shared.txt" }]"#,
+    );
+
+    treeboot()
+        .args(["--force", "run", "--dry-run", "--skip-commands"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(2)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "implicit run options placed before an explicit subcommand are not allowed",
+        ));
+
+    assert!(!repo.worktree_path().join("shared.txt").exists());
+}
+
+pub(crate) fn structured_run_planning_error_should_leave_stdout_empty_and_files_unmodified() {
+    let repo = git_worktree();
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        "copy = [{ source = \"missing.txt\", required = true }]\n",
+    );
+
+    treeboot()
+        .args(["run", "--skip-commands", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::is_empty().not());
+
+    assert!(!repo.worktree_path().join("missing.txt").exists());
+}
+
+pub(crate) fn structured_views_should_share_mixed_file_decisions() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("sync"))
+        .expect("root sync directory should be created");
+    std::fs::create_dir_all(repo.worktree_path().join("sync"))
+        .expect("worktree sync directory should be created");
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("root shared directory should be created");
+    write_file(&repo.root_path().join("existing.txt"), "root\n");
+    write_file(&repo.worktree_path().join("existing.txt"), "worktree\n");
+    write_file(&repo.root_path().join("sync/update.txt"), "new\n");
+    write_file(&repo.worktree_path().join("sync/update.txt"), "old\n");
+    write_file(&repo.worktree_path().join("sync/delete.txt"), "delete\n");
+    write_file(&repo.root_path().join("shared/config"), "value\n");
+    symlink_file("config", repo.root_path().join("shared/link"));
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"
+copy = [
+  { source = "existing.txt", target = "existing.txt" },
+  { source = "shared/link", target = "links/link" },
+]
+sync = [{ source = "sync", target = "sync", compare = "checksum", delete = true }]
+commands = [{ run = "exit 42" }]
+"#,
+    );
+
+    let plan_output = treeboot()
+        .args(["plan", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    let plan: serde_json::Value =
+        serde_json::from_slice(&plan_output).expect("plan JSON should parse");
+    let dry_run_output = treeboot()
+        .args(["run", "--dry-run", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    let dry_run: serde_json::Value =
+        serde_json::from_slice(&dry_run_output).expect("dry-run JSON should parse");
+
+    assert_eq!(plan["mode"], "plan");
+    assert_eq!(dry_run["mode"], "dry_run");
+    assert_eq!(plan["file_summary"], dry_run["file_summary"]);
+    assert_eq!(plan["files"], dry_run["files"]);
+    assert_eq!(plan["file_warnings"], dry_run["file_warnings"]);
+    assert_eq!(plan["has_file_changes"], true);
+    assert_eq!(plan["file_summary"]["skipped"], 1);
+    assert_eq!(plan["file_summary"]["deleted"], 1);
+    assert_eq!(plan["file_summary"]["file_warnings"], 1);
+    assert_eq!(plan["files"][0]["summary"]["expanded"], false);
+    assert_eq!(plan["files"][0]["summary"]["skip_reason"], "target exists");
+    assert_eq!(plan["files"][2]["summary"]["expanded"], true);
+    assert_eq!(
+        plan["files"][2]["summary"]["skip_reason"],
+        serde_json::Value::Null
+    );
+    assert_eq!(plan["commands"][0]["label"], "exit 42");
+    assert_eq!(plan["execution_warnings"], serde_json::json!([]));
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("sync/update.txt"))
+            .expect("dry-run target should remain readable"),
+        "old\n"
+    );
+    assert!(repo.worktree_path().join("sync/delete.txt").exists());
+    assert!(!repo.worktree_path().join("links/link").exists());
+
+    let execute_output = treeboot()
+        .args(["run", "--skip-commands", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    let execute: serde_json::Value =
+        serde_json::from_slice(&execute_output).expect("execute JSON should parse");
+    assert_eq!(execute["mode"], "execute");
+    assert_eq!(execute["file_summary"], plan["file_summary"]);
+    assert_eq!(execute["files"], plan["files"]);
+    assert_eq!(execute["commands_skipped"], true);
+    assert_eq!(execute["commands"], serde_json::json!([]));
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("sync/update.txt"))
+            .expect("executed target should be readable"),
+        "new\n"
+    );
+    assert!(!repo.worktree_path().join("sync/delete.txt").exists());
+    assert!(std::fs::symlink_metadata(repo.worktree_path().join("links/link")).is_ok());
+
+    let follow_up_output = treeboot()
+        .args(["plan", "--skip-commands", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    let follow_up: serde_json::Value =
+        serde_json::from_slice(&follow_up_output).expect("follow-up plan JSON should parse");
+    assert_eq!(follow_up["has_file_changes"], false);
+}
+
+pub(crate) fn plan_structured_noops_and_validation_warnings_should_be_explicit() {
+    let repo = git_worktree();
+
+    let missing_output = treeboot()
+        .args(["plan", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let missing: serde_json::Value =
+        serde_json::from_slice(&missing_output).expect("missing-config report should parse");
+    assert_eq!(missing["action"]["kind"], "missing_config");
+    assert_eq!(missing["has_file_changes"], false);
+    assert_eq!(missing["files"], serde_json::json!([]));
+
+    let root_output = treeboot()
+        .args(["plan", "--json"])
+        .current_dir(repo.root_path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let root: serde_json::Value =
+        serde_json::from_slice(&root_output).expect("root-worktree report should parse");
+    assert_eq!(root["action"]["kind"], "root_worktree_skipped");
+    assert_eq!(root["has_file_changes"], false);
+
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("source directory should be created");
+    std::fs::create_dir_all(repo.worktree_path().join("shared"))
+        .expect("target directory should be created");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        r#"copy = [{ source = "shared", include = ["missing/**"], ignore_metadata = ["ownership", "permissions"] }]"#,
+    );
+    let warning_output = treeboot()
+        .args(["plan", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    let warning: serde_json::Value =
+        serde_json::from_slice(&warning_output).expect("warning report should parse");
+    assert_eq!(warning["has_file_changes"], false);
+    assert_eq!(warning["files"].as_array().map(Vec::len), Some(1));
+    assert_eq!(warning["files"][0]["operation"], "copy");
+    assert_eq!(
+        warning["files"][0]["summary"],
+        serde_json::json!({
+            "changed": 0,
+            "skipped": 0,
+            "deleted": 0,
+            "metadata_changed": 0,
+            "file_warnings": 0,
+            "expanded": true,
+            "skip_reason": null,
+        })
+    );
+    assert_eq!(
+        warning["validation_warnings"],
+        serde_json::json!(["include patterns match no source paths for copy shared -> shared"])
+    );
+
+    let text_output = treeboot()
+        .arg("plan")
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(text_output).expect("text plan output should be UTF-8");
+    let expected_warning =
+        "treeboot: warning: include patterns match no source paths for copy shared -> shared";
+    assert!(
+        text.lines().any(|line| line == expected_warning),
+        "text plan output should contain the exact warning line: {text}"
+    );
+}
+
+pub(crate) fn structured_mode_combinations_and_text_verbose_plan_should_be_supported() {
+    let repo = git_worktree();
+    std::fs::create_dir_all(repo.root_path().join("shared"))
+        .expect("source directory should be created");
+    write_file(&repo.root_path().join("shared/file.txt"), "value\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        "copy = [{ source = \"shared\", target = \"shared\" }]\n\
+         commands = [{ run = \"exit 42\" }]\n",
+    );
+
+    treeboot()
+        .args(["plan", "--format", "text", "--verbose"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "treeboot: would copy {} -> {}",
+            display_path("shared/file.txt"),
+            display_path("shared/file.txt")
+        )));
+
+    let output = treeboot()
+        .args(["run", "--dry-run", "--skip-commands", "--yaml"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty())
+        .get_output()
+        .stdout
+        .clone();
+    let report: serde_json::Value =
+        yaml_serde::from_slice(&output).expect("combined-mode YAML should parse");
+    assert_eq!(report["mode"], "dry_run");
+    assert_eq!(report["commands_skipped"], true);
+    assert_eq!(report["commands"], serde_json::json!([]));
+    assert!(!repo.worktree_path().join("shared/file.txt").exists());
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn plan_text_should_support_non_utf8_worktrees_while_structured_output_fails_atomically()
+{
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let repo = git_worktree();
+    let parent = TempDir::new().expect("non-UTF-8 parent should be created");
+    let path = parent
+        .path()
+        .join(OsString::from_vec(b"treeboot-plan-\xff".to_vec()));
+    let output = crate::cases::support::host_process("git")
+        .args(["worktree", "add", "-b", "treeboot-plan-non-utf8"])
+        .arg(&path)
+        .current_dir(repo.root_path())
+        .output()
+        .expect("git should run");
+    crate::cases::support::assert_fixture_process_success("git worktree add", &output);
+    write_file(&repo.root_path().join("shared.txt"), "root\n");
+    write_file(
+        &path.join(".treeboot.toml"),
+        r#"copy = [{ source = "shared.txt", target = "shared.txt" }]"#,
+    );
+
+    treeboot()
+        .arg("plan")
+        .current_dir(&path)
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
+    assert!(!path.join("shared.txt").exists());
+
+    for args in [
+        &["plan", "--json"][..],
+        &["run", "--skip-commands", "--json"][..],
+    ] {
+        treeboot()
+            .args(args)
+            .current_dir(&path)
+            .assert()
+            .code(1)
+            .stdout(predicate::str::is_empty())
+            .stderr(predicate::str::is_empty().not());
+        assert!(!path.join("shared.txt").exists());
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn structured_run_should_preflight_non_utf8_expanded_child_before_mutation() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let repo = git_worktree();
+    let source = repo.root_path().join("shared");
+    std::fs::create_dir_all(&source).expect("source directory should be created");
+    let child = OsString::from_vec(b"child-\xff.txt".to_vec());
+    let child_path = source.join(child);
+    write_file(&child_path, "value\n");
+    let config = repo.worktree_path().join(".treeboot.toml");
+    write_file(
+        &config,
+        r#"copy = [{ source = "shared", target = "copied" }]"#,
+    );
+    assert!(repo.root_path().to_str().is_some());
+    assert!(repo.worktree_path().to_str().is_some());
+    assert!(config.to_str().is_some());
+    assert!(source.to_str().is_some());
+    assert!(child_path.to_str().is_none());
+
+    treeboot()
+        .args(["run", "--skip-commands", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::is_empty().not());
+
+    assert!(
+        !repo.worktree_path().join("copied").exists(),
+        "structured child-path preflight should finish before creating the target directory"
+    );
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn structured_execute_failure_should_keep_stdout_empty_and_prior_effects_only() {
+    use std::io::Read;
+
+    let repo = git_worktree();
+    let unreadable_source = std::path::Path::new("/proc/self/mem");
+    let metadata = std::fs::metadata(unreadable_source).unwrap_or_else(|error| {
+        skip(format!(
+            "requires readable /proc/self/mem metadata: {error}"
+        ))
+    });
+    if !metadata.is_file() {
+        skip("requires /proc/self/mem to report as a regular file");
+    }
+    let mut probe = std::fs::File::open(unreadable_source)
+        .unwrap_or_else(|error| skip(format!("requires /proc/self/mem to open: {error}")));
+    match probe.read(&mut [0_u8; 1]) {
+        Ok(count) => skip(format!(
+            "requires an offset-zero /proc/self/mem read failure, read {count} bytes"
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            skip("requires an offset-zero /proc/self/mem failure other than permission denied")
+        }
+        Err(_) => {}
+    }
+    write_file(&repo.root_path().join("first.txt"), "first\n");
+    write_file(
+        &repo.worktree_path().join(".treeboot.toml"),
+        &format!(
+            r#"
+dangerously_allow_sources_outside_root = true
+copy = [
+  {{ source = "first.txt", target = "first.txt", required = true }},
+  {{ source = "{}", target = "second.txt", required = true }},
+]
+"#,
+            toml_string_path(unreadable_source)
+        ),
+    );
+
+    treeboot()
+        .args(["run", "--skip-commands", "--json"])
+        .current_dir(repo.worktree_path())
+        .assert()
+        .code(1)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::is_empty().not());
+
+    assert_eq!(
+        std::fs::read_to_string(repo.worktree_path().join("first.txt"))
+            .expect("the earlier action should remain applied"),
+        "first\n"
+    );
+    assert_eq!(
+        std::fs::metadata(repo.worktree_path().join("second.txt"))
+            .expect("the failing copy should leave its created target")
+            .len(),
+        0,
+        "the failing copy should leave only an empty target"
     );
 }

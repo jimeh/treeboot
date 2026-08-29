@@ -2,7 +2,7 @@ use std::io::Write;
 
 use clap::{Args, ValueEnum};
 use serde::Serialize;
-use treeboot_core::Error;
+use treeboot_core::{BootstrapReport, Error, OutputEvent, Reporter};
 
 #[derive(Debug, Args, Clone, Default)]
 pub(crate) struct OutputArgs {
@@ -36,6 +36,42 @@ impl OutputArgs {
         } else {
             self.format.unwrap_or_default()
         }
+    }
+
+    pub(crate) fn is_specified(&self) -> bool {
+        self.format.is_some() || self.json || self.yaml
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum BootstrapReportMode {
+    Plan,
+    DryRun,
+    Execute,
+}
+
+#[derive(Serialize)]
+struct CliBootstrapReport<'a> {
+    mode: BootstrapReportMode,
+    #[serde(flatten)]
+    report: &'a BootstrapReport,
+}
+
+pub(crate) fn write_bootstrap_report(
+    report: &BootstrapReport,
+    mode: BootstrapReportMode,
+    format: ReportFormat,
+) -> treeboot_core::Result<()> {
+    write_structured(&CliBootstrapReport { mode, report }, format)
+}
+
+#[derive(Default)]
+pub(crate) struct SilentReporter;
+
+impl Reporter for SilentReporter {
+    fn report(&mut self, _event: OutputEvent) -> std::io::Result<()> {
+        Ok(())
     }
 }
 
