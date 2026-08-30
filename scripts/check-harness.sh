@@ -160,7 +160,8 @@ elif [[ -z "${mise_cargo_audit_version}" || "${mise_cargo_audit_version}" == *$'
   fail "mise.toml cargo-audit versions must match"
 fi
 
-if ! rg -Fxq "      - run: mise run audit:deps:ci" .github/workflows/ci.yml; then
+if ! awk '$0 == "      - run: mise run audit:deps:ci" { found = 1 } END { exit !found }' \
+  .github/workflows/ci.yml; then
   fail ".github/workflows/ci.yml must run the prebuilt cargo-audit task"
 fi
 
