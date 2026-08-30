@@ -322,6 +322,8 @@ work. Lefthook checks staged Markdown files through
 - Repo harness invariants are wrapped by `mise run harness:check`; keep
   dependency-boundary and spec-version drift checks there when they can be
   expressed without heavyweight tooling.
+- Harness scripts run in a minimal CI job and cannot assume `rg` is installed;
+  use the existing POSIX shell tools unless the job's tool set changes.
 - Do not require package-version literals in `crates/treeboot-spec/SPEC.md`
   examples to match Cargo package versions. Release-please does not update spec
   examples, and example version drift should not block release PRs.
@@ -369,6 +371,8 @@ work. Lefthook checks staged Markdown files through
   install `llvm-tools-preview` for the active Rust toolchain.
 - Keep optional heavyweight tools task-scoped in `mise.toml`; GitHub Actions
   installs top-level mise tools in every job.
+- Keep task-scoped GitHub release tools in `mise.lock` with artifact checksums.
+  After changing one, verify that `mise lock` includes its task declaration.
 - Give task-scoped Cargo tools concrete versions such as `0.22.2`; an `=0.22.2`
   requirement makes Mise warn that the semver range is unsupported.
 - Leave `settings.lockfile_platforms` unset. Dev-tool artifact coverage is

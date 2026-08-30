@@ -72,7 +72,7 @@ gate; it is a sensor for finding untested behavior.
 GitHub Actions runs these mise tasks:
 
 - `mise run actions:lint`
-- `mise run audit:deps`
+- `mise run audit:deps:ci`
 - `mise run format:check`
 - `mise run generate:check`
   - currently wraps `mise run generate:schema:check`
@@ -85,6 +85,11 @@ GitHub Actions runs these mise tasks:
 The full test suite runs once on each supported GitHub Actions host platform:
 Linux x64/ARM64, macOS x64/ARM64, and Windows x64/ARM64. The local `mise run ci`
 task mirrors the task set, but only on the current host platform.
+
+The GitHub Actions audit job uses the prebuilt `cargo-audit` release through
+Mise's `github:` backend. The local `audit:deps` task retains the `cargo:`
+backend so developers on hosts without an upstream release asset can compile the
+tool from source.
 
 ## Cross-platform Preflight
 

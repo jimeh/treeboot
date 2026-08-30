@@ -95,11 +95,6 @@ jobs:
           cache: false
           cache_key: mise-v2-${{ github.event_name }}-${{ matrix.target }}-{{platform}}-{{file_hash}}
 
-      - if: matrix.tool == 'cross'
-        uses: taiki-e/install-action@6cd13508893c0e7eab5f273c2575d3859bd7229a # v2.86.6
-        with:
-          tool: cross
-
       - if: matrix.tool == 'cargo'
         shell: bash
         env:
@@ -131,7 +126,7 @@ jobs:
           TOOL: ${{ matrix.tool }}
         run: |
           if [[ "${TOOL}" == "cross" ]]; then
-            cross build -p treeboot --locked --release --target "${TARGET}"
+            mise run release:cross:build "${TARGET}"
           else
             cargo build -p treeboot --locked --release --target "${TARGET}"
           fi
@@ -141,13 +136,7 @@ jobs:
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
-        run: |
-          cross test \
-            -p treeboot \
-            --locked \
-            --release \
-            --target "${TARGET}" \
-            --test cli
+        run: mise run release:cross:test "${TARGET}"
 
       - if: matrix.smoke == 'native'
         shell: bash
