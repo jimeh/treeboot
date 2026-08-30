@@ -312,6 +312,16 @@ treeboot sync shared/config --delete --dry-run
 
 ## Installation alternatives
 
+With Node.js 22 or newer, run Treeboot through npm without adding it to the
+project or installing it globally:
+
+```sh
+npx treeboot
+```
+
+Pass commands and options after the package name, for example
+`npx treeboot run --dry-run`.
+
 For a global mise install:
 
 ```sh
