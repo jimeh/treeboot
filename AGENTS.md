@@ -369,6 +369,8 @@ work. Lefthook checks staged Markdown files through
   install `llvm-tools-preview` for the active Rust toolchain.
 - Keep optional heavyweight tools task-scoped in `mise.toml`; GitHub Actions
   installs top-level mise tools in every job.
+- Keep task-scoped GitHub release tools in `mise.lock` with artifact checksums.
+  After changing one, verify that `mise lock` includes its task declaration.
 - Give task-scoped Cargo tools concrete versions such as `0.22.2`; an `=0.22.2`
   requirement makes Mise warn that the semver range is unsupported.
 - Leave `settings.lockfile_platforms` unset. Dev-tool artifact coverage is

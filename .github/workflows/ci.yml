@@ -47,11 +47,7 @@ jobs:
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           cache_key: mise-v2-{{platform}}-{{file_hash}}
-      - uses: taiki-e/install-action@6cd13508893c0e7eab5f273c2575d3859bd7229a # v2.86.6
-        with:
-          tool: cargo-audit@0.22.2
-          fallback: none
-      - run: cargo audit --file Cargo.lock
+      - run: mise run audit:deps:ci
 
   format:
     runs-on: ubuntu-latest

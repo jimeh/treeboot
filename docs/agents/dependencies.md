@@ -48,8 +48,13 @@ dependencies for small wrappers around the standard library.
   depend on Python or platform-specific zip tools in CI.
 - `cargo-llvm-cov` is a task-scoped mise development tool, not a Cargo
   dependency.
-- `cargo-audit` is a task-scoped mise development tool used by local and GitHub
-  Actions CI to reject known RustSec vulnerabilities in `Cargo.lock`.
+- `cargo-audit` is a task-scoped mise development tool used to reject known
+  RustSec vulnerabilities in `Cargo.lock`. Local validation uses the portable
+  `cargo:` backend, while GitHub Actions downloads the upstream release through
+  the checksum-locked `github:` backend.
+- `cross` is a task-scoped mise release tool. Release jobs download its upstream
+  binary through the checksum-locked `github:` backend instead of a separate
+  installer action.
 - Mise-managed tools use a 7-day `minimum_release_age` cooldown and checked-in
   `mise.lock` to avoid adopting freshly published binaries by default. Pinact
   applies the same cooldown to GitHub Actions, and Bun applies it to new npm

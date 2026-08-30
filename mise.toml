@@ -297,6 +297,11 @@ description = "Audit Rust dependencies for security vulnerabilities"
 tools."cargo:cargo-audit" = "0.22.2"
 run = "cargo audit --file Cargo.lock"
 
+[tasks."audit:deps:ci"]
+description = "Audit Rust dependencies with the prebuilt CI binary"
+tools."github:RustSec/rustsec[exe=cargo-audit,matching=musl,matching_regex=^cargo-audit-,version_prefix=cargo-audit/v]" = "0.22.2"
+run = "cargo audit --file Cargo.lock"
+
 [tasks.check]
 depends = [
   "format:check",
@@ -390,6 +395,25 @@ version="$(scripts/release-version.sh)"
 cargo build -p treeboot --locked --release --target "$target"
 scripts/package-release-asset.sh "$target" "$version" dist
 scripts/package-config-schema.sh dist
+'''
+
+[tasks."release:cross:build"]
+description = "Build a release binary with cross"
+tools."github:cross-rs/cross[exe=cross,matching=musl,matching_regex=^cross-]" = "0.2.5"
+usage = 'arg "target"'
+run = 'cross build -p treeboot --locked --release --target "${usage_target}"'
+
+[tasks."release:cross:test"]
+description = "Smoke-test the CLI with cross"
+tools."github:cross-rs/cross[exe=cross,matching=musl,matching_regex=^cross-]" = "0.2.5"
+usage = 'arg "target"'
+run = '''
+cross test \
+  -p treeboot \
+  --locked \
+  --release \
+  --target "${usage_target}" \
+  --test cli
 '''
 
 [tasks."release:check"]

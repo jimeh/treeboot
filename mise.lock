@@ -104,6 +104,20 @@ url = "https://github.com/oven-sh/bun/releases/download/bun-v1.4.0/bun-windows-x
 checksum = "sha256:b929c54a9badb104a16dedd23aab6152c86793ae653d4e6b13983ffd0c882a66"
 url = "https://github.com/oven-sh/bun/releases/download/bun-v1.4.0/bun-windows-x64-baseline.zip"
 
+[[tools."github:RustSec/rustsec"]]
+version = "0.22.2"
+backend = "github:RustSec/rustsec"
+
+[tools."github:RustSec/rustsec".options]
+matching = "musl"
+matching_regex = "^cargo-audit-"
+version_prefix = "cargo-audit/v"
+
+[tools."github:RustSec/rustsec"."platforms.linux-x64"]
+checksum = "sha256:7fb9497f8594b389e5fce5ef9b92db08432996895b2e0c5a0167a69ed445c428"
+url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-x86_64-unknown-linux-musl-v0.22.2.tgz"
+url_api = "https://api.github.com/repos/rustsec/rustsec/releases/assets/439292222"
+
 [[tools."github:colbymchenry/codegraph"]]
 version = "1.5.0"
 backend = "github:colbymchenry/codegraph"
@@ -156,6 +170,19 @@ checksum = "sha256:d6798622b4f44ee6757c94335f437ee27a9ff7d3537b554cb6a2b3baf11bc
 url = "https://github.com/colbymchenry/codegraph/releases/download/v1.5.0/codegraph-win32-x64.zip"
 url_api = "https://api.github.com/repos/colbymchenry/codegraph/releases/assets/485052628"
 provenance = "github-attestations"
+
+[[tools."github:cross-rs/cross"]]
+version = "0.2.5"
+backend = "github:cross-rs/cross"
+
+[tools."github:cross-rs/cross".options]
+matching = "musl"
+matching_regex = "^cross-"
+
+[tools."github:cross-rs/cross"."platforms.linux-x64"]
+checksum = "sha256:a486cefa6cb486971b97be321ea9dfc2e90c1979550295314a368f53fab6d588"
+url = "https://github.com/cross-rs/cross/releases/download/v0.2.5/cross-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/cross-rs/cross/releases/assets/94307576"
 
 [[tools."github:jimeh/treeboot"]]
 version = "0.13.0"
