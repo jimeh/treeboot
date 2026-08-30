@@ -47,7 +47,7 @@ jobs:
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           cache_key: mise-v2-{{platform}}-{{file_hash}}
-      - uses: taiki-e/install-action@a2a5f6e99e1a31540baa0468acfa302cff0f359f # v2.86.4
+      - uses: taiki-e/install-action@6cd13508893c0e7eab5f273c2575d3859bd7229a # v2.86.6
         with:
           tool: cargo-audit@0.22.2
           fallback: none
