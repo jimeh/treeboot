@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/jimeh/treeboot/compare/v0.15.0...v0.16.0) (2026-08-30)
+
+
+### Features
+
+* add machine-readable bootstrap planning ([#149](https://github.com/jimeh/treeboot/issues/149)) ([26adf69](https://github.com/jimeh/treeboot/commit/26adf691fa8bb09aa51ed5ebca96f1ea56dd9f73))
+
 ## [0.15.0](https://github.com/jimeh/treeboot/compare/v0.14.0...v0.15.0) (2026-08-28)
 
 
