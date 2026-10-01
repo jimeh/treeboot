@@ -17,7 +17,7 @@ run_auto_install = true
 
 [tools]
 actionlint = "1"
-bun = "1.4.0"
+bun = "1.4.2"
 lefthook = "2"
 markdownlint-cli2 = "0"
 pinact = "4"
@@ -282,12 +282,12 @@ depends = ["lint:npm", "npm:test"]
 
 [tasks.coverage]
 description = "Run tests and print Rust coverage summary"
-tools."cargo:cargo-llvm-cov" = "0.9.0"
+tools."cargo:cargo-llvm-cov" = "0.9.1"
 run = "cargo llvm-cov --workspace --all-targets --all-features --locked"
 
 [tasks."coverage:missing"]
 description = "Show uncovered Rust lines"
-tools."cargo:cargo-llvm-cov" = "0.9.0"
+tools."cargo:cargo-llvm-cov" = "0.9.1"
 run = "cargo llvm-cov --workspace --all-targets --all-features --locked --summary-only --show-missing-lines"
 
 # Validation
@@ -347,7 +347,7 @@ run = "scripts/check-harness.sh"
 [tasks.doctor]
 description = "Check required local tools"
 tools."cargo:cargo-audit" = "0.22.2"
-tools."cargo:cargo-llvm-cov" = "0.9.0"
+tools."cargo:cargo-llvm-cov" = "0.9.1"
 run = [
   "git --version",
   "bun --version",
