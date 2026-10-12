@@ -335,8 +335,8 @@ work. Lefthook checks staged Markdown files through
   release bot GitHub App token and uses `.github/renovate-mise.config.js` as
   self-hosted/global config. Mise tools use major-version constraints in
   `mise.toml`, while `mise.lock` records the exact resolved versions. Keep the
-  `extractVersion` rule for `github:jdx/jactionlint` and `github:jimeh/treeboot`
-  so GitHub release tags do not reintroduce a `v` prefix into `mise.toml`. Keep
+  `extractVersion` rule for every top-level `github:` tool in `mise.toml` so
+  GitHub release tags do not reintroduce a `v` prefix there. Keep
   `allowedUnsafeExecutions = ["mise"]` for mise lockfile refreshes. Keep exact
   allowlist entries for `mise trust mise.toml` and `mise lock rust` so Rust
   toolchain PRs can trust the temporary checkout before updating `mise.lock`

@@ -188,6 +188,12 @@ for github_tool in RustSec/rustsec cross-rs/cross; do
   fi
 done
 
+while IFS= read -r github_tool; do
+  if ! grep -Fq "\"${github_tool}\"" .github/renovate-mise.config.js; then
+    fail ".github/renovate-mise.config.js extractVersion rule must list ${github_tool}"
+  fi
+done < <(sed -nE 's/^"(github:[^"]+)" = .*/\1/p' mise.toml)
+
 for crate_license in crates/treeboot/LICENSE crates/treeboot-core/LICENSE crates/treeboot-spec/LICENSE; do
   if ! cmp -s LICENSE "${crate_license}"; then
     fail "${crate_license} must match root LICENSE"
