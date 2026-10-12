@@ -192,7 +192,7 @@ while IFS= read -r github_tool; do
   if ! grep -Fq "\"${github_tool}\"" .github/renovate-mise.config.js; then
     fail ".github/renovate-mise.config.js extractVersion rule must list ${github_tool}"
   fi
-done < <(sed -nE 's/^"(github:[^"]+)" = .*/\1/p' mise.toml)
+done < <(sed -nE '/version_prefix=/d; s/^"(github:[^"[]+)(\[[^"]*\])?" = .*/\1/p' mise.toml)
 
 for crate_license in crates/treeboot/LICENSE crates/treeboot-core/LICENSE crates/treeboot-spec/LICENSE; do
   if ! cmp -s LICENSE "${crate_license}"; then
