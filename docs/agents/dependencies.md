@@ -55,6 +55,10 @@ dependencies for small wrappers around the standard library.
 - `cross` is a task-scoped mise release tool. Release jobs download its upstream
   binary through the checksum-locked `github:` backend instead of a separate
   installer action.
+- `jactionlint` is the mise-managed GitHub Actions workflow linter. It is the
+  maintained fork of `actionlint`, which the mise registry marks as deprecated.
+  `mise.toml` names the `github:jdx/jactionlint` backend directly because mise
+  releases before 2026.10.3 do not know the `jactionlint` registry name.
 - Mise-managed tools use a 7-day `minimum_release_age` cooldown and checked-in
   `mise.lock` to avoid adopting freshly published binaries by default. Pinact
   applies the same cooldown to GitHub Actions, and Bun applies it to new npm
