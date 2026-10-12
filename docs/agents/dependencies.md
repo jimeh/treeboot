@@ -81,6 +81,13 @@ dependencies for small wrappers around the standard library.
 - Add a dependency only when the reason is clear in the surrounding change.
 - For urgent security or CI-maintenance updates that must bypass the mise
   cooldown, use the narrowest one-off override and call it out in the PR.
+- Cargo has no release-age setting. After `cargo update`, check the publish date
+  of each changed crate and use `cargo update -p <crate> --precise <version>` to
+  hold back versions published inside the 7-day cooldown.
+- Refresh `@types/node` by raising its range, running `bun install`, and then
+  restoring the `^22.0.0` range. With Bun 1.4, `bun update @types/node` resolves
+  the `*` requirement in `bun-types` to the newest major and nests a second
+  `@types/node` in `bun.lock` without failing the type check.
 
 ## Review Checklist
 

@@ -237,7 +237,6 @@ fn write_line(message: &str) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write as _;
     use std::path::PathBuf;
 
     use super::*;
