@@ -32,6 +32,7 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
+          minimum_release_age: 7d
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           cache_key: mise-v2-{{platform}}-{{file_hash}}
       - run: mise run actions:lint
@@ -45,6 +46,7 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
+          minimum_release_age: 7d
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           cache_key: mise-v2-{{platform}}-{{file_hash}}
       - run: mise run audit:deps:ci
@@ -58,6 +60,7 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
+          minimum_release_age: 7d
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           cache_key: mise-v2-{{platform}}-{{file_hash}}
       - run: mise run format:check
@@ -74,6 +77,7 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
+          minimum_release_age: 7d
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           cache_key: mise-v2-{{platform}}-{{file_hash}}
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -96,6 +100,7 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
+          minimum_release_age: 7d
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           cache_key: mise-v2-{{platform}}-{{file_hash}}
       - run: mise run harness:check
@@ -124,6 +129,7 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
+          minimum_release_age: 7d
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           cache_key: mise-v2-{{platform}}-{{file_hash}}
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -156,6 +162,7 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
+          minimum_release_age: 7d
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           cache_key: mise-v2-{{platform}}-{{file_hash}}
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -177,6 +184,7 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
+          minimum_release_age: 7d
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           cache_key: mise-v2-npm-{{platform}}-{{file_hash}}
       - run: mise run npm:check
@@ -204,6 +212,7 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
+          minimum_release_age: 7d
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           cache_key: mise-v2-{{platform}}-{{file_hash}}
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -253,6 +262,7 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
+          minimum_release_age: 7d
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           cache_key: mise-v2-standalone-conformance-{{platform}}-{{file_hash}}
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0

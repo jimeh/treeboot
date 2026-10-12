@@ -373,6 +373,11 @@ work. Lefthook checks staged Markdown files through
   installs top-level mise tools in every job.
 - Keep task-scoped GitHub release tools in `mise.lock` with artifact checksums.
   After changing one, verify that `mise lock` includes its task declaration.
+  `mise lock` records a URL without a checksum for platform entries whose
+  release predates GitHub asset digests, such as cross 0.2.5.
+  `mise run harness:check` rejects those entries. Verify the archive hash and
+  copy the checksum from the entry that shares the URL; later `mise lock` runs
+  keep it.
 - Give task-scoped Cargo tools concrete versions such as `0.22.2`; an `=0.22.2`
   requirement makes Mise warn that the semver range is unsupported.
 - Leave `settings.lockfile_platforms` unset. Dev-tool artifact coverage is

@@ -34,6 +34,7 @@ jobs:
 
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
+          minimum_release_age: 7d
           cache: false
           cache_key: mise-v2-${{ github.event_name }}-release-prepare-{{platform}}-{{file_hash}}
 
@@ -92,6 +93,7 @@ jobs:
 
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
+          minimum_release_age: 7d
           cache: false
           cache_key: mise-v2-${{ github.event_name }}-${{ matrix.target }}-{{platform}}-{{file_hash}}
 
@@ -177,6 +179,7 @@ jobs:
 
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
+          minimum_release_age: 7d
           cache: false
           cache_key: mise-v2-${{ github.event_name }}-release-assemble-{{platform}}-{{file_hash}}
 
@@ -247,6 +250,7 @@ jobs:
 
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
+          minimum_release_age: 7d
           cache: false
           cache_key: mise-v2-${{ github.event_name }}-release-publish-{{platform}}-{{file_hash}}
 

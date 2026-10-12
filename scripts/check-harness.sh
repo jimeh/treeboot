@@ -27,14 +27,26 @@ git_path_exists() {
   git cat-file -e "$1:$2" 2>/dev/null
 }
 
-locked_tool_has_checksum() {
+locked_tool_downloads_have_checksums() {
   local header="[[tools.\"$1\"]]"
 
   awk -v header="${header}" '
+    function close_platform() {
+      if (in_platform && has_url && !has_checksum) { missing = 1 }
+      in_platform = 0
+    }
     $0 == header { in_tool = 1; next }
     in_tool && /^\[\[tools\./ { exit }
-    in_tool && /^checksum = "sha256:/ { found = 1 }
-    END { exit !found }
+    in_tool && /^\[tools\./ {
+      close_platform()
+      in_platform = ($0 ~ /"platforms\./)
+      has_url = 0
+      has_checksum = 0
+      next
+    }
+    in_platform && /^url = "/ { has_url = 1 }
+    in_platform && /^checksum = "sha256:/ { has_checksum = 1; found = 1 }
+    END { close_platform(); exit !(found && !missing) }
   ' mise.lock
 }
 
@@ -166,8 +178,8 @@ if ! awk '$0 == "      - run: mise run audit:deps:ci" { found = 1 } END { exit !
 fi
 
 for github_tool in RustSec/rustsec cross-rs/cross; do
-  if ! locked_tool_has_checksum "github:${github_tool}"; then
-    fail "mise.lock must checksum github:${github_tool}"
+  if ! locked_tool_downloads_have_checksums "github:${github_tool}"; then
+    fail "mise.lock must checksum every github:${github_tool} download"
   fi
 done
 

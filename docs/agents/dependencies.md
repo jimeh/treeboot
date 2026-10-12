@@ -58,7 +58,9 @@ dependencies for small wrappers around the standard library.
 - Mise-managed tools use a 7-day `minimum_release_age` cooldown and checked-in
   `mise.lock` to avoid adopting freshly published binaries by default. Pinact
   applies the same cooldown to GitHub Actions, and Bun applies it to new npm
-  package resolutions.
+  package resolutions. Each `jdx/mise-action` step sets
+  `minimum_release_age: 7d` so the mise binary installed in CI follows the same
+  cooldown instead of the action's 24-hour default.
 - Renovate owns Rust toolchain updates so each `rust-toolchain.toml` change is
   paired with the corresponding `mise lock rust` refresh.
 - Bun is the npm workspace package manager and development runtime. Mise owns

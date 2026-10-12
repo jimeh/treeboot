@@ -255,14 +255,17 @@ url = "https://github.com/cross-rs/cross/releases/download/v0.2.5/cross-x86_64-u
 url_api = "https://api.github.com/repos/cross-rs/cross/releases/assets/94307576"
 
 [tools."github:cross-rs/cross"."platforms.linux-x64-baseline"]
+checksum = "sha256:a486cefa6cb486971b97be321ea9dfc2e90c1979550295314a368f53fab6d588"
 url = "https://github.com/cross-rs/cross/releases/download/v0.2.5/cross-x86_64-unknown-linux-musl.tar.gz"
 url_api = "https://api.github.com/repos/cross-rs/cross/releases/assets/94307576"
 
 [tools."github:cross-rs/cross"."platforms.linux-x64-musl"]
+checksum = "sha256:a486cefa6cb486971b97be321ea9dfc2e90c1979550295314a368f53fab6d588"
 url = "https://github.com/cross-rs/cross/releases/download/v0.2.5/cross-x86_64-unknown-linux-musl.tar.gz"
 url_api = "https://api.github.com/repos/cross-rs/cross/releases/assets/94307576"
 
 [tools."github:cross-rs/cross"."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:a486cefa6cb486971b97be321ea9dfc2e90c1979550295314a368f53fab6d588"
 url = "https://github.com/cross-rs/cross/releases/download/v0.2.5/cross-x86_64-unknown-linux-musl.tar.gz"
 url_api = "https://api.github.com/repos/cross-rs/cross/releases/assets/94307576"
 
