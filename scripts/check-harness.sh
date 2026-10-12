@@ -45,7 +45,12 @@ locked_tool_downloads_have_checksums() {
       next
     }
     in_platform && /^url = "/ { has_url = 1 }
-    in_platform && /^checksum = "sha256:/ { has_checksum = 1; found = 1 }
+    # 84 = the 19-character prefix, 64 hex digits, and the closing quote.
+    # Interval expressions such as {64} are not portable to older mawk.
+    in_platform && /^checksum = "sha256:[0-9a-f]+"$/ && length($0) == 84 {
+      has_checksum = 1
+      found = 1
+    }
     END { close_platform(); exit !(found && !missing) }
   ' mise.lock
 }
