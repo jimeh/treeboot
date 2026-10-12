@@ -9,6 +9,12 @@ on: # zizmor: ignore[dangerous-triggers] metadata-only PR title check
       - reopened
       - synchronize
 
+# Runs for one pull request queue instead of overlapping, so an edit and a push
+# that arrive together cannot both create the sticky title comment.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
 permissions:
   pull-requests: write
 
