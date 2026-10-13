@@ -335,8 +335,9 @@ work. Lefthook checks staged Markdown files through
   release bot GitHub App token and uses `.github/renovate-mise.config.js` as
   self-hosted/global config. Mise tools use major-version constraints in
   `mise.toml`, while `mise.lock` records the exact resolved versions. Keep the
-  `github:jimeh/treeboot` `extractVersion` rule so GitHub release tags do not
-  reintroduce a `v` prefix into `mise.toml`. Keep
+  `extractVersion` rule for every top-level `github:` tool in `mise.toml` that
+  does not set `version_prefix`, so GitHub release tags do not reintroduce a `v`
+  prefix there. `mise run harness:check` enforces the list. Keep
   `allowedUnsafeExecutions = ["mise"]` for mise lockfile refreshes. Keep exact
   allowlist entries for `mise trust mise.toml` and `mise lock rust` so Rust
   toolchain PRs can trust the temporary checkout before updating `mise.lock`
@@ -373,6 +374,11 @@ work. Lefthook checks staged Markdown files through
   installs top-level mise tools in every job.
 - Keep task-scoped GitHub release tools in `mise.lock` with artifact checksums.
   After changing one, verify that `mise lock` includes its task declaration.
+  `mise lock` records a URL without a checksum for platform entries whose
+  release predates GitHub asset digests, such as cross 0.2.5.
+  `mise run harness:check` rejects those entries. Verify the archive hash and
+  copy the checksum from the entry that shares the URL; later `mise lock` runs
+  keep it.
 - Give task-scoped Cargo tools concrete versions such as `0.22.2`; an `=0.22.2`
   requirement makes Mise warn that the semver range is unsupported.
 - Leave `settings.lockfile_platforms` unset. Dev-tool artifact coverage is

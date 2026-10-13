@@ -7,6 +7,15 @@ on: # zizmor: ignore[dangerous-triggers] metadata-only PR title check
       - opened
       - edited
       - reopened
+      - synchronize
+
+# Runs for one pull request execute one at a time, so an edit and a push that
+# arrive together cannot both create the sticky title comment. Every queued run
+# still executes, so each head commit gets a result for this required check.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+  queue: max
 
 permissions:
   pull-requests: write

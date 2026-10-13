@@ -55,10 +55,16 @@ dependencies for small wrappers around the standard library.
 - `cross` is a task-scoped mise release tool. Release jobs download its upstream
   binary through the checksum-locked `github:` backend instead of a separate
   installer action.
+- `jactionlint` is the mise-managed GitHub Actions workflow linter. It is the
+  maintained fork of `actionlint`, which the mise registry marks as deprecated.
+  `mise.toml` names the `github:jdx/jactionlint` backend directly because mise
+  releases before 2026.10.3 do not know the `jactionlint` registry name.
 - Mise-managed tools use a 7-day `minimum_release_age` cooldown and checked-in
   `mise.lock` to avoid adopting freshly published binaries by default. Pinact
   applies the same cooldown to GitHub Actions, and Bun applies it to new npm
-  package resolutions.
+  package resolutions. Each `jdx/mise-action` step sets
+  `minimum_release_age: 7d` so the mise binary installed in CI follows the same
+  cooldown instead of the action's 24-hour default.
 - Renovate owns Rust toolchain updates so each `rust-toolchain.toml` change is
   paired with the corresponding `mise lock rust` refresh.
 - Bun is the npm workspace package manager and development runtime. Mise owns
@@ -81,6 +87,13 @@ dependencies for small wrappers around the standard library.
 - Add a dependency only when the reason is clear in the surrounding change.
 - For urgent security or CI-maintenance updates that must bypass the mise
   cooldown, use the narrowest one-off override and call it out in the PR.
+- Cargo has no release-age setting. After `cargo update`, check the publish date
+  of each changed crate and use `cargo update -p <crate> --precise <version>` to
+  hold back versions published inside the 7-day cooldown.
+- Refresh `@types/node` by raising its range, running `bun install`, and then
+  restoring the `^22.0.0` range. With Bun 1.4, `bun update @types/node` resolves
+  the `*` requirement in `bun-types` to the newest major and nests a second
+  `@types/node` in `bun.lock` without failing the type check.
 
 ## Review Checklist
 

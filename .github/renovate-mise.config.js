@@ -24,7 +24,11 @@ module.exports = {
     },
     {
       extractVersion: "^v?(?<version>.+)$",
-      matchDepNames: ["github:jimeh/treeboot"],
+      matchDepNames: [
+        "github:colbymchenry/codegraph",
+        "github:jdx/jactionlint",
+        "github:jimeh/treeboot",
+      ],
       matchManagers: ["mise"],
     },
     {
